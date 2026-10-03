@@ -1,0 +1,22 @@
+# Gehirn 1: Claude (Anthropic)
+anthropic>=1.11.0
+
+# Gehirn 2: DeepSeek (OpenAI-kompatibel, extrem guenstig)
+openai>=1.40
+
+# Konfiguration
+tomli>=2.0 ; python_version < "3.11"
+
+# Internetzugang (Fallback-Websuche/-Fetch, falls serverseitige Tools nicht genutzt werden)
+requests>=2.31
+beautifulsoup4>=4.12
+
+# -----------------------------------------------------------------------------
+# Optionale Extras - die KI laeuft auch ohne sie (mit freundlichem Hinweis).
+# Installiere sie nur, wenn du die jeweilige Funktion willst:
+#
+#   Sprachsteuerung (Mikrofon -> Text):   pip install SpeechRecognition openai-whisper sounddevice
+#   Sprachausgabe (Text -> Stimme):       pip install pyttsx3
+#   PC-Steuerung (Maus/Tastatur lokal):   pip install pyautogui pillow
+#   Build zur .exe:                       pip install pyinstaller
+# -----------------------------------------------------------------------------

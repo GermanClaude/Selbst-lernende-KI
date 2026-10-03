@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/dist/
+dist/
+.venv/
+venv/
+*.spec.bak
+
+# Geheimnisse & lokale Konfiguration
+.env
+config/settings.toml
+config/permissions.toml
+
+# Laufzeitdaten der KI (Gedaechtnis, Logs, Quarantaene, Arbeitsordner)
+data/
+logs/
+workspace/
+*.sqlite3
+*.db
+
+# PyInstaller
+*.spec.out

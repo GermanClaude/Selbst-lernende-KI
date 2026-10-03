@@ -1,0 +1,101 @@
+# ============================================================================
+#  Einstellungen fuer deine KI.
+#  Kopiere diese Datei zu "config/settings.toml" und passe sie an.
+#  (settings.toml wird NICHT in Git eingecheckt - es ist deine private Kopie.)
+# ============================================================================
+
+[provider]
+# Welches "Gehirn" aktiv ist: "claude" (sehr stark) oder "deepseek" (extrem guenstig).
+aktiv = "claude"
+
+
+# ----------------------------------------------------------------------------
+#  CLAUDE (Anthropic) - Schluessel kommt aus .env: ANTHROPIC_API_KEY
+# ----------------------------------------------------------------------------
+[claude]
+model = "claude-opus-5-5"
+# Denk-Tiefe: low | medium | high | xhigh | max  (mehr = gruendlicher, teurer)
+effort = "high"
+max_tokens = 16000
+server_side_fallback = false
+
+
+# ----------------------------------------------------------------------------
+#  DEEPSEEK - Schluessel kommt aus .env: DEEPSEEK_API_KEY
+#  Sehr guenstig. Nutzt automatisches Kontext-Caching (verbilligt Wiederholungen).
+# ----------------------------------------------------------------------------
+[deepseek]
+# Modell-ID. "deepseek-chat" ist der guenstige, schnelle Standard (Nicht-Denker).
+# Falls dein Konto diesen Alias nicht kennt, probiere "deepseek-flash" oder
+# "deepseek-v4-pro". Fuer schwierige Logik gibt es "deepseek-reasoner" (mehr Token).
+model = "deepseek-chat"
+base_url = "https://api.deepseek.com"
+max_tokens = 2048
+temperature = 0.6
+
+
+[ki]
+# Anzeigename deiner KI.
+name = "Aria"
+language = "de"
+
+
+# ----------------------------------------------------------------------------
+#  SPARSAM - moeglichst wenig Token bei voller Leistung.
+# ----------------------------------------------------------------------------
+[sparsam]
+aktiv = true
+# Bittet die KI im System-Prompt, knapp und ohne Fuellsaetze zu antworten.
+knapp_antworten = true
+# Werkzeug-Ausgaben (z.B. lange Dateien) auf so viele Zeichen kuerzen.
+max_werkzeug_ausgabe = 6000
+# Verlauf frueh zusammenfassen, damit nicht jede Nachricht den ganzen Verlauf
+# erneut bezahlt. 0 = aus (dann gilt [conversation].compact_after_messages).
+verlauf_kompakt_nach = 24
+
+
+# ----------------------------------------------------------------------------
+#  PREISE (US-Dollar pro 1 Mio. Token) - fuer die Kostenanzeige.
+#  Bei Preisaenderung einfach die Zahlen anpassen. '/kosten' zeigt die Schaetzung.
+# ----------------------------------------------------------------------------
+[preise]
+claude_input = 4.0
+claude_cache_hit = 0.4
+claude_output = 20.0
+deepseek_input = 0.28
+deepseek_cache_hit = 0.028
+deepseek_output = 0.42
+usd_zu_eur = 0.92
+
+
+[memory]
+db_path = "data/memory.sqlite3"
+max_facts_in_context = 60
+
+
+[conversation]
+compact_after_messages = 40
+
+
+[voice]
+enabled = false
+speak_responses = false
+wake_word = ""
+
+
+# ----------------------------------------------------------------------------
+#  SICHERHEIT - bitte bewusst einstellen.
+# ----------------------------------------------------------------------------
+[permissions]
+# SAFE MODE: true sperrt gefaehrliche Aktionen (Loeschen, Shell, PC-Steuerung).
+safe_mode = true
+# false = KI fragt vor jeder schreibenden/gefaehrlichen Aktion nach.
+auto_confirm = false
+# Arbeitsordner ("Sandbox"). Leer = Ordner "workspace" im Projekt.
+workspace_root = ""
+# true = Zugriff auch ausserhalb des Arbeitsordners (volles Dateisystem).
+allow_full_filesystem = false
+# Geloeschtes wandert erst in die Quarantaene (wiederherstellbar).
+use_quarantine = true
+shell_allowlist = ["echo", "ls", "dir", "pwd", "cat", "type", "whoami", "date"]
+shell_denylist = ["rm -rf /", "mkfs", "format c:", ":(){", "dd if=", "shutdown"]
