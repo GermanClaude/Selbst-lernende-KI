@@ -13,19 +13,33 @@ from pathlib import Path
 from ..permissions import Risk
 from .base import Tool, ToolContext
 
-_MAX_READ_BYTES = 200_000
+_MAX_READ_BYTES = 5_000_000
+_LINES_PER_READ = 400       # so viele Zeilen liefert datei_lesen hoechstens auf einmal
+_CHARS_PER_READ = 40_000    # ... und hoechstens so viele Zeichen
 
 
 class ReadFileTool(Tool):
     name = "datei_lesen"
-    description = "Liest den Textinhalt einer Datei im Arbeitsordner und gibt ihn zurueck."
+    description = (
+        "Liest den Textinhalt einer Datei. Lange Dateien kommen abschnittsweise "
+        f"(hoechstens {_LINES_PER_READ} Zeilen); den Rest liest du mit 'ab_zeile'. "
+        "Lies eine Datei nur einmal - du behaeltst den Inhalt."
+    )
     input_schema = {
         "type": "object",
-        "properties": {"pfad": {"type": "string", "description": "Pfad zur Datei"}},
+        "properties": {
+            "pfad": {"type": "string", "description": "Pfad zur Datei"},
+            "ab_zeile": {
+                "type": "integer",
+                "description": "Erste zu lesende Zeile (ab 1). Nur fuer lange Dateien noetig.",
+            },
+        },
         "required": ["pfad"],
     }
+    # Liefert selbst passende Abschnitte -> der Sparmodus soll nicht zusaetzlich kuerzen.
+    sparmodus_kuerzen = False
 
-    def run(self, ctx: ToolContext, pfad: str) -> str:
+    def run(self, ctx: ToolContext, pfad: str, ab_zeile: int = 1) -> str:
         path = ctx.permissions.resolve_path(pfad, must_exist=True)
         ctx.permissions.require(Risk.SAFE, f"Datei lesen: {path}")
         data = path.read_bytes()[:_MAX_READ_BYTES]
@@ -33,33 +47,68 @@ class ReadFileTool(Tool):
             text = data.decode("utf-8")
         except UnicodeDecodeError:
             return f"(Binaerdatei, {path.stat().st_size} Bytes - kann nicht als Text angezeigt werden.)"
-        suffix = "\n…(gekuerzt)" if path.stat().st_size > _MAX_READ_BYTES else ""
-        return f"Inhalt von {path.name}:\n{text}{suffix}"
+
+        lines = text.splitlines(keepends=True)
+        total = len(lines)
+        start = max(1, int(ab_zeile or 1))
+        if total and start > total:
+            return f"{path.name} hat nur {total} Zeilen - ab Zeile {start} gibt es nichts mehr."
+
+        chunk: list[str] = []
+        size = 0
+        for line in lines[start - 1 : start - 1 + _LINES_PER_READ]:
+            if chunk and size + len(line) > _CHARS_PER_READ:
+                break
+            chunk.append(line[:_CHARS_PER_READ])
+            size += len(line)
+        end = start - 1 + len(chunk)
+
+        if start == 1 and end >= total and path.stat().st_size <= _MAX_READ_BYTES:
+            return f"Inhalt von {path.name}:\n{''.join(chunk)}"
+        header = f"Inhalt von {path.name} (Zeilen {start}-{end} von {total}):\n"
+        if end < total:
+            footer = f"\n…(noch {total - end} Zeilen - weiterlesen mit ab_zeile={end + 1})"
+        elif path.stat().st_size > _MAX_READ_BYTES:
+            footer = "\n…(Datei ist zu gross, der Rest wird nicht angezeigt)"
+        else:
+            footer = "\n(Ende der Datei)"
+        return header + "".join(chunk) + footer
 
 
 class WriteFileTool(Tool):
     name = "datei_schreiben"
     description = (
         "Schreibt Text in eine Datei (ueberschreibt vorhandenen Inhalt). "
-        "Legt fehlende Ordner an. Nur im Arbeitsordner, ausser voller Zugriff ist erlaubt."
+        "Legt fehlende Ordner an. Nur im Arbeitsordner, ausser voller Zugriff ist erlaubt. "
+        "Grosse Dateien in mehreren Teilen schreiben: erster Teil normal, weitere Teile "
+        "mit anhaengen=true."
     )
     input_schema = {
         "type": "object",
         "properties": {
             "pfad": {"type": "string"},
             "inhalt": {"type": "string"},
+            "anhaengen": {
+                "type": "boolean",
+                "description": "true = Text ans Dateiende anhaengen statt zu ueberschreiben",
+            },
         },
         "required": ["pfad", "inhalt"],
     }
 
-    def run(self, ctx: ToolContext, pfad: str, inhalt: str) -> str:
+    def run(self, ctx: ToolContext, pfad: str, inhalt: str, anhaengen: bool = False) -> str:
         path = ctx.permissions.resolve_path(pfad)
         existed = path.exists()
-        ctx.permissions.require(
-            Risk.MODERATE,
-            f"{'Ueberschreiben' if existed else 'Neu anlegen'}: {path}",
-        )
+        if anhaengen and existed:
+            action = "Anhaengen an"
+        else:
+            action = "Ueberschreiben" if existed else "Neu anlegen"
+        ctx.permissions.require(Risk.MODERATE, f"{action}: {path}")
         path.parent.mkdir(parents=True, exist_ok=True)
+        if anhaengen:
+            with path.open("a", encoding="utf-8") as fh:
+                fh.write(inhalt)
+            return f"Angehaengt an {path} ({len(inhalt)} Zeichen, jetzt {path.stat().st_size} Bytes)"
         path.write_text(inhalt, encoding="utf-8")
         return f"{'Aktualisiert' if existed else 'Erstellt'}: {path} ({len(inhalt)} Zeichen)"
 

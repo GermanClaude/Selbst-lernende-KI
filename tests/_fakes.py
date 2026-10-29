@@ -29,6 +29,7 @@ class AnthroMessages:
         self.calls = 0
 
     def stream(self, **kwargs):
+        self.last_kwargs = kwargs
         msg, events = self._scripted[min(self.calls, len(self._scripted) - 1)]
         self.calls += 1
         return AnthroStream(msg, events)

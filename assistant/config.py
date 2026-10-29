@@ -45,7 +45,7 @@ class ProviderSettings:
 class ClaudeSettings:
     model: str = DEFAULT_MODEL
     effort: str = "high"
-    max_tokens: int = 16000
+    max_tokens: int = 32000
     server_side_fallback: bool = False
 
 
@@ -53,7 +53,7 @@ class ClaudeSettings:
 class DeepSeekSettings:
     model: str = DEFAULT_DEEPSEEK_MODEL
     base_url: str = "https://api.deepseek.com"
-    max_tokens: int = 2048
+    max_tokens: int = 8192  # Maximum von deepseek-chat; kleiner = grosse Dateien brechen ab
     temperature: float = 0.6
 
 
@@ -69,7 +69,7 @@ class EconomySettings:
     aktiv: bool = True
     knapp_antworten: bool = True        # System-Prompt bittet um knappe Antworten
     max_werkzeug_ausgabe: int = 6000    # Werkzeug-Ausgaben kuerzen (Zeichen)
-    verlauf_kompakt_nach: int = 24      # Verlauf frueh zusammenfassen (0 = aus)
+    verlauf_kompakt_nach: int = 24      # nach so vielen DEINER Nachrichten zusammenfassen (0 = aus)
 
 
 @dataclass
@@ -98,7 +98,15 @@ class MemorySettings:
 
 @dataclass
 class ConversationSettings:
+    # Nach so vielen Nachrichten von DIR wird der Verlauf zusammengefasst.
+    # Werkzeug-Schritte der KI zaehlen nicht mit.
     compact_after_messages: int = 40
+    # Zusaetzlich zusammenfassen, wenn der Verlauf groesser als so viele Zeichen
+    # wird (~4 Zeichen = 1 Token). Schuetzt vor zu vollem Kontext. 0 = aus.
+    max_verlauf_zeichen: int = 400_000
+    # So viele Werkzeug-Schritte darf die KI pro Nachricht machen, bevor sie
+    # anhaelt und fragt, ob sie weitermachen soll.
+    max_werkzeug_runden: int = 60
 
 
 @dataclass

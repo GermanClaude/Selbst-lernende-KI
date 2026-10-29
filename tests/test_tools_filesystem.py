@@ -70,3 +70,25 @@ def test_unknown_tool(tmp_path):
     ctx, _ = _ctx(tmp_path)
     out, err = reg.execute(ctx, "gibt_es_nicht", {})
     assert err and "Unbekannt" in out
+
+
+def test_read_long_file_in_sections(tmp_path):
+    reg = build_registry()
+    ctx, _ = _ctx(tmp_path)
+    (tmp_path / "lang.txt").write_text("\n".join(f"Zeile {i}" for i in range(1, 1001)), encoding="utf-8")
+    out, err = reg.execute(ctx, "datei_lesen", {"pfad": "lang.txt"})
+    assert not err and "Zeilen 1-400 von 1000" in out and "ab_zeile=401" in out
+    assert "Zeile 400\n" in out and "Zeile 401" not in out
+    out, err = reg.execute(ctx, "datei_lesen", {"pfad": "lang.txt", "ab_zeile": 901})
+    assert "Zeilen 901-1000 von 1000" in out and "Zeile 1000" in out and "Ende der Datei" in out
+    out, _ = reg.execute(ctx, "datei_lesen", {"pfad": "lang.txt", "ab_zeile": 5000})
+    assert "nur 1000 Zeilen" in out
+
+
+def test_write_append(tmp_path):
+    reg = build_registry()
+    ctx, _ = _ctx(tmp_path)
+    reg.execute(ctx, "datei_schreiben", {"pfad": "teile.py", "inhalt": "teil1\n"})
+    out, err = reg.execute(ctx, "datei_schreiben", {"pfad": "teile.py", "inhalt": "teil2\n", "anhaengen": True})
+    assert not err and "Angehaengt" in out
+    assert (tmp_path / "teile.py").read_text(encoding="utf-8") == "teil1\nteil2\n"

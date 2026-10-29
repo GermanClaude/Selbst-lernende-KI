@@ -226,6 +226,19 @@ falsch kopiert. Guthaben prüfen, Schlüssel neu kopieren.
 `[deepseek]` `model` von `deepseek-chat` auf `deepseek-flash` oder
 `deepseek-v4-pro` ändern.
 
+**Die KI liest beim Programmieren nur Dateien, zeigt die Kostenzeile und macht
+nichts** → Ab dieser Version hält sie nach `max_werkzeug_runden` Schritten mit
+einem Hinweis an – schreib dann einfach **„weiter“**. Wenn deine
+`config/settings.toml` noch aus einer älteren Version stammt, prüfe dort:
+`[sparsam] verlauf_kompakt_nach` sollte nicht zu klein sein (Standard 24 – zählt
+jetzt nur deine Nachrichten), und bei DeepSeek `[deepseek] max_tokens = 8192`
+(mit 2048 werden große Dateien beim Schreiben abgeschnitten).
+
+**`UnicodeDecodeError: 'charmap' codec can't decode byte 0x81`** → In älteren
+Versionen hat das Shell-Werkzeug Umlaute in der Ausgabe von Windows-Befehlen
+falsch gelesen. Ist behoben. Ohne Update hilft: im Projektordner `cmd` öffnen,
+`chcp 1252` eingeben und dann `start.bat` starten.
+
 **Wo finde ich `.env`?** Direkt im Projektordner. Falls du sie nicht siehst:
 im Explorer oben **Ansicht → Anzeigen → Dateinamenerweiterungen** und
 **ausgeblendete Elemente** einschalten.

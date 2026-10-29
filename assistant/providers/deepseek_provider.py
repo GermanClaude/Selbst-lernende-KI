@@ -11,7 +11,14 @@ import json
 from typing import Any
 
 from ..logging_setup import get_logger
-from .base import LLMProvider, StreamFn
+from .base import (
+    LIMIT_NOTE,
+    SUMMARY_INSTRUCTION,
+    TRUNCATED_NOTE,
+    TRUNCATED_TOOL_ERROR,
+    LLMProvider,
+    StreamFn,
+)
 
 logger = get_logger()
 
@@ -27,6 +34,7 @@ class DeepSeekProvider(LLMProvider):
 
     def __init__(self, *args: Any, **kwargs: Any):
         super().__init__(*args, **kwargs)
+        self._finish_reason: str | None = None
         # OpenAI-Format: System-Prompt ist die erste Nachricht.
         self.messages: list[dict[str, Any]] = [{"role": "system", "content": self.system_prompt}]
         if self.client is None:
@@ -43,7 +51,9 @@ class DeepSeekProvider(LLMProvider):
         return OpenAI(api_key=key, base_url=self.config.deepseek.base_url)
 
     # -- Hauptschleife ------------------------------------------------------
-    def respond(self, user_text: str, on_text: StreamFn | None = None, max_tool_rounds: int = 25) -> str:
+    def respond(
+        self, user_text: str, on_text: StreamFn | None = None, max_tool_rounds: int | None = None
+    ) -> str:
         if self.client is None:
             if on_text:
                 on_text(_INSTALL_HINT)
@@ -51,8 +61,10 @@ class DeepSeekProvider(LLMProvider):
 
         self.messages.append({"role": "user", "content": user_text})
         final_parts: list[str] = []
+        rounds = self._rounds(max_tool_rounds)
 
-        for _ in range(max_tool_rounds):
+        for _ in range(rounds):
+            self._finish_reason = None
             text, tool_calls = self._one_turn(on_text)
             if text is None:
                 return "Es gab ein Problem bei der Verbindung zu DeepSeek."
@@ -66,26 +78,43 @@ class DeepSeekProvider(LLMProvider):
                     {
                         "id": tc["id"],
                         "type": "function",
-                        "function": {"name": tc["name"], "arguments": tc["arguments"]},
+                        # Abgeschnittenes JSON nicht zurueckschicken (koennte die API ablehnen).
+                        "function": {
+                            "name": tc["name"],
+                            "arguments": _valid_json_or_empty(tc["arguments"]),
+                        },
                     }
                     for tc in tool_calls
                 ]
             self.messages.append(assistant_msg)
 
             if not tool_calls:
+                if self._finish_reason == "length":
+                    final_parts.append(TRUNCATED_NOTE.strip())
+                    if on_text:
+                        on_text(TRUNCATED_NOTE)
                 break
 
             for tc in tool_calls:
-                if on_text:
-                    on_text(f"\n  … nutze Werkzeug: {tc['name']}\n")
                 try:
                     parsed = json.loads(tc["arguments"]) if tc["arguments"] else {}
                 except json.JSONDecodeError:
-                    parsed = {}
-                output, _is_error = self._exec_tool(tc["name"], parsed)
+                    # Fast immer: Antwort bei max_tokens abgeschnitten. Nicht mit
+                    # leeren Argumenten ausfuehren, sondern der KI erklaeren, was los ist.
+                    output = TRUNCATED_TOOL_ERROR
+                else:
+                    if on_text:
+                        on_text(f"\n  … nutze Werkzeug: {tc['name']}\n")
+                    output, _is_error = self._exec_tool(tc["name"], parsed)
                 self.messages.append(
                     {"role": "tool", "tool_call_id": tc["id"], "content": output}
                 )
+        else:
+            # Schritt-Limit erreicht: Bescheid geben statt stumm aufzuhoeren.
+            note = LIMIT_NOTE.format(n=rounds)
+            final_parts.append(note.strip())
+            if on_text:
+                on_text(note)
 
         return "\n".join(final_parts).strip() or "(keine Textantwort)"
 
@@ -118,6 +147,8 @@ class DeepSeekProvider(LLMProvider):
                     self._track_usage(chunk.usage)
                 if not chunk.choices:
                     continue
+                if getattr(chunk.choices[0], "finish_reason", None):
+                    self._finish_reason = chunk.choices[0].finish_reason
                 delta = chunk.choices[0].delta
                 if getattr(delta, "content", None):
                     text_parts.append(delta.content)
@@ -164,6 +195,17 @@ class DeepSeekProvider(LLMProvider):
         # System-Nachricht nicht mitzaehlen.
         return max(0, len(self.messages) - 1)
 
+    def user_turns(self) -> int:
+        return sum(1 for m in self.messages if m.get("role") == "user")
+
+    def history_chars(self) -> int:
+        total = 0
+        for m in self.messages[1:]:
+            total += len(m.get("content") or "")
+            for tc in m.get("tool_calls") or []:
+                total += len(tc["function"]["arguments"] or "")
+        return total
+
     def summarize_history(self) -> str:
         if self.client is None or self.history_length() < 2:
             return ""
@@ -171,15 +213,11 @@ class DeepSeekProvider(LLMProvider):
             resp = self.client.chat.completions.create(
                 model=self.config.deepseek.model,
                 messages=[
-                    {
-                        "role": "system",
-                        "content": "Fasse das folgende Gespraech in 4-8 knappen deutschen "
-                        "Stichpunkten zusammen. Behalte Namen, Entscheidungen, offene "
-                        "Aufgaben und Vorlieben.",
-                    },
-                    {"role": "user", "content": _history_as_text(self.messages)[:30000]},
+                    {"role": "system", "content": SUMMARY_INSTRUCTION},
+                    # Das Ende ist am wichtigsten (aktueller Stand) -> im Zweifel den Anfang kuerzen.
+                    {"role": "user", "content": _history_as_text(self.messages)[-60000:]},
                 ],
-                max_tokens=600,
+                max_tokens=2000,
                 stream=False,
             )
             self._track_usage(getattr(resp, "usage", None))
@@ -196,6 +234,14 @@ class DeepSeekProvider(LLMProvider):
         ]
 
 
+def _valid_json_or_empty(arguments: str) -> str:
+    try:
+        json.loads(arguments or "{}")
+        return arguments or "{}"
+    except json.JSONDecodeError:
+        return "{}"
+
+
 def _history_as_text(messages: list[dict[str, Any]]) -> str:
     lines: list[str] = []
     for msg in messages:
@@ -203,9 +249,13 @@ def _history_as_text(messages: list[dict[str, Any]]) -> str:
         if role == "system":
             continue
         content = msg.get("content")
+        if role == "tool":
+            lines.append(f"werkzeug-ergebnis: {str(content or '')[:600]}")
+            continue
         if isinstance(content, str) and content:
             lines.append(f"{role}: {content}")
         if msg.get("tool_calls"):
             for tc in msg["tool_calls"]:
-                lines.append(f"{role}: [Werkzeug {tc['function']['name']}]")
+                args = (tc["function"].get("arguments") or "")[:200]
+                lines.append(f"{role}: [Werkzeug {tc['function']['name']}: {args}]")
     return "\n".join(lines)

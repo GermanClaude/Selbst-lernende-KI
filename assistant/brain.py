@@ -46,21 +46,30 @@ class Brain:
         return self.provider.cost()
 
     def respond(self, user_text: str, on_text: StreamFn | None = None) -> str:
-        answer = self.provider.respond(user_text, on_text=on_text)
+        answer = self.provider.respond(
+            user_text,
+            on_text=on_text,
+            max_tool_rounds=self.config.conversation.max_werkzeug_runden,
+        )
         self._maybe_compact()
         return answer
 
     def _maybe_compact(self) -> None:
-        if self.provider.history_length() < self.config.compact_threshold:
+        # Gezaehlt werden nur DEINE Nachrichten, nicht die Werkzeug-Schritte der KI:
+        # sonst wuerde mitten in einer Programmieraufgabe alles Gelesene vergessen.
+        turns = self.provider.user_turns()
+        chars = self.provider.history_chars()
+        max_chars = self.config.conversation.max_verlauf_zeichen
+        if turns < self.config.compact_threshold and not (max_chars and chars > max_chars):
             return
-        logger.info("Kompaktiere Verlauf (%d Nachrichten).", self.provider.history_length())
+        logger.info("Kompaktiere Verlauf (%d Nachrichten, ~%d Zeichen).", turns, chars)
         summary = self.provider.summarize_history()
         if summary:
             self.memory.add_episode(summary)
             self.provider.reset_to_summary(summary)
 
     def end_session_summary(self) -> None:
-        if self.provider.history_length() < 2:
+        if self.provider.user_turns() < 1 or self.provider.history_length() < 2:
             return
         summary = self.provider.summarize_history()
         if summary:

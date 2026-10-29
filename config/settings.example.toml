@@ -16,7 +16,8 @@ aktiv = "claude"
 model = "claude-opus-5-5"
 # Denk-Tiefe: low | medium | high | xhigh | max  (mehr = gruendlicher, teurer)
 effort = "high"
-max_tokens = 16000
+# Maximale Laenge EINER Antwort. Zu klein = grosse Dateien werden abgeschnitten.
+max_tokens = 32000
 server_side_fallback = false
 
 
@@ -30,7 +31,9 @@ server_side_fallback = false
 # "deepseek-v4-pro". Fuer schwierige Logik gibt es "deepseek-reasoner" (mehr Token).
 model = "deepseek-chat"
 base_url = "https://api.deepseek.com"
-max_tokens = 2048
+# Maximale Laenge EINER Antwort (8192 ist das Maximum von deepseek-chat).
+# Zu klein = grosse Dateien werden mitten im Schreiben abgeschnitten.
+max_tokens = 8192
 temperature = 0.6
 
 
@@ -47,10 +50,11 @@ language = "de"
 aktiv = true
 # Bittet die KI im System-Prompt, knapp und ohne Fuellsaetze zu antworten.
 knapp_antworten = true
-# Werkzeug-Ausgaben (z.B. lange Dateien) auf so viele Zeichen kuerzen.
+# Werkzeug-Ausgaben (z.B. Shell, Webseiten) auf so viele Zeichen kuerzen.
+# Dateien lesen ist ausgenommen - das kommt ohnehin abschnittsweise.
 max_werkzeug_ausgabe = 6000
-# Verlauf frueh zusammenfassen, damit nicht jede Nachricht den ganzen Verlauf
-# erneut bezahlt. 0 = aus (dann gilt [conversation].compact_after_messages).
+# Verlauf nach so vielen Nachrichten von DIR zusammenfassen (Werkzeug-Schritte der
+# KI zaehlen nicht mit). 0 = aus (dann gilt [conversation].compact_after_messages).
 verlauf_kompakt_nach = 24
 
 
@@ -74,7 +78,15 @@ max_facts_in_context = 60
 
 
 [conversation]
+# Nach so vielen Nachrichten von DIR wird der Verlauf zusammengefasst
+# (gilt, wenn der Sparmodus aus ist).
 compact_after_messages = 40
+# Zusaetzlich zusammenfassen, wenn der Verlauf groesser als so viele Zeichen wird
+# (~4 Zeichen = 1 Token). 0 = aus.
+max_verlauf_zeichen = 400000
+# So viele Werkzeug-Schritte (Datei lesen, schreiben, ...) darf die KI pro Nachricht
+# machen. Danach haelt sie an und du schreibst "weiter".
+max_werkzeug_runden = 60
 
 
 [voice]

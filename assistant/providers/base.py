@@ -10,6 +10,32 @@ from ..tools import ToolContext, ToolRegistry
 
 StreamFn = Callable[[str], None]
 
+# Wird angezeigt, wenn die KI ihr Schritt-Limit fuer eine Nachricht erreicht.
+LIMIT_NOTE = (
+    "\n\n[Ich habe das Limit von {n} Werkzeug-Schritten fuer diese Nachricht erreicht "
+    "und halte hier an. Schreib einfach \"weiter\", dann mache ich genau an dieser "
+    "Stelle weiter.]"
+)
+TRUNCATED_NOTE = (
+    "\n\n[Meine Antwort wurde wegen der Laengenbegrenzung (max_tokens) abgeschnitten. "
+    "Schreib \"weiter\", dann mache ich weiter.]"
+)
+# Werkzeug-Ergebnis, wenn ein Aufruf abgeschnitten wurde und nicht ausgefuehrt wird.
+TRUNCATED_TOOL_ERROR = (
+    "Nicht ausgefuehrt: Deine Antwort wurde wegen der Laengenbegrenzung (max_tokens) "
+    "abgeschnitten, die Eingabe dieses Werkzeugs ist unvollstaendig. Schreibe grosse "
+    "Dateien in mehreren kleineren Teilen (datei_schreiben mit anhaengen=true)."
+)
+# Anleitung fuer die Verlaufs-Zusammenfassung (fuer beide Provider gleich).
+SUMMARY_INSTRUCTION = (
+    "Fasse das folgende Gespraech zwischen einem Menschen und seinem KI-Assistenten auf "
+    "Deutsch in knappen Stichpunkten zusammen, damit der Assistent nahtlos weiterarbeiten "
+    "kann. Behalte unbedingt: Namen, Vorlieben, Entscheidungen; die aktuelle Aufgabe und "
+    "das Ziel; was bereits erledigt ist (welche Dateien gelesen, angelegt oder geaendert "
+    "wurden, mit Pfad und dem Wichtigsten zum Inhalt); offene Probleme; und was als "
+    "Naechstes zu tun ist."
+)
+
 
 @dataclass
 class Usage:
@@ -51,10 +77,20 @@ class LLMProvider(ABC):
 
     # -- von Unterklassen zu implementieren ---------------------------------
     @abstractmethod
-    def respond(self, user_text: str, on_text: StreamFn | None = None, max_tool_rounds: int = 25) -> str: ...
+    def respond(
+        self, user_text: str, on_text: StreamFn | None = None, max_tool_rounds: int | None = None
+    ) -> str: ...
 
     @abstractmethod
     def history_length(self) -> int: ...
+
+    def user_turns(self) -> int:
+        """Anzahl der Nachrichten vom Menschen (Werkzeug-Schritte zaehlen nicht)."""
+        return self.history_length()
+
+    def history_chars(self) -> int:
+        """Ungefaehre Groesse des Verlaufs in Zeichen (fuer die Kompaktierung)."""
+        return 0
 
     @abstractmethod
     def summarize_history(self) -> str: ...
@@ -63,9 +99,17 @@ class LLMProvider(ABC):
     def reset_to_summary(self, summary: str) -> None: ...
 
     # -- gemeinsam ----------------------------------------------------------
+    def _rounds(self, max_tool_rounds: int | None) -> int:
+        return max(1, max_tool_rounds or self.config.conversation.max_werkzeug_runden)
+
     def _exec_tool(self, name: str, tool_input: Any) -> tuple[str, bool]:
         """Fuehrt ein Werkzeug aus und kuerzt die Ausgabe im Sparmodus."""
         output, is_error = self.registry.execute(self.tool_ctx, name, tool_input)
+        tool = self.registry.get(name)
+        # Werkzeuge, die selbst abschnittsweise liefern (datei_lesen), nicht kuerzen -
+        # sonst sieht die KI Dateien nie vollstaendig und liest sie immer wieder.
+        if tool is not None and not getattr(tool, "sparmodus_kuerzen", True):
+            return output, is_error
         cap = self.config.economy.max_werkzeug_ausgabe if self.config.economy.aktiv else 0
         if cap and len(output) > cap:
             output = output[:cap] + "\n…(Ausgabe gekuerzt, um Token zu sparen)"
