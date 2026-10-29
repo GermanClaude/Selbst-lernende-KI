@@ -26,15 +26,25 @@ TRUNCATED_TOOL_ERROR = (
     "abgeschnitten, die Eingabe dieses Werkzeugs ist unvollstaendig. Schreibe grosse "
     "Dateien in mehreren kleineren Teilen (datei_schreiben mit anhaengen=true)."
 )
+# Platzhalter im Verlauf, wenn das Modell eine Anfrage abgelehnt hat (die Teil-
+# Antwort darf nicht im Verlauf bleiben, sonst lehnt die API jede Folgeanfrage ab).
+REFUSAL_PLACEHOLDER = "(Diese Anfrage habe ich abgelehnt.)"
 # Anleitung fuer die Verlaufs-Zusammenfassung (fuer beide Provider gleich).
 SUMMARY_INSTRUCTION = (
     "Fasse das folgende Gespraech zwischen einem Menschen und seinem KI-Assistenten auf "
     "Deutsch in knappen Stichpunkten zusammen, damit der Assistent nahtlos weiterarbeiten "
-    "kann. Behalte unbedingt: Namen, Vorlieben, Entscheidungen; die aktuelle Aufgabe und "
-    "das Ziel; was bereits erledigt ist (welche Dateien gelesen, angelegt oder geaendert "
-    "wurden, mit Pfad und dem Wichtigsten zum Inhalt); offene Probleme; und was als "
-    "Naechstes zu tun ist."
+    "kann. Beginne mit der aktuellen Aufgabe und ihrem Ziel und damit, was als Naechstes "
+    "zu tun ist. Behalte ausserdem: Namen, Vorlieben, Entscheidungen; was bereits erledigt "
+    "ist (welche Dateien gelesen, angelegt oder geaendert wurden, mit Pfad und dem "
+    "Wichtigsten zum Inhalt); offene Probleme."
 )
+
+
+def summary_input(history_text: str, limit: int = 60_000, head: int = 8_000) -> str:
+    """Anfang (Aufgabe bzw. fruehere Zusammenfassung) + Ende (aktueller Stand)."""
+    if len(history_text) <= limit:
+        return history_text
+    return history_text[:head] + "\n…(Mitte ausgelassen)…\n" + history_text[-(limit - head) :]
 
 
 @dataclass

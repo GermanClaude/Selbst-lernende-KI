@@ -101,7 +101,7 @@ class ClaudeSettings:
 class DeepSeekSettings:
     model: str = DEFAULT_DEEPSEEK_MODEL
     base_url: str = "https://api.deepseek.com"
-    max_tokens: int = 8192  # Maximum von deepseek-chat; kleiner = grosse Dateien brechen ab
+    max_tokens: int = 8192  # kleiner = grosse Dateien brechen beim Schreiben ab
     temperature: float = 0.6
 
 
@@ -124,7 +124,7 @@ class EconomySettings:
 class PriceSettings:
     # US-Dollar pro 1 Mio. Token. Bei Preisaenderung einfach hier anpassen.
     claude_input: float = 4.0
-    claude_cache_hit: float = 0.4
+    claude_cache_hit: float = 0.2
     claude_output: float = 20.0
     deepseek_input: float = 0.28
     deepseek_cache_hit: float = 0.028
@@ -274,6 +274,13 @@ def load_config(project_root: Path | None = None) -> Config:
     provider = _merge(ProviderSettings(), raw.get("provider", {}))
     claude = _merge(ClaudeSettings(), raw.get("claude", {}))
     deepseek = _merge(DeepSeekSettings(), raw.get("deepseek", {}))
+    # Aeltere settings.toml enthalten die frueheren, zu kleinen Standardwerte
+    # (aus settings.example.toml kopiert). Damit brechen grosse Dateien beim
+    # Schreiben ab - also wie "nicht gesetzt" behandeln.
+    if deepseek.max_tokens == 2048:
+        deepseek.max_tokens = DeepSeekSettings.max_tokens
+    if claude.max_tokens == 16000:
+        claude.max_tokens = ClaudeSettings.max_tokens
 
     # Modell per Umgebungsvariable erzwingen (zielt auf den aktiven Provider).
     if os.environ.get("KI_MODEL"):

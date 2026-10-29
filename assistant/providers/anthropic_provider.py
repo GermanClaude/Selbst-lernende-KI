@@ -6,11 +6,13 @@ from typing import Any
 from ..logging_setup import get_logger
 from .base import (
     LIMIT_NOTE,
+    REFUSAL_PLACEHOLDER,
     SUMMARY_INSTRUCTION,
     TRUNCATED_NOTE,
     TRUNCATED_TOOL_ERROR,
     LLMProvider,
     StreamFn,
+    summary_input,
 )
 
 logger = get_logger()
@@ -74,7 +76,9 @@ class AnthropicProvider(LLMProvider):
                 detail = ""
                 if getattr(response, "stop_details", None):
                     detail = f" (Kategorie: {getattr(response.stop_details, 'category', '?')})"
-                self.messages.append({"role": "assistant", "content": response.content})
+                # Teil-Antwort verwerfen (kann leer sein oder einen Werkzeugaufruf ohne
+                # Ergebnis enthalten - beides liesse jede weitere Anfrage scheitern).
+                self.messages.append({"role": "assistant", "content": REFUSAL_PLACEHOLDER})
                 msg = "Das tut mir leid - diese Anfrage kann ich nicht erfuellen" + detail + "."
                 if on_text:
                     on_text(msg)
@@ -172,13 +176,16 @@ class AnthropicProvider(LLMProvider):
         try:
             resp = self.client.messages.create(
                 model=self.config.claude.model,
-                max_tokens=4000,
+                max_tokens=8000,
                 system=SUMMARY_INSTRUCTION,
-                # Das Ende ist am wichtigsten (aktueller Stand) -> im Zweifel den Anfang kuerzen.
-                messages=[{"role": "user", "content": _history_as_text(self.messages)[-60000:]}],
+                messages=[{"role": "user", "content": summary_input(_history_as_text(self.messages))}],
                 output_config={"effort": "low"},
             )
             self._track_usage(getattr(resp, "usage", None))
+            if getattr(resp, "stop_reason", None) in ("max_tokens", "refusal"):
+                # Abgeschnittene/abgelehnte Zusammenfassung -> lieber Verlauf behalten.
+                logger.warning("Zusammenfassung unvollstaendig (%s).", getattr(resp, "stop_reason", None))
+                return ""
             return "".join(b.text for b in resp.content if getattr(b, "type", None) == "text").strip()
         except Exception as exc:  # noqa: BLE001
             logger.warning("Zusammenfassung fehlgeschlagen: %s", exc)

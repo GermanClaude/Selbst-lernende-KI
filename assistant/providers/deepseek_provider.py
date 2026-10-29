@@ -18,6 +18,7 @@ from .base import (
     TRUNCATED_TOOL_ERROR,
     LLMProvider,
     StreamFn,
+    summary_input,
 )
 
 logger = get_logger()
@@ -118,7 +119,7 @@ class DeepSeekProvider(LLMProvider):
 
         return "\n".join(final_parts).strip() or "(keine Textantwort)"
 
-    def _one_turn(self, on_text: StreamFn | None):
+    def _one_turn(self, on_text: StreamFn | None, retried: bool = False):
         """Ein Modell-Durchlauf (gestreamt). Gibt (text, tool_calls) zurueck."""
         try:
             stream = self.client.chat.completions.create(
@@ -132,6 +133,11 @@ class DeepSeekProvider(LLMProvider):
                 stream_options={"include_usage": True},
             )
         except Exception as exc:  # noqa: BLE001
+            # Kontext voll (sehr viele/grosse Dateien gelesen): alte Werkzeug-Ausgaben
+            # kuerzen und einmal neu versuchen, statt bei jedem "weiter" erneut zu scheitern.
+            if not retried and _is_context_error(exc) and self._shrink_old_tool_outputs():
+                logger.warning("Kontext voll - aeltere Werkzeug-Ausgaben gekuerzt.")
+                return self._one_turn(on_text, retried=True)
             logger.error("DeepSeek-Fehler: %s", exc)
             if on_text:
                 on_text(f"\n[DeepSeek-Fehler: {exc}]")
@@ -198,6 +204,17 @@ class DeepSeekProvider(LLMProvider):
     def user_turns(self) -> int:
         return sum(1 for m in self.messages if m.get("role") == "user")
 
+    def _shrink_old_tool_outputs(self, keep_last: int = 2) -> bool:
+        """Ersetzt grosse, aeltere Werkzeug-Ausgaben durch einen kurzen Hinweis."""
+        tool_msgs = [m for m in self.messages if m.get("role") == "tool"]
+        changed = False
+        for m in tool_msgs[: max(0, len(tool_msgs) - keep_last)]:
+            content = m.get("content") or ""
+            if len(content) > 500:
+                m["content"] = content[:300] + _SHRUNK_NOTE
+                changed = True
+        return changed
+
     def history_chars(self) -> int:
         total = 0
         for m in self.messages[1:]:
@@ -214,13 +231,15 @@ class DeepSeekProvider(LLMProvider):
                 model=self.config.deepseek.model,
                 messages=[
                     {"role": "system", "content": SUMMARY_INSTRUCTION},
-                    # Das Ende ist am wichtigsten (aktueller Stand) -> im Zweifel den Anfang kuerzen.
-                    {"role": "user", "content": _history_as_text(self.messages)[-60000:]},
+                    {"role": "user", "content": summary_input(_history_as_text(self.messages))},
                 ],
-                max_tokens=2000,
+                max_tokens=4000,
                 stream=False,
             )
             self._track_usage(getattr(resp, "usage", None))
+            if getattr(resp.choices[0], "finish_reason", "stop") == "length":
+                logger.warning("DeepSeek-Zusammenfassung abgeschnitten - Verlauf bleibt.")
+                return ""
             return (resp.choices[0].message.content or "").strip()
         except Exception as exc:  # noqa: BLE001
             logger.warning("DeepSeek-Zusammenfassung fehlgeschlagen: %s", exc)
@@ -232,6 +251,15 @@ class DeepSeekProvider(LLMProvider):
             {"role": "user", "content": "Zusammenfassung unseres bisherigen Gespraechs:\n" + summary},
             {"role": "assistant", "content": "Verstanden, ich habe den Kontext."},
         ]
+
+
+_SHRUNK_NOTE = "\n…(aeltere Ausgabe gekuerzt, weil der Kontext voll war - bei Bedarf neu lesen)"
+_CONTEXT_ERROR_HINTS = ("context length", "context_length", "maximum context", "too many tokens", "too long")
+
+
+def _is_context_error(exc: Exception) -> bool:
+    text = str(exc).lower()
+    return any(hint in text for hint in _CONTEXT_ERROR_HINTS)
 
 
 def _valid_json_or_empty(arguments: str) -> str:

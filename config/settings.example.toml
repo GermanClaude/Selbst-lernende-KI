@@ -31,7 +31,7 @@ server_side_fallback = false
 # "deepseek-v4-pro". Fuer schwierige Logik gibt es "deepseek-reasoner" (mehr Token).
 model = "deepseek-chat"
 base_url = "https://api.deepseek.com"
-# Maximale Laenge EINER Antwort (8192 ist das Maximum von deepseek-chat).
+# Maximale Laenge EINER Antwort (mindestens 8192 empfohlen).
 # Zu klein = grosse Dateien werden mitten im Schreiben abgeschnitten.
 max_tokens = 8192
 temperature = 0.6
@@ -64,7 +64,7 @@ verlauf_kompakt_nach = 24
 # ----------------------------------------------------------------------------
 [preise]
 claude_input = 4.0
-claude_cache_hit = 0.4
+claude_cache_hit = 0.2
 claude_output = 20.0
 deepseek_input = 0.28
 deepseek_cache_hit = 0.028

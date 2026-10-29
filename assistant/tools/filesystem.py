@@ -56,14 +56,19 @@ class ReadFileTool(Tool):
 
         chunk: list[str] = []
         size = 0
-        for line in lines[start - 1 : start - 1 + _LINES_PER_READ]:
+        cut_lines: list[str] = []
+        for number, line in enumerate(lines[start - 1 : start - 1 + _LINES_PER_READ], start=start):
             if chunk and size + len(line) > _CHARS_PER_READ:
                 break
-            chunk.append(line[:_CHARS_PER_READ])
+            if len(line) > _CHARS_PER_READ:
+                cut_lines.append(f"Zeile {number} hat {len(line)} Zeichen, gezeigt: {_CHARS_PER_READ}")
+                line = line[:_CHARS_PER_READ] + "…\n"
+            chunk.append(line)
             size += len(line)
         end = start - 1 + len(chunk)
+        cut_note = f"\n…(Zeile gekuerzt: {'; '.join(cut_lines)})" if cut_lines else ""
 
-        if start == 1 and end >= total and path.stat().st_size <= _MAX_READ_BYTES:
+        if start == 1 and end >= total and path.stat().st_size <= _MAX_READ_BYTES and not cut_lines:
             return f"Inhalt von {path.name}:\n{''.join(chunk)}"
         header = f"Inhalt von {path.name} (Zeilen {start}-{end} von {total}):\n"
         if end < total:
@@ -72,7 +77,7 @@ class ReadFileTool(Tool):
             footer = "\n…(Datei ist zu gross, der Rest wird nicht angezeigt)"
         else:
             footer = "\n(Ende der Datei)"
-        return header + "".join(chunk) + footer
+        return header + "".join(chunk) + cut_note + footer
 
 
 class WriteFileTool(Tool):

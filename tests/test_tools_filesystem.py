@@ -92,3 +92,12 @@ def test_write_append(tmp_path):
     out, err = reg.execute(ctx, "datei_schreiben", {"pfad": "teile.py", "inhalt": "teil2\n", "anhaengen": True})
     assert not err and "Angehaengt" in out
     assert (tmp_path / "teile.py").read_text(encoding="utf-8") == "teil1\nteil2\n"
+
+
+def test_read_very_long_line_is_marked(tmp_path):
+    reg = build_registry()
+    ctx, _ = _ctx(tmp_path)
+    (tmp_path / "data.json").write_text('{"a": "' + "x" * 100_000 + '"}', encoding="utf-8")
+    out, err = reg.execute(ctx, "datei_lesen", {"pfad": "data.json"})
+    assert not err and "Zeile gekuerzt" in out and "Zeile 1 hat 100009 Zeichen" in out
+    assert not out.startswith("Inhalt von data.json:\n")  # nicht als vollstaendig ausgeben

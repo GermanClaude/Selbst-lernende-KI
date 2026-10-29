@@ -199,3 +199,77 @@ def test_deepseek_user_turns_ignore_tool_messages(tmp_path):
     prov.respond("los")
     assert prov.user_turns() == 1 and prov.history_length() > 10
     mem.close()
+
+
+# ----- Befunde der Gegenpruefung ----------------------------------------------
+def test_refusal_leaves_a_valid_history(tmp_path):
+    from assistant.providers.base import REFUSAL_PLACEHOLDER
+
+    # Ablehnung mitten in einem Werkzeugaufruf: der tool_use darf nicht im Verlauf bleiben.
+    refused = (anthro_msg([text_block("Ich"), tool_use_block("system_info", "t9", {})],
+                          stop_reason="refusal", stop_details=SimpleNamespace(category="cyber")), [])
+    prov, mem = _anthropic(tmp_path, [refused, (anthro_msg([text_block("ok")]), [])])
+    prov.respond("Portscanner bauen")
+    assert prov.messages[-1] == {"role": "assistant", "content": REFUSAL_PLACEHOLDER}
+    prov.respond("Dann etwas anderes")
+    assert not any(
+        getattr(b, "type", None) == "tool_use" for m in prov.messages if isinstance(m["content"], list)
+        for b in m["content"]
+    )
+    mem.close()
+
+
+def test_summary_input_keeps_task_and_latest_state():
+    from assistant.providers.base import summary_input
+
+    text = "user: AUFGABE: Baue ein Spiel\n" + ("werkzeug-ergebnis: x\n" * 20000) + "user: NEUESTER STAND"
+    out = summary_input(text)
+    assert len(out) <= 60_100 and "AUFGABE" in out and "NEUESTER STAND" in out
+
+
+def test_truncated_summary_keeps_history(tmp_path):
+    cfg, mem, reg, ctx = _setup(tmp_path)
+    client = AnthroClient([(anthro_msg([text_block("x")]), [])])
+    client.messages.create = lambda **kw: SimpleNamespace(
+        content=[text_block("halbe Zusamm")], stop_reason="max_tokens",
+        usage=SimpleNamespace(input_tokens=1, output_tokens=1),
+    )
+    prov = AnthropicProvider(cfg, "SYSTEM", reg, ctx, client=client)
+    prov.respond("hi")
+    assert prov.summarize_history() == ""
+    mem.close()
+
+
+def test_deepseek_context_overflow_recovers(tmp_path):
+    prov, mem = _deepseek(tmp_path, [[ds_text_chunk("weiter gehts"), ds_usage_chunk()]])
+    prov.messages += [
+        {"role": "assistant", "content": "", "tool_calls": [
+            {"id": f"c{i}", "type": "function", "function": {"name": "datei_lesen", "arguments": "{}"}}]}
+        if j == 0 else {"role": "tool", "tool_call_id": f"c{i}", "content": "x" * 30000}
+        for i in range(5) for j in range(2)
+    ]
+    real_create = prov.client.chat.completions.create
+    calls = {"n": 0}
+
+    def create(**kw):
+        calls["n"] += 1
+        if kw.get("stream") and calls["n"] == 1:
+            raise RuntimeError("Error code: 400 - This model's maximum context length is 131072 tokens")
+        return real_create(**kw)
+
+    prov.client.chat.completions.create = create
+    out = prov.respond("weiter")
+    assert "weiter gehts" in out
+    tool_contents = [m["content"] for m in prov.messages if m["role"] == "tool"]
+    assert all(len(c) < 1000 for c in tool_contents[:-2]) and len(tool_contents[-1]) == 30000
+    mem.close()
+
+
+def test_old_max_tokens_defaults_are_upgraded(tmp_path):
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "settings.toml").write_text(
+        "[claude]\nmax_tokens = 16000\n[deepseek]\nmax_tokens = 2048\n", encoding="utf-8")
+    cfg = load_config(tmp_path)
+    assert cfg.deepseek.max_tokens == 8192 and cfg.claude.max_tokens == 32000
+    (tmp_path / "config" / "settings.toml").write_text("[deepseek]\nmax_tokens = 4000\n", encoding="utf-8")
+    assert load_config(tmp_path).deepseek.max_tokens == 4000  # bewusst gewaehlte Werte bleiben
