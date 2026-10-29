@@ -21,4 +21,5 @@ pyinstaller packaging/ki.spec --noconfirm
 
 echo
 echo "Fertig! Die Datei liegt hier: dist/KI"
-echo "Trage vorher deinen Schluessel in die Datei .env ein."
+echo "Sie nutzt .env und config/ aus diesem Projektordner. Kopierst du KI"
+echo "woandershin, legt sie dort beim ersten Start eigene Dateien an (.env, config/)."

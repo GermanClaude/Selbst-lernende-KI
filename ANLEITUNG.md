@@ -191,6 +191,12 @@ pip install pyautogui pillow
 Doppelklick auf `packaging\build.bat`. Nach ein paar Minuten liegt die Datei
 **`dist\KI.exe`** bereit.
 
+Die `.exe` im `dist`-Ordner benutzt deine `.env` und `config\settings.toml` aus
+dem Projektordner – du musst nichts kopieren. Ziehst du `KI.exe` woandershin
+(z.B. auf den Desktop), legt sie dort beim ersten Start eine eigene `.env` und
+`config\` an; trag dann dort deinen Schlüssel ein. Im Chat zeigt `/status`, welche
+Dateien sie gerade liest.
+
 ---
 
 ## 💶 Bleibt es billig?

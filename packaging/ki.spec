@@ -12,9 +12,12 @@ from pathlib import Path
 
 block_cipher = None
 
+# Projektordner = Ordner ueber dieser .spec-Datei. (Pfade in Analysis() wuerden
+# sonst relativ zu packaging/ aufgeloest -> "run_ki.py not found".)
+project_root = Path(SPECPATH).resolve().parent  # SPECPATH setzt PyInstaller
+
 # Beispiel-Konfiguration mit ins Paket legen, damit die .exe beim ersten Start
 # etwas zum Kopieren hat.
-project_root = Path.cwd()
 added_files = [
     (str(project_root / "config" / "settings.example.toml"), "config"),
     (str(project_root / "config" / "persona.md"), "config"),
@@ -23,7 +26,7 @@ added_files = [
 ]
 
 a = Analysis(
-    ["run_ki.py"],
+    [str(project_root / "run_ki.py")],
     pathex=[str(project_root)],
     binaries=[],
     datas=added_files,

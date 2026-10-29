@@ -8,6 +8,7 @@ Es gibt zwei "Gehirne" zur Auswahl:
 from __future__ import annotations
 
 import os
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -19,20 +20,67 @@ except ModuleNotFoundError:  # pragma: no cover - Fallback fuer 3.10
 
 DEFAULT_MODEL = "claude-opus-5-5"
 DEFAULT_DEEPSEEK_MODEL = "deepseek-chat"
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+
+class ConfigError(Exception):
+    """Eine Einstellungsdatei ist fehlerhaft - mit verstaendlicher Meldung."""
+
+
+def find_app_root() -> Path:
+    """Der Ordner, in dem .env, config/, data/ und workspace/ liegen.
+
+    Aus dem Quellcode: der Projektordner. Als gepackte KI.exe: der Ordner der .exe -
+    NICHT __file__, denn das zeigt dort in PyInstallers temporaeren Entpack-Ordner.
+    Liegt die .exe im 'dist'-Ordner des Projekts (so wie build.bat sie ablegt) und
+    steht die .env nur im Projektordner, wird der Projektordner genutzt.
+    """
+    if not getattr(sys, "frozen", False):
+        return Path(__file__).resolve().parent.parent
+    exe_dir = Path(sys.executable).resolve().parent
+    parent = exe_dir.parent
+    if (parent / "config").is_dir() and not (exe_dir / ".env").is_file():
+        # Die .env entscheidet (aeltere Versionen legten neben der .exe schon eine
+        # settings.toml an, die sonst die Projekt-.env verdecken wuerde).
+        if (parent / ".env").is_file():
+            return parent
+        if (parent / "config" / "settings.toml").is_file() and not (
+            exe_dir / "config" / "settings.toml"
+        ).is_file():
+            return parent
+    return exe_dir
+
+
+def bundle_dir() -> Path:
+    """Wo die mitgelieferten Vorlagen liegen (in der .exe: der Entpack-Ordner)."""
+    return Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
+
+
+PROJECT_ROOT = find_app_root()
 
 
 def _load_env_file(path: Path) -> None:
-    """Liest eine einfache KEY=VALUE .env-Datei in os.environ (ohne Ueberschreiben)."""
-    if not path.exists():
+    """Liest eine einfache KEY=VALUE .env-Datei in os.environ.
+
+    Bereits gesetzte (nicht leere) Umgebungsvariablen haben Vorrang. Platzhalter aus
+    .env.example (z.B. 'sk-ant-...') werden ignoriert.
+    """
+    if not path.is_file():
         return
-    for raw in path.read_text(encoding="utf-8").splitlines():
+    # utf-8-sig: Notepad speichert manchmal mit BOM, sonst hiesse der erste Schluessel
+    # "\ufeffANTHROPIC_API_KEY" und wuerde nie gefunden.
+    text = path.read_bytes().decode("utf-8-sig", errors="replace")
+    for raw in text.splitlines():
         line = raw.strip()
+        if line.startswith("export "):
+            line = line[len("export ") :].strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, _, value = line.partition("=")
         key, value = key.strip(), value.strip().strip('"').strip("'")
-        os.environ.setdefault(key, value)
+        if not value or value.endswith("..."):
+            continue
+        if not os.environ.get(key):
+            os.environ[key] = value
 
 
 @dataclass
@@ -144,6 +192,7 @@ class Config:
     project_root: Path
     anthropic_api_key: str | None
     deepseek_api_key: str | None
+    settings_file: Path | None = None  # tatsaechlich gelesene Einstellungsdatei
 
     # -- Komfort-Eigenschaften ---------------------------------------------
     @property
@@ -180,7 +229,24 @@ class Config:
 
 
 def _read_text(path: Path, fallback: str = "") -> str:
-    return path.read_text(encoding="utf-8") if path.exists() else fallback
+    if not path.is_file():
+        return fallback
+    return path.read_bytes().decode("utf-8-sig", errors="replace")
+
+
+def _first_existing(*paths: Path) -> Path | None:
+    return next((p for p in paths if p.is_file()), None)
+
+
+def _load_toml(path: Path) -> dict[str, Any]:
+    try:
+        return tomllib.loads(path.read_bytes().decode("utf-8-sig"))
+    except (tomllib.TOMLDecodeError, UnicodeDecodeError) as exc:
+        raise ConfigError(
+            f"Die Einstellungsdatei ist fehlerhaft und kann nicht gelesen werden:\n"
+            f"  {path}\n  {exc}\n"
+            "Pruefe die genannte Zeile (Anfuehrungszeichen, = und [Abschnitte])."
+        ) from exc
 
 
 def _merge(dc_instance: Any, data: dict[str, Any]) -> Any:
@@ -197,14 +263,13 @@ def load_config(project_root: Path | None = None) -> Config:
     _load_env_file(root / ".env")
 
     config_dir = root / "config"
-    settings_path = config_dir / "settings.toml"
-    if not settings_path.exists():
-        settings_path = config_dir / "settings.example.toml"
-
-    raw: dict[str, Any] = {}
-    if settings_path.exists():
-        with settings_path.open("rb") as fh:
-            raw = tomllib.load(fh)
+    bundled = bundle_dir() / "config"  # Vorlagen in der .exe als letzte Rueckfallebene
+    settings_path = _first_existing(
+        config_dir / "settings.toml",
+        config_dir / "settings.example.toml",
+        bundled / "settings.example.toml",
+    )
+    raw: dict[str, Any] = _load_toml(settings_path) if settings_path else {}
 
     provider = _merge(ProviderSettings(), raw.get("provider", {}))
     claude = _merge(ClaudeSettings(), raw.get("claude", {}))
@@ -228,10 +293,15 @@ def load_config(project_root: Path | None = None) -> Config:
         conversation=_merge(ConversationSettings(), raw.get("conversation", {})),
         voice=_merge(VoiceSettings(), raw.get("voice", {})),
         permissions=_merge(PermissionSettings(), raw.get("permissions", {})),
-        persona_text=_read_text(config_dir / "persona.md"),
-        values_text=_read_text(config_dir / "werte.md"),
+        persona_text=_read_text(config_dir / "persona.md") or _read_text(bundled / "persona.md"),
+        values_text=_read_text(config_dir / "werte.md") or _read_text(bundled / "werte.md"),
         project_root=root,
         anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY"),
         deepseek_api_key=os.environ.get("DEEPSEEK_API_KEY"),
+        settings_file=settings_path,
     )
+    # Relative Pfade gelten ab dem Programmordner, nicht ab dem aktuellen Verzeichnis.
+    db_path = Path(cfg.memory.db_path).expanduser()
+    if not db_path.is_absolute():
+        cfg.memory.db_path = str(root / db_path)
     return cfg

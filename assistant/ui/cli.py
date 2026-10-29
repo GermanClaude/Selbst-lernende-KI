@@ -63,10 +63,11 @@ class CLI:
         self._print_banner()
         if not self.config.api_key:
             key_name = "DEEPSEEK_API_KEY" if self.config.active_provider == "deepseek" else "ANTHROPIC_API_KEY"
+            env_path = self.config.project_root / ".env"
             print(
                 _c(
-                    f"\nAchtung: Kein {key_name} gefunden. Lege eine .env-Datei an "
-                    "(siehe .env.example) und trage deinen Schluessel ein.\n"
+                    f"\nAchtung: Kein {key_name} gefunden. Trage deinen Schluessel in diese "
+                    f"Datei ein (Zeile {key_name}=...):\n  {env_path}\n"
                     "Ohne Schluessel kann das Gehirn nicht denken.\n",
                     YELLOW,
                 )
@@ -203,6 +204,9 @@ class CLI:
         print(f"  Voller FS-Zugriff: {'JA' if p.allow_full_filesystem else 'nein (Sandbox)'}")
         print(f"  Werkzeuge:       {', '.join(self.registry.names())}")
         print(f"  Sprachmodus:     {'AN' if self.voice_mode else 'aus'}")
+        env_path = self.config.project_root / ".env"
+        print(f"  Einstellungen:   {self.config.settings_file or '(keine Datei - Standardwerte)'}")
+        print(f"  Schluessel-Datei: {env_path} ({'gefunden' if env_path.is_file() else 'FEHLT'})")
 
     def _print_banner(self) -> None:
         name = self.config.ki.name

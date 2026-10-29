@@ -10,7 +10,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from .config import load_config
+from .config import PROJECT_ROOT, ConfigError, load_config
 from .logging_setup import setup_logging
 
 
@@ -33,8 +33,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Selbst-lernende-KI {__version__}")
         return 0
 
-    setup_logging()
-    config = load_config()
+    setup_logging(PROJECT_ROOT / "logs")
+    try:
+        config = load_config()
+    except ConfigError as exc:
+        print(exc)
+        return 1
 
     if args.einrichten:
         _first_setup(config)

@@ -87,6 +87,13 @@ packaging\build.bat
 Danach liegt die fertige Datei unter `dist\KI.exe`. Doppelklick startet die KI
 in einem Konsolenfenster. (Unter Linux/macOS: `packaging/build.sh` → `dist/KI`.)
 
+Wo die `.exe` ihre Dateien sucht:
+- Liegt sie im `dist`-Ordner des Projekts, nutzt sie `.env`, `config\`, `data\`
+  und `workspace\` des **Projektordners** – also dasselbe Gedächtnis wie `start.bat`.
+- Kopierst du sie woandershin, nutzt sie den **Ordner der `.exe`** und legt dort
+  beim ersten Start `.env` und `config\settings.toml` an.
+- `/status` im Chat zeigt, welche Einstellungs- und Schlüssel-Datei sie gerade liest.
+
 > Hinweis: Eine Windows-`.exe` muss **auf Windows** gebaut werden. Der Code ist
 > plattformübergreifend; die Build-Skripte gibt es für beide Welten.
 
