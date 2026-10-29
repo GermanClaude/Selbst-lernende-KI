@@ -3,15 +3,45 @@
 Laeuft nur, wenn Safe Mode aus ist. Jeder Befehl geht durch die Verbots- und
 Erlaubnisliste des PermissionManagers und wird (ausser bei auto_confirm oder
 Allowlist) bestaetigt. Mit Timeout, damit nichts haengen bleibt.
+
+Die Ausgabe wird als Bytes gelesen und selbst dekodiert: Windows-Konsolenbefehle
+(dir, ipconfig, ...) schreiben in der OEM-Codepage (z.B. cp850, dort ist 0x81 ein
+"ue"), nicht in der ANSI-Codepage cp1252, die Python sonst annehmen wuerde.
 """
 from __future__ import annotations
 
 import subprocess
+import sys
 
 from .base import Tool, ToolContext
 
 _TIMEOUT = 120
 _MAX_OUTPUT = 20_000
+
+
+def _windows_codepages() -> list[str]:
+    """OEM- und ANSI-Codepage des Systems (z.B. ['cp850', 'cp1252'])."""
+    if sys.platform != "win32":
+        return []
+    try:
+        import ctypes
+
+        kernel32 = ctypes.windll.kernel32
+        return [f"cp{kernel32.GetOEMCP()}", f"cp{kernel32.GetACP()}"]
+    except Exception:  # noqa: BLE001
+        return ["cp850", "cp1252"]
+
+
+def _decode(data: bytes | None) -> str:
+    """Dekodiert Shell-Ausgabe robust - stuerzt nie wegen fremder Zeichen ab."""
+    if not data:
+        return ""
+    for encoding in ("utf-8", *_windows_codepages()):
+        try:
+            return data.decode(encoding)
+        except (UnicodeDecodeError, LookupError):
+            continue
+    return data.decode("utf-8", errors="replace")
 
 
 class ShellTool(Tool):
@@ -47,15 +77,15 @@ class ShellTool(Tool):
                 befehl,
                 shell=True,
                 capture_output=True,
-                text=True,
+                stdin=subprocess.DEVNULL,  # Befehle, die auf Eingabe warten, haengen nicht
                 timeout=_TIMEOUT,
                 cwd=cwd,
             )
         except subprocess.TimeoutExpired:
             return f"Abgebrochen: Befehl lief laenger als {_TIMEOUT} Sekunden."
 
-        out = (proc.stdout or "")[:_MAX_OUTPUT]
-        err = (proc.stderr or "")[:_MAX_OUTPUT]
+        out = _decode(proc.stdout)[:_MAX_OUTPUT]
+        err = _decode(proc.stderr)[:_MAX_OUTPUT]
         parts = [f"Rueckgabecode: {proc.returncode}"]
         if out:
             parts.append(f"Ausgabe:\n{out}")
