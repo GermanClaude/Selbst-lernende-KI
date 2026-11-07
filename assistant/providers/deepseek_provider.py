@@ -67,6 +67,7 @@ class DeepSeekProvider(LLMProvider):
         on_text: StreamFn | None = None,
         max_tool_rounds: int | None = None,
         announce_limit: bool = True,
+        allow_tools: bool = True,
     ) -> str:
         self.hit_limit = False
         if self.client is None:
@@ -81,11 +82,12 @@ class DeepSeekProvider(LLMProvider):
         for _ in range(rounds):
             self._finish_reason = None
             self._waiting()
-            text, tool_calls = self._one_turn(on_text)
+            text, tool_calls = self._one_turn(on_text, tool_choice="auto" if allow_tools else "none")
             if text is None:
                 return "Es gab ein Problem bei der Verbindung zu DeepSeek."
             if text:
                 final_parts.append(text)
+                self.last_text = text
 
             # Assistenten-Nachricht (OpenAI-Format) anhaengen.
             assistant_msg: dict[str, Any] = {"role": "assistant", "content": text or ""}
@@ -136,14 +138,14 @@ class DeepSeekProvider(LLMProvider):
 
         return "\n".join(final_parts).strip() or "(keine Textantwort)"
 
-    def _one_turn(self, on_text: StreamFn | None, retried: bool = False):
+    def _one_turn(self, on_text: StreamFn | None, tool_choice: str = "auto", retried: bool = False):
         """Ein Modell-Durchlauf (gestreamt). Gibt (text, tool_calls) zurueck."""
         try:
             stream = self.client.chat.completions.create(
                 model=self.config.deepseek.model,
                 messages=self.messages,
                 tools=self.registry.specs_openai(),
-                tool_choice="auto",
+                tool_choice=tool_choice,
                 max_tokens=self.config.deepseek.max_tokens,
                 temperature=self.config.deepseek.temperature,
                 stream=True,
@@ -154,7 +156,7 @@ class DeepSeekProvider(LLMProvider):
             # kuerzen und einmal neu versuchen, statt bei jedem "weiter" erneut zu scheitern.
             if not retried and _is_context_error(exc) and self._shrink_old_tool_outputs():
                 logger.warning("Kontext voll - aeltere Werkzeug-Ausgaben gekuerzt.")
-                return self._one_turn(on_text, retried=True)
+                return self._one_turn(on_text, tool_choice, retried=True)
             logger.error("DeepSeek-Fehler: %s", exc)
             if on_text:
                 on_text(f"\n[DeepSeek-Fehler: {exc}]")
@@ -220,6 +222,17 @@ class DeepSeekProvider(LLMProvider):
 
     def user_turns(self) -> int:
         return sum(1 for m in self.messages if m.get("role") == "user")
+
+    def _close_open_tool_calls(self, messages: list) -> None:
+        idx = next((i for i in range(len(messages) - 1, -1, -1)
+                    if messages[i].get("role") == "assistant"), None)
+        if idx is None or not messages[idx].get("tool_calls"):
+            return
+        answered = {m.get("tool_call_id") for m in messages[idx + 1 :] if m.get("role") == "tool"}
+        for tc in messages[idx]["tool_calls"]:
+            if tc["id"] not in answered:
+                messages.append({"role": "tool", "tool_call_id": tc["id"],
+                                 "content": "Abgebrochen (Strg+C) - nicht ausgefuehrt."})
 
     def _shrink_old_tool_outputs(self, keep_last: int = 2) -> bool:
         """Ersetzt grosse, aeltere Werkzeug-Ausgaben durch einen kurzen Hinweis."""

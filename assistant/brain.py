@@ -25,6 +25,11 @@ CONTINUE_PROMPT = (
     "Mach mit der Aufgabe genau dort weiter, wo du aufgehoert hast. Lies nichts erneut, "
     "was du schon kennst."
 )
+AGENT_REPORT_PROMPT = (
+    "Dein Schritt-Limit ist erreicht. Schreibe JETZT ohne weitere Werkzeuge deinen "
+    "Ergebnisbericht: was du herausgefunden bzw. erledigt hast (mit Pfaden/Quellen) und "
+    "was noch offen ist."
+)
 
 
 class Brain:
@@ -76,7 +81,9 @@ class Brain:
                 break
             if on_text:
                 on_text(f"\n\n[Ich arbeite weiter … (Abschnitt {part + 2}) - Strg+C haelt an]\n")
-            self._maybe_compact(only_if_large=True)  # zwischendurch nur, wenn der Verlauf zu gross wird
+            # zwischendurch nur, wenn der Verlauf zu gross wird; Strg+C dabei = nicht weitermachen
+            if not self._maybe_compact(only_if_large=True):
+                break
             text = CONTINUE_PROMPT
         self._maybe_compact()
         return "\n".join(p for p in parts if p).strip()
@@ -112,23 +119,39 @@ class Brain:
         emit(f"\n  >> Agent '{role}' startet: {short[:110]}{'…' if len(short) > 110 else ''}\n")
         self._agent_running = True
         try:
-            result = agent.respond(
+            agent.respond(
                 f"Auftrag:\n{task}\n\nKontext:\n{context or '(keiner)'}",
                 on_text=show,
                 max_tool_rounds=self.config.conversation.agent_runden,
                 announce_limit=False,
             )
+            limit_reached = agent.hit_limit
+            if limit_reached:
+                # Sonst kaeme nach vielen Schritten gar kein Bericht zurueck.
+                agent.respond(AGENT_REPORT_PROMPT, on_text=show, max_tool_rounds=1,
+                              announce_limit=False, allow_tools=False)
+            result = agent.last_text or "(Der Agent hat keinen Bericht geliefert - evtl. Verbindungsproblem.)"
         finally:
             self._agent_running = False
             u = agent.usage  # Kosten des Agenten zaehlen zur Sitzung
             self.provider.usage.add(input_full=u.input_full_tokens, cache_hit=u.cache_hit_tokens,
                                     output=u.output_tokens)
         emit(f"  << Agent '{role}' fertig\n")
-        if agent.hit_limit:
+        if limit_reached:
             result += "\n(Hinweis: Der Agent hat sein Schritt-Limit erreicht - das Ergebnis ist evtl. unvollstaendig.)"
         return f"Ergebnisbericht des Agenten ({role}):\n{result}"
 
-    def _maybe_compact(self, only_if_large: bool = False) -> None:
+    def _maybe_compact(self, only_if_large: bool = False) -> bool:
+        """Fasst den Verlauf ggf. zusammen. False = mit Strg+C abgebrochen."""
+        try:
+            self._compact(only_if_large)
+        except KeyboardInterrupt:
+            # Die Antwort ist schon fertig - Zusammenfassen einfach auslassen.
+            logger.info("Zusammenfassung mit Strg+C uebersprungen.")
+            return False
+        return True
+
+    def _compact(self, only_if_large: bool) -> None:
         # Gezaehlt werden nur DEINE Nachrichten, nicht die Werkzeug-Schritte der KI:
         # sonst wuerde mitten in einer Programmieraufgabe alles Gelesene vergessen.
         turns = self.provider.user_turns()
@@ -140,6 +163,7 @@ class Brain:
         if turns < self.config.compact_threshold and not too_large:
             return
         logger.info("Kompaktiere Verlauf (%d Nachrichten, ~%d Zeichen).", turns, chars)
+        self.provider._waiting()  # "denkt nach" - sonst sieht es nach Haengen aus
         summary = self.provider.summarize_history()
         if summary:
             self.memory.add_episode(summary)

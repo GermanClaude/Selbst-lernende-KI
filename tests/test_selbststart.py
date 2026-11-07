@@ -31,7 +31,7 @@ def test_ancestry_from_process_table():
 
 def test_start_guard_single_instance(tmp_path, monkeypatch):
     other_pid = 99999
-    table = {other_pid: (1, "python.exe"), os.getpid(): (other_pid, "python.exe")}
+    table = {other_pid: (1, "python.exe"), os.getpid(): (1, "python.exe")}
     guard = s.StartGuard(tmp_path, table=table)
     assert guard.running_pid() is None
     (tmp_path / "data").mkdir()
@@ -129,3 +129,35 @@ def test_writing_into_startup_folder_asks(tmp_path):
     ctx = ToolContext(permissions=pm, memory=None)
     out, _ = build_registry().execute(ctx, "datei_schreiben", {"pfad": str(startup / "ki.bat"), "inhalt": "x"})
     assert "Nicht ausgefuehrt" in out and not (startup / "ki.bat").exists()
+
+
+def test_watchdog_that_opened_this_window_is_found_and_flagged(monkeypatch):
+    monkeypatch.setattr(s, "_seconds_since_boot", lambda: 10_000)
+    # neue KI <- venv-Starter <- cmd (start.bat) <- powershell (Waechter, sein Elternteil ist beendet)
+    chain = [(400, "python.exe"), (300, "cmd.exe"), (200, "powershell.exe")]
+    who, unexpected = s.classify(chain)
+    assert "Hintergrund-Skript" in who and unexpected
+    markers = s._markers(Path("C:/KI"), Path("C:/KI/workspace"))
+    procs = [(200, "powershell.exe", "powershell -WindowStyle Hidden -File C:/KI/workspace/waechter.ps1"),
+             (300, "cmd.exe", 'cmd /c "C:/KI/start.bat"')]
+    found = s._match_processes(procs, markers, chain=chain)
+    assert [e.ref["pid"] for e in found] == [200]  # der eigene start.bat-cmd zaehlt nicht
+    assert found[0].ref["vorfahr"] and "DIESES Fenster" in found[0].name
+
+
+def test_interactive_shell_and_ki_exe_are_normal(monkeypatch):
+    monkeypatch.setattr(s, "_seconds_since_boot", lambda: 10_000)
+    # selbst in PowerShell ".\\start.bat" getippt
+    assert not s.classify([(400, "python.exe"), (300, "cmd.exe"), (200, "powershell.exe"), (100, "explorer.exe")])[1]
+    # KI.exe (PyInstaller-Starter) per Doppelklick bzw. von der Aufgabenplanung
+    assert not s.classify([(50, "KI.exe"), (10, "explorer.exe")])[1]
+    who, unexpected = s.classify([(50, "KI.exe"), (10, "svchost.exe")])
+    assert unexpected and "Aufgabenplanung" in who
+
+
+def test_stale_lock_with_reused_pid_does_not_lock_out(tmp_path, monkeypatch):
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data/ki.lock").write_text(json.dumps({"pid": 777, "seit": 1000.0}))
+    monkeypatch.setattr(s, "_process_start_time", lambda pid: 5000.0)  # spaeter gestartet = fremder Prozess
+    guard = s.StartGuard(tmp_path, table={777: (1, "python.exe"), os.getpid(): (1, "python.exe")})
+    assert guard.running_pid() is None

@@ -28,6 +28,13 @@ class VoiceOutput:
                 logger.warning("Sprachausgabe nicht verfuegbar: %s", exc)
                 self.enabled = False
 
+    def stop(self) -> None:
+        try:
+            if self._engine:
+                self._engine.stop()
+        except Exception:  # noqa: BLE001
+            pass
+
     def speak(self, text: str) -> None:
         if not self.enabled or not self._engine or not text.strip():
             return

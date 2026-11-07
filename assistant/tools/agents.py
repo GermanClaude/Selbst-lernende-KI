@@ -43,6 +43,8 @@ class AgentTool(Tool):
         },
         "required": ["rolle", "auftrag"],
     }
+    # Der Bericht ist schon verdichtet - der Sparmodus soll ihn nicht abschneiden.
+    sparmodus_kuerzen = False
 
     def run(self, ctx: ToolContext, rolle: str, auftrag: str, kontext: str = "") -> str:
         runner = ctx.extra.get("agent_runner")

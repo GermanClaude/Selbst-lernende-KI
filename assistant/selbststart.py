@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -133,25 +134,63 @@ def ancestry(pid: int | None = None, table: dict[int, tuple[int, str]] | None = 
     return chain
 
 
+# Gehoeren zum eigenen Startweg: venv-Python, KI.exe-Starter, Konsole/Terminal.
+_OWN_HOSTS = {"conhost.exe", "openconsole.exe", "windowsterminal.exe", "py.exe", "pyw.exe", "ki.exe"}
+_SHELLS = {"cmd.exe", "bash", "sh", "dash", "zsh"}  # die Shell, die start.bat/start.sh ausfuehrt
+# Programme, die ein "Waechter-Skript" sein koennen (Windows).
+_WIN_SCRIPT_HOSTS = {"powershell.exe", "pwsh.exe", "wscript.exe", "cscript.exe", "cmd.exe", "mshta.exe"}
+_INTERACTIVE_PARENTS = {"explorer.exe", "windowsterminal.exe", "openconsole.exe", "conhost.exe"}
+
+
+def split_chain(chain: list[tuple[int, str]]) -> tuple[list[tuple[int, str]], list[tuple[int, str]]]:
+    """Teilt die Prozesskette in den eigenen Startweg und den Rest (wer hat gestartet)."""
+    own: list[tuple[int, str]] = []
+    seen_shell = False
+    for pid, name in chain:
+        low = name.lower()
+        if low.startswith("python") or low in _OWN_HOSTS:
+            own.append((pid, name))
+            continue
+        if low in _SHELLS and not seen_shell:
+            seen_shell = True
+            own.append((pid, name))
+            continue
+        break
+    return own, chain[len(own):]
+
+
+def _is_script_host(name: str) -> bool:
+    low = name.lower()
+    return low in _WIN_SCRIPT_HOSTS or (low.startswith("python") and low.endswith(".exe"))
+
+
 def classify(chain: list[tuple[int, str]], ki_pids: set[int] = frozenset()) -> tuple[str, bool]:
     """(Beschreibung, unerwartet?) fuer eine Prozesskette."""
-    for pid, _name in chain:
+    own, rest = split_chain(chain)
+    for pid, _name in chain:  # die ganze Kette: auch "python -m assistant" direkt aus der Shell
         if pid in ki_pids:
             return "von einer anderen laufenden KI (z.B. per Shell-Befehl)", True
-    for _pid, name in chain:
-        low = name.lower()
-        if low in _HOSTS or low.startswith("python"):
-            continue
-        if low in _SCHEDULER:
-            return "von der Windows-Aufgabenplanung (geplante Aufgabe)", True
-        if low in ("cron", "crond", "anacron"):
-            return "von einem Zeitplan (cron)", True
-        if low == "explorer.exe":
-            if _seconds_since_boot() < 180:
-                return "beim Anmelden (Windows-Autostart)", True
-            return "per Doppelklick bzw. aus dem Explorer", False
-        return f"von {name}", False
-    return "unbekannt", False
+    if not rest:
+        # Eltern schon beendet: typisch fuer ein Skript, das die KI startet und sich beendet.
+        return "unbekannt (der startende Prozess laeuft nicht mehr)", False
+    name = rest[0][1]
+    low = name.lower()
+    if low in _SCHEDULER:
+        return "von der Windows-Aufgabenplanung (geplante Aufgabe)", True
+    if low in ("cron", "crond", "anacron"):
+        return "von einem Zeitplan (cron)", True
+    if low == "explorer.exe":
+        if _seconds_since_boot() < 180:
+            return "beim Anmelden (Windows-Autostart)", True
+        return "per Doppelklick bzw. aus dem Explorer", False
+    if _is_script_host(name):
+        parent = rest[1][1].lower() if len(rest) > 1 else ""
+        if parent in _INTERACTIVE_PARENTS:
+            return f"aus einem Fenster von {name}", False
+        # Ein Skript ohne sichtbares Fenster dahinter: typisch fuer einen "Waechter",
+        # der die KI immer wieder oeffnet.
+        return f"von einem Hintergrund-Skript ({name}, PID {rest[0][0]})", True
+    return f"von {name}", False
 
 
 def _seconds_since_boot() -> float:
@@ -170,14 +209,52 @@ def _seconds_since_boot() -> float:
         return 1e9
 
 
-def _pid_alive(pid: int, table: dict[int, tuple[int, str]] | None = None) -> bool:
+def _pid_alive(pid: int, table: dict[int, tuple[int, str]] | None = None, since: float | None = None) -> bool:
+    """Laeuft unter dieser PID noch die KI? 'since' = Zeitpunkt der Sperre: ein Prozess,
+    der danach gestartet ist, hat nur dieselbe (wiederverwendete) PID."""
     if pid <= 0:
         return False
     table = table if table is not None else _process_table()
     if pid not in table:
         return False
     name = table[pid][1].lower()
-    return "python" in name or name.startswith("ki") or name == "assistant"
+    if not ("python" in name or name == "ki.exe" or name == "assistant"):
+        return False
+    if since is not None:
+        started = _process_start_time(pid)
+        if started is not None and started > since + 5:
+            return False
+    return True
+
+
+def _process_start_time(pid: int) -> float | None:
+    """Startzeit eines Prozesses (Unix-Zeit) - oder None, wenn nicht ermittelbar."""
+    try:
+        if sys.platform == "win32":
+            import ctypes
+
+            k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            k32.OpenProcess.restype = ctypes.c_void_p
+            k32.OpenProcess.argtypes = [ctypes.c_uint32, ctypes.c_int32, ctypes.c_uint32]
+            handle = k32.OpenProcess(0x1000, 0, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+            if not handle:
+                return None
+            try:
+                times = [ctypes.c_uint64() for _ in range(4)]
+                k32.GetProcessTimes.argtypes = [ctypes.c_void_p] + [ctypes.POINTER(ctypes.c_uint64)] * 4
+                if not k32.GetProcessTimes(handle, *[ctypes.byref(t) for t in times]):
+                    return None
+                return times[0].value / 10_000_000 - 11_644_473_600  # FILETIME -> Unix
+            finally:
+                k32.CloseHandle.argtypes = [ctypes.c_void_p]
+                k32.CloseHandle(handle)
+        stat = Path(f"/proc/{pid}/stat").read_text()
+        ticks = int(stat[stat.rindex(")") + 2 :].split()[19])
+        btime = next(int(line.split()[1]) for line in Path("/proc/stat").read_text().splitlines()
+                     if line.startswith("btime"))
+        return btime + ticks / os.sysconf("SC_CLK_TCK")
+    except Exception:  # noqa: BLE001
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -206,15 +283,16 @@ class StartGuard:
         try:
             data = json.loads(self.lock_path.read_text(encoding="utf-8"))
             pid = int(data.get("pid", 0))
+            since = float(data.get("seit", 0)) or None
         except (OSError, ValueError, TypeError):
             return None
-        if pid == os.getpid():
+        if pid == os.getpid() or pid in {p for p, _ in ancestry(table=self._get_table())}:
             return None
         restarted_from = os.environ.get("KI_NEUSTART_VON")
         if restarted_from and str(pid) == restarted_from:
             self._wait_for_exit(pid)  # Neustart nach Update: die alte KI beendet sich gleich
             return None
-        return pid if _pid_alive(pid, self._get_table()) else None
+        return pid if _pid_alive(pid, self._get_table(), since=since) else None
 
     def _wait_for_exit(self, pid: int, seconds: float = 15) -> None:
         end = time.monotonic() + seconds
@@ -373,8 +451,9 @@ def _file_mentions(path: Path, markers: list[str]) -> bool:
         data = path.read_bytes()[:200_000]
     except OSError:
         return False
-    # .lnk speichert Pfade als UTF-16; Skripte als Text.
-    text = data.decode("utf-16-le", "ignore") + "\n" + data.decode("latin-1", "ignore")
+    # .lnk speichert Pfade als UTF-16 (an gerader oder ungerader Stelle); Skripte als Text.
+    text = "\n".join((data.decode("utf-16-le", "ignore"), data[1:].decode("utf-16-le", "ignore"),
+                      data.decode("latin-1", "ignore")))
     return _matches(text, markers)
 
 
@@ -402,22 +481,32 @@ def _processes(markers: list[str]) -> list[Autostart]:
     )
 
 
-def _match_processes(procs: list[tuple[int, str, str]], markers: list[str]) -> list[Autostart]:
-    """Laufende Skripte/Programme aus dem KI-Ordner - ausser der KI selbst."""
-    me = os.getpid()
-    family = {me, *[pid for pid, _ in ancestry()]}
+def _match_processes(procs: list[tuple[int, str, str]], markers: list[str],
+                     chain: list[tuple[int, str]] | None = None) -> list[Autostart]:
+    """Laufende Skripte/Programme aus dem KI-Ordner - ausser der KI selbst.
+
+    Nur der eigene Startweg (venv-Python, start.bat-Shell, Konsole) wird ausgelassen.
+    Ein Skript WEITER OBEN in der Kette hat dieses Fenster geoeffnet - genau der
+    "Waechter", der die KI immer wieder startet - und wird mit angezeigt.
+    """
+    chain = ancestry() if chain is None else chain
+    own, rest = split_chain(chain)
+    own_pids = {os.getpid(), *[pid for pid, _ in own]}
+    rest_pids = {pid for pid, _ in rest}
     result = []
     for pid, name, cmdline in procs:
-        if pid in family or not cmdline or not _matches(cmdline, markers):
+        if pid in own_pids or not cmdline or not _matches(cmdline, markers):
             continue
         if name.lower() not in _SCRIPT_HOSTS and not name.lower().startswith("python"):
             continue
         low = cmdline.lower()
-        if "-m assistant" in low or "run_ki.py" in low or low.rstrip('" ').endswith("ki.exe"):
+        if pid in rest_pids:
+            kind_name = f"{name} (PID {pid}) - hat DIESES Fenster geoeffnet"
+        elif "-m assistant" in low or "run_ki.py" in low or low.rstrip('" ').endswith("ki.exe"):
             kind_name = f"{name} (PID {pid}) - eine weitere KI"
         else:
             kind_name = f"{name} (PID {pid})"
-        result.append(Autostart("prozess", kind_name, cmdline.strip(), {"pid": pid}))
+        result.append(Autostart("prozess", kind_name, cmdline.strip(), {"pid": pid, "vorfahr": pid in rest_pids}))
     return result
 
 
@@ -477,7 +566,9 @@ def entferne(entry: Autostart, root: Path) -> str:
     if entry.kind == "prozess":
         pid = int(entry.ref["pid"])
         if sys.platform == "win32":
-            subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)], capture_output=True, timeout=30)
+            # Ohne /T, wenn es dieses Fenster geoeffnet hat - sonst wuerde die KI mit beendet.
+            tree = [] if entry.ref.get("vorfahr") else ["/T"]
+            subprocess.run(["taskkill", "/F", *tree, "/PID", str(pid)], capture_output=True, timeout=30)
         else:
             import signal
 
@@ -495,24 +586,46 @@ def entferne(entry: Autostart, root: Path) -> str:
 # ---------------------------------------------------------------------------
 #  Shell-Befehle, die einen automatischen Start einrichten
 # ---------------------------------------------------------------------------
-_PERSISTENCE_PATTERNS = (
-    "schtasks", "register-scheduledtask", "new-scheduledtask", "set-scheduledtask",
-    "\\currentversion\\run", "/currentversion/run", "start menu\\programs\\startup",
-    "start menu/programs/startup", "shell:startup", "shell:common startup", "\\startup\\",
-    "crontab", "systemctl --user enable", "systemctl enable", ".config/autostart", "win32_startupcommand",
-    "new-service", "sc create", "sc.exe create", "at.exe",
+# Nur EINRICHTEN zaehlt - Nachschauen (schtasks /query, crontab -l, dir ...) und
+# Entfernen (schtasks /delete, Unregister-ScheduledTask) sind erwuenscht und frei.
+_CREATE_TASK = re.compile(
+    r"\bschtasks(\.exe)?\b[^|&]*\s/(create|change)\b|\b(register|set|new)-scheduledtask\b", re.I
 )
-_SELF_START_PATTERNS = ("start.bat", "ki.exe", "run_ki.py", "-m assistant", "start.sh")
+_RUN_KEY = re.compile(r"\\currentversion\\run(once)?\b", re.I)
+_REG_WRITE = re.compile(r"\breg(\.exe)?\s+(add|import|copy)\b|\b(set|new)-itemproperty\b|\bnew-item\b", re.I)
+_STARTUP_DIR = re.compile(r"start menu\\programs\\startup|shell:(common )?startup|\\\.config\\autostart", re.I)
+_WRITE = re.compile(
+    r"\b(copy|xcopy|robocopy|move|mklink|new-item|set-content|add-content|out-file|copy-item|"
+    r"move-item|createshortcut|cp|mv|ln|tee)\b|>", re.I
+)
+_OTHER_AUTOSTART = re.compile(
+    r"\bcrontab\b(?!\s+-[lr]\b)|\bsystemctl\b[^|&;]*\benable\b|\bnew-service\b|\bsc(\.exe)?\s+create\b"
+    r"|(^|[\s\"'&|;\\/])at(\.exe)?\s+\d|win32_startupcommand",
+    re.I,
+)
+_KI_TARGET = r"(start\.bat|ki\.exe|run_ki\.py|-m\s+assistant\b|start\.sh)"
+_RUNS_KI = re.compile(
+    rf"(^|[&|;(]\s*)\"?[^\s\"&|;]*{_KI_TARGET}"                      # als Befehl selbst: C:\\KI\\start.bat
+    rf"|\b(start|call|start-process|saps|invoke-item|ii)\b[^&|;]*{_KI_TARGET}"
+    rf"|\b(python[w3]?|py|pythonw)(\.exe)?\b[^&|;]*{_KI_TARGET}"
+    rf"|\bcmd(\.exe)?\s+/[ck]\b[^&|;]*{_KI_TARGET}|\b(bash|sh)\b[^&|;]*{_KI_TARGET}",
+    re.I,
+)
 
 
 def sets_up_autostart(command: str) -> bool:
-    low = command.lower().replace("/", "\\") + " " + command.lower()
-    return any(p in low for p in _PERSISTENCE_PATTERNS)
+    """Richtet der Befehl einen automatischen Start ein (Aufgabe, Run-Schluessel, ...)?"""
+    paths = command.replace("/", "\\")
+    if _CREATE_TASK.search(command) or _OTHER_AUTOSTART.search(command):
+        return True
+    if _RUN_KEY.search(paths) and _REG_WRITE.search(command):
+        return True
+    return bool(_STARTUP_DIR.search(paths) and _WRITE.search(command))
 
 
 def starts_the_ki(command: str) -> bool:
-    low = command.lower()
-    return any(p in low for p in _SELF_START_PATTERNS)
+    """Wuerde der Befehl die KI (noch einmal) starten? Lesen/Bearbeiten zaehlt nicht."""
+    return bool(_RUNS_KI.search(command.strip()))
 
 
 def is_autostart_path(path: Path) -> bool:

@@ -198,14 +198,24 @@ class CLI:
                 self.brain.provider.abort_turn(snapshot, user_text)
                 print(_c("\n[Angehalten. Schreib einfach weiter - z.B. was sie anders machen soll.]", YELLOW))
                 continue
+            except Exception as exc:  # noqa: BLE001 - ein Fehler darf die Sitzung nicht beenden
+                self.thinking.stop()
+                logger.exception("Fehler bei der Antwort")
+                self.brain.provider.abort_turn(snapshot, user_text)
+                print(_c(f"\n[Da ist etwas schiefgegangen ({exc}). Versuch es einfach nochmal.]", YELLOW))
+                continue
             finally:
                 self.thinking.stop()
-            print()
-            if self.config.economy.aktiv:
-                self._print_cost_line()
-            print()
-            if self.voice_out.enabled:
-                self.voice_out.speak(answer)
+            try:
+                print()
+                if self.config.economy.aktiv:
+                    self._print_cost_line()
+                print()
+                if self.voice_out.enabled:
+                    self.voice_out.speak(answer)
+            except KeyboardInterrupt:
+                self.voice_out.stop()  # Strg+C beim Vorlesen: nur das Vorlesen anhalten
+                print(_c("\n[Vorlesen angehalten.]", GREY))
 
     # -- Ein-/Ausgabe -------------------------------------------------------
     def _emit(self, chunk: str) -> None:

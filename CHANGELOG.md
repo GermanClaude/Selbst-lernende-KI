@@ -4,6 +4,20 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.3.1 – 2026-11-07
+
+- `/autostart` findet jetzt auch ein Hintergrund-Skript, das genau **dieses**
+  Fenster geöffnet hat (der typische „Wächter“, der die KI alle paar Minuten neu
+  startet), und die KI sagt beim Start Bescheid, wenn so ein Skript sie geöffnet hat.
+- Nachschauen und Entfernen (z.B. „schau in der Aufgabenplanung nach und lösch
+  den Eintrag“) läuft ohne Alarm-Rückfrage – nur das Einrichten fragt nach.
+- Ein abgestürztes oder geschlossenes Fenster sperrt den nächsten Start nicht mehr.
+- Bricht die Verbindung zu Claude mitten in einer Antwort ab, stürzt die KI nicht
+  mehr ab, sondern versucht es neu oder sagt Bescheid.
+- Strg+C behält alles, was schon fertig ist – die KI weiß danach noch, was sie
+  getan hat. Auch Strg+C beim Vorlesen schließt die KI nicht mehr.
+- Agenten liefern immer einen Abschlussbericht, und der wird nicht mehr gekürzt.
+
 ## 0.3.0 – 2026-11-07
 
 **Öffnet sich nicht mehr von selbst**

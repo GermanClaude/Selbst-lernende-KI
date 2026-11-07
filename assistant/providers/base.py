@@ -91,6 +91,7 @@ class LLMProvider(ABC):
         self.client = client
         self.usage = Usage()
         self.hit_limit = False          # hat die letzte Antwort am Schritt-Limit aufgehoert?
+        self.last_text = ""             # Text der letzten Modell-Antwort (z.B. Bericht eines Agenten)
         self.wait_fn: Callable[[], None] | None = None  # "denkt nach"-Anzeige der Oberflaeche
 
     # -- von Unterklassen zu implementieren ---------------------------------
@@ -101,25 +102,31 @@ class LLMProvider(ABC):
         on_text: StreamFn | None = None,
         max_tool_rounds: int | None = None,
         announce_limit: bool = True,
+        allow_tools: bool = True,
     ) -> str: ...
 
     # -- Abbrechen mit Strg+C ------------------------------------------------
     def history_snapshot(self) -> int:
         return len(getattr(self, "messages", []))
 
-    def abort_turn(self, snapshot: int, user_text: str) -> None:
-        """Nach Strg+C: angefangene Antwort verwerfen, damit der Verlauf gueltig bleibt.
+    def abort_turn(self, snapshot: int | None = None, user_text: str = "") -> None:
+        """Nach Strg+C (oder einem Fehler): den Verlauf wieder gueltig machen.
 
-        Ein halb fertiger Werkzeugaufruf ohne Ergebnis wuerde sonst jede weitere
-        Anfrage scheitern lassen. Das Getane (z.B. geschriebene Dateien) bleibt.
+        Alles Fertige bleibt erhalten - die KI weiss also noch, was sie schon getan
+        hat. Nur ein angefangener Werkzeugaufruf ohne Ergebnis wird als "abgebrochen"
+        geschlossen (sonst scheitert jede weitere Anfrage). Es wird nur angehaengt,
+        nichts frueheres veraendert.
         """
         messages = getattr(self, "messages", None)
-        if messages is None:
+        if not messages:
             return
-        del messages[snapshot:]
-        messages.append({"role": "user", "content": user_text})
-        messages.append({"role": "assistant", "content": ABORT_NOTE})
+        self._close_open_tool_calls(messages)
+        if messages[-1].get("role") != "assistant":
+            messages.append({"role": "assistant", "content": ABORT_NOTE})
         self.hit_limit = False
+
+    def _close_open_tool_calls(self, messages: list) -> None:
+        """Von den Providern ueberschrieben: offene Werkzeugaufrufe schliessen."""
 
     def _waiting(self) -> None:
         if self.wait_fn:

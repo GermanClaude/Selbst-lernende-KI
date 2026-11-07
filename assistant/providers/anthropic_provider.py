@@ -39,20 +39,25 @@ class AnthropicProvider(LLMProvider):
         return anthropic.Anthropic(timeout=timeout, max_retries=3)
 
     # -- Request ------------------------------------------------------------
-    def _stream_kwargs(self) -> dict[str, Any]:
-        return {
+    def _stream_kwargs(self, allow_tools: bool = True) -> dict[str, Any]:
+        kwargs = {
             "model": self.config.claude.model,
             "max_tokens": self.config.claude.max_tokens,
             "system": self.system_prompt,
             "messages": self.messages,
             "tools": self.registry.specs(),
             "tool_choice": {"type": "auto"},
-            "thinking": {"type": "adaptive"},
+            # "summarized": waehrend des Nachdenkens kommen weiter Daten - sonst wirkt eine
+            # lange Denkpause wie eine tote Verbindung (Zeitlimit) und Strg+C reagiert spaet.
+            "thinking": {"type": "adaptive", "display": "summarized"},
             "output_config": {"effort": self.config.claude.effort},
             # Automatisches Prompt-Caching: der wachsende Verlauf wird bei jedem
             # Werkzeug-Schritt erneut gesendet - aus dem Cache kostet er ~10 %.
             "extra_body": {"cache_control": {"type": "ephemeral"}},
         }
+        if not allow_tools:
+            kwargs["tool_choice"] = {"type": "none"}  # z.B. Abschlussbericht eines Agenten
+        return kwargs
 
     def _open_stream(self, kwargs: dict[str, Any]):
         if self.config.claude.server_side_fallback:
@@ -69,6 +74,7 @@ class AnthropicProvider(LLMProvider):
         on_text: StreamFn | None = None,
         max_tool_rounds: int | None = None,
         announce_limit: bool = True,
+        allow_tools: bool = True,
     ) -> str:
         self.messages.append({"role": "user", "content": user_text})
         final_parts: list[str] = []
@@ -77,7 +83,7 @@ class AnthropicProvider(LLMProvider):
 
         for _ in range(rounds):
             self._waiting()
-            response = self._one_turn(on_text)
+            response = self._one_turn(on_text, allow_tools)
             if response is None:
                 return "Es gab ein Problem bei der Verbindung zum Modell."
 
@@ -101,6 +107,7 @@ class AnthropicProvider(LLMProvider):
             )
             if text_this_turn:
                 final_parts.append(text_this_turn)
+                self.last_text = text_this_turn
 
             stop_reason = getattr(response, "stop_reason", None)
             if stop_reason == "pause_turn":
@@ -144,25 +151,46 @@ class AnthropicProvider(LLMProvider):
 
         return "\n".join(final_parts).strip() or "(keine Textantwort)"
 
-    def _one_turn(self, on_text: StreamFn | None):
+    def _one_turn(self, on_text: StreamFn | None, allow_tools: bool = True):
         import anthropic
 
-        try:
-            with self._open_stream(self._stream_kwargs()) as stream:
-                for event in stream:
-                    if getattr(event, "type", None) == "text" and on_text:
-                        on_text(event.text)
-                return stream.get_final_message()
-        except anthropic.APIStatusError as exc:
-            logger.error("API-Fehler: %s", exc)
-            if on_text:
-                on_text(f"\n[Fehler vom Modell: {getattr(exc, 'message', exc)}]")
-            return None
-        except anthropic.APIConnectionError:
-            logger.error("Verbindungsfehler zum Modell.")
-            if on_text:
-                on_text("\n[Keine Verbindung zum Modell - Internet/Schluessel pruefen.]")
-            return None
+        for attempt in (1, 2):
+            emitted = False
+            try:
+                with self._open_stream(self._stream_kwargs(allow_tools)) as stream:
+                    for event in stream:
+                        if getattr(event, "type", None) == "text" and on_text:
+                            on_text(event.text)
+                            emitted = True
+                    return stream.get_final_message()
+            except anthropic.APIStatusError as exc:
+                logger.error("API-Fehler: %s", exc)
+                if on_text:
+                    on_text(f"\n[Fehler vom Modell: {getattr(exc, 'message', exc)}]")
+                return None
+            except Exception as exc:  # noqa: BLE001 - Verbindung weg/haengt (auch mitten im Stream)
+                logger.warning("Verbindung zum Modell unterbrochen: %s", exc)
+                if attempt == 1 and not emitted:
+                    continue  # noch nichts gezeigt -> einfach noch einmal versuchen
+                if on_text:
+                    if isinstance(exc, anthropic.APIConnectionError) and not emitted:
+                        on_text("\n[Keine Verbindung zum Modell - Internet/Schluessel pruefen.]")
+                    else:
+                        on_text("\n[Verbindung zum Modell unterbrochen - bitte nochmal versuchen.]")
+                return None
+        return None
+
+    def _close_open_tool_calls(self, messages: list) -> None:
+        last = messages[-1]
+        if last.get("role") != "assistant" or isinstance(last.get("content"), str):
+            return
+        open_ids = [_field(b, "id") for b in last["content"] if _field(b, "type") == "tool_use"]
+        if open_ids:
+            messages.append({"role": "user", "content": [
+                {"type": "tool_result", "tool_use_id": tid, "is_error": True,
+                 "content": "Abgebrochen (Strg+C) - nicht ausgefuehrt."}
+                for tid in open_ids
+            ]})
 
     def _track_usage(self, usage: Any) -> None:
         if not usage:

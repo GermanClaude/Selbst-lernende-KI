@@ -130,11 +130,62 @@ def test_ctrl_c_leaves_a_valid_history(tmp_path):
     with pytest.raises(KeyboardInterrupt):
         prov.respond("Zweite Frage")
     prov.abort_turn(snapshot, "Zweite Frage")
-    assert prov.messages[-2] == {"role": "user", "content": "Zweite Frage"}
+    assert prov.messages[snapshot] == {"role": "user", "content": "Zweite Frage"}  # bleibt, nichts geloescht
     assert prov.messages[-1] == {"role": "assistant", "content": ABORT_NOTE}
-    # kein Werkzeugaufruf ohne Ergebnis bleibt zurueck
-    for m in prov.messages[snapshot:]:
-        assert isinstance(m["content"], str)
+    # der angefangene Werkzeugaufruf ist als "abgebrochen" geschlossen - der Verlauf ist gueltig
+    closing = prov.messages[-2]["content"]
+    assert closing[0]["type"] == "tool_result" and closing[0]["is_error"]
+    assert "Abgebrochen" in closing[0]["content"]
+    mem.close()
+
+
+def test_ctrl_c_keeps_finished_work_and_survives_compaction(tmp_path):
+    # Abschnitt 1 fertig (2 Schritte), dann Kompaktierung zwischen den Abschnitten,
+    # dann Strg+C mitten in einem Werkzeug: der Verlauf muss gueltig bleiben.
+    cfg, mem, reg, ctx = _setup(tmp_path, max_werkzeug_runden=2, automatisch_weiter=2, max_verlauf_zeichen=1)
+    prov = AnthropicProvider(cfg, "SYSTEM", reg, ctx, client=AnthroClient([_tool(i) for i in range(9)]))
+    brain = Brain(cfg, mem, reg, ctx, provider=prov)
+    snapshot = prov.history_snapshot()
+    calls = {"n": 0}
+    real_execute = prov.registry.execute
+
+    def execute(*a, **kw):
+        calls["n"] += 1
+        if calls["n"] == 3:
+            raise KeyboardInterrupt
+        return real_execute(*a, **kw)
+
+    prov.registry.execute = execute
+    with pytest.raises(KeyboardInterrupt):
+        brain.respond("Grosse Aufgabe")
+    prov.abort_turn(snapshot, "Grosse Aufgabe")
+    roles = [m["role"] for m in prov.messages]
+    assert roles[-1] == "assistant" and prov.messages[-1]["content"] == ABORT_NOTE
+    # jeder tool_use hat ein tool_result direkt danach
+    for i, m in enumerate(prov.messages):
+        if m["role"] == "assistant" and isinstance(m["content"], list):
+            ids = [b.id for b in m["content"] if getattr(b, "type", None) == "tool_use"]
+            if ids:
+                nxt = prov.messages[i + 1]["content"]
+                assert {b["tool_use_id"] for b in nxt} == set(ids)
+    mem.close()
+
+
+def test_deepseek_ctrl_c_closes_open_tool_calls(tmp_path):
+    from assistant.providers.deepseek_provider import DeepSeekProvider
+
+    cfg, mem, reg, ctx = _setup(tmp_path)
+    prov = DeepSeekProvider(cfg, "SYSTEM", reg, ctx, client=object())
+    prov.messages += [
+        {"role": "user", "content": "x"},
+        {"role": "assistant", "content": "", "tool_calls": [
+            {"id": "a", "type": "function", "function": {"name": "system_info", "arguments": "{}"}},
+            {"id": "b", "type": "function", "function": {"name": "system_info", "arguments": "{}"}}]},
+        {"role": "tool", "tool_call_id": "a", "content": "ok"},
+    ]
+    prov.abort_turn()
+    assert prov.messages[-2] == {"role": "tool", "tool_call_id": "b", "content": "Abgebrochen (Strg+C) - nicht ausgefuehrt."}
+    assert prov.messages[-1]["role"] == "assistant"
     mem.close()
 
 
@@ -165,4 +216,71 @@ def test_waiting_indicator_is_called_before_each_model_request(tmp_path):
     prov.wait_fn = lambda: calls.append(1)
     prov.respond("x")
     assert len(calls) == 2
+    mem.close()
+
+
+def test_agent_at_its_limit_still_delivers_a_report(tmp_path):
+    cfg, mem, reg, ctx = _setup(tmp_path, agent_runden=2)
+    client = AnthroClient([_tool(1), _tool(2), _text("Bericht: 3 Quellen gelesen, Ergebnis X.")])
+    prov = AnthropicProvider(cfg, "SYSTEM", reg, ctx, client=client)
+    brain = Brain(cfg, mem, reg, ctx, provider=prov)
+    out = brain.run_agent("recherche", "Finde X")
+    assert "Bericht: 3 Quellen gelesen" in out and "Schritt-Limit" in out
+    assert client.messages.last_kwargs["tool_choice"] == {"type": "none"}  # Bericht ohne Werkzeuge
+    mem.close()
+
+
+def test_long_agent_report_is_not_cut_by_economy_mode(tmp_path):
+    cfg, mem, reg, ctx = _setup(tmp_path)
+    cfg.economy.aktiv, cfg.economy.max_werkzeug_ausgabe = True, 100
+    prov = AnthropicProvider(cfg, "SYSTEM", reg, ctx, client=AnthroClient([]))
+    ctx.extra["agent_runner"] = lambda role, task, context: "A" * 5000 + " ENDE"
+    out, err = prov._exec_tool("agent_beauftragen", {"rolle": "helfer", "auftrag": "x"})
+    assert not err and out.endswith("ENDE")
+    mem.close()
+
+
+def test_connection_drop_mid_stream_does_not_crash(tmp_path):
+    cfg, mem, reg, ctx = _setup(tmp_path)
+    client = AnthroClient([_text("ok")])
+
+    class Dropping:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def __iter__(self):
+            raise ConnectionResetError("peer closed connection")  # wie httpx RemoteProtocolError
+
+    attempts = {"n": 0}
+    real = client.messages.stream
+
+    def stream(**kw):
+        attempts["n"] += 1
+        return Dropping() if attempts["n"] == 1 else real(**kw)
+
+    client.messages.stream = stream
+    prov = AnthropicProvider(cfg, "SYSTEM", reg, ctx, client=client)
+    assert prov.respond("hi") == "ok"  # noch nichts gezeigt -> automatisch neuer Versuch
+    attempts["n"] = -10  # jetzt jedes Mal abbrechen
+    client.messages.stream = lambda **kw: Dropping()
+    shown = []
+    assert "Problem" in prov.respond("nochmal", on_text=shown.append)
+    assert any("unterbrochen" in s for s in shown)
+    mem.close()
+
+
+def test_ctrl_c_during_compaction_keeps_the_answer(tmp_path):
+    cfg, mem, reg, ctx = _setup(tmp_path, max_verlauf_zeichen=1)
+    prov = AnthropicProvider(cfg, "SYSTEM", reg, ctx, client=AnthroClient([_text("Die Antwort.")]))
+
+    def interrupted():
+        raise KeyboardInterrupt
+
+    prov.summarize_history = interrupted
+    brain = Brain(cfg, mem, reg, ctx, provider=prov)
+    assert brain.respond("Frage") == "Die Antwort."
+    assert prov.messages[-1]["role"] == "assistant"
     mem.close()
