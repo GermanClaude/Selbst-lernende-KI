@@ -1569,12 +1569,14 @@ kbd {
   position: absolute; left: 50%; top: 6px; z-index: 3;
   max-width: min(560px, calc(100% - 32px));
   padding: 7px 14px; border-radius: 999px;
-  background: rgba(251, 146, 60, .13); border: 1px solid rgba(251, 146, 60, .36); color: #fed7aa;
+  /* deckend: der Orb und andere Hinweise duerfen nicht durchscheinen */
+  background: #2a1a12; border: 1px solid rgba(251, 146, 60, .42); color: #fed7aa;
+  box-shadow: 0 8px 26px rgba(0, 0, 0, .5);
   font-size: calc(13px * var(--font-scale)); font-weight: 550; text-align: center;
   transform: translateX(-50%);
   animation: jv-note-in .25s ease both;
 }
-.jv-note.soft { background: var(--jv-glass-2); border-color: var(--jv-line); color: var(--jv-text); }
+.jv-note.soft { background: #1b1d28; border-color: rgba(255, 255, 255, .16); color: var(--jv-text); }
 @keyframes jv-note-in { from { opacity: 0; transform: translate(-50%, -6px); } }
 
 .jv-text {
@@ -1666,6 +1668,8 @@ kbd {
   .jv-launch { width: 36px; padding: 0; justify-content: center; }
   .jv-top { padding: 10px 8px 0 14px; min-height: 54px; }
   .jv-setup { position: absolute; left: 50%; top: 58px; transform: translateX(-50%); max-width: calc(100% - 28px); }
+  /* "Live-Mitschrift wird eingerichtet …" steht dann oben in der Mitte: Hinweis darunter */
+  .jv.setup-on .jv-note { top: calc(16px + 30px * var(--font-scale)); }
   .jv-btn { height: 46px; min-width: 0; padding: 0 18px 0 15px; }
   .jv-hint { font-size: calc(12px * var(--font-scale)); }
   .jv-stage { padding: 0 16px; }

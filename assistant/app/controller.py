@@ -110,6 +110,8 @@ class AppController(CLI):
         self._live_setup_failed = False
         self._speaker = None
         self.tool_ctx.extra["on_appearance"] = lambda: self._event({"type": "appearance"})
+        # Sphaere: reagiert auf deine Stimme beim Mikrofon-Knopf / F2
+        self.voice_capture.on_level = lambda value: self._event({"type": "mic", "level": value})
 
     # -- Ereignisse -----------------------------------------------------------
     def _event(self, event: dict) -> None:
@@ -332,7 +334,15 @@ class AppController(CLI):
         self._event({"type": "done"})
         self._last_answer = "".join(self._answer_parts) or answer
         if self.voice_out.enabled and not self._jarvis_active():
-            threading.Thread(target=self.voice_out.speak, args=(answer,), daemon=True).start()
+            threading.Thread(target=self._speak_aloud, args=(answer,), daemon=True).start()
+
+    def _speak_aloud(self, answer: str) -> None:
+        """Vorlesen am PC (Schalter 'Vorlesen') - die Sphaere spricht mit."""
+        self._event({"type": "speaking", "on": True})
+        try:
+            self.voice_out.speak(answer)
+        finally:
+            self._event({"type": "speaking", "on": False})
 
     def stop(self) -> None:
         if self._live is not None:

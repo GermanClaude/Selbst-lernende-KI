@@ -15,7 +15,9 @@ class AppAnpassenTool(Tool):
         "sofort im App-Fenster. aktion: 'anzeigen' (aktuellen Stand zeigen), 'setzen' (einfache "
         "Einstellungen: akzentfarbe als Hex wie #22c55e, schriftgroesse 80-140 Prozent, ecken "
         "eckig|normal|rund, dichte kompakt|normal|luftig, begruessung (Text auf dem Startbildschirm), "
-        "beispiele (Beispiel-Fragen)), 'css_ersetzen' / 'css_anhaengen' (eigenes CSS; die App nutzt "
+        "beispiele (Beispiel-Fragen), avatar sphaere|buchstabe (dein Gesicht in der App: leuchtende "
+        "Sphaere oder Buchstabe), sphaere_farbe als Hex (Farbe deiner Sphaere, sonst die Akzentfarbe), "
+        "bewegung ruhig|normal|lebhaft (wie lebendig sich die Sphaere bewegt)), 'css_ersetzen' / 'css_anhaengen' (eigenes CSS; die App nutzt "
         "CSS-Variablen wie --accent, --bg, --surface, --text, --radius, --font-scale), 'zuruecksetzen' "
         "(Original-Aussehen). Leerer Wert bei 'setzen' = diese Einstellung zuruecksetzen."
     )
@@ -30,6 +32,9 @@ class AppAnpassenTool(Tool):
             "dichte": {"type": "string"},
             "begruessung": {"type": "string"},
             "beispiele": {"type": "array", "items": {"type": "string"}},
+            "avatar": {"type": "string"},
+            "sphaere_farbe": {"type": "string"},
+            "bewegung": {"type": "string"},
             "css": {"type": "string"},
         },
         "required": ["aktion"],
