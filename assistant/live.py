@@ -35,6 +35,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from statistics import median
 
+from .anzeige import schoen
 from .logging_setup import get_logger
 from .voice import _importable, _rms, speech_text
 
@@ -47,12 +48,12 @@ BLOCK = 800  # 50 ms - kurze Bloecke = schnelle Reaktion
 #  Saetze aus dem Antwort-Strom schneiden
 # ---------------------------------------------------------------------------
 _ABBREVIATIONS = {
-    "z.b", "z. b", "d.h", "u.a", "o.ae", "o.ä", "bzw", "ca", "dr", "nr", "usw", "evtl", "ggf", "inkl", "bspw",
+    "z.b", "z. b", "d.h", "u.a", "o.ae", "o.\u00e4", "bzw", "ca", "dr", "nr", "usw", "evtl", "ggf", "inkl", "bspw",
     "vgl", "etc", "prof", "str", "tel", "mind", "max", "min", "mio", "mrd", "sog", "jh", "s", "u", "z", "v",
     "e.g", "i.e", "mr", "mrs", "vs",
 }
-_END = re.compile(r"[.!?…]+[\"'»«“”)\]]*(?=\s)")
-_TOOL_MARK = re.compile(r"(… nutze Werkzeug:|>> Agent '|<< Agent '|^\s*\[Ich arbeite weiter)")
+_END = re.compile(r"[.!?\u2026]+[\"'\u00bb\u00ab\u201c\u201d)\]]*(?=\s)")
+_TOOL_MARK = re.compile(r"(\u2026 nutze Werkzeug:|>> Agent '|<< Agent '|^\s*\[Ich arbeite weiter)")
 
 
 class SentenceSplitter:
@@ -126,7 +127,7 @@ class SentenceSplitter:
                 word = re.search(r"(\S+)$", text[start:match.start()])
                 token = (word.group(1) if word else "").lower()
                 if match.group().startswith(".") and (token.rstrip(".") in _ABBREVIATIONS or token.isdigit()
-                                                      or re.fullmatch(r"[a-zäöü]", token)):
+                                                      or re.fullmatch(r"[a-z\u00e4\u00f6\u00fc]", token)):
                     continue  # "z.B.", "3. Mai", "A. Meier" - kein Satzende
             piece = text[start:end].strip()
             start = end
@@ -340,8 +341,8 @@ def tidy(text: str) -> str:
 _GOES_ON = {
     "und", "oder", "aber", "weil", "dass", "ob", "wenn", "als", "denn", "sondern", "also", "der", "die", "das",
     "den", "dem", "des", "ein", "eine", "einen", "einem", "einer", "mit", "in", "im", "zu", "zum", "zur", "von",
-    "vom", "fuer", "für", "auf", "an", "am", "bei", "nach", "aus", "um", "mein", "meine", "meinen", "dein", "deine",
-    "ich", "du", "wir", "bitte", "äh", "ähm", "hm", "and", "or", "but", "the", "a", "to", "of",
+    "vom", "fuer", "f\u00fcr", "auf", "an", "am", "bei", "nach", "aus", "um", "mein", "meine", "meinen", "dein", "deine",
+    "ich", "du", "wir", "bitte", "\u00e4h", "\u00e4hm", "hm", "and", "or", "but", "the", "a", "to", "of",
 }
 
 
@@ -644,18 +645,18 @@ _ALWAYS = ("immer", "jedes mal", "dauerhaft")
 _NO = ("nein", "nee", "ne", "nicht", "stopp", "stop", "abbrechen", "lass")
 
 
-_STOP = ("stopp", "stop", "halt", "abbrechen", "aufhoeren", "aufhören", "hoer auf", "hör auf", "warte")
+_STOP = ("stopp", "stop", "halt", "abbrechen", "aufhoeren", "aufh\u00f6ren", "hoer auf", "h\u00f6r auf", "warte")
 
 
 def is_stop(text: str) -> bool:
-    low = re.sub(r"[^\wäöüß ]", " ", text.lower())
+    low = re.sub(r"[^\w\u00e4\u00f6\u00fc\u00df ]", " ", text.lower())
     words = low.split()
     return 0 < len(words) <= 5 and any(p in " ".join(words) for p in _STOP)
 
 
 def voice_choice(text: str, options: list[str]) -> str | None:
     """Gesprochene Antwort auf eine Rueckfrage -> passender Wert (oder None)."""
-    words = re.findall(r"[a-zäöüß]+", text.lower())
+    words = re.findall(r"[a-z\u00e4\u00f6\u00fc\u00df]+", text.lower())
     joined = " ".join(words)
     if not words or len(words) > 8:
         return None
@@ -885,7 +886,7 @@ class LiveLoop:
         if self.interrupted:
             return
         question = speech_text(text).split(". ")[0][:220].rstrip(".")
-        self._say(f"Kurze Rückfrage: {question}. Sag ja, immer oder nein.")
+        self._say(schoen(f"Kurze Rueckfrage: {question}. Sag ja, immer oder nein."))
 
     def _on_turn_end(self, cancelled) -> None:  # noqa: ARG002
         if not self.turn_active:

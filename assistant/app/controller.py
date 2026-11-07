@@ -23,6 +23,7 @@ from contextlib import redirect_stdout
 from typing import Any, Callable
 
 from .. import __version__
+from ..anzeige import schoen, schoen_alles
 from ..cancel import Abgebrochen
 from ..config import Config, save_setting
 from ..logging_setup import get_logger
@@ -119,6 +120,7 @@ class AppController(CLI):
     def _notice(self, text: str, level: str = "info") -> None:
         if not text.strip():
             return
+        text = schoen(text)
         self.history.append({"role": "notice", "text": text, "level": level})
         self._event({"type": "notice", "level": level, "text": text})
 
@@ -146,7 +148,7 @@ class AppController(CLI):
             "full_access": bool(self.permissions.settings.allow_full_filesystem),
             "tutorial_done": self._tutorial_done(),
             "started_by": self.started_by,
-            "commands": [{"cmd": c, "help": h} for c, h in COMMANDS],
+            "commands": [{"cmd": c, "help": schoen(h)} for c, h in COMMANDS],
         }
 
     def _state_changed(self) -> None:
@@ -343,14 +345,15 @@ class AppController(CLI):
             "name": self.config.ki.name,
             "meaning": self.config.ki.bedeutung,
             "character": current,
-            "characters": [{"id": c.key, "name": c.name, "description": c.description,
+            "characters": [{"id": c.key, "name": schoen(c.name), "description": schoen(c.description),
                             "active": c.key == current} for c in CHARACTERS],
             "persona_text": self.config.persona_text,
             "style": {"anrede": s.anrede, "laenge": s.laenge, "humor": s.humor, "emojis": s.emojis},
-            "style_options": {k: [{"value": v, "label": label} for v, label in opts]
+            "style_options": {k: [{"value": v, "label": schoen(label)} for v, label in opts]
                               for k, opts in STYLE_OPTIONS.items()},
             "about": dict(self.config.about),
-            "about_fields": [{"key": k, "label": label, "placeholder": ph} for k, label, ph in ABOUT_FIELDS],
+            "about_fields": [{"key": k, "label": schoen(label), "placeholder": schoen(ph)}
+                             for k, label, ph in ABOUT_FIELDS],
             "values_text": self.config.values_text,
         }
 
@@ -426,7 +429,7 @@ class AppController(CLI):
                 return {"ok": True, "live": self._live.ear.live}
             problem = self.voice_capture.problem()
             if problem:
-                return {"ok": False, "error": problem, "setup": not getattr(sys, "frozen", False)}
+                return {"ok": False, "error": schoen(problem), "setup": not getattr(sys, "frozen", False)}
             root = self.config.project_root
             if tts == "server":
                 from ..voice import Speaker
@@ -515,7 +518,7 @@ class AppController(CLI):
     def tutorial(self) -> dict:
         from ..tutorial import steps
 
-        return {"steps": steps(self.config), "done": self._tutorial_done()}
+        return {"steps": schoen_alles(steps(self.config)), "done": self._tutorial_done()}
 
     def tutorial_action(self, action: str) -> dict:
         from ..tutorial import mark_done
@@ -642,6 +645,8 @@ class _LiveHost:
         self.ctl = ctl
 
     def event(self, event: dict) -> None:
+        if event.get("error"):
+            event = dict(event, error=schoen(event["error"]))
         self.ctl._event(event)
 
     def busy(self) -> bool:

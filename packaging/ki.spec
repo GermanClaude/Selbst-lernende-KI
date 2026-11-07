@@ -26,6 +26,7 @@ added_files = [
     (str(project_root / "config" / "werte.md"), "config"),
     (str(project_root / ".env.example"), "."),
     (str(project_root / "assistant" / "app" / "static"), "assistant/app/static"),  # App-Oberflaeche
+    (str(project_root / "assistant" / "umlaute.json"), "assistant"),  # schoene Texte in der App
 ]
 
 a = Analysis(

@@ -328,7 +328,7 @@ def test_questions_can_be_answered_by_voice_and_exit_phrase_ends():
     step(loop, "tool")
     host.ask = {"id": "q1", "options": ["einmal", "immer", "nein"]}
     step(loop, "ask", "Die KI moechte figuren.py schreiben. Risiko: mittel")
-    assert voice_.said[-1].startswith("Kurze Rückfrage: Die KI moechte figuren.py schreiben")
+    assert voice_.said[-1].startswith("Kurze Rückfrage: Die KI möchte figuren.py schreiben")
     step(loop, "utterance", Utterance("Ja klar", b"", 0.5))
     assert host.answers == [("q1", "einmal")] and host.cancels == []
     host.ask = None
@@ -453,3 +453,13 @@ def test_ear_waits_longer_when_the_sentence_obviously_goes_on():
     blocks = [quiet] * 12 + [loud] * 20 + [quiet] * 16 + [loud] * 10 + [quiet] * 30
     seen, _ = _run_ear(blocks, "utterance", pause=0.6, recognizer_factory=Unfinished)
     assert [k for k, _ in seen].count("utterance") == 1 and seen[-1][1].seconds > 2.5
+
+
+def test_app_texts_get_real_umlauts_but_paths_and_unknown_words_stay():
+    from assistant.anzeige import schoen
+
+    assert schoen("Hoeflich, erklaert geduldig, viel Spass") == "H\u00f6flich, erkl\u00e4rt geduldig, viel Spa\u00df"
+    assert schoen("Die neue Steuer ist aktuell") == "Die neue Steuer ist aktuell"
+    assert schoen(r"C:\Users\fuer\a.txt und pfad/zu/fuer.txt") == r"C:\Users\fuer\a.txt und pfad/zu/fuer.txt"
+    assert schoen("Stuetzraeder") == "St\u00fctzr\u00e4der"
+    assert schoen("Lies fuer.txt, das ist schoen.") == "Lies fuer.txt, das ist sch\u00f6n."
