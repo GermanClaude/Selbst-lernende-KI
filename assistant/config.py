@@ -8,6 +8,7 @@ Es gibt zwei "Gehirne" zur Auswahl:
 from __future__ import annotations
 
 import os
+import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -79,7 +80,9 @@ def _load_env_file(path: Path) -> None:
         key, value = key.strip(), value.strip().strip('"').strip("'")
         if not value or value.endswith("..."):
             continue
-        if not os.environ.get(key):
+        # API-Schluessel aus .env gewinnen: sonst ueberdeckt eine alte Windows-Umgebungsvariable
+        # still den Schluessel, den du in der App/.env eingetragen hast.
+        if not os.environ.get(key) or key.endswith("_API_KEY"):
             os.environ[key] = value
 
 
@@ -308,6 +311,22 @@ def _load_about(path: Path) -> dict:
 
 def _first_existing(*paths: Path) -> Path | None:
     return next((p for p in paths if p.is_file()), None)
+
+
+def save_env_value(root: Path, name: str, value: str) -> Path:
+    """Schreibt NAME=wert in die .env im Programmordner (andere Zeilen bleiben erhalten)."""
+    path = Path(root) / ".env"
+    lines = path.read_bytes().decode("utf-8-sig", errors="replace").splitlines() if path.exists() else []
+    entry = f"{name}={value}"
+    pattern = re.compile(rf"^\s*(export\s+)?{re.escape(name)}\s*=")
+    for i, line in enumerate(lines):
+        if pattern.match(line):
+            lines[i] = entry
+            break
+    else:
+        lines.append(entry)
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
 
 
 def toml_string(text: str) -> str:

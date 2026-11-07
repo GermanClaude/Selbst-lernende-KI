@@ -418,7 +418,7 @@ class VoiceLineReader:
             return False
         interactive = self._interactive
         if interactive is None:
-            interactive = sys.stdin.isatty() and sys.stdout.isatty()
+            interactive = bool(sys.stdin and sys.stdout) and sys.stdin.isatty() and sys.stdout.isatty()
         return interactive
 
     def warm_up(self) -> None:

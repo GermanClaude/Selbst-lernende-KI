@@ -115,9 +115,17 @@ def test_env_with_bom_and_empty_environment_variable(monkeypatch, tmp_path):
     assert load_config(tmp_path).anthropic_api_key == "sk-ant-bom"
 
 
-def test_real_environment_variable_wins(monkeypatch, tmp_path):
+def test_key_from_env_file_wins_over_an_old_system_variable(monkeypatch, tmp_path):
+    # Den Schluessel traegt man in der App/.env ein - eine alte Windows-Variable soll ihn nicht verdecken.
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-system")
-    (tmp_path / ".env").write_text("ANTHROPIC_API_KEY=sk-ant-datei\n", encoding="utf-8")
+    monkeypatch.setenv("KI_MODEL", "modell-system")
+    (tmp_path / ".env").write_text("ANTHROPIC_API_KEY=sk-ant-datei\nKI_MODEL=modell-datei\n", encoding="utf-8")
+    assert load_config(tmp_path).anthropic_api_key == "sk-ant-datei"
+    import os
+
+    assert os.environ["KI_MODEL"] == "modell-system"  # andere Variablen: die echte Umgebung gewinnt
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-system")
+    (tmp_path / ".env").write_text("ANTHROPIC_API_KEY=sk-ant-...\n", encoding="utf-8")  # nur Platzhalter
     assert load_config(tmp_path).anthropic_api_key == "sk-ant-system"
 
 

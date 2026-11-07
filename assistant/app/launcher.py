@@ -132,6 +132,33 @@ def spawn_app(root: Path, wait_for_pid: int | None = None) -> bool:
         return False
 
 
+def spawn_terminal(root: Path, wait_for_pid: int | None = None) -> bool:
+    """Oeffnet die Terminal-Version in einem eigenen Konsolenfenster (Windows)."""
+    if sys.platform != "win32":
+        return False
+    env = dict(os.environ)
+    if wait_for_pid:
+        env["KI_NEUSTART_VON"] = str(wait_for_pid)  # wartet, bis die App zu ist
+    if getattr(sys, "frozen", False):
+        own = Path(sys.executable)
+        sibling = own.with_name("KI.exe")
+        exe = sibling if sibling.exists() and sibling.resolve() != own.resolve() else own
+        cmd = [str(exe), "--terminal"]
+        env = {k: v for k, v in env.items() if not k.startswith("_PYI_")}
+        env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+    else:
+        exe = sys.executable
+        if os.path.basename(exe).lower() == "pythonw.exe":
+            exe = os.path.join(os.path.dirname(exe), "python.exe")  # mit Konsole
+        cmd = [exe, "-m", "assistant", "--terminal"]
+    try:
+        subprocess.Popen(cmd, cwd=str(root), env=env, creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0))
+        return True
+    except OSError as exc:
+        logger.warning("Terminal konnte nicht gestartet werden: %s", exc)
+        return False
+
+
 def create_desktop_shortcut(root: Path, name: str) -> str:
     """Legt eine Verknuepfung auf dem Desktop an, die die KI als App oeffnet."""
     root = Path(root)

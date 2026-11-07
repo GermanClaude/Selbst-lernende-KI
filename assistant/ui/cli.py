@@ -26,6 +26,7 @@ Sonderbefehle (mit '/' beginnen):
   /stuetzraeder an|aus - an: fragt vor allem, nur Arbeitsordner; aus: darf alles
   /aussehen [zuruecksetzen] - Aussehen der App anzeigen bzw. zuruecksetzen
   /name <Name> [= Bedeutung] - der KI einen anderen Namen geben
+  /gehirn [deepseek|claude] - Gehirn zeigen bzw. wechseln (Schluessel: einfach in den Chat einfuegen)
   /app                - zur App wechseln (eigenes Fenster statt Terminal)
   /verknuepfung       - Symbol fuer die App auf den Desktop legen
   /erlauben alles     - nie mehr nachfragen, alles erlauben (dauerhaft)
@@ -370,6 +371,47 @@ class CLI:
             speaker.stop()
         print(_c("\n[Zurueck im Chat-Modus]", GREY))
 
+    # -- Gehirn & Schluessel ----------------------------------------------------
+    def _setup_key(self, key: str | None = None, provider: str | None = None) -> bool:
+        """Schluessel pruefen, speichern und das passende Gehirn einschalten."""
+        from ..schluessel import PROVIDERS, provider_for_key, setup
+
+        target = provider or (provider_for_key(key) if key else self.config.active_provider)
+        print(_c(f"Ich pruefe den Schluessel kurz bei {PROVIDERS.get(target, {}).get('name', target)} …", GREY))
+        result = setup(self.config, key=key, provider=target)
+        if not result["ok"]:
+            print(_c(result["message"], YELLOW))
+            return False
+        fresh = self.brain.switch_provider()
+        extra = " Wir beginnen ein neues Gespraech, weil das Gehirn gewechselt hat." if fresh else ""
+        print(_c(result["message"] + extra + " Du kannst jetzt loslegen!", GREEN))
+        self._after_provider_change()
+        return True
+
+    def _after_provider_change(self) -> None:
+        """Fuer die App: Anzeige auffrischen."""
+
+    def _brain_command(self, args: list[str]) -> None:
+        from ..schluessel import PROVIDERS, key_of, mask
+
+        if args:
+            wanted = args[0].lower().replace("anthropic", "claude")
+            if wanted not in PROVIDERS:
+                print(_c(f"Moeglich: {', '.join(PROVIDERS)} - z.B. /gehirn deepseek", YELLOW))
+                return
+            if not key_of(self.config, wanted):
+                print(_c(f"Fuer {PROVIDERS[wanted]['name']} fehlt noch der Schluessel - fuege ihn einfach hier "
+                         f"ein (zu bekommen unter {PROVIDERS[wanted]['url']}).", YELLOW))
+                return
+            self._setup_key(provider=wanted)
+            return
+        for pid, info in PROVIDERS.items():
+            key = key_of(self.config, pid)
+            mark = "->" if pid == self.config.active_provider else "  "
+            state = f"Schluessel {mask(key)}" if key else "kein Schluessel"
+            print(_c(f"{mark} {info['name']}: {info['info']} ({state})", CYAN))
+        print(_c("Wechseln: /gehirn deepseek  bzw.  /gehirn claude. Neuer Schluessel: einfach einfuegen.", GREY))
+
     def _open_in_editor(self, name: str) -> None:
         path = self.config.project_root / "config" / name
         try:
@@ -457,16 +499,7 @@ class CLI:
                 )
             )
         if not self.config.api_key:
-            key_name = "DEEPSEEK_API_KEY" if self.config.active_provider == "deepseek" else "ANTHROPIC_API_KEY"
-            env_path = self.config.project_root / ".env"
-            print(
-                _c(
-                    f"\nAchtung: Kein {key_name} gefunden. Trage deinen Schluessel in diese "
-                    f"Datei ein (Zeile {key_name}=...):\n  {env_path}\n"
-                    "Ohne Schluessel kann das Gehirn nicht denken.\n",
-                    YELLOW,
-                )
-            )
+            print(_c("\n" + KEY_HINT + "\n", YELLOW))
         try:
             if self._startup_update():
                 return self.exit_code  # Update installiert -> Neustart
@@ -488,9 +521,18 @@ class CLI:
             user_text = user_text.strip()
             if not user_text:
                 continue
+            from ..schluessel import find_key
+
+            key = find_key(user_text)
+            if key and not user_text.startswith("/"):
+                self._setup_key(key)  # Schluessel eingefuegt: einrichten - geht NIE an die KI
+                continue
             if user_text.startswith("/"):
                 if self._handle_command(user_text):
                     break
+                continue
+            if not self.config.api_key:
+                print(_c(KEY_HINT, YELLOW))
                 continue
 
             # Antwort streamen. Strg+C haelt nur diese Antwort an, nicht die ganze KI.
@@ -507,7 +549,11 @@ class CLI:
                 self.thinking.stop()
                 logger.exception("Fehler bei der Antwort")
                 self.brain.provider.abort_turn(snapshot, user_text)
-                print(_c(f"\n[Da ist etwas schiefgegangen ({exc}). Versuch es einfach nochmal.]", YELLOW))
+                from ..schluessel import friendly_error
+
+                hint = friendly_error(exc, self.config.active_provider)
+                print(_c(f"\n[{hint}]" if hint else
+                         f"\n[Da ist etwas schiefgegangen ({exc}). Versuch es einfach nochmal.]", YELLOW))
                 continue
             finally:
                 self.thinking.stop()
@@ -586,6 +632,18 @@ class CLI:
             self._training_wheels_command(cmd.split()[1:])
         elif base == "/jarvis":
             self._jarvis_terminal()
+        elif base in ("/schluessel", "/schlüssel", "/key", "/api", "/apikey"):
+            from ..schluessel import find_key
+
+            key = find_key(cmd)
+            if key:
+                self._setup_key(key)
+            else:
+                print(_c(KEY_HINT, CYAN))
+        elif base == "/gehirn":
+            self._brain_command(cmd.split()[1:])
+        elif base == "/terminal":
+            print(_c("Du bist schon im Terminal. In die App: /app", CYAN))
         elif base in ("/tutorial", "/tour"):
             self._tutorial_terminal()
         elif base == "/aussehen":
@@ -887,7 +945,7 @@ class CLI:
             )
         )
         print(_c("Rede einfach los. '/hilfe' fuer Befehle, '/beenden' zum Schluss.", GREY))
-        if self.config.voice.f2_aufnahme and sys.stdin.isatty():
+        if self.config.voice.f2_aufnahme and sys.stdin is not None and sys.stdin.isatty():
             print(_c("Sprechen: bei leerer Zeile F2 halten (oder kurz druecken = Mikrofon an/aus).", GREY))
         if self.config.permissions.safe_mode:
             print(
@@ -909,6 +967,12 @@ class CLI:
         print(_c("Bis bald!", CYAN))
 
 
+KEY_HINT = (
+    "Mir fehlt noch der Schluessel fuer mein Gehirn. Fuege ihn einfach hier ein und druecke Enter - "
+    "ich pruefe ihn und richte alles ein:\n"
+    "  DeepSeek (guenstig): beginnt mit sk-...      -> https://platform.deepseek.com/api_keys\n"
+    "  Claude (stark):      beginnt mit sk-ant-...  -> https://console.anthropic.com/settings/keys"
+)
 JARVIS_HINT = (
     "\n\n[Sprachmodus: Antworte kurz und natuerlich gesprochen - ohne Tabellen, Code und Listen-Zeichen.]"
 )
