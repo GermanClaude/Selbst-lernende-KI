@@ -338,7 +338,10 @@ class CLI:
             print(_c(problem, YELLOW))
             return
         root, settings = self.config.project_root, self.config.voice
-        if settings.live_mitschrift and not live_available(root, settings) and not getattr(sys, "frozen", False):
+        from ..voice import _importable
+
+        can_setup = not getattr(sys, "frozen", False) or _importable("vosk")  # .exe: nur das Modell laden
+        if settings.live_mitschrift and not live_available(root, settings) and can_setup:
             print(_c("Ich richte einmalig die Live-Mitschrift ein (~50 MB) …", GREY))
             ok, message = setup_live(root, settings, progress=_progress_line)
             print(_c("\r" + message + " " * 10, CYAN if ok else YELLOW))

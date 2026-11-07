@@ -493,7 +493,9 @@ class AppController(CLI):
         """Erster Jarvis-Start: Live-Mitschrift (vosk + Modell) nebenbei einrichten."""
         from ..live import recognizer_factory, setup_live
 
-        if self._live_setup or self._live_setup_failed or getattr(sys, "frozen", False):
+        from ..voice import _importable
+
+        if self._live_setup or self._live_setup_failed or (getattr(sys, "frozen", False) and not _importable("vosk")):
             return
         self._live_setup = True
 

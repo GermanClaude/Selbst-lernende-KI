@@ -29,10 +29,20 @@ added_files = [
     (str(project_root / "assistant" / "umlaute.json"), "assistant"),  # schoene Texte in der App
 ]
 
+# Live-Mitschrift im Jarvis-Modus (Vosk): die DLL liegt im Paketordner.
+extra_binaries = []
+try:
+    import vosk  # noqa: F401
+    from PyInstaller.utils.hooks import collect_dynamic_libs
+
+    extra_binaries += collect_dynamic_libs("vosk")
+except Exception:  # noqa: BLE001 - ohne vosk: Jarvis-Modus ohne Live-Mitschrift
+    pass
+
 a = Analysis(
     [str(project_root / "run_ki.py")],
     pathex=[str(project_root)],
-    binaries=[],
+    binaries=extra_binaries,
     datas=added_files,
     # Optionale Extras werden nur eingebunden, wenn sie installiert sind.
     hiddenimports=["anthropic", "openai", "requests", "bs4", "webview"],

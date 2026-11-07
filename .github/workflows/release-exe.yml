@@ -48,6 +48,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt pyinstaller pywebview sounddevice SpeechRecognition pyttsx3 pyautogui pillow
 
+      - name: Live-Mitschrift (vosk) dazu
+        if: steps.version.outputs.neu == 'true'
+        continue-on-error: true
+        shell: bash
+        run: pip install vosk || pip install --use-pep517 vosk
+
       - name: KI.exe und KI-App.exe bauen
         if: steps.version.outputs.neu == 'true'
         run: pyinstaller packaging/ki.spec --noconfirm
