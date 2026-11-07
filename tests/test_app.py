@@ -402,3 +402,68 @@ def test_bad_requests_get_an_answer_and_meaning_with_backslash_is_saved(app, tmp
     from assistant.config import load_config
 
     assert load_config(tmp_path).ki.bedeutung == 'Mein "Assistent" C:\\Users'
+
+
+def test_jarvis_starts_only_once_and_never_cancels_a_typed_answer(app, monkeypatch):
+    import threading
+
+    server = app([_streamed("Hallo!")])
+    ctl = server.controller
+    ears = _fake_ear(monkeypatch, ctl)
+    results = []
+    threads = [threading.Thread(target=lambda: results.append(ctl.jarvis("start"))) for _ in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert len(ears) == 1 and all(r["ok"] for r in results)        # Doppelklick: nur EIN Jarvis-Modus
+    loop = ctl._live
+    gate = threading.Event()
+    ctl._live_turn = None
+    assert ctl.send("getippt")[0]                                   # getippte Nachricht, nicht von Jarvis
+    loop.host.cancel_turn(False)
+    assert not ctl.brain.provider.cancel_event.is_set()
+    gate.set()
+    _events_until(server, "done")
+    ctl.jarvis("stop")
+    old = loop
+    ctl.jarvis("start")
+    time.sleep(0.3)
+    old.host.event({"type": "jarvis", "state": "off"})              # verspaetetes "off" der alten Sitzung
+    assert ctl._jarvis_active()
+    ctl.jarvis("stop")
+
+
+def test_terminal_jarvis_answers_questions_by_voice(tmp_path, monkeypatch):
+    import threading
+
+    from assistant.permissions import Risk
+    from assistant.ui.cli import _TerminalLiveHost
+    from tests.test_erlauben import _cli
+
+    cli = _cli(tmp_path, [], monkeypatch)
+    host = _TerminalLiveHost(cli)
+
+    class Loop:
+        asked = []
+
+        def on_ask(self, text):
+            self.asked.append(text)
+
+    host.loop = Loop()
+    host.install()
+    out = {}
+    t = threading.Thread(target=lambda: out.setdefault("v", cli._permission_answer("Datei schreiben?", Risk.MODERATE)),
+                         daemon=True)
+    t.start()
+    for _ in range(100):
+        if host.pending_ask() and Loop.asked:
+            break
+        time.sleep(0.02)
+    ask = host.pending_ask()
+    assert ask["options"] == ["einmal", "immer", "nein"] and Loop.asked == ["Datei schreiben?"]
+    host.answer_ask(ask["id"], "immer")
+    t.join(2)
+    assert out["v"] == "immer"
+    host.uninstall()
+    assert "_permission_answer" not in cli.__dict__

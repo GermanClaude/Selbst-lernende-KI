@@ -103,7 +103,8 @@ class AppController(CLI):
         self._writer: _NoticeWriter | None = None
         self._voice_lock = threading.Lock()
         self._live = None            # laufender Jarvis-Modus (live.LiveLoop)
-        self._live_turn = False      # laeuft gerade eine Antwort, die der Jarvis-Modus gestartet hat?
+        self._live_turn = None       # der Jarvis-Modus (LiveLoop), dem die laufende Antwort gehoert
+        self._jarvis_lock = threading.Lock()
         self._drop_turn = False      # die angehaltene Antwort ganz zuruecknehmen (Nachtrag im Sprachmodus)
         self._live_setup = False     # Live-Mitschrift wird gerade eingerichtet
         self._live_setup_failed = False
@@ -232,8 +233,9 @@ class AppController(CLI):
         self._state_changed()
 
     # -- Senden -----------------------------------------------------------------
-    def send(self, text: str, model_text: str | None = None) -> tuple[bool, str]:
-        """text = was angezeigt wird; model_text = was die KI bekommt (z.B. mit Sprachmodus-Hinweis)."""
+    def send(self, text: str, model_text: str | None = None, live=None) -> tuple[bool, str]:
+        """text = was angezeigt wird; model_text = was die KI bekommt (z.B. mit Sprachmodus-Hinweis);
+        live = der Jarvis-Modus, dem diese Antwort gehoert (bekommt Text, Werkzeuge und das Ende)."""
         text = (text or "").strip()
         if not text:
             return False, "Leere Nachricht"
@@ -241,6 +243,8 @@ class AppController(CLI):
             if self.busy:
                 return False, "Ich arbeite noch an der letzten Nachricht - Stopp, um sie anzuhalten."
             self.busy = True
+            self._live_turn = live
+            self._drop_turn = False
         self.brain.provider.cancel_event.clear()
         threading.Thread(target=self._work, args=(text, None, model_text), name="ki-antwort", daemon=True).start()
         return True, ""
@@ -277,11 +281,12 @@ class AppController(CLI):
         finally:
             writer.flush_notice()
             self._writer = None
-            self.busy = False
-            live_turn, self._live_turn = self._live_turn, False
+            with self._lock:  # erst den Besitzer der Antwort merken, dann frei geben
+                live_turn, self._live_turn = self._live_turn, None
+                self.busy = False
             self._state_changed()
-            if live_turn and self._live is not None:
-                self._live.on_turn_end()
+            if live_turn is not None:
+                live_turn.on_turn_end()
         if quit_code is not None:
             self.on_quit(quit_code)
 
@@ -300,7 +305,6 @@ class AppController(CLI):
         self._event({"type": "user", "text": text})
         self._event({"type": "start"})
         self._answer_parts: list[str] = []
-        self._drop_turn = False
         snapshot = self.brain.provider.history_snapshot()
         try:
             answer = self.brain.respond(model_text or text, on_text=self._emit)
@@ -426,8 +430,8 @@ class AppController(CLI):
         return self._live is not None and not self._live.stop_event.is_set()
 
     def _live_hook(self, kind: str, text: str = "") -> None:
-        live = self._live
-        if live is None or not self._live_turn:
+        live = self._live_turn
+        if live is None:
             return
         if kind == "text":
             live.on_text(text)
@@ -436,7 +440,21 @@ class AppController(CLI):
         elif kind == "ask":
             live.on_ask(text)
 
-    def jarvis(self, action: str, tts: str = "client", turn: Any = None) -> dict:
+    def jarvis(self, action: str, tts: str = "client", turn: Any = None, seq: Any = None) -> dict:
+        if action in ("start", "stop"):
+            with self._jarvis_lock:  # Doppelklick / Befehl + Knopf: nur EIN Jarvis-Modus
+                return self._jarvis_start_stop(action, tts)
+        if action == "spoken":  # Fenster hat vorgelesen (seq = ein Satz, ohne seq = alles) -> weiter zuhoeren
+            if self._live is not None:
+                self._live.spoken(_int_or_none(turn), _int_or_none(seq))
+            return {"ok": True}
+        if action == "hush":  # Stopp im Jarvis-Fenster
+            if self._live is not None:
+                self._live.hush()
+            return {"ok": True}
+        return {"ok": False, "error": f"Unbekannt: {action}"}
+
+    def _jarvis_start_stop(self, action: str, tts: str) -> dict:
         from ..live import LiveLoop, LocalVoice, WindowVoice, live_available, recognizer_factory
 
         if action == "start":
@@ -455,7 +473,9 @@ class AppController(CLI):
             else:
                 voice_out = WindowVoice(self._event)
             factory = recognizer_factory(root, self.config.voice)
-            loop = LiveLoop(_LiveHost(self), voice_out, self.config.voice, recognizer_factory=factory)
+            host = _LiveHost(self)
+            loop = LiveLoop(host, voice_out, self.config.voice, recognizer_factory=factory)
+            host.loop = loop
             self._live = loop
             self.brain.provider.effort_override = (self.config.voice.live_denktiefe or "").strip() or None
             threading.Thread(target=self._run_live, args=(loop,), name="jarvis", daemon=True).start()
@@ -463,23 +483,10 @@ class AppController(CLI):
                 self._setup_live_in_background(loop)
             self._state_changed()
             return {"ok": True, "live": factory is not None}
-        if action == "stop":
-            if self._live is not None:
-                self._live.stop()
-            self._state_changed()
-            return {"ok": True}
-        if action == "spoken":  # Fenster hat fertig vorgelesen -> weiter zuhoeren
-            if self._live is not None:
-                try:
-                    self._live.spoken(int(turn) if turn is not None else None)
-                except (TypeError, ValueError):
-                    self._live.spoken(None)
-            return {"ok": True}
-        if action == "hush":  # Stopp im Jarvis-Fenster
-            if self._live is not None:
-                self._live.hush()
-            return {"ok": True}
-        return {"ok": False, "error": f"Unbekannt: {action}"}
+        if self._live is not None:
+            self._live.stop()
+        self._state_changed()
+        return {"ok": True}
 
     def _run_live(self, loop) -> None:
         try:
@@ -655,13 +662,23 @@ class AppController(CLI):
             logger.warning("Beim Beenden: %s", exc)
 
 
+def _int_or_none(value: Any) -> int | None:
+    try:
+        return int(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
 class _LiveHost:
     """Verbindet den Jarvis-Modus (live.LiveLoop) mit der App."""
 
     def __init__(self, ctl: AppController):
         self.ctl = ctl
+        self.loop = None
 
     def event(self, event: dict) -> None:
+        if self.ctl._live is not self.loop:
+            return  # ein alter, schon beendeter Jarvis-Modus - nichts mehr anzeigen
         if event.get("error"):
             event = dict(event, error=schoen(event["error"]))
         self.ctl._event(event)
@@ -670,13 +687,12 @@ class _LiveHost:
         return bool(self.ctl.busy)
 
     def start_turn(self, text: str) -> bool:
-        self.ctl._live_turn = True
-        ok, _err = self.ctl.send(text, model_text=text + JARVIS_HINT)
-        if not ok:
-            self.ctl._live_turn = False
+        ok, _err = self.ctl.send(text, model_text=text + JARVIS_HINT, live=self.loop)
         return ok
 
     def cancel_turn(self, drop: bool) -> None:
+        if self.ctl._live_turn is not self.loop:
+            return  # nur eigene Antworten anhalten (nicht z.B. eine getippte Nachricht)
         self.ctl._drop_turn = drop
         self.ctl.brain.provider.cancel()
 

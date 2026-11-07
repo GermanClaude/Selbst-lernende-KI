@@ -191,6 +191,7 @@ class Brain:
         self.system_prompt = build_system_prompt(self.config, self.memory)
         new = build_provider(self.config, self.system_prompt, self.registry, self.tool_ctx, client=old.client)
         new.usage, new.wait_fn, new.cancel_event = old.usage, old.wait_fn, old.cancel_event
+        new.effort_override = getattr(old, "effort_override", None)  # z.B. Jarvis-Modus: schnell antworten
         self.provider = new
 
     def end_session_summary(self) -> None:

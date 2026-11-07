@@ -446,6 +446,8 @@ class Speaker:
         self._idle = threading.Event()
         self._idle.set()
         self._engine = None
+        self.completed = 0      # fertig gesprochene Saetze (fuer den Jarvis-Modus)
+        self._generation = 0    # stop() beginnt eine neue Zaehlung
         self.available = _importable("pyttsx3")
         self._thread = threading.Thread(target=self._run, name="vorlesen", daemon=True) if self.available else None
         if self._thread:
@@ -472,14 +474,17 @@ class Speaker:
             self.available = False
             return
         while True:
-            text = self._queue.get()
-            if text is None:
+            item = self._queue.get()
+            if item is None:
                 return
+            generation, text = item
             try:
                 self._engine.say(text)
                 self._engine.runAndWait()
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Vorlese-Fehler: %s", exc)
+            if generation == self._generation:
+                self.completed += 1
             if self._queue.empty():
                 self._idle.set()
 
@@ -488,12 +493,13 @@ class Speaker:
         if not text or not self.available:
             return
         self._idle.clear()
-        self._queue.put(text)
+        self._queue.put((self._generation, text))
 
     def wait(self, timeout: float | None = None) -> bool:
         return self._idle.wait(timeout)
 
     def stop(self) -> None:
+        self._generation += 1
         try:
             while not self._queue.empty():
                 self._queue.get_nowait()

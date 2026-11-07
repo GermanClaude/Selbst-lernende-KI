@@ -341,9 +341,11 @@ class CLI:
         from ..voice import _importable
 
         can_setup = not getattr(sys, "frozen", False) or _importable("vosk")  # .exe: nur das Modell laden
-        if settings.live_mitschrift and not live_available(root, settings) and can_setup:
+        if (settings.live_mitschrift and not live_available(root, settings) and can_setup
+                and not getattr(self, "_live_setup_failed", False)):
             print(_c("Ich richte einmalig die Live-Mitschrift ein (~50 MB) …", GREY))
             ok, message = setup_live(root, settings, progress=_progress_line)
+            self._live_setup_failed = not ok  # nicht bei jedem /jarvis erneut versuchen
             print(_c("\r" + message + " " * 10, CYAN if ok else YELLOW))
         speaker = Speaker(settings.sprache or "de")
         if not speaker.available:
@@ -352,6 +354,7 @@ class CLI:
         host = _TerminalLiveHost(self)
         loop = LiveLoop(host, LocalVoice(speaker), settings, recognizer_factory=recognizer_factory(root, settings))
         host.loop = loop
+        host.install()  # Rueckfragen per Stimme ("ja", "immer", "nein")
         provider = self.brain.provider
         provider.effort_override = (settings.live_denktiefe or "").strip() or None
         print(_c("\n[Jarvis-Modus] Sprich einfach - ich hoere die ganze Zeit zu und du kannst mich jederzeit "
@@ -361,8 +364,9 @@ class CLI:
         except KeyboardInterrupt:
             pass
         finally:
-            provider.effort_override = None
+            self.brain.provider.effort_override = None
             host.wait()
+            host.uninstall()
             speaker.stop()
         print(_c("\n[Zurueck im Chat-Modus]", GREY))
 
@@ -946,6 +950,47 @@ class _TerminalLiveHost:
         self.loop = None
         self.worker: threading.Thread | None = None
         self.drop = False
+        self._asks: dict[str, dict] = {}
+        self._ask_ids = 0
+
+    # -- Rueckfragen per Stimme (ersetzt die Tastatur-Abfrage, solange Jarvis laeuft) --
+    def install(self) -> None:
+        self.cli._permission_answer = self._permission_answer
+        self.cli._ask_yes = self._ask_yes
+
+    def uninstall(self) -> None:
+        for name in ("_permission_answer", "_ask_yes"):
+            self.cli.__dict__.pop(name, None)
+
+    def _wait_for_answer(self, text: str, options: list[tuple[str, str]], default: str) -> str:
+        self._ask_ids += 1
+        ask_id = f"q{self._ask_ids}"
+        waiter = {"event": threading.Event(), "value": default, "options": [v for v, _ in options]}
+        self._asks[ask_id] = waiter
+        labels = ", ".join(f"'{label}'" for _, label in options)
+        print(_c(f"\n[Rueckfrage] {text.strip()}\n   Sag {labels}.", YELLOW))
+        if self.loop is not None:
+            self.loop.on_ask(text)
+        brain = getattr(self.cli, "brain", None)
+        cancel = getattr(getattr(brain, "provider", None), "cancel_event", None)
+        try:
+            while not waiter["event"].wait(0.25):
+                if cancel is not None and cancel.is_set():  # Strg+C / Jarvis beendet
+                    break
+        finally:
+            self._asks.pop(ask_id, None)
+        return waiter["value"]
+
+    def _permission_answer(self, message: str, risk: Risk) -> str:
+        options = [("einmal", "ja")]
+        if risk != Risk.AUTOSTART:
+            options.append(("immer", "immer"))
+        options.append(("nein", "nein"))
+        return self._wait_for_answer(message, options, "nein")
+
+    def _ask_yes(self, question: str, default: bool = False) -> bool:
+        text = question.strip().removesuffix("[j/N]").removesuffix("[J/n]").strip()
+        return self._wait_for_answer(text, [("ja", "ja"), ("nein", "nein")], "ja" if default else "nein") == "ja"
 
     def event(self, event: dict) -> None:
         kind = event.get("type")
@@ -1016,10 +1061,16 @@ class _TerminalLiveHost:
         return self.cli.voice_capture.transcribe(pcm)
 
     def pending_ask(self) -> dict | None:
+        for ask_id, waiter in reversed(list(self._asks.items())):
+            return {"id": ask_id, "options": waiter["options"]}
         return None
 
-    def answer_ask(self, ask_id: str, value: str) -> None:  # noqa: ARG002
-        return None
+    def answer_ask(self, ask_id: str, value: str) -> None:
+        waiter = self._asks.get(ask_id)
+        if waiter is not None:
+            waiter["value"] = value
+            waiter["event"].set()
+            print(_c(f"   -> {value}", GREY))
 
     def is_exit(self, text: str) -> bool:
         return _is_exit_phrase(text)

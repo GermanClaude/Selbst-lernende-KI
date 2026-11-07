@@ -212,7 +212,7 @@ class AppServer:
                     return self._json(ctl.memory_action(body))
                 if url.path == "/api/jarvis":
                     return self._json(ctl.jarvis(str(body.get("action", "")), str(body.get("tts", "client")),
-                                                 body.get("turn")))
+                                                 body.get("turn"), body.get("seq")))
                 if url.path == "/api/tutorial":
                     return self._json(ctl.tutorial_action(str(body.get("action", ""))))
                 return self._deny(404)

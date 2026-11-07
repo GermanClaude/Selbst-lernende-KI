@@ -216,7 +216,7 @@ class FakeVoice:
         self.stopped += 1
         self._idle = True
 
-    def spoken(self, turn=None):
+    def spoken(self, turn=None, seq=None):
         self._idle = True
 
     def idle(self):
@@ -463,3 +463,152 @@ def test_app_texts_get_real_umlauts_but_paths_and_unknown_words_stay():
     assert schoen(r"C:\Users\fuer\a.txt und pfad/zu/fuer.txt") == r"C:\Users\fuer\a.txt und pfad/zu/fuer.txt"
     assert schoen("Stuetzraeder") == "St\u00fctzr\u00e4der"
     assert schoen("Lies fuer.txt, das ist schoen.") == "Lies fuer.txt, das ist sch\u00f6n."
+
+
+# -- Fehler aus der Pruefung (Regressionstests) ------------------------------------
+class ProgressVoice(FakeVoice):
+    """Wie das App-Fenster mit Rueckmeldung pro Satz."""
+
+    def __init__(self):
+        super().__init__()
+        self.done = 0
+
+    def say(self, text, seq):
+        super().say(text, seq)
+        self.last = seq
+
+    def finish(self, seq):
+        self.done = seq
+        if seq >= self.last:
+            self._idle = True
+
+    def done_seq(self):
+        return self.done
+
+
+def _ploop():
+    host, voice_ = FakeHost(), ProgressVoice()
+    return LiveLoop(host, voice_, SETTINGS, ear=FakeEar()), host, voice_
+
+
+def test_a_cough_after_the_answer_was_streamed_resumes_where_she_was():
+    loop, host, voice_ = _ploop()
+    step(loop, "utterance", Utterance("Erzaehl was", b"", 1.0))
+    step(loop, "text", "Es war einmal ein König. Der hatte drei Töchter, die alle sehr klug waren und viel lasen. "
+                       "Eines Tages kam ein Drache in das Land und alle erschraken sehr, auch der König selbst. ")
+    step(loop, "turn_end")
+    voice_.finish(1)                                   # Satz 1 ist gesagt, Satz 2 laeuft gerade
+    step(loop, "barge")
+    step(loop, "dropped")                              # war nur ein Husten
+    assert voice_.stopped == 1 and host.cancels == []
+    assert voice_.said[-1].startswith("Eines Tages") and voice_.said[-2].startswith("Der hatte")
+    assert loop.speaking
+
+
+def test_answering_a_question_by_voice_keeps_the_rest_of_the_answer():
+    loop, host, voice_ = _ploop()
+    step(loop, "utterance", Utterance("Schreib die Datei", b"", 1.0))
+    step(loop, "text", "Klar, mache ich.\n")
+    step(loop, "tool")
+    host.ask = {"id": "q1", "options": ["einmal", "immer", "nein"]}
+    step(loop, "ask", "Neu anlegen: C:\\Spiel\\figuren.py")
+    assert "figuren.py" in voice_.said[-1] and "Spiel" not in voice_.said[-1]
+    assert voice_.ended                                 # Fenster meldet, wenn die Frage gesagt ist
+    step(loop, "barge")                                 # "Ja" waehrend sie noch fragt
+    step(loop, "utterance", Utterance("Ja", b"", 0.4))
+    assert host.answers == [("q1", "einmal")]
+    host.ask = None
+    step(loop, "text", "Erledigt, die Datei ist da.")
+    step(loop, "turn_end")
+    assert voice_.said[-1] == "Erledigt, die Datei ist da."
+
+
+def test_stop_words_only_as_whole_short_commands():
+    for text in ("Was ist der Inhalt", "Wie hoch ist mein Gehalt", "Wo ist die nächste Haltestelle",
+                 "Das ist halt so", "Ruf das Wartezimmer an", "Starte die Stoppuhr"):
+        assert not live.is_stop(text), text
+    for text in ("Stopp!", "Stop", "Hör auf", "Halt", "Warte kurz", "Abbrechen bitte"):
+        assert live.is_stop(text), text
+    loop, host, voice_ = _loop()
+    step(loop, "utterance", Utterance("Wo ist die nächste Haltestelle", b"", 1.0))
+    assert host.turns == ["Wo ist die nächste Haltestelle"]
+
+
+def test_nova_does_not_talk_over_you_and_ambiguous_answers_are_asked_again():
+    loop, host, voice_ = _loop()
+    step(loop, "utterance", Utterance("Wie wird das Wetter", b"", 1.0))
+    step(loop, "onset")                                 # du redest noch weiter ...
+    step(loop, "text", "Morgen wird es sonnig. ")
+    assert voice_.said == []                            # ... also wartet sie
+    step(loop, "dropped")                               # war nichts
+    assert voice_.said == ["Morgen wird es sonnig."]
+    assert voice_choice("Sag bitte ja, immer oder nein", ["einmal", "immer", "nein"]) is None
+    assert voice_choice("Ja, lass mal", ["einmal", "nein"]) == "einmal"
+
+
+def test_speech_outside_a_turn_finishes_and_novas_own_echo_is_ignored():
+    loop, host, voice_ = _ploop()
+    host.ask = {"id": "q1", "options": ["einmal", "nein"]}
+    step(loop, "utterance", Utterance("Was meinst du damit", b"", 1.0))
+    assert voice_.said == ["Sag bitte ja, immer oder nein."] and voice_.ended
+    step(loop, "utterance", Utterance("Sag bitte ja immer oder nein", b"", 1.5))   # Echo aus dem Lautsprecher
+    assert host.answers == []
+    voice_.finish(1)
+    step(loop, "spoken")
+    assert not loop.speaking and loop.ear.nova[-1] is False
+
+
+def test_ear_learns_echo_only_from_audible_blocks():
+    import random
+
+    random.seed(3)
+    quiet = _block(40)
+    ear_box = {}
+
+    def run(blocks, nova_from):
+        got: queue.Queue = queue.Queue()
+
+        def nova(i):
+            if i == nova_from and "ear" in ear_box:
+                ear_box["ear"].set_nova_speaking(True)
+
+        ear = Ear(lambda k, d: got.put((k, d)), sd_module=FakeSD(blocks, nova), pause=0.6)
+        ear_box["ear"] = ear
+        ear.start()
+        kinds, end = [], time.monotonic() + 4
+        while time.monotonic() < end:
+            try:
+                kinds.append(got.get(timeout=0.1)[0])
+            except queue.Empty:
+                if len(kinds) and time.monotonic() > end - 2.5:
+                    break
+        ear.stop()
+        return [k for k in kinds if k != "level"]
+
+    echo = [_block(int(2500 * random.uniform(0.6, 1.4))) for _ in range(60)]
+    # Nova sagt etwas, dann 8 s Werkzeug-Arbeit (still), dann spricht sie gleich laut weiter
+    assert "barge" not in run([quiet] * 12 + echo[:20] + [quiet] * 160 + echo, nova_from=12)
+    # Vorlesen beginnt erst 0,8 s nach dem Satz (langsame Stimme)
+    assert "barge" not in run([quiet] * 12 + [quiet] * 16 + echo, nova_from=12)
+
+
+def test_ear_adapts_when_the_room_gets_louder():
+    quiet, fan = _block(40), _block(600)
+    seen, _ = _run_ear([quiet] * 20 + [fan] * 300 + [_block(9000)] * 12 + [fan] * 20, "utterance",
+                       pause=0.6, max_seconds=40.0)
+    utts = [d for k, d in seen if k == "utterance"]
+    assert utts[0].seconds < 8                           # nicht 40 s lang "Sprache"
+
+
+def test_window_voice_reports_each_sentence():
+    events = []
+    wv = live.WindowVoice(events.append)
+    wv.begin(3)
+    wv.say("Eins.", 1)
+    wv.say("Zwei.", 2)
+    wv.spoken(3, 1)
+    assert not wv.idle() and wv.done_seq() == 1
+    wv.spoken(2, 2)                                      # alte Runde: egal
+    assert not wv.idle()
+    wv.spoken(3, 2)
+    assert wv.idle()
