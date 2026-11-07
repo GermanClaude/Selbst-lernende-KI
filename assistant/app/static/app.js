@@ -398,7 +398,7 @@
   const tourEl = byId('tour');
   const cmodal = byId('cmodal');
   const jv = {
-    open: false, starting: false, cancelStart: false, closing: false, closeTimer: 0, closeWaiters: [],
+    open: false, starting: false, cancelStart: false, closing: false, closeTimer: 0, closeWaiters: [], left: false,
     leaveTimer: 0, openedAt: 0, state: 'starting', label: '', labelTimer: 0, working: false,
     live: null, setupText: '', setupFailed: false, focusBack: null, noteTimer: 0,
     words: [], heardFinal: false, heardStale: false, heardTimer: 0, subsTimer: 0,
@@ -535,9 +535,17 @@
     setBusy(!!s.busy);
     profileNames();
     updateEmpty();
-    // Jarvis-Modus laeuft beim Server (z.B. nach dem Neuverbinden), Fenster zeigt ihn nicht – oder umgekehrt
-    if (s.jarvis === true && !jv.open && !jv.closing && !ended) openJarvisView(false, 'listening');
-    else if (s.jarvis === false && jv.open && !jv.starting && performance.now() - jv.openedAt > 2500) closeJarvisView();
+    // Jarvis-Modus laeuft beim Server (z.B. zweites Fenster, Neuverbinden), Fenster zeigt ihn nicht – oder umgekehrt
+    if (s.jarvis === true && !jv.open && !jv.left && !ended) {
+      const st = String(s.jarvis_state || '');
+      openJarvisView(false, JV_STATES.has(st) ? st : 'listening');
+      jv.live = !!s.jarvis_live;
+      renderLive();
+    } else if (s.jarvis === true && jv.open && s.jarvis_live === true && jv.live !== true) {
+      jv.live = true;
+      jv.setupFailed = false;
+      renderLive();
+    } else if (s.jarvis === false && jv.open && !jv.starting && performance.now() - jv.openedAt > 2500) closeJarvisView();
   }
 
   const WHEELS_SUB = {
@@ -772,7 +780,7 @@
   // =====================================================================
   let stick = true;
   let lastTop = 0;
-  let userUpAt = 0;      // wann der Nutzer zuletzt nach oben gescrollt hat (Rad, Tasten)
+  let userUpAt = -Infinity; // wann der Nutzer zuletzt nach oben gescrollt hat (Rad, Tasten)
   let dragging = false;  // Bildlaufleiste oder Finger wird gerade gezogen
   const jumpBtn = byId('jump');
   const distBottom = () => scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
@@ -812,7 +820,7 @@
   window.addEventListener('touchcancel', endDrag, { passive: true });
   let scrollQueued = false;
   function toBottom(force) {
-    if (force) stick = true;
+    if (force) { stick = true; jumpBtn.hidden = true; }
     if (scrollQueued) return;
     scrollQueued = true;
     requestAnimationFrame(() => {
@@ -825,6 +833,7 @@
   }
   function keepBottom() {
     if (stick) toBottom();
+    else if (distBottom() < 2) { stick = true; jumpBtn.hidden = true; } // nichts zum Scrollen da
     else if (msgs.childElementCount) jumpBtn.hidden = false;
   }
   jumpBtn.addEventListener('click', () => { jumpBtn.hidden = true; toBottom(true); });
@@ -1704,12 +1713,12 @@
     appendToInput(text);
   }
 
-  async function voiceCancel() {
+  async function voiceCancel(quiet) {
     const startP = voice.startP;
     const wasRemote = voice.phase === 'remote';
     voice.quietUntil = Date.now() + 3000;
     voiceReset();
-    toast('Aufnahme abgebrochen');
+    if (!quiet) toast('Aufnahme abgebrochen');
     if (startP) await startP;
     if (startP || wasRemote) post('/api/voice', { action: 'cancel' });
   }
@@ -3081,7 +3090,7 @@
     ? window.speechSynthesis : null;
   const tts = {
     voice: null, voices: 0, waiting: false, waitTimer: 0, noVoice: !synth, blocked: false, fails: 0,
-    queue: [], cur: null, ends: new Map(), answered: new Set(), maxTurn: 0, cooldown: 0, pumpTimer: 0,
+    queue: [], cur: null, ends: new Map(), answered: new Set(), maxTurn: 0, cooldown: 0, pumpTimer: 0, followAt: 0,
   };
 
   function voiceRank(v) {
@@ -3118,9 +3127,106 @@
     loadVoices();
   }
 
+  // ---------- Mehrere Fenster: nur eines liest vor ----------
+  // Sind zwei Fenster offen (z.B. Browser-Ersatz), liest nur das Fenster vor, in dem Jarvis
+  // gestartet wurde – sonst das, das vorne ist. Die anderen zeigen nur Untertitel und melden
+  // kein "spoken" (sonst redet Nova doppelt und das schnellere Fenster meldet "fertig").
+  const WIN_ID = (() => {
+    try { if (window.crypto && typeof crypto.randomUUID === 'function') return crypto.randomUUID(); } catch (_) { /* egal */ }
+    return Math.random().toString(36).slice(2) + Date.now().toString(36);
+  })();
+  const lead = { owner: '', rank: -1, timer: 0, silent: new Set() };
+  let leadBc = null;
+  try { if (typeof BroadcastChannel === 'function') leadBc = new BroadcastChannel('ki-jarvis-stimme'); } catch (_) { leadBc = null; }
+  const iSpeak = () => lead.owner === WIN_ID;
+  function leadSend(t) {
+    if (!leadBc) return;
+    try { leadBc.postMessage({ t, id: WIN_ID, rank: lead.rank }); } catch (_) { /* egal */ }
+  }
+  /** Dieses Fenster liest vor. rank: 2 = hier gestartet, 1 = Fenster ist vorne, 0 = sonst. */
+  function leadClaim(rank) {
+    clearTimeout(lead.timer);
+    lead.timer = 0;
+    lead.owner = WIN_ID;
+    lead.rank = rank;
+    leadSend('own');
+    // Was ein anderes (inzwischen weg) Fenster melden sollte: Nova ist hier still
+    for (const turn of lead.silent) {
+      if (turn >= tts.maxTurn && jv.open && !jv.left) post('/api/jarvis', { action: 'spoken', turn });
+    }
+    lead.silent.clear();
+    if (rank < 2 && !tts.cur && !tts.queue.length) ttsWarmup(); // beim Knopf-Start macht das startJarvis
+    ttsPump();
+  }
+  /** Ein anderes Fenster liest vor: hier still sein, nur noch Untertitel. */
+  function leadYield(id, rank) {
+    clearTimeout(lead.timer);
+    lead.timer = 0;
+    lead.owner = id;
+    lead.rank = rank;
+    const cur = dropCur();
+    if (cur) {
+      if (!cur.shown) showSub(cur.it.text);
+      ttsCancelSynth();
+    }
+    ttsPump();
+  }
+  function leadLater(ms) {
+    clearTimeout(lead.timer);
+    lead.timer = setTimeout(() => {
+      lead.timer = 0;
+      if (jv.open && !lead.owner) leadClaim(document.hasFocus() ? 1 : 0);
+    }, ms);
+  }
+  /** Beim Oeffnen der Ansicht: wer liest vor? started = hier per Knopf/Befehl gestartet. */
+  function leadElect(started) {
+    clearTimeout(lead.timer);
+    lead.timer = 0;
+    lead.silent.clear();
+    lead.owner = '';
+    lead.rank = -1;
+    if (started || !leadBc) { leadClaim(started ? 2 : 1); return; }
+    leadSend('who'); // liest schon ein Fenster vor? Es antwortet sofort.
+    leadLater(document.hasFocus() ? 150 : 450); // sonst: das vordere Fenster zuerst
+  }
+  /** Ansicht zu: ein anderes Fenster darf uebernehmen. */
+  function leadRelease() {
+    clearTimeout(lead.timer);
+    lead.timer = 0;
+    if (iSpeak()) leadSend('free');
+    lead.owner = '';
+    lead.rank = -1;
+    lead.silent.clear();
+  }
+  if (leadBc) {
+    leadBc.onmessage = (e) => {
+      const m = e && e.data;
+      if (!m || typeof m !== 'object' || typeof m.id !== 'string' || m.id === WIN_ID) return;
+      const rank = Number(m.rank) || 0;
+      if (m.t === 'who') { if (jv.open && iSpeak()) leadSend('own'); return; }
+      if (!jv.open) return;
+      if (m.t === 'free') {
+        if (lead.owner === m.id) { lead.owner = ''; lead.rank = -1; leadLater(document.hasFocus() ? 60 : 300); }
+        return;
+      }
+      if (m.t !== 'own') return;
+      if (iSpeak()) {
+        // beide wollen vorlesen: der hoehere Rang gewinnt, bei Gleichstand die kleinere Kennung
+        if (rank > lead.rank || (rank === lead.rank && m.id < WIN_ID)) leadYield(m.id, rank);
+        else leadSend('own');
+        return;
+      }
+      clearTimeout(lead.timer);
+      lead.timer = 0;
+      lead.owner = m.id;
+      lead.rank = rank;
+      ttsPump();
+    };
+  }
+
   /** Beim Start (Nutzer-Geste): stumme Utterance, damit der erste Satz sofort kommt. */
   function ttsWarmup() {
-    if (!synth) return;
+    if (!synth || !iSpeak()) return;
     try {
       synth.cancel();
       const u = new SpeechSynthesisUtterance(' ');
@@ -3133,6 +3239,7 @@
   /** Neue Jarvis-Sitzung: Runden fangen beim Server wieder bei 1 an. */
   function ttsSession() {
     ttsStop();
+    tts.followAt = 0;
     tts.answered.clear();
     tts.maxTurn = 0;
     tts.blocked = false;
@@ -3173,21 +3280,29 @@
     clearTimeout(tts.pumpTimer);
     clearTimeout(tts.waitTimer);
     tts.waiting = false;
-    if (had || (synth && (synth.speaking || synth.pending))) ttsCancelSynth();
+    // nur die eigene Sprache abbrechen (cancel() traefe sonst auch das Fenster, das gerade vorliest)
+    if (had || (iSpeak() && synth && (synth.speaking || synth.pending))) ttsCancelSynth();
   }
 
   /** hush: sofort still, Warteschlange leeren – dafuer kein "spoken". */
   function ttsHush() {
     tts.queue.length = 0;
-    dropCur();
+    const had = dropCur();
     tts.ends.clear();
+    lead.silent.clear();
+    tts.followAt = 0;
     clearTimeout(tts.pumpTimer);
-    ttsCancelSynth();
+    if (had || iSpeak()) ttsCancelSynth(); // ein Fenster, das nur mitliest, hat nichts abzubrechen
     markSubCut();
   }
 
+  /** speak = vorlesen, show = sofort als Untertitel (und melden), follow = ein anderes Fenster
+   *  liest vor: Untertitel ungefaehr im Sprechtempo, ohne Meldung, wait = noch warten. */
   function speakMode(it) {
-    if (it.local || !synth || tts.noVoice || tts.blocked) return 'show';
+    if (it.local) return 'show';
+    if (!lead.owner) return 'wait'; // noch offen, welches Fenster vorliest (hoechstens ~0,5 s)
+    if (!iSpeak()) return 'follow';
+    if (!synth || tts.noVoice || tts.blocked) return 'show';
     return tts.waiting ? 'wait' : 'speak';
   }
 
@@ -3198,10 +3313,12 @@
       const it = tts.queue[0];
       const mode = speakMode(it);
       if (mode === 'wait') return;
-      const wait = tts.cooldown - performance.now();
-      if (mode === 'speak' && wait > 0) { tts.pumpTimer = setTimeout(ttsPump, wait + 5); return; }
+      const now = performance.now();
+      const wait = mode === 'speak' ? tts.cooldown - now : mode === 'follow' ? tts.followAt - now : 0;
+      if (wait > 0) { tts.pumpTimer = setTimeout(ttsPump, wait + 5); return; }
       tts.queue.shift();
-      if (mode === 'show') {
+      if (mode === 'show' || mode === 'follow') {
+        if (mode === 'follow') tts.followAt = now + clamp(it.text.length * 65, 900, 8000);
         showSub(it.text);
         orb.kick(0.8);
         if (!it.local) reportSeq(it);
@@ -3246,8 +3363,9 @@
     if (!cur.shown) { cur.shown = true; showSub(cur.it.text); }
     if (err === 'timeout') ttsCancelSynth();
     if (err === 'not-allowed') {
+      // Browser erlaubt Sprache erst nach einem Klick/Tastendruck (z.B. neues Fenster, neu geladen)
+      if (!tts.blocked) showNote('Vorlesen ist gerade blockiert – klick einmal ins Fenster, dann lese ich wieder vor.', 'soft', 7000);
       tts.blocked = true;
-      showNote('Vorlesen ist hier gerade blockiert – ich zeige dir die Antwort als Untertitel.', 'soft', 6000);
     } else if (err && err !== 'interrupted' && err !== 'canceled' && err !== 'timeout') {
       if (++tts.fails >= 2) tts.noVoice = true; // Stimme geht nicht: nur noch Untertitel
     } else if (!err) tts.fails = 0;
@@ -3257,7 +3375,7 @@
 
   /** Fortschritt: dieser Satz ist fertig (die KI weiss so genau, wann Nova still ist). */
   function reportSeq(it) {
-    if (!it.seq || !jv.open || jv.closing) return;
+    if (!it.seq || !jv.open || jv.left || !iSpeak()) return; // nur das vorlesende Fenster meldet
     post('/api/jarvis', { action: 'spoken', turn: it.turn, seq: it.seq });
   }
 
@@ -3269,12 +3387,22 @@
       tts.ends.delete(turn);
       if (tts.answered.has(key)) continue;
       tts.answered.add(key);
-      if (jv.open && !jv.closing) post('/api/jarvis', { action: 'spoken', turn });
+      if (!jv.open || jv.left) continue;
+      if (iSpeak()) post('/api/jarvis', { action: 'spoken', turn });
+      else lead.silent.add(turn); // meldet das vorlesende Fenster (faellt es weg: siehe leadClaim)
     }
   }
 
+  /** Nach "not-allowed": beim naechsten Klick/Tastendruck im Jarvis-Modus wieder vorlesen. */
+  function ttsUnblock() {
+    if (!tts.blocked || !jv.open || !iSpeak()) return;
+    tts.blocked = false;
+    tts.fails = 0;
+    ttsWarmup();
+  }
+
   function onSay(ev) {
-    if (jv.closing || ended) return;
+    if (jv.left || ended) return; // Nutzer hat Jarvis verlassen: bis "off" nichts mehr vorlesen
     const turn = Number(ev.turn) || 0;
     const text = String(ev.text == null ? '' : ev.text).trim();
     if (!jv.open) openJarvisView(false); // Jarvis laeuft (z.B. von woanders gestartet)
@@ -3285,6 +3413,7 @@
       if (old.length) tts.queue = tts.queue.filter((it) => it.turn >= turn);
       if (tts.cur && tts.cur.it.turn < turn) { dropCur(); ttsCancelSynth(); }
       tts.maxTurn = turn;
+      tts.followAt = 0;
     }
     if (!text) return;
     tts.queue.push({ turn, seq: Number(ev.seq) || 0, text, local: !!ev.local });
@@ -3292,8 +3421,9 @@
   }
 
   function onSayEnd(ev) {
-    if (jv.closing || ended || !jv.open) return;
+    if (jv.left || ended || !jv.open) return;
     const turn = Number(ev.turn) || 0;
+    if (turn && turn < tts.maxTurn) return; // veraltete Runde
     const key = turn + ':' + (Number(ev.count) || 0);
     if (tts.answered.has(key)) return; // dieses say_end ist schon beantwortet
     tts.ends.set(turn, key);
@@ -3301,7 +3431,7 @@
   }
 
   function onHush() {
-    if (jv.closing || ended || !jv.open) return;
+    if (jv.left || ended || !jv.open) return;
     ttsHush();
   }
 
@@ -3616,6 +3746,7 @@
     byId('jv-live').hidden = jv.live !== true;
     const setup = byId('jv-setup');
     setup.hidden = jv.live !== false;
+    jvEl.classList.toggle('setup-on', !setup.hidden); // schmal: Hinweis darunter statt darueber
     if (jv.live === false) {
       setup.querySelector('.spinner').hidden = jv.setupFailed;
       byId('jv-setup-text').textContent = jv.setupFailed
@@ -3742,9 +3873,12 @@
     jv.live = null;
     jv.setupFailed = false;
     jv.focusBack = document.activeElement;
+    // laufende Aufnahme (F2/Mikrofon-Knopf) abbrechen – das Mikrofon gehoert jetzt Jarvis
+    if (voice.phase === 'starting' || voice.phase === 'recording' || voice.phase === 'remote') voiceCancel(true);
     closeSidebar();
     closeCmdPop();
     ttsSession();
+    leadElect(!!starting);
     clearHeard();
     clearSubs();
     hideNote();
@@ -3765,6 +3899,7 @@
     jv.open = false;
     jv.starting = false;
     ttsStop();
+    leadRelease();
     hideNote();
     clearTimeout(jv.labelTimer);
     jvEl.classList.add('leaving');
@@ -3787,9 +3922,12 @@
     } else if (!pmodal.hidden && modal.hidden) panel.focus();
   }
 
-  /** Schliessen lokal: bis "off" kommt, gehoeren Ereignisse noch zur alten Sitzung. */
+  /** Schliessen lokal: bis "off" kommt, gehoeren Ereignisse noch zur alten Sitzung und werden
+   *  ignoriert (jv.left) – auch wenn das dauert (z.B. Umwandeln ohne Live-Mitschrift).
+   *  Die 3 s (jv.closing) gelten nur dafuer, wie lange ein neuer Start auf "off" wartet. */
   function beginClosing() {
     jv.closing = true;
+    jv.left = true;
     clearTimeout(jv.closeTimer);
     jv.closeTimer = setTimeout(endClosing, 3000);
   }
@@ -3810,10 +3948,11 @@
     if (jv.open) { jvEl.focus(); return; }
     if (jv.closing) await waitClosed(); // alte Sitzung erst ganz beenden
     if (ended || jv.open) return;
+    jv.left = false; // neue Sitzung
     openJarvisView(true);
     ttsWarmup(); // nach dem Zuruecksetzen der Warteschlange (das wuerde sie sonst gleich abbrechen)
     jv.cancelStart = false;
-    const r = await post('/api/jarvis', { action: 'start', tts: 'client' });
+    const r = await post('/api/jarvis', { action: 'start', tts: 'client', progress: true });
     const cancelled = jv.cancelStart;
     jv.cancelStart = false;
     jv.starting = false;
@@ -3840,7 +3979,11 @@
     if (wasStarting) { jv.cancelStart = true; return; }
     beginClosing();
     post('/api/jarvis', { action: 'stop' }).then((r) => {
-      if (!r.ok) toast(r.error || 'Der Jarvis-Modus ließ sich nicht beenden.', 'error');
+      if (r.ok) return;
+      // Jarvis laeuft weiter: seine Ereignisse wieder zeigen (die Ansicht oeffnet sich dann erneut)
+      jv.left = false;
+      endClosing();
+      toast(r.error || 'Der Jarvis-Modus ließ sich nicht beenden.', 'error');
     });
   }
 
@@ -3855,14 +3998,15 @@
   function onJarvisEvent(ev) {
     const st = String(ev.state || '');
     if (st === 'off') {
+      jv.left = false;
       endClosing();
       if (jv.open) closeJarvisView();
       else ttsStop();
       if (ev.error) addError(String(ev.error));
       return;
     }
-    if (jv.closing || ended || !JV_STATES.has(st)) return;
-    if (!jv.open) openJarvisView(false); // z.B. serverseitig gestartet
+    if (jv.left || ended || !JV_STATES.has(st)) return; // verlassen: spaete Ereignisse bis "off" ignorieren
+    if (!jv.open) openJarvisView(false, st); // z.B. serverseitig gestartet
     const prev = jv.state;
     jv.state = st;
     jv.working = st === 'thinking' && !!ev.working;
@@ -3879,7 +4023,7 @@
   }
 
   function onHeard(ev) {
-    if (!jv.open || jv.closing) return;
+    if (!jv.open || jv.left) return;
     const text = String(ev.text == null ? '' : ev.text).trim();
     if (!ev.final) {
       if (jv.live !== true) { jv.live = true; jv.setupFailed = false; renderLive(); }
@@ -3901,12 +4045,23 @@
   byId('jv-chat').addEventListener('click', chatMode);
   byId('jv-close').addEventListener('click', chatMode);
   byId('jv-stop').addEventListener('click', jvHush);
-  window.addEventListener('pagehide', () => { if (synth) { try { synth.cancel(); } catch (_) { /* egal */ } } });
+  // Klick/Taste im Jarvis-Modus (auch im Rueckfrage-Dialog darueber): blockiertes Vorlesen wieder erlauben
+  const jvGesture = () => { if (jv.open) ttsUnblock(); };
+  document.addEventListener('pointerdown', jvGesture, true);
+  document.addEventListener('keydown', jvGesture, true);
+  window.addEventListener('pagehide', () => {
+    const mine = iSpeak() || !!tts.cur;
+    leadRelease(); // ein anderes Fenster liest weiter vor
+    if (synth && mine) { try { synth.cancel(); } catch (_) { /* egal */ } }
+  });
+  // aus dem Zwischenspeicher des Browsers zurueck: neu klaeren, wer vorliest
+  window.addEventListener('pageshow', (e) => { if (e.persisted && jv.open) leadElect(false); });
 
   // =====================================================================
   // Tour: Nova zeigt alles (Spotlight auf Elemente mit data-tour)
   // =====================================================================
   const tourCard = byId('tour-card');
+  const tourTextEl = byId('tour-text');
   const tourSpot = byId('tour-spot');
   const tourDim = byId('tour-dim');
   const TOUR_TARGETS = new Set(['eingabe', 'mikrofon', 'jarvis', 'profil', 'stuetzraeder']);
@@ -3939,7 +4094,7 @@
     tourCard.classList.add('no-anim');
     updateInert();
     updateEmpty();
-    window.addEventListener('resize', tourReflow);
+    window.addEventListener('resize', tourResize);
     document.addEventListener('scroll', tourReflow, true);
     tourStep(0);
   }
@@ -3963,6 +4118,11 @@
     clearTimeout(tour.waitTimer);
     const st = tour.steps[tour.i];
     const target = tourTarget(st.ziel);
+    // Ziel beobachten: waechst es (z.B. Eingabefeld beim Tippen), wandert das Spotlight mit
+    if (tourRO && tour.target !== target) {
+      if (tour.target) tourRO.unobserve(tour.target);
+      if (target) tourRO.observe(target);
+    }
     tour.target = target;
     const inSidebar = !!target && byId('sidebar').contains(target);
     if (inSidebar && isDrawer()) {
@@ -3973,7 +4133,9 @@
       const r = parseFloat(getComputedStyle(target).borderTopLeftRadius) || 10;
       tourSpot.style.borderRadius = Math.min(28, r + 6) + 'px';
     }
+    tourCard.style.maxWidth = ''; // evtl. schmaler gemachte Karte (tourPlace) zuruecksetzen
     renderTour();
+    tourTextEl.scrollTop = 0;
     tourCard.classList.remove('fresh');
     void tourCard.offsetWidth; // Einblende-Animation neu starten (einmal pro Schritt)
     tourCard.classList.add('fresh');
@@ -4017,11 +4179,18 @@
   }
 
   let tourQueued = false;
+  function tourResize() { tourCard.style.maxWidth = ''; tourReflow(); }
   function tourReflow() {
     if (tourQueued || !tour.open) return;
     tourQueued = true;
-    requestAnimationFrame(() => { tourQueued = false; tourPlace(); });
+    requestAnimationFrame(() => { tourQueued = false; tourPlace(); tourTextFade(); });
   }
+  /** Wird der Text gescrollt (wenig Platz), zeigt ein weicher Rand unten: da kommt noch mehr. */
+  function tourTextFade() {
+    const t = tourTextEl;
+    t.classList.toggle('more', t.scrollHeight - t.scrollTop - t.clientHeight > 2);
+  }
+  tourTextEl.addEventListener('scroll', tourTextFade, { passive: true });
   /** Eine Weile jedem Bild folgen (z.B. waehrend die Seitenleiste hereingleitet). */
   function tourFollow(ms) {
     const until = performance.now() + ms;
@@ -4029,6 +4198,7 @@
     const step = () => {
       tourPlace();
       if (performance.now() < until && tour.open) tour.follow = requestAnimationFrame(step);
+      else tourTextFade();
     };
     tour.follow = requestAnimationFrame(step);
   }
@@ -4046,9 +4216,13 @@
       const r = t.getBoundingClientRect();
       if (r.width && r.height && r.bottom > 0 && r.top < vh && r.right > 0 && r.left < vw) rect = r;
     }
-    const cw = tourCard.offsetWidth;
-    const ch = tourCard.offsetHeight;
+    if (tour.demo && tourCard.style.maxWidth) tourCard.style.maxWidth = '';
+    let cw = tourCard.offsetWidth;
+    // volle Hoehe der Karte – auch wenn sie gerade begrenzt ist (dann scrollt nur der Text)
+    const full = tourCard.offsetHeight - tourTextEl.clientHeight + tourTextEl.scrollHeight;
     const pad = 6;
+    const gap = pad + 14;
+    let maxH = vh - 2 * M;
     let x;
     let y;
     if (tour.demo) {
@@ -4057,21 +4231,38 @@
       y = narrow ? 62 : 70;
     } else if (rect) {
       const inSb = byId('sidebar').contains(t);
-      if (inSb && !narrow && rect.right + 18 + cw <= vw - M) {
+      const side = vw - M - (rect.right + pad + 18); // Platz rechts neben der Seitenleiste
+      const below = vh - M - (rect.bottom + gap);
+      const above = rect.top - gap - M;
+      const fitsV = full <= below || full <= above;
+      if (inSb && !narrow && (cw <= side || (!fitsV && side >= 300))) {
+        // neben die Seitenleiste – notfalls etwas schmaler (grosse Schrift, niedriges Fenster);
+        // die Grenze bleibt fuer diesen Schritt (tourStep/Groessenaenderung nehmen sie zurueck)
+        if (cw > side) { tourCard.style.maxWidth = Math.floor(side) + 'px'; cw = Math.floor(side); }
         x = rect.right + pad + 18;
-        y = rect.top + rect.height / 2 - ch / 2;
+        y = rect.top + rect.height / 2 - Math.min(full, maxH) / 2;
       } else {
         x = rect.left + rect.width / 2 - cw / 2;
-        if (rect.bottom + pad + 14 + ch <= vh - M) y = rect.bottom + pad + 14;
-        else if (rect.top - pad - 14 - ch >= M) y = rect.top - pad - 14 - ch;
-        else y = vh - ch - M;
+        if (full <= below) y = rect.bottom + gap;
+        else if (full <= above) y = rect.top - gap - full;
+        else if (above >= below) {
+          // passt weder darueber noch darunter: auf die groessere Seite, Text scrollt – nie ueber das Ziel
+          maxH = Math.max(150, above);
+          y = rect.top - gap - Math.min(full, maxH);
+        } else {
+          maxH = Math.max(150, below);
+          y = rect.bottom + gap;
+        }
       }
     } else {
       x = (vw - cw) / 2;
-      y = narrow ? vh - ch - M : (vh - ch) / 2;
+      y = narrow ? vh - Math.min(full, maxH) - M : (vh - Math.min(full, maxH)) / 2;
     }
+    maxH = Math.max(120, Math.round(maxH));
+    const ch = Math.min(full, maxH);
     x = clamp(x, M, Math.max(M, vw - cw - M));
     y = clamp(y, M, Math.max(M, vh - ch - M));
+    if (tourCard.style.maxHeight !== maxH + 'px') tourCard.style.maxHeight = maxH + 'px';
     tourSpot.hidden = !rect;
     tourDim.hidden = !!rect || tour.demo;
     if (rect) {
@@ -4082,7 +4273,9 @@
     tourCard.style.transform = 'translate(' + Math.round(x) + 'px,' + Math.round(y) + 'px)';
     if (tourCard.classList.contains('no-anim')) requestAnimationFrame(() => tourCard.classList.remove('no-anim'));
   }
-  if (window.ResizeObserver) new ResizeObserver(tourReflow).observe(tourCard);
+  // Karte (Text, Schriftgroesse) und das aktuelle Ziel beobachten
+  const tourRO = window.ResizeObserver ? new ResizeObserver(tourReflow) : null;
+  if (tourRO) { tourRO.observe(tourCard); tourRO.observe(tourTextEl); }
 
   function tourNext() {
     if (!tour.open || tour.waiting) return;
@@ -4141,7 +4334,9 @@
     cancelAnimationFrame(tour.follow);
     tourEl.hidden = true;
     tourSpot.hidden = true;
-    window.removeEventListener('resize', tourReflow);
+    if (tourRO && tour.target) tourRO.unobserve(tour.target);
+    tour.target = null;
+    window.removeEventListener('resize', tourResize);
     document.removeEventListener('scroll', tourReflow, true);
     if (tour.sbOpened) { closeSidebar(); tour.sbOpened = false; }
     updateInert();
@@ -4404,6 +4599,8 @@
       case 'hello':
         retry = 0;
         setConnected(true);
+        // getrennt gewesen: evtl. "off" verpasst – laeuft Jarvis nicht mehr, nichts mehr ignorieren
+        if (jv.left && ev.state && ev.state.jarvis !== true) { jv.left = false; endClosing(); }
         applyState(ev.state);
         loadHistory();
         if (helloCount++ > 0) loadAppearance(true); // nach dem Neuverbinden: evtl. verpasste Aenderungen
@@ -4487,7 +4684,7 @@
         onHeard(ev);
         break;
       case 'level':
-        if (jv.open && !jv.closing) orb.level(Number(ev.value));
+        if (jv.open && !jv.left) orb.level(Number(ev.value));
         break;
       case 'say':
         onSay(ev);
@@ -4500,7 +4697,7 @@
         break;
       case 'open':
         if (ended) break;
-        if (ev.what === 'jarvis') { if (!jv.open && !jv.closing) { openJarvisView(false); ttsWarmup(); } }
+        if (ev.what === 'jarvis') { if (!jv.open && !jv.closing) { jv.left = false; openJarvisView(false, 'listening'); } }
         else if (ev.what === 'tutorial') startTour();
         break;
       case 'appearance':
