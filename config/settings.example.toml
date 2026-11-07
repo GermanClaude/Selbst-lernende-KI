@@ -136,7 +136,11 @@ alte_versionen_behalten = 5
 # SAFE MODE: true sperrt gefaehrliche Aktionen (Loeschen, Shell, PC-Steuerung).
 safe_mode = true
 # false = KI fragt vor jeder schreibenden/gefaehrlichen Aktion nach.
+# Im Chat: bei einer Rueckfrage 'a' (= ab jetzt immer) oder /erlauben alles.
 auto_confirm = false
+# Auch bei auto_confirm = true vorher fragen, bevor die KI einen automatischen
+# Start einrichtet (Aufgabenplanung/Autostart) oder sich selbst neu startet.
+autostart_immer_fragen = true
 # Arbeitsordner ("Sandbox"). Leer = Ordner "workspace" im Projekt.
 workspace_root = ""
 # true = Zugriff auch ausserhalb des Arbeitsordners (volles Dateisystem).

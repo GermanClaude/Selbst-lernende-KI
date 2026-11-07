@@ -276,6 +276,8 @@ stoppt die Steuerung sofort.
 | `/versionen` | gesicherte alte Versionen anzeigen |
 | `/zurueck <Nr>` | zu einer alten Version zurückkehren |
 | `/autostart` | zeigen (und abstellen), was die KI automatisch startet |
+| `/erlauben alles` | nie mehr nachfragen, alles erlauben (dauerhaft) |
+| `/erlauben fragen` | wieder vor jeder Aktion nachfragen |
 | `/beenden` | Sitzung beenden (speichert eine Zusammenfassung) |
 
 ---

@@ -39,6 +39,7 @@ class Risk(enum.IntEnum):
     SAFE = 0
     MODERATE = 1
     DANGEROUS = 2
+    AUTOSTART = 3  # automatischer Start / KI erneut starten - wird gesondert gefragt
 
 
 @dataclass
@@ -66,10 +67,12 @@ class PermissionManager:
         settings: PermissionSettings,
         workspace_root: Path,
         confirm_fn: ConfirmFn | None = None,
+        app_root: Path | None = None,
     ):
         self.settings = settings
         self.workspace_root = workspace_root.resolve()
         self.confirm_fn = confirm_fn or _default_confirm
+        self.app_root = app_root  # Ordner der KI (fuer "startet sich selbst")
 
     # -- Aktionsfreigabe ----------------------------------------------------
     def check(self, risk: Risk, description: str) -> Decision:
@@ -90,8 +93,13 @@ class PermissionManager:
         return Decision(False, "Vom Nutzer abgelehnt.")
 
     def confirm_always(self, description: str) -> Decision:
-        """Fragt IMMER nach - auch bei auto_confirm (fuer Autostart & Co.)."""
-        if self.confirm_fn(description, Risk.DANGEROUS):
+        """Fragt IMMER nach - auch bei auto_confirm (fuer Autostart & Co.).
+
+        Abschaltbar mit [permissions] autostart_immer_fragen = false.
+        """
+        if self.settings.auto_confirm and not self.settings.autostart_immer_fragen:
+            return Decision(True)
+        if self.confirm_fn(description, Risk.AUTOSTART):
             return Decision(True)
         return Decision(
             False,
@@ -147,7 +155,7 @@ class PermissionManager:
             return False
 
     # -- Shell-Pruefung -----------------------------------------------------
-    def check_shell(self, command: str) -> Decision:
+    def check_shell(self, command: str, cwd: str | None = None) -> Decision:
         """Prueft einen Shell-Befehl gegen Verbots-/Erlaubnisliste und Safe Mode."""
         lowered = command.lower().strip()
         for pattern in self.settings.shell_denylist:
@@ -163,7 +171,7 @@ class PermissionManager:
         # KI-Fenster, die sich "von selbst" immer wieder oeffnen.
         if sets_up_autostart(command):
             return self.confirm_always(f"{AUTOSTART_WARNING}\n    {command}")
-        if starts_the_ki(command):
+        if starts_the_ki(command, self.app_root, cwd):
             return self.confirm_always(f"{SELF_START_WARNING}\n    {command}")
         first_word = lowered.split()[0] if lowered.split() else ""
         if self.settings.auto_confirm:

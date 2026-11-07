@@ -153,13 +153,12 @@ class ShellTool(Tool):
     }
 
     def run(self, ctx: ToolContext, befehl: str, arbeitsverzeichnis: str = "") -> str:
-        decision = ctx.permissions.check_shell(befehl)
-        if not decision.allowed:
-            return f"Nicht ausgefuehrt: {decision.reason}"
-
         cwd = None
         if arbeitsverzeichnis:
             cwd = str(ctx.permissions.resolve_path(arbeitsverzeichnis, must_exist=True))
+        decision = ctx.permissions.check_shell(befehl, cwd=cwd)
+        if not decision.allowed:
+            return f"Nicht ausgefuehrt: {decision.reason}"
 
         extra = {} if sys.platform == "win32" else {"start_new_session": True}
         timed_out = False

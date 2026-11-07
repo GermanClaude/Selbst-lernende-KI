@@ -163,6 +163,7 @@ Standardmäßig ist **Claude** eingestellt. Für **DeepSeek** (billig):
 | `/update` | nach einer neuen Version schauen |
 | `/versionen` / `/zurueck <Nr>` | alte Versionen anzeigen / zurückholen |
 | `/autostart` | zeigen und abstellen, was die KI von selbst startet |
+| `/erlauben alles` | nie mehr nachfragen (bei einer Rückfrage geht auch **a**) |
 | `/beenden` | Sitzung beenden |
 
 **Sprechen statt tippen:** einmal `/sprache einrichten` eingeben. Danach

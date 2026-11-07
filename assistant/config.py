@@ -199,6 +199,9 @@ class PermissionSettings:
     use_quarantine: bool = True
     shell_allowlist: list[str] = field(default_factory=list)
     shell_denylist: list[str] = field(default_factory=list)
+    # Auch bei auto_confirm nachfragen, bevor ein automatischer Start eingerichtet
+    # oder die KI erneut gestartet wird (sonst oeffnen sich Fenster "von selbst").
+    autostart_immer_fragen: bool = True
 
 
 @dataclass
@@ -263,6 +266,49 @@ def _read_text(path: Path, fallback: str = "") -> str:
 
 def _first_existing(*paths: Path) -> Path | None:
     return next((p for p in paths if p.is_file()), None)
+
+
+def save_setting(root: Path, section: str, key: str, value: str) -> Path:
+    """Schreibt 'key = value' (TOML-Literal, z.B. 'true') dauerhaft in config/settings.toml.
+
+    Kommentare und alles andere bleiben erhalten. Gibt den Pfad der Datei zurueck.
+    """
+    import re
+    import shutil
+
+    path = Path(root) / "config" / "settings.toml"
+    if not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        example = _first_existing(path.with_name("settings.example.toml"),
+                                  bundle_dir() / "config" / "settings.example.toml")
+        if example:
+            shutil.copyfile(example, path)
+        else:
+            path.write_text("", encoding="utf-8")
+    lines = path.read_bytes().decode("utf-8-sig").splitlines(keepends=True)
+    header = re.compile(r"^\s*\[([^\]]+)\]")
+    entry = re.compile(rf"^\s*{re.escape(key)}\s*=")
+    current, section_line, done = None, None, False
+    for i, line in enumerate(lines):
+        m = header.match(line)
+        if m:
+            current = m.group(1).strip()
+            if current == section:
+                section_line = i
+            continue
+        if current == section and entry.match(line):
+            lines[i] = f"{key} = {value}\n"
+            done = True
+            break
+    if not done:
+        if section_line is not None:
+            lines.insert(section_line + 1, f"{key} = {value}\n")
+        else:
+            lines.append(f"\n[{section}]\n{key} = {value}\n")
+    text = "".join(lines)
+    tomllib.loads(text)  # nie eine kaputte Datei schreiben
+    path.write_text(text, encoding="utf-8")
+    return path
 
 
 def _load_toml(path: Path) -> dict[str, Any]:

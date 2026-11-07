@@ -623,9 +623,38 @@ def sets_up_autostart(command: str) -> bool:
     return bool(_STARTUP_DIR.search(paths) and _WRITE.search(command))
 
 
-def starts_the_ki(command: str) -> bool:
-    """Wuerde der Befehl die KI (noch einmal) starten? Lesen/Bearbeiten zaehlt nicht."""
-    return bool(_RUNS_KI.search(command.strip()))
+_START_SCRIPT = re.compile(r"\"?([^\s\"&|;]*start\.(bat|sh))\b", re.I)
+
+
+def _same_dir(a: Path, b: Path) -> bool:
+    try:
+        return os.path.normcase(str(a.resolve())) == os.path.normcase(str(b.resolve()))
+    except OSError:
+        return False
+
+
+def starts_the_ki(command: str, ki_root: Path | None = None, cwd: str | Path | None = None) -> bool:
+    """Wuerde der Befehl die KI (noch einmal) starten? Lesen/Bearbeiten zaehlt nicht.
+
+    Mit ki_root zaehlt eine start.bat/start.sh nur, wenn es die der KI ist - die
+    start.bat eines Spiels oder Projekts darf ohne Rueckfrage laufen.
+    """
+    text = command.strip()
+    if not _RUNS_KI.search(text):
+        return False
+    if ki_root is None:
+        return True
+    if re.search(r"ki\.exe|run_ki\.py|-m\s+assistant\b", text, re.I):
+        return True
+    base = Path(cwd) if cwd else Path.cwd()
+    for match in _START_SCRIPT.finditer(text):
+        raw = match.group(1).replace("\\", "/")
+        script = Path(raw)
+        if not script.is_absolute() and not re.match(r"^[a-zA-Z]:", raw):
+            script = base / script
+        if _same_dir(Path(str(script)).parent, Path(ki_root)):
+            return True
+    return False
 
 
 def is_autostart_path(path: Path) -> bool:

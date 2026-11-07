@@ -4,6 +4,15 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.3.2 – 2026-11-07
+
+- **Einmal zustimmen reicht:** Bei jeder Rückfrage kannst du jetzt **a** eingeben
+  („ab jetzt immer“). Dann macht die KI alles durch, ohne noch einmal zu fragen –
+  dauerhaft, auch nach einem Neustart. Ein- und ausschalten geht auch mit
+  `/erlauben alles` und `/erlauben fragen`.
+- Die `start.bat` eines Spiels oder Projekts löst keine „KI startet sich selbst“-
+  Rückfrage mehr aus – nur noch die `start.bat` der KI.
+
 ## 0.3.1 – 2026-11-07
 
 - `/autostart` findet jetzt auch ein Hintergrund-Skript, das genau **dieses**

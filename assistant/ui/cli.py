@@ -16,6 +16,8 @@ Sonderbefehle (mit '/' beginnen):
   /versionen          - gesicherte alte Versionen anzeigen
   /zurueck <Nr>       - zu einer gesicherten alten Version zurueckkehren
   /autostart          - zeigen, was die KI automatisch startet (und es abstellen)
+  /erlauben alles     - nie mehr nachfragen, alles erlauben (dauerhaft)
+  /erlauben fragen    - wieder vor jeder Aktion nachfragen
   /beenden            - Sitzung beenden (speichert eine Zusammenfassung)
 
 Strg+C waehrend einer Antwort haelt die KI an - du kannst gleich weiterschreiben.
@@ -29,7 +31,7 @@ import time
 
 from .. import __version__
 from ..brain import Brain
-from ..config import Config
+from ..config import Config, save_setting
 from ..logging_setup import get_logger
 from ..memory import Memory
 from ..permissions import PermissionManager, Risk
@@ -57,13 +59,25 @@ def _c(text: str, color: str) -> str:
 
 def _confirm(message: str, risk: Risk) -> bool:
     """Fragt den Nutzer interaktiv um Bestaetigung fuer eine Aktion."""
-    label = {Risk.MODERATE: "Aktion", Risk.DANGEROUS: "GEFAEHRLICHE Aktion"}.get(risk, "Aktion")
+    return _ask_permission(message, risk) in ("einmal", "immer")
+
+
+def _ask_permission(message: str, risk: Risk) -> str:
+    """'einmal', 'immer' oder 'nein'. 'immer' gibt es nicht fuer Autostart-Fragen."""
+    label = {Risk.MODERATE: "Aktion", Risk.DANGEROUS: "GEFAEHRLICHE Aktion",
+             Risk.AUTOSTART: "AUTOSTART"}.get(risk, "Aktion")
     print(_c(f"\n[{label}] {message}", YELLOW))
+    if risk == Risk.AUTOSTART:
+        question = "   Erlauben? [j = ja / N = nein] "
+    else:
+        question = "   Erlauben? [j = ja, einmal / a = ab jetzt IMMER alles erlauben / N = nein] "
     try:
-        answer = input(_c("   Erlauben? [j/N] ", YELLOW)).strip().lower()
+        answer = input(_c(question, YELLOW)).strip().lower()
     except (EOFError, KeyboardInterrupt):
-        return False
-    return answer in ("j", "ja", "y", "yes")
+        return "nein"
+    if answer in ("a", "alle", "alles", "immer") and risk != Risk.AUTOSTART:
+        return "immer"
+    return "einmal" if answer in ("j", "ja", "y", "yes") else "nein"
 
 
 class _Thinking:
@@ -117,7 +131,8 @@ class CLI:
         self.memory = Memory(config.memory.db_path)
         self.thinking = _Thinking(sys.stdout.isatty())
         self.permissions = PermissionManager(
-            config.permissions, config.workspace_path, confirm_fn=self._confirm
+            config.permissions, config.workspace_path, confirm_fn=self._confirm,
+            app_root=config.project_root,
         )
         self.registry = build_registry(include_computer=True)
         self.tool_ctx = ToolContext(permissions=self.permissions, memory=self.memory)
@@ -137,7 +152,40 @@ class CLI:
 
     def _confirm(self, message: str, risk: Risk) -> bool:
         self.thinking.stop()
-        return _confirm(message, risk)
+        answer = _ask_permission(message, risk)
+        if answer == "immer":
+            self._set_auto_confirm(True)
+        return answer in ("einmal", "immer")
+
+    def _set_auto_confirm(self, value: bool) -> None:
+        """Schaltet das Nachfragen dauerhaft an/aus (auch nach einem Neustart)."""
+        self.permissions.settings.auto_confirm = value
+        try:
+            path = save_setting(self.config.project_root, "permissions", "auto_confirm",
+                                "true" if value else "false")
+            where = f"gespeichert in {path}"
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Einstellung nicht gespeichert: %s", exc)
+            where = "nur fuer diese Sitzung - die Einstellungsdatei liess sich nicht aendern"
+        if value:
+            print(_c(f"[Ab jetzt frage ich nicht mehr nach und mache alles durch ({where}). "
+                     "Zurueck mit /erlauben fragen.]", GREEN))
+        else:
+            print(_c(f"[Ab jetzt frage ich vor jeder Aktion wieder nach ({where}).]", GREEN))
+
+    def _allow_command(self, args: list[str]) -> None:
+        sub = args[0].lower() if args else ""
+        p = self.permissions.settings
+        if sub in ("alles", "alle", "immer"):
+            self._set_auto_confirm(True)
+            if p.safe_mode:
+                print(_c("Hinweis: Safe Mode ist noch AN - Shell, Loeschen und PC-Steuerung bleiben "
+                         "gesperrt. Ausschalten: in config/settings.toml 'safe_mode = false'.", YELLOW))
+        elif sub in ("fragen", "nachfragen", "aus"):
+            self._set_auto_confirm(False)
+        else:
+            state = "AN - ich frage nicht nach" if p.auto_confirm else "AUS - ich frage vor jeder Aktion"
+            print(_c(f"Alles erlauben ist {state}. Aendern: /erlauben alles  bzw.  /erlauben fragen", CYAN))
 
     # -- Start --------------------------------------------------------------
     def run(self) -> int:
@@ -263,6 +311,8 @@ class CLI:
             return self._restore_command(cmd.split()[1:])
         elif base == "/autostart":
             self._autostart_command(cmd.split()[1:])
+        elif base == "/erlauben":
+            self._allow_command(cmd.split()[1:])
         else:
             print(_c(f"Unbekannter Befehl: {base}. /hilfe zeigt alle.", YELLOW))
         return False
