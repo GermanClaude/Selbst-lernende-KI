@@ -1,11 +1,12 @@
 """Oeffnet das App-Fenster und haelt alles am Laufen, bis das Fenster zu ist.
 
-Das Fenster ist Edge (auf jedem Windows 10/11 vorhanden) oder Chrome im App-Modus:
-ein eigenes Fenster ohne Adressleiste, mit eigenem Profil in data/app-fenster.
-Gibt es keinen der beiden, oeffnet sich der Standardbrowser.
+Normalfall: ein echtes Programmfenster (pywebview) - eigenes Fenster, eigenes
+Symbol in der Taskleiste, kein Browser. Unter Windows zeigt es die Oberflaeche mit
+der eingebauten Windows-Komponente WebView2 an (wie Teams oder Discord).
 
-Geschlossen wird die KI, wenn kein Fenster mehr verbunden ist (ein Neuladen der
-Seite verbindet sich sofort wieder und zaehlt nicht).
+Nur wenn das nicht geht (pywebview fehlt, WebView2 fehlt), wird nach Rueckfrage
+ersatzweise ein Browser-Fenster (Edge/Chrome im App-Modus) benutzt; dann endet die
+KI, sobald kein Fenster mehr verbunden ist.
 """
 from __future__ import annotations
 
@@ -91,14 +92,17 @@ def _info_file(root: Path) -> Path:
 
 
 def open_existing_window(root: Path, pid: int) -> bool:
-    """Laeuft die App schon: einfach ein weiteres Fenster dazu oeffnen."""
+    """Laeuft die App schon? Dann True (das vorhandene Fenster bleibt das einzige)."""
     try:
         info = json.loads(_info_file(root).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return False
     if int(info.get("pid", 0)) != pid or not info.get("url"):
         return False
-    open_window(info["url"], Path(root) / "data" / "app-fenster")
+    if info.get("fenster") != "programm":
+        open_window(info["url"], Path(root) / "data" / "app-fenster")  # Browser-Ersatz: Fenster dazu
+    else:
+        message_box("Die KI-App ist schon offen - schau in der Taskleiste nach.")
     return True
 
 
@@ -169,6 +173,52 @@ def message_box(text: str, title: str = "Selbst-lernende KI") -> None:
         pass
 
 
+def ask_yes_no(text: str, title: str = "Selbst-lernende KI") -> bool:
+    """Ja/Nein-Meldung ohne Konsole (Windows), sonst False."""
+    if sys.platform == "win32":
+        try:
+            import ctypes
+
+            return ctypes.windll.user32.MessageBoxW(None, text, title, 0x4 | 0x20) == 6  # MB_YESNO, IDYES
+        except Exception:  # noqa: BLE001
+            return False
+    return False
+
+
+def native_window_available() -> bool:
+    import importlib.util
+
+    try:
+        return importlib.util.find_spec("webview") is not None
+    except (ImportError, ValueError):
+        return False
+
+
+def run_native_window(server, ctl, title: str, storage: Path, on_quit_holder: dict) -> bool:
+    """Zeigt die App in einem echten Programmfenster. Blockiert, bis es zu ist.
+
+    False = ging nicht (dann ersatzweise Browser-Fenster)."""
+    try:
+        import webview  # type: ignore
+    except Exception as exc:  # noqa: BLE001
+        logger.info("pywebview nicht verfuegbar: %s", exc)
+        return False
+    try:
+        window = webview.create_window(
+            title, server.url, width=1200, height=860, min_size=(480, 560),
+            background_color="#111318", text_select=True,
+        )
+        on_quit_holder["close"] = window.destroy  # /beenden oder Neustart schliesst das Fenster
+        ctl.startup()
+        storage.mkdir(parents=True, exist_ok=True)
+        webview.start(private_mode=False, storage_path=str(storage))  # laeuft bis das Fenster zu ist
+        return True
+    except Exception as exc:  # noqa: BLE001 - z.B. WebView2 fehlt
+        logger.warning("Programmfenster ging nicht: %s", exc)
+        on_quit_holder.pop("close", None)
+        return False
+
+
 def run_app(config, started_by: str | None = None) -> int:
     """Startet Server + Fenster; kehrt zurueck, wenn das Fenster geschlossen ist."""
     root = Path(config.project_root)
@@ -177,19 +227,51 @@ def run_app(config, started_by: str | None = None) -> int:
     ctl = server.controller
     quit_now = threading.Event()
     result = {"code": 0}
+    holder: dict = {}
 
     def on_quit(code: int) -> None:
         result["code"] = code
         quit_now.set()
+        close = holder.get("close")
+        if close:
+            try:
+                close()
+            except Exception:  # noqa: BLE001
+                pass
 
     ctl.on_quit = on_quit
     info = _info_file(root)
     try:
         info.parent.mkdir(parents=True, exist_ok=True)
-        info.write_text(json.dumps({"pid": os.getpid(), "url": server.url}), encoding="utf-8")
+        info.write_text(json.dumps({"pid": os.getpid(), "url": server.url, "fenster": "programm"}),
+                        encoding="utf-8")
     except OSError as exc:
         logger.info("app.json nicht schreibbar: %s", exc)
 
+    title = f"{config.ki.name} - Selbst-lernende KI"
+    try:
+        if run_native_window(server, ctl, title, root / "data" / "app-fenster", holder):
+            return result["code"]
+        # Ersatz nur nach Rueckfrage - die App soll ein eigenes Programm sein.
+        if sys.platform == "win32" and not ask_yes_no(
+            "Das App-Fenster konnte nicht geoeffnet werden (fehlt pywebview oder die Microsoft "
+            "WebView2-Laufzeit?).\n\nStattdessen in einem Browser-Fenster oeffnen?"
+        ):
+            return 0
+        _browser_fallback(server, ctl, root, quit_now)
+        return result["code"]
+    finally:
+        ctl.shutdown()
+        server.stop()
+        try:
+            if json.loads(info.read_text(encoding="utf-8")).get("pid") == os.getpid():
+                info.unlink()
+        except (OSError, ValueError):
+            pass
+
+
+def _browser_fallback(server, ctl, root: Path, quit_now: threading.Event) -> None:
+    """Ersatz: Edge/Chrome im App-Modus; endet, wenn kein Fenster mehr verbunden ist."""
     open_window(server.url, root / "data" / "app-fenster")
     ctl.startup()
     began = time.monotonic()
@@ -210,12 +292,3 @@ def run_app(config, started_by: str | None = None) -> int:
                 break
     except KeyboardInterrupt:
         pass
-    finally:
-        ctl.shutdown()
-        server.stop()
-        try:
-            if json.loads(info.read_text(encoding="utf-8")).get("pid") == os.getpid():
-                info.unlink()
-        except (OSError, ValueError):
-            pass
-    return result["code"]

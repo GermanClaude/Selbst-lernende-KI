@@ -1,4 +1,4 @@
-# Baut bei jeder neuen Version auf dem Standard-Branch eine KI.exe und
+# Baut bei jeder neuen Version auf dem Standard-Branch KI.exe + KI-App.exe und
 # veroeffentlicht sie als GitHub-Release "v<Version>". Die KI.exe-Updater laden
 # sie von dort. Neue Version = __version__ in assistant/__init__.py erhoehen.
 name: KI.exe bauen und veroeffentlichen
@@ -46,9 +46,9 @@ jobs:
         if: steps.version.outputs.neu == 'true'
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt pyinstaller sounddevice SpeechRecognition pyttsx3 pyautogui pillow
+          pip install -r requirements.txt pyinstaller pywebview sounddevice SpeechRecognition pyttsx3 pyautogui pillow
 
-      - name: KI.exe bauen
+      - name: KI.exe und KI-App.exe bauen
         if: steps.version.outputs.neu == 'true'
         run: pyinstaller packaging/ki.spec --noconfirm
 
@@ -59,7 +59,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           python packaging/release_notes.py > notes.md
-          gh release create "v${{ steps.version.outputs.version }}" dist/KI.exe \
+          gh release create "v${{ steps.version.outputs.version }}" dist/KI.exe dist/KI-App.exe \
             --title "Version ${{ steps.version.outputs.version }}" \
             --notes-file notes.md \
             --target "${{ github.sha }}"

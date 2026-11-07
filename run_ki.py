@@ -44,9 +44,16 @@ def _ensure_runtime_dir() -> None:
     os.chdir(root)
 
 
+def _is_app_exe() -> bool:
+    """KI-App.exe = dasselbe Programm, aber gleich als App (ohne Konsole)."""
+    return getattr(sys, "frozen", False) and Path(sys.executable).stem.lower() == "ki-app"
+
+
 def main() -> int:
     # Projektpfad in sys.path aufnehmen (fuer den Start aus dem Quellordner).
     sys.path.insert(0, str(Path(__file__).resolve().parent))
+    if _is_app_exe() and "--app" not in sys.argv:
+        sys.argv.append("--app")
     try:
         _ensure_runtime_dir()
         from assistant.__main__ import main as app_main
@@ -54,10 +61,17 @@ def main() -> int:
         code = app_main()
     except Exception:  # noqa: BLE001 - in der .exe sonst unsichtbar
         traceback.print_exc()
+        if _is_app_exe():  # kein Konsolenfenster: Fehler als Meldung zeigen
+            try:
+                from assistant.app.launcher import message_box
+
+                message_box("Die KI konnte nicht starten:\n\n" + traceback.format_exc(limit=3))
+            except Exception:  # noqa: BLE001
+                pass
         code = 1
     # Die .exe schliesst ihr Fenster sofort - Fehler sonst nicht lesbar.
     # (43 = "laeuft schon in einem anderen Fenster" - dann still schliessen.)
-    if code and code != 43 and getattr(sys, "frozen", False):
+    if code and code != 43 and getattr(sys, "frozen", False) and not _is_app_exe():
         try:
             input("\nEnter druecken zum Schliessen...")
         except (EOFError, KeyboardInterrupt):

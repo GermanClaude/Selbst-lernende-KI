@@ -1,11 +1,13 @@
 # -*- mode: python ; coding: utf-8 -*-
 #
 # PyInstaller-Spezifikation fuer die Selbst-lernende-KI.
-# Baut eine einzelne ausfuehrbare Datei (unter Windows: KI.exe).
+# Baut zwei Programme aus demselben Code:
+#   KI.exe      - im Terminal (Konsolenfenster)
+#   KI-App.exe  - als App in einem eigenen Programmfenster (ohne Konsole)
 #
 # Bauen (im Projektordner, venv aktiv, 'pip install pyinstaller'):
 #     pyinstaller packaging/ki.spec
-# Ergebnis liegt danach in: dist/KI(.exe)
+# Ergebnis liegt danach in: dist/KI(.exe) und dist/KI-App(.exe)
 
 import sys
 from pathlib import Path
@@ -32,7 +34,7 @@ a = Analysis(
     binaries=[],
     datas=added_files,
     # Optionale Extras werden nur eingebunden, wenn sie installiert sind.
-    hiddenimports=["anthropic", "openai", "requests", "bs4"],
+    hiddenimports=["anthropic", "openai", "requests", "bs4", "webview"],
     hookspath=[],
     runtime_hooks=[],
     excludes=[],
@@ -41,6 +43,9 @@ a = Analysis(
 )
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+
+icon_file = project_root / "packaging" / "ki.ico"
+icon = str(icon_file) if icon_file.exists() else None
 
 exe = EXE(
     pyz,
@@ -57,5 +62,23 @@ exe = EXE(
     runtime_tmpdir=None,
     console=True,  # Konsolenfenster (die KI redet dort mit dir)
     disable_windowed_traceback=False,
-    icon=None,
+    icon=icon,
+)
+
+app_exe = EXE(
+    pyz,
+    a.scripts,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    [],
+    name="KI-App",
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=True,
+    runtime_tmpdir=None,
+    console=False,  # eigenes Programmfenster, keine Konsole
+    disable_windowed_traceback=False,
+    icon=icon,
 )

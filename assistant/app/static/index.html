@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="referrer" content="no-referrer">
+  <title>KI</title>
+  <link rel="icon" id="favicon" href="data:,">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<div class="app" id="app">
+
+  <!-- Seitenleiste -->
+  <aside class="sidebar" id="sidebar" aria-label="Seitenleiste">
+    <div class="sb-head">
+      <div class="avatar lg ai-avatar" aria-hidden="true">K</div>
+      <div class="sb-id">
+        <div class="sb-name" id="sb-name">KI</div>
+        <div class="sb-version" id="sb-version">Verbinde …</div>
+      </div>
+      <button class="icon-btn sb-close" id="sb-close" type="button" aria-label="Seitenleiste schließen" data-icon="x"></button>
+    </div>
+
+    <div class="sb-alerts" id="sb-alerts" aria-live="polite"></div>
+
+    <div class="sb-cards">
+      <div class="sb-card">
+        <div class="sb-label"><span data-icon="sparkles"></span>Gehirn</div>
+        <div class="sb-value" id="sb-provider">–</div>
+        <div class="sb-sub mono" id="sb-model">–</div>
+      </div>
+      <div class="sb-card">
+        <div class="sb-label"><span data-icon="coins"></span>Kosten</div>
+        <div class="sb-value big num" id="sb-eur">≈ 0,00 €</div>
+        <div class="sb-sub num" id="sb-tokens">0 Token</div>
+      </div>
+    </div>
+
+    <section class="sb-section" aria-labelledby="h-settings">
+      <h2 class="sb-heading" id="h-settings">Einstellungen</h2>
+      <div class="switch-row" data-toggle="erlauben">
+        <div class="switch-text">
+          <span class="switch-title" id="lbl-erlauben">Alles erlauben</span>
+          <span class="switch-sub" id="sub-erlauben">Ohne Rückfragen arbeiten</span>
+        </div>
+        <button class="switch" id="sw-erlauben" type="button" role="switch" aria-checked="false"
+                aria-labelledby="lbl-erlauben" aria-describedby="sub-erlauben"><span class="knob"></span></button>
+      </div>
+      <div class="switch-row" data-toggle="vorlesen">
+        <div class="switch-text">
+          <span class="switch-title" id="lbl-vorlesen">Vorlesen</span>
+          <span class="switch-sub" id="sub-vorlesen">Antworten laut vorlesen</span>
+        </div>
+        <button class="switch" id="sw-vorlesen" type="button" role="switch" aria-checked="false"
+                aria-labelledby="lbl-vorlesen" aria-describedby="sub-vorlesen"><span class="knob"></span></button>
+      </div>
+    </section>
+
+    <nav class="sb-section" aria-labelledby="h-cmds">
+      <h2 class="sb-heading" id="h-cmds">Befehle</h2>
+      <button class="sb-btn" type="button" data-cmd="/status"><span data-icon="activity"></span>Status</button>
+      <button class="sb-btn" type="button" data-cmd="/gedaechtnis"><span data-icon="book"></span>Gedächtnis</button>
+      <button class="sb-btn" type="button" data-cmd="/kosten"><span data-icon="coins"></span>Kosten</button>
+      <button class="sb-btn" type="button" data-cmd="/update"><span data-icon="refresh"></span>Nach Updates suchen</button>
+      <button class="sb-btn" type="button" data-cmd="/versionen"><span data-icon="history"></span>Versionen</button>
+      <button class="sb-btn" type="button" data-cmd="/autostart"><span data-icon="power"></span>Autostart prüfen</button>
+      <button class="sb-btn" type="button" data-cmd="/hilfe"><span data-icon="help"></span>Hilfe</button>
+    </nav>
+
+    <div class="sb-foot" id="sb-foot"><span data-icon="shield"></span><span id="sb-foot-text">Läuft lokal auf deinem PC</span></div>
+  </aside>
+  <div class="scrim" id="scrim"></div>
+
+  <!-- Hauptbereich -->
+  <main class="main" id="main">
+    <header class="topbar">
+      <button class="icon-btn menu-btn" id="menu-btn" type="button" aria-label="Menü öffnen"
+              aria-controls="sidebar" aria-expanded="false" data-icon="menu"><span class="menu-dot" id="menu-dot" hidden></span></button>
+      <div class="tb-main">
+        <span class="tb-name" id="tb-name">KI</span>
+        <span class="status" id="status" data-s="connecting" role="status">
+          <span class="status-dot" aria-hidden="true"></span><span id="status-text">Verbinde …</span>
+        </span>
+      </div>
+      <div class="tb-actions">
+        <button class="pill-btn" id="tb-update" type="button" hidden><span data-icon="download"></span><span id="tb-update-text">Update verfügbar</span></button>
+        <span class="model-chip" id="tb-model" hidden><span data-icon="sparkles"></span><span id="tb-model-text"></span></span>
+        <button class="icon-btn" id="theme-btn" type="button" aria-label="Design wechseln" data-icon="contrast"></button>
+      </div>
+    </header>
+
+    <div class="conn-banner" id="conn-banner" role="alert" hidden>
+      <span class="spinner" aria-hidden="true"></span>
+      <span id="conn-text">Verbindung getrennt … ich verbinde mich neu.</span>
+    </div>
+
+    <div class="chat-scroll" id="chat-scroll">
+      <div class="chat-inner">
+        <!-- Leerer Zustand -->
+        <div class="empty" id="empty" hidden>
+          <div class="avatar xl ai-avatar" aria-hidden="true">K</div>
+          <h1 id="empty-title">Hallo!</h1>
+          <p>Frag mich etwas, gib mir eine Aufgabe – oder halte <kbd>F2</kbd> gedrückt und sprich mit mir.</p>
+          <div class="suggestions">
+            <button class="suggestion" type="button" data-prompt="Was kannst du alles? Gib mir einen kurzen Überblick.">
+              <span data-icon="sparkles"></span>
+              <span class="sg-text"><span class="sg-title">Was kannst du alles?</span><span class="sg-sub">Ein kurzer Überblick über deine Fähigkeiten</span></span>
+            </button>
+            <button class="suggestion" type="button" data-prompt="Was hast du dir bisher über mich gemerkt?">
+              <span data-icon="book"></span>
+              <span class="sg-text"><span class="sg-title">Was weißt du über mich?</span><span class="sg-sub">Zeig mir, was du dir gemerkt hast</span></span>
+            </button>
+            <button class="suggestion" type="button" data-prompt="Erklär mir einfach und kurz, wie das Internet funktioniert.">
+              <span data-icon="globe"></span>
+              <span class="sg-text"><span class="sg-title">Erklär mir etwas</span><span class="sg-sub">Wie funktioniert eigentlich das Internet?</span></span>
+            </button>
+            <button class="suggestion" type="button" data-prompt="Hilf mir, eine freundliche E-Mail an einen Kollegen zu schreiben: Ich komme morgen eine Stunde später.">
+              <span data-icon="pen"></span>
+              <span class="sg-text"><span class="sg-title">Hilf mir beim Schreiben</span><span class="sg-sub">Eine kurze, freundliche E-Mail</span></span>
+            </button>
+          </div>
+        </div>
+        <div class="messages" id="messages" role="log" aria-label="Unterhaltung"></div>
+      </div>
+    </div>
+
+    <!-- Eingabe -->
+    <footer class="composer-wrap">
+      <div class="composer-inner">
+        <button class="jump" id="jump" type="button" hidden><span data-icon="arrowDown"></span>Neueste Nachrichten</button>
+        <div class="cmd-pop" id="cmd-pop" role="listbox" aria-label="Befehle" hidden></div>
+        <div class="composer" id="composer">
+          <label class="sr-only" for="input">Nachricht</label>
+          <textarea id="input" rows="1" placeholder="Schreib eine Nachricht …" autocomplete="off" spellcheck="true"
+                    aria-autocomplete="list" aria-controls="cmd-pop" aria-expanded="false"></textarea>
+          <button class="c-btn mic-btn" id="mic-btn" type="button" aria-label="Spracheingabe (gedrückt halten oder kurz drücken, F2)"
+                  title="Sprechen – gedrückt halten oder kurz drücken (F2)" aria-pressed="false" data-icon="mic"></button>
+          <button class="c-btn send-btn" id="send-btn" type="button" aria-label="Senden (Enter)" title="Senden (Enter)" disabled data-icon="send"></button>
+        </div>
+        <div class="composer-hint" id="hint">
+          <span><kbd>Enter</kbd> senden</span>
+          <span class="h-extra"><kbd>Shift</kbd> + <kbd>Enter</kbd> neue Zeile</span>
+          <span class="h-extra"><kbd>/</kbd> Befehle</span>
+          <span><kbd>F2</kbd> sprechen</span>
+        </div>
+        <div class="composer-hint voice-bar" id="voice-bar" aria-live="polite" hidden>
+          <span class="rec-dot" aria-hidden="true"></span>
+          <span id="voice-label">Aufnahme</span>
+          <span class="rec-time" id="voice-time">0:00</span>
+          <span class="rec-help" id="voice-help"></span>
+        </div>
+      </div>
+    </footer>
+  </main>
+</div>
+
+<!-- Dialog fuer Rueckfragen -->
+<div class="modal" id="modal" hidden>
+  <div class="dialog" id="dialog" role="alertdialog" aria-modal="true" aria-labelledby="dlg-title" aria-describedby="dlg-text" tabindex="-1">
+    <div class="dlg-head">
+      <div class="dlg-icon" id="dlg-icon"></div>
+      <div class="dlg-titles">
+        <h2 class="dlg-title" id="dlg-title">Darf ich das?</h2>
+        <span class="dlg-risk" id="dlg-risk"></span>
+      </div>
+    </div>
+    <div class="dlg-body"><p class="dlg-text" id="dlg-text"></p></div>
+    <div class="dlg-foot" id="dlg-foot"></div>
+    <div class="dlg-keys" id="dlg-keys"></div>
+  </div>
+</div>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>

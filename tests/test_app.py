@@ -161,3 +161,78 @@ def test_second_message_while_busy_is_refused(app):
     status, body = _req(server, "/api/send", {"text": "zwei"})
     assert body["ok"] is False and "Stopp" in body["error"]
     _req(server, "/api/stop", {})
+
+
+def test_native_program_window_is_used(app, tmp_path, monkeypatch):
+    """Normalfall: echtes Programmfenster (pywebview) - kein Browser."""
+    import types
+
+    from assistant.app import launcher
+
+    server = app([])
+    calls = {}
+    fake = types.ModuleType("webview")
+
+    class Window:
+        def destroy(self):
+            calls["destroyed"] = True
+
+    def create_window(title, url, **kw):
+        calls["title"], calls["url"], calls["kw"] = title, url, kw
+        return Window()
+
+    fake.create_window = create_window
+    fake.start = lambda **kw: calls.setdefault("start", kw)
+    monkeypatch.setitem(sys.modules, "webview", fake)
+    monkeypatch.setattr(launcher, "open_window", lambda *a, **k: calls.setdefault("browser", True))
+    holder = {}
+    assert launcher.run_native_window(server, server.controller, "Aria - Selbst-lernende KI",
+                                      tmp_path / "fenster", holder)
+    assert calls["url"] == server.url and calls["title"].startswith("Aria")
+    assert "browser" not in calls  # kein Browser geoeffnet
+    holder["close"]()
+    assert calls["destroyed"]
+
+
+def test_window_failure_falls_back_only_after_asking(app, tmp_path, monkeypatch):
+    import types
+
+    from assistant.app import launcher
+
+    server = app([])
+    fake = types.ModuleType("webview")
+    fake.create_window = lambda *a, **k: object()
+
+    def broken_start(**kw):
+        raise RuntimeError("WebView2 fehlt")
+
+    fake.start = broken_start
+    monkeypatch.setitem(sys.modules, "webview", fake)
+    assert launcher.run_native_window(server, server.controller, "x", tmp_path / "f", {}) is False
+
+
+def test_each_exe_updates_from_its_own_release_file(tmp_path):
+    from assistant.config import UpdateSettings
+    from assistant.updater import Updater
+
+    release = {"tag_name": "v9.0.0", "assets": [
+        {"name": "KI.exe", "browser_download_url": "u-terminal"},
+        {"name": "KI-App.exe", "browser_download_url": "u-app"}]}
+
+    def fetch(url, timeout=15):
+        return json.dumps(release).encode() if "releases" in url else b""
+
+    for exe, expected in (("KI.exe", "u-terminal"), ("KI-App.exe", "u-app")):
+        up = Updater(UpdateSettings(), tmp_path, fetch=fetch, current_version="0.4.0", frozen=True,
+                     exe_path=tmp_path / exe)
+        assert up.check().download_url == expected
+
+
+def test_app_exe_starts_in_app_mode(monkeypatch):
+    import run_ki
+
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", "C:/KI/KI-App.exe")
+    assert run_ki._is_app_exe()
+    monkeypatch.setattr(sys, "executable", "C:/KI/KI.exe")
+    assert not run_ki._is_app_exe()

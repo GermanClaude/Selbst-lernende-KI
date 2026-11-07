@@ -11,6 +11,9 @@ tomli>=2.0 ; python_version < "3.11"
 requests>=2.31
 beautifulsoup4>=4.12
 
+# App-Fenster (start-app.bat / KI-App.exe): echtes Programmfenster unter Windows
+pywebview>=6.2 ; sys_platform == "win32"
+
 # -----------------------------------------------------------------------------
 # Optionale Extras - die KI laeuft auch ohne sie (mit freundlichem Hinweis).
 # Installiere sie nur, wenn du die jeweilige Funktion willst:

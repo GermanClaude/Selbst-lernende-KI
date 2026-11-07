@@ -201,8 +201,9 @@ pip install pyautogui pillow
 
 ## Als App statt im Terminal
 
-Doppelklick auf **`start-app.bat`** – die KI öffnet sich in einem eigenen Fenster
-mit Knöpfen statt im schwarzen Terminal. Alles andere bleibt gleich (Gedächtnis,
+Doppelklick auf **`start-app.bat`** (oder **`KI-App.exe`**) – die KI öffnet sich
+als eigenes Programm mit Fenster und Knöpfen statt im schwarzen Terminal. Es öffnet
+sich kein Browser. Alles andere bleibt gleich (Gedächtnis,
 Einstellungen, Updates). Tipp: im Chat `/verknuepfung` eingeben, dann liegt ein
 Symbol auf dem Desktop. Das Terminal gibt es weiterhin mit `start.bat`.
 

@@ -244,10 +244,12 @@ class Updater:
         remote = str(release.get("tag_name", "")).lstrip("vV")
         if not remote or not is_newer(remote, self.current):
             return None
-        asset = next(
-            (a for a in release.get("assets", []) if str(a.get("name", "")).lower() == self.exe_path.name.lower()),
-            None,
-        ) or next((a for a in release.get("assets", []) if str(a.get("name", "")).lower().endswith(".exe")), None)
+        assets = release.get("assets", [])
+        # Jedes Programm holt sich SEINE Datei (KI.exe bzw. KI-App.exe).
+        asset = next((a for a in assets if str(a.get("name", "")).lower() == self.exe_path.name.lower()), None)
+        if asset is None and self.exe_path.name.lower() == "ki.exe":
+            asset = next((a for a in assets if str(a.get("name", "")).lower().endswith(".exe")
+                          and "app" not in str(a.get("name", "")).lower()), None)
         if asset is None:
             return None
         notes = release.get("body") or ""

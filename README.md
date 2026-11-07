@@ -84,8 +84,8 @@ python -m assistant
 ```bat
 packaging\build.bat
 ```
-Danach liegt die fertige Datei unter `dist\KI.exe`. Doppelklick startet die KI
-in einem Konsolenfenster. (Unter Linux/macOS: `packaging/build.sh` → `dist/KI`.)
+Danach liegen zwei Programme in `dist\`: **`KI.exe`** (im Terminal) und
+**`KI-App.exe`** (eigenes Programmfenster). (Unter Linux/macOS: `packaging/build.sh` → `dist/KI`.)
 
 Wo die `.exe` ihre Dateien sucht:
 - Liegt sie im `dist`-Ordner des Projekts, nutzt sie `.env`, `config\`, `data\`
@@ -219,9 +219,10 @@ Antworten vorlesen lassen: `/sprache vorlesen` (braucht `pip install pyttsx3`).
 
 ## Als App oder im Terminal
 
-- **`start-app.bat`** – die KI als App in einem eigenen Fenster (Edge/Chrome im
-  App-Modus, nichts extra zu installieren; Linux/macOS: `./start.sh app`).
-- **`start.bat`** – wie bisher im Terminal.
+- **`start-app.bat`** bzw. **`KI-App.exe`** – die KI als eigenes Programm mit
+  eigenem Fenster (kein Browser; unter Windows zeigt die eingebaute Komponente
+  WebView2 die Oberfläche an – wie bei Teams oder Discord). Linux/macOS: `./start.sh app`.
+- **`start.bat`** bzw. **`KI.exe`** – wie bisher im Terminal.
 - Im Terminal wechselt `/app` in die App; `/verknuepfung` legt ein Desktop-Symbol an.
   Mit `oberflaeche = "app"` unter `[ki]` öffnet auch `start.bat` die App.
 - Die App läuft nur lokal (`127.0.0.1`, mit geheimem Schlüssel in der Adresse) –

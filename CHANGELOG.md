@@ -7,9 +7,10 @@ deine KI erklärt sie dir in eigenen Worten.
 ## 0.4.0 – 2026-11-07
 
 **Die KI als App**
-- Neu: **start-app.bat** öffnet die KI in einem eigenen, schönen Fenster statt im
-  Terminal. Das Terminal (`start.bat`) gibt es weiterhin – dieselbe KI, dasselbe
-  Gedächtnis.
+- Neu: die KI als **eigenes Programm** mit eigenem Fenster und Symbol in der
+  Taskleiste – kein Browser. Starten mit **start-app.bat** oder **KI-App.exe**.
+  Das Terminal (`start.bat` bzw. `KI.exe`) gibt es weiterhin – dieselbe KI,
+  dasselbe Gedächtnis.
 - In der App: Antworten mit Überschriften, Listen, Tabellen und Codeblöcken (mit
   Kopier-Knopf), Werkzeug-Schritte und Agenten übersichtlich, Rückfragen als Knöpfe
   („Einmal erlauben“, „Immer erlauben“, „Nein“), ein **Stopp-Knopf**, ein
