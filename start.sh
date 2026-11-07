@@ -48,6 +48,12 @@ if [ ! -f .env ]; then
   "${EDITOR:-nano}" .env || true
 fi
 
+# --- 5a) Als App: ./start.sh app ---
+if [ "${1:-}" = "app" ]; then
+  nohup python -m assistant --app >/dev/null 2>&1 &
+  exit 0
+fi
+
 # --- 5) Los geht's ---
 # Die Schleife wird komplett eingelesen, bevor sie laeuft - ein Update darf diese
 # Datei also ersetzen. Rueckgabecode 42 = Update installiert -> neu starten.

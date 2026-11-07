@@ -1,0 +1,222 @@
+"""Lokaler Webserver fuer das App-Fenster.
+
+Nur auf 127.0.0.1 erreichbar und nur mit dem geheimen Schluessel (Token), der in
+der Adresse des Fensters steckt. Zusaetzlich wird der Host-Header geprueft, damit
+fremde Webseiten im Browser nicht ueber Umwege (DNS-Rebinding) Befehle schicken
+koennen. Der Server spricht nur mit der eigenen Oberflaeche:
+  GET  /, /static/*      Oberflaeche
+  GET  /api/events       Ereignisstrom (Server-Sent Events)
+  GET  /api/state, /api/history
+  POST /api/send, /api/stop, /api/answer, /api/voice, /api/toggle
+"""
+from __future__ import annotations
+
+import hmac
+import json
+import mimetypes
+import queue
+import secrets
+import threading
+import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import parse_qs, urlparse
+
+from ..logging_setup import get_logger
+
+logger = get_logger()
+
+STATIC_DIR = Path(__file__).resolve().parent / "static"
+_MAX_BODY = 1_000_000
+
+
+class EventHub:
+    """Verteilt Ereignisse an alle offenen Fenster (jedes hat eine eigene Warteschlange)."""
+
+    def __init__(self):
+        self._clients: list[queue.Queue] = []
+        self._lock = threading.Lock()
+        self.last_seen = time.monotonic()
+        self.ever_connected = False
+
+    def subscribe(self) -> queue.Queue:
+        q: queue.Queue = queue.Queue(maxsize=5000)
+        with self._lock:
+            self._clients.append(q)
+            self.ever_connected = True
+            self.last_seen = time.monotonic()
+        return q
+
+    def unsubscribe(self, q: queue.Queue) -> None:
+        with self._lock:
+            if q in self._clients:
+                self._clients.remove(q)
+            self.last_seen = time.monotonic()
+
+    @property
+    def connected(self) -> int:
+        with self._lock:
+            return len(self._clients)
+
+    def broadcast(self, event: dict) -> None:
+        data = json.dumps(event, ensure_ascii=False)
+        with self._lock:
+            clients = list(self._clients)
+        for q in clients:
+            try:
+                q.put_nowait(data)
+            except queue.Full:  # Fenster haengt - nicht die KI aufhalten
+                pass
+
+
+class AppServer:
+    def __init__(self, controller_factory, host: str = "127.0.0.1", port: int = 0):
+        self.token = secrets.token_urlsafe(24)
+        self.hub = EventHub()
+        self.controller = None
+        self._factory = controller_factory
+        self.httpd = ThreadingHTTPServer((host, port), self._handler_class())
+        self.httpd.daemon_threads = True
+        self.port = self.httpd.server_address[1]
+        self.stopping = threading.Event()
+
+    @property
+    def url(self) -> str:
+        return f"http://127.0.0.1:{self.port}/?t={self.token}"
+
+    def start(self) -> None:
+        self.controller = self._factory(self.hub.broadcast)
+        threading.Thread(target=self.httpd.serve_forever, name="app-server", daemon=True).start()
+
+    def stop(self) -> None:
+        self.stopping.set()
+        self.hub.broadcast({"type": "bye"})
+        try:
+            self.httpd.shutdown()
+            self.httpd.server_close()
+        except Exception:  # noqa: BLE001
+            pass
+
+    # -- Anfragen -----------------------------------------------------------------
+    def _handler_class(self):
+        server = self
+
+        class Handler(BaseHTTPRequestHandler):
+            protocol_version = "HTTP/1.1"
+
+            def log_message(self, fmt, *args):  # nichts auf die (evtl. fehlende) Konsole
+                logger.debug("app: " + fmt, *args)
+
+            # Schutz: nur unser Host, nur mit Schluessel
+            def _host_ok(self) -> bool:
+                host = (self.headers.get("Host") or "").lower()
+                return host in (f"127.0.0.1:{server.port}", f"localhost:{server.port}")
+
+            def _token_ok(self, query: dict) -> bool:
+                given = self.headers.get("X-KI-Token") or (query.get("t") or [""])[0]
+                return hmac.compare_digest(given.encode(), server.token.encode())
+
+            def _send(self, code: int, body: bytes, ctype: str, extra: dict | None = None) -> None:
+                self.send_response(code)
+                self.send_header("Content-Type", ctype)
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("X-Content-Type-Options", "nosniff")
+                self.send_header("Referrer-Policy", "no-referrer")
+                for key, value in (extra or {}).items():
+                    self.send_header(key, value)
+                self.end_headers()
+                self.wfile.write(body)
+
+            def _json(self, data: dict, code: int = 200) -> None:
+                self._send(code, json.dumps(data, ensure_ascii=False).encode("utf-8"), "application/json; charset=utf-8")
+
+            def _deny(self, code: int = 403) -> None:
+                self._json({"ok": False, "error": "nicht erlaubt"}, code)
+
+            def do_GET(self):  # noqa: N802
+                url = urlparse(self.path)
+                query = parse_qs(url.query)
+                if not self._host_ok():
+                    return self._deny()
+                if url.path in ("/", "/index.html"):
+                    if not self._token_ok(query):
+                        return self._send(403, "Bitte die App neu starten.".encode("utf-8"), "text/plain; charset=utf-8")
+                    return self._static("index.html")
+                if url.path.startswith("/static/"):
+                    return self._static(url.path[len("/static/"):])
+                if not self._token_ok(query):
+                    return self._deny()
+                ctl = server.controller
+                if url.path == "/api/events":
+                    return self._events()
+                if url.path == "/api/state":
+                    return self._json(ctl.state())
+                if url.path == "/api/history":
+                    return self._json({"messages": ctl.history[-400:]})
+                return self._deny(404)
+
+            def do_POST(self):  # noqa: N802
+                url = urlparse(self.path)
+                if not self._host_ok() or not self._token_ok({}):
+                    return self._deny()
+                try:
+                    length = int(self.headers.get("Content-Length") or 0)
+                    if length > _MAX_BODY:
+                        return self._deny(413)
+                    body = json.loads(self.rfile.read(length) or b"{}") if length else {}
+                except (ValueError, json.JSONDecodeError):
+                    return self._json({"ok": False, "error": "ungueltige Anfrage"}, 400)
+                ctl = server.controller
+                if url.path == "/api/send":
+                    ok, error = ctl.send(str(body.get("text", "")))
+                    return self._json({"ok": ok, "error": error} if not ok else {"ok": True})
+                if url.path == "/api/stop":
+                    ctl.stop()
+                    return self._json({"ok": True})
+                if url.path == "/api/answer":
+                    return self._json({"ok": ctl.answer(str(body.get("id", "")), str(body.get("value", "")))})
+                if url.path == "/api/voice":
+                    return self._json(ctl.voice(str(body.get("action", ""))))
+                if url.path == "/api/toggle":
+                    ctl.toggle(str(body.get("name", "")), bool(body.get("value")))
+                    return self._json({"ok": True, "state": ctl.state()})
+                return self._deny(404)
+
+            def _static(self, name: str) -> None:
+                path = (STATIC_DIR / name).resolve()
+                if STATIC_DIR not in path.parents or not path.is_file():
+                    return self._deny(404)
+                ctype = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+                if ctype.startswith("text/") or ctype in ("application/javascript",):
+                    ctype += "; charset=utf-8"
+                csp = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+                       "img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'; "
+                       "frame-ancestors 'none'")
+                self._send(200, path.read_bytes(), ctype, {"Content-Security-Policy": csp})
+
+            def _events(self) -> None:
+                q = server.hub.subscribe()
+                try:
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+                    self.send_header("Cache-Control", "no-store")
+                    self.send_header("Connection", "keep-alive")
+                    self.end_headers()
+                    hello = json.dumps({"type": "hello", "state": server.controller.state()}, ensure_ascii=False)
+                    self.wfile.write(f"data: {hello}\n\n".encode("utf-8"))
+                    self.wfile.flush()
+                    while not server.stopping.is_set():
+                        try:
+                            data = q.get(timeout=15)
+                            self.wfile.write(f"data: {data}\n\n".encode("utf-8"))
+                        except queue.Empty:
+                            self.wfile.write(b": ping\n\n")  # Verbindung lebt
+                        self.wfile.flush()
+                except (BrokenPipeError, ConnectionResetError, OSError):
+                    pass
+                finally:
+                    server.hub.unsubscribe(q)
+                    self.close_connection = True
+
+        return Handler

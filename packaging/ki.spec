@@ -23,6 +23,7 @@ added_files = [
     (str(project_root / "config" / "persona.md"), "config"),
     (str(project_root / "config" / "werte.md"), "config"),
     (str(project_root / ".env.example"), "."),
+    (str(project_root / "assistant" / "app" / "static"), "assistant/app/static"),  # App-Oberflaeche
 ]
 
 a = Analysis(

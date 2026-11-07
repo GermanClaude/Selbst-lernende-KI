@@ -152,6 +152,7 @@ class DeepSeekProvider(LLMProvider):
                 stream_options={"include_usage": True},
             )
         except Exception as exc:  # noqa: BLE001
+            self._check_cancel()
             # Kontext voll (sehr viele/grosse Dateien gelesen): alte Werkzeug-Ausgaben
             # kuerzen und einmal neu versuchen, statt bei jedem "weiter" erneut zu scheitern.
             if not retried and _is_context_error(exc) and self._shrink_old_tool_outputs():
@@ -166,8 +167,10 @@ class DeepSeekProvider(LLMProvider):
         # tool_calls nach Index sammeln (Fragmente kommen verteilt an).
         tool_acc: dict[int, dict[str, str]] = {}
 
+        self._active_stream = stream
         try:
             for chunk in stream:
+                self._check_cancel()
                 if getattr(chunk, "usage", None):
                     self._track_usage(chunk.usage)
                 if not chunk.choices:
@@ -191,10 +194,14 @@ class DeepSeekProvider(LLMProvider):
                         if getattr(fn, "arguments", None):
                             slot["arguments"] += fn.arguments
         except Exception as exc:  # noqa: BLE001
+            self._check_cancel()
             logger.error("DeepSeek-Streamfehler: %s", exc)
             if on_text:
                 on_text(f"\n[DeepSeek-Streamfehler: {exc}]")
             return (None, None)
+
+        finally:
+            self._active_stream = None
 
         tool_calls = [tool_acc[i] for i in sorted(tool_acc) if tool_acc[i]["name"]]
         return ("".join(text_parts), tool_calls)

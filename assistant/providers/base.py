@@ -1,10 +1,12 @@
 """Gemeinsame Basis fuer alle Provider: Token-Zaehlung, Kosten, Werkzeug-Hilfen."""
 from __future__ import annotations
 
+import threading
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from ..cancel import Abgebrochen
 from ..config import Config
 from ..tools import ToolContext, ToolRegistry
 
@@ -93,6 +95,10 @@ class LLMProvider(ABC):
         self.hit_limit = False          # hat die letzte Antwort am Schritt-Limit aufgehoert?
         self.last_text = ""             # Text der letzten Modell-Antwort (z.B. Bericht eines Agenten)
         self.wait_fn: Callable[[], None] | None = None  # "denkt nach"-Anzeige der Oberflaeche
+        # Stopp-Knopf der App: von einem anderen Thread gesetzt, hier regelmaessig geprueft.
+        self.cancel_event = threading.Event()
+        self._active_stream: Any = None
+        self._children: list["LLMProvider"] = []  # laufende Agenten (mit anhalten)
 
     # -- von Unterklassen zu implementieren ---------------------------------
     @abstractmethod
@@ -128,7 +134,25 @@ class LLMProvider(ABC):
     def _close_open_tool_calls(self, messages: list) -> None:
         """Von den Providern ueberschrieben: offene Werkzeugaufrufe schliessen."""
 
+    # -- Anhalten aus einem anderen Thread (App) ---------------------------------
+    def cancel(self) -> None:
+        """Haelt die laufende Antwort an: setzt das Signal und schliesst offene Streams,
+        damit auch eine still wartende Verbindung sofort endet."""
+        self.cancel_event.set()
+        for provider in [self, *list(self._children)]:
+            stream = provider._active_stream
+            if stream is not None:
+                try:
+                    stream.close()
+                except Exception:  # noqa: BLE001
+                    pass
+
+    def _check_cancel(self) -> None:
+        if self.cancel_event.is_set():
+            raise Abgebrochen()
+
     def _waiting(self) -> None:
+        self._check_cancel()
         if self.wait_fn:
             try:
                 self.wait_fn()
@@ -171,7 +195,9 @@ class LLMProvider(ABC):
 
     def _exec_tool(self, name: str, tool_input: Any) -> tuple[str, bool]:
         """Fuehrt ein Werkzeug aus und kuerzt die Ausgabe im Sparmodus."""
+        self._check_cancel()
         output, is_error = self.registry.execute(self.tool_ctx, name, tool_input)
+        self._check_cancel()
         tool = self.registry.get(name)
         # Werkzeuge, die selbst abschnittsweise liefern (datei_lesen), nicht kuerzen -
         # sonst sieht die KI Dateien nie vollstaendig und liest sie immer wieder.

@@ -158,7 +158,9 @@ class AnthropicProvider(LLMProvider):
             emitted = False
             try:
                 with self._open_stream(self._stream_kwargs(allow_tools)) as stream:
+                    self._active_stream = stream
                     for event in stream:
+                        self._check_cancel()
                         if getattr(event, "type", None) == "text" and on_text:
                             on_text(event.text)
                             emitted = True
@@ -169,6 +171,7 @@ class AnthropicProvider(LLMProvider):
                     on_text(f"\n[Fehler vom Modell: {getattr(exc, 'message', exc)}]")
                 return None
             except Exception as exc:  # noqa: BLE001 - Verbindung weg/haengt (auch mitten im Stream)
+                self._check_cancel()  # vom Stopp-Knopf geschlossen -> kein neuer Versuch
                 logger.warning("Verbindung zum Modell unterbrochen: %s", exc)
                 if attempt == 1 and not emitted:
                     continue  # noch nichts gezeigt -> einfach noch einmal versuchen
@@ -178,6 +181,8 @@ class AnthropicProvider(LLMProvider):
                     else:
                         on_text("\n[Verbindung zum Modell unterbrochen - bitte nochmal versuchen.]")
                 return None
+            finally:
+                self._active_stream = None
         return None
 
     def _close_open_tool_calls(self, messages: list) -> None:

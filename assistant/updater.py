@@ -446,15 +446,16 @@ class Updater:
         )
 
     # -- Neustart -----------------------------------------------------------
-    def restart_exe(self) -> None:
-        """Startet die (neue) KI.exe in einem neuen Fenster."""
+    def restart_exe(self, extra_args: list[str] | None = None) -> None:
+        """Startet die (neue) KI.exe in einem neuen Fenster (z.B. mit --app)."""
         flags = getattr(subprocess, "CREATE_NEW_CONSOLE", 0)
         # Ohne das haelt PyInstaller (>= 6.9) den neuen Prozess fuer einen Helfer der
         # alten KI.exe und nutzt deren entpackte Dateien - die gleich geloescht werden.
         env = {k: v for k, v in os.environ.items() if not k.startswith("_PYI_")}
         env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
         env["KI_NEUSTART_VON"] = str(os.getpid())  # die neue KI wartet, bis diese sich beendet
-        subprocess.Popen([str(self.exe_path)], cwd=str(self.exe_path.parent), creationflags=flags, env=env)
+        subprocess.Popen([str(self.exe_path), *(extra_args or [])], cwd=str(self.exe_path.parent),
+                         creationflags=flags, env=env)
 
 
 def _retry(action: Callable[[], None], attempts: int = 5, delay: float = 0.5) -> None:

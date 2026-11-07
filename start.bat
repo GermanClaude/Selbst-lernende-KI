@@ -91,6 +91,16 @@ if not exist ".env" (
     notepad .env
 )
 
+REM --- 5a) Als App (start-app.bat ruft "start.bat app" auf) --
+if /i "%~1"=="app" (
+    if exist ".venv\Scripts\pythonw.exe" (
+        start "" ".venv\Scripts\pythonw.exe" -m assistant --app
+    ) else (
+        start "" python -m assistant --app
+    )
+    exit /b
+)
+
 REM --- 5) Los geht's ----------------------------------------
 REM Alles in EINEM Klammerblock: cmd liest ihn komplett ein, bevor er laeuft.
 REM So stoert es nicht, wenn ein Update diese Datei waehrend des Laufs ersetzt.

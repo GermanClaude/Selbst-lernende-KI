@@ -109,6 +109,8 @@ class Brain:
             client=self.provider.client,
         )
         agent.wait_fn = self.provider.wait_fn
+        agent.cancel_event = self.provider.cancel_event  # Stopp-Knopf haelt auch den Agenten an
+        self.provider._children.append(agent)
 
         def show(chunk: str) -> None:
             # Vom Agenten nur die Werkzeug-Schritte zeigen - sein Ergebnis fasst die KI zusammen.
@@ -133,6 +135,8 @@ class Brain:
             result = agent.last_text or "(Der Agent hat keinen Bericht geliefert - evtl. Verbindungsproblem.)"
         finally:
             self._agent_running = False
+            if agent in self.provider._children:
+                self.provider._children.remove(agent)
             u = agent.usage  # Kosten des Agenten zaehlen zur Sitzung
             self.provider.usage.add(input_full=u.input_full_tokens, cache_hit=u.cache_hit_tokens,
                                     output=u.output_tokens)

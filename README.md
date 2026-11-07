@@ -217,6 +217,16 @@ online, kostenlos). Offline-Erkennung: zusätzlich `pip install faster-whisper`
 (beim ersten Sprechen wird das Modell geladen). Einstellungen unter `[voice]`.
 Antworten vorlesen lassen: `/sprache vorlesen` (braucht `pip install pyttsx3`).
 
+## Als App oder im Terminal
+
+- **`start-app.bat`** – die KI als App in einem eigenen Fenster (Edge/Chrome im
+  App-Modus, nichts extra zu installieren; Linux/macOS: `./start.sh app`).
+- **`start.bat`** – wie bisher im Terminal.
+- Im Terminal wechselt `/app` in die App; `/verknuepfung` legt ein Desktop-Symbol an.
+  Mit `oberflaeche = "app"` unter `[ki]` öffnet auch `start.bat` die App.
+- Die App läuft nur lokal (`127.0.0.1`, mit geheimem Schlüssel in der Adresse) –
+  niemand sonst im Netz kann sie erreichen. Fenster zu = KI beendet.
+
 ## Agenten, Durcharbeiten und Selbstkontrolle
 
 - Große Aufgaben gibt die KI teilweise an **Agenten** ab – eigene KI-Sitzungen mit
@@ -276,6 +286,8 @@ stoppt die Steuerung sofort.
 | `/versionen` | gesicherte alte Versionen anzeigen |
 | `/zurueck <Nr>` | zu einer alten Version zurückkehren |
 | `/autostart` | zeigen (und abstellen), was die KI automatisch startet |
+| `/app` | zur App wechseln (eigenes Fenster) |
+| `/verknuepfung` | Desktop-Symbol für die App anlegen |
 | `/erlauben alles` | nie mehr nachfragen, alles erlauben (dauerhaft) |
 | `/erlauben fragen` | wieder vor jeder Aktion nachfragen |
 | `/beenden` | Sitzung beenden (speichert eine Zusammenfassung) |
@@ -298,6 +310,7 @@ assistant/
     deepseek_provider.py    DeepSeek (OpenAI-kompatibel)
   voice.py         Sprachein-/-ausgabe (F2-Sprechtaste)
   updater.py       automatische Updates + gesicherte alte Versionen
+  app/             die KI als App: Server, Fenster, Oberflaeche (static/)
   tools/           Werkzeuge: Dateien, Shell, Web, System, Gedächtnis, PC
   ui/cli.py        die Chat-Oberfläche
 config/            persona.md, werte.md, settings(.example).toml

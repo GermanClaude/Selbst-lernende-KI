@@ -4,6 +4,20 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.4.0 – 2026-11-07
+
+**Die KI als App**
+- Neu: **start-app.bat** öffnet die KI in einem eigenen, schönen Fenster statt im
+  Terminal. Das Terminal (`start.bat`) gibt es weiterhin – dieselbe KI, dasselbe
+  Gedächtnis.
+- In der App: Antworten mit Überschriften, Listen, Tabellen und Codeblöcken (mit
+  Kopier-Knopf), Werkzeug-Schritte und Agenten übersichtlich, Rückfragen als Knöpfe
+  („Einmal erlauben“, „Immer erlauben“, „Nein“), ein **Stopp-Knopf**, ein
+  **Mikrofon-Knopf** (halten oder klicken, F2 geht auch) und eine Seitenleiste mit
+  Kosten, Gedächtnis, Updates, Autostart und dem Schalter „Alles erlauben“.
+- `/app` wechselt aus dem Terminal in die App, `/verknuepfung` legt ein Symbol auf
+  den Desktop. Wer immer die App will: `oberflaeche = "app"` unter `[ki]`.
+
 ## 0.3.2 – 2026-11-07
 
 - **Einmal zustimmen reicht:** Bei jeder Rückfrage kannst du jetzt **a** eingeben

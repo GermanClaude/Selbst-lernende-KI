@@ -16,6 +16,8 @@ Sonderbefehle (mit '/' beginnen):
   /versionen          - gesicherte alte Versionen anzeigen
   /zurueck <Nr>       - zu einer gesicherten alten Version zurueckkehren
   /autostart          - zeigen, was die KI automatisch startet (und es abstellen)
+  /app                - zur App wechseln (eigenes Fenster statt Terminal)
+  /verknuepfung       - Symbol fuer die App auf den Desktop legen
   /erlauben alles     - nie mehr nachfragen, alles erlauben (dauerhaft)
   /erlauben fragen    - wieder vor jeder Aktion nachfragen
   /beenden            - Sitzung beenden (speichert eine Zusammenfassung)
@@ -52,7 +54,7 @@ GREY = "\033[90m"
 
 
 def _c(text: str, color: str) -> str:
-    if not sys.stdout.isatty():
+    if not (sys.stdout and sys.stdout.isatty()):  # App (pythonw): kein Terminal
         return text
     return f"{color}{text}{RESET}"
 
@@ -129,7 +131,7 @@ class CLI:
         self.config = config
         self.started_by = started_by  # gesetzt, wenn die KI unerwartet automatisch gestartet wurde
         self.memory = Memory(config.memory.db_path)
-        self.thinking = _Thinking(sys.stdout.isatty())
+        self.thinking = _Thinking(bool(sys.stdout) and sys.stdout.isatty())
         self.permissions = PermissionManager(
             config.permissions, config.workspace_path, confirm_fn=self._confirm,
             app_root=config.project_root,
@@ -150,9 +152,17 @@ class CLI:
         self._pending_shown = False
         self._stop_watch = threading.Event()
 
+    def _permission_answer(self, message: str, risk: Risk) -> str:
+        """'einmal', 'immer' oder 'nein' - im Terminal per Eingabe, in der App per Knopf."""
+        return _ask_permission(message, risk)
+
+    def _ask_yes(self, question: str, default: bool = False) -> bool:
+        self.thinking.stop()
+        return _yes(question, default)
+
     def _confirm(self, message: str, risk: Risk) -> bool:
         self.thinking.stop()
-        answer = _ask_permission(message, risk)
+        answer = self._permission_answer(message, risk)
         if answer == "immer":
             self._set_auto_confirm(True)
         return answer in ("einmal", "immer")
@@ -172,6 +182,25 @@ class CLI:
                      "Zurueck mit /erlauben fragen.]", GREEN))
         else:
             print(_c(f"[Ab jetzt frage ich vor jeder Aktion wieder nach ({where}).]", GREEN))
+
+    def _switch_to_app(self) -> bool:
+        from ..app.launcher import spawn_app
+
+        if spawn_app(self.config.project_root, wait_for_pid=os.getpid()):
+            print(_c("Die App oeffnet sich gleich - dieses Fenster schliesst sich.", CYAN))
+            self.exit_code = 43  # start.bat: ohne "Taste druecken" schliessen
+            return True
+        print(_c("Die App liess sich nicht starten.", YELLOW))
+        return False
+
+    def _shortcut_command(self) -> None:
+        from ..app.launcher import create_desktop_shortcut
+
+        try:
+            path = create_desktop_shortcut(self.config.project_root, self.config.ki.name)
+            print(_c(f"Auf dem Desktop liegt jetzt '{self.config.ki.name}' - Doppelklick oeffnet die App. ({path})", GREEN))
+        except Exception as exc:  # noqa: BLE001
+            print(_c(f"Konnte keine Verknuepfung anlegen: {exc}", YELLOW))
 
     def _allow_command(self, args: list[str]) -> None:
         sub = args[0].lower() if args else ""
@@ -313,6 +342,10 @@ class CLI:
             self._autostart_command(cmd.split()[1:])
         elif base == "/erlauben":
             self._allow_command(cmd.split()[1:])
+        elif base == "/app":
+            return self._switch_to_app()
+        elif base in ("/verknuepfung", "/verknüpfung"):
+            self._shortcut_command()
         else:
             print(_c(f"Unbekannter Befehl: {base}. /hilfe zeigt alle.", YELLOW))
         return False
@@ -383,7 +416,7 @@ class CLI:
                 print(_c("Welche? z.B. /autostart entfernen 1  oder  /autostart entfernen alle", YELLOW))
                 return
             for entry in chosen:
-                if not _yes(f"\n{entry.describe()}\nEntfernen? [j/N] "):
+                if not self._ask_yes(f"\n{entry.describe()}\nEntfernen? [j/N] "):
                     continue
                 try:
                     print(_c(entferne(entry, self.config.project_root), GREEN))
@@ -467,7 +500,7 @@ class CLI:
             return False
         print(_c(f"\nNeue Version {info.new} verfuegbar (du hast {info.current}).", BOLD))
         print(_c(f"{self.config.ki.name}: ", CYAN) + self._explain_update(info))
-        if ask and not _yes("\nJetzt aktualisieren? Deine alte Version wird gesichert. [J/n] ", default=True):
+        if ask and not self._ask_yes("\nJetzt aktualisieren? Deine alte Version wird gesichert. [J/n] ", default=True):
             print(_c("Ok - spaeter jederzeit mit /update.", GREY))
             return False
         try:
@@ -526,7 +559,7 @@ class CLI:
         if not args:
             self._print_versions()
             return False
-        if not _yes(f"Wirklich zu '{args[0]}' zurueckkehren? Die jetzige Version wird gesichert. [j/N] "):
+        if not self._ask_yes(f"Wirklich zu '{args[0]}' zurueckkehren? Die jetzige Version wird gesichert. [j/N] "):
             return False
         try:
             message = self.updater.restore(args[0], say=lambda m: print(_c(m, GREY)))

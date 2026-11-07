@@ -111,6 +111,8 @@ class KISettings:
     language: str = "de"
     # Laeuft die KI schon, oeffnet sich kein zweites Fenster.
     nur_ein_fenster: bool = True
+    # "terminal" oder "app": womit start.bat die KI oeffnet (start-app.bat = immer App).
+    oberflaeche: str = "terminal"
 
 
 @dataclass

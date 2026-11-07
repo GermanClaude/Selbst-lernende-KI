@@ -20,7 +20,9 @@ import signal
 import subprocess
 import sys
 import tempfile
+import time
 
+from ..cancel import Abgebrochen
 from .base import Tool, ToolContext
 
 _TIMEOUT = 120
@@ -173,15 +175,24 @@ class ShellTool(Tool):
                 env=_child_env(),
                 **extra,
             )
-            try:
-                proc.wait(timeout=_TIMEOUT)
-            except subprocess.TimeoutExpired:
-                timed_out = True
-                _kill_tree(proc)
+            cancel = ctx.extra.get("cancel_event")
+            deadline = time.monotonic() + _TIMEOUT
+            while True:
                 try:
-                    proc.wait(timeout=10)
+                    proc.wait(timeout=0.25)
+                    break
                 except subprocess.TimeoutExpired:
-                    pass
+                    if cancel is not None and cancel.is_set():  # Stopp-Knopf der App
+                        _kill_tree(proc)
+                        raise Abgebrochen()
+                    if time.monotonic() >= deadline:
+                        timed_out = True
+                        _kill_tree(proc)
+                        try:
+                            proc.wait(timeout=10)
+                        except subprocess.TimeoutExpired:
+                            pass
+                        break
             out = _decode(_read(out_fh))[:_MAX_OUTPUT]
             err = _decode(_read(err_fh))[:_MAX_OUTPUT]
 

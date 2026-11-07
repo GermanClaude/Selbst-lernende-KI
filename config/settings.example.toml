@@ -43,6 +43,9 @@ name = "Aria"
 language = "de"
 # Laeuft die KI schon, oeffnet sich kein zweites Fenster.
 nur_ein_fenster = true
+# Womit start.bat die KI oeffnet: "terminal" (schwarzes Fenster) oder "app"
+# (eigenes, schoeneres Fenster). start-app.bat oeffnet immer die App.
+oberflaeche = "terminal"
 
 
 # ----------------------------------------------------------------------------

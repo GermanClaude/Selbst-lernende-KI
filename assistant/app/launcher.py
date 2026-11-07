@@ -1,0 +1,221 @@
+"""Oeffnet das App-Fenster und haelt alles am Laufen, bis das Fenster zu ist.
+
+Das Fenster ist Edge (auf jedem Windows 10/11 vorhanden) oder Chrome im App-Modus:
+ein eigenes Fenster ohne Adressleiste, mit eigenem Profil in data/app-fenster.
+Gibt es keinen der beiden, oeffnet sich der Standardbrowser.
+
+Geschlossen wird die KI, wenn kein Fenster mehr verbunden ist (ein Neuladen der
+Seite verbindet sich sofort wieder und zaehlt nicht).
+"""
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import subprocess
+import sys
+import threading
+import time
+import webbrowser
+from pathlib import Path
+
+from ..logging_setup import get_logger
+from .controller import AppController
+from .server import AppServer
+
+logger = get_logger()
+
+_CLOSED_AFTER = 8.0      # so lange kein Fenster verbunden = geschlossen
+_FIRST_CONNECT = 45.0    # kommt bis dahin kein Fenster, Standardbrowser versuchen
+_GIVE_UP = 180.0         # ... und spaetestens dann aufgeben
+
+
+def find_browser() -> str | None:
+    """Pfad zu Edge oder Chrome (fuer den App-Modus) - oder None."""
+    if sys.platform == "win32":
+        candidates = []
+        try:
+            import winreg  # type: ignore
+
+            for exe in ("msedge.exe", "chrome.exe"):
+                for hive in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+                    try:
+                        key = winreg.OpenKey(hive, rf"Software\Microsoft\Windows\CurrentVersion\App Paths\{exe}")
+                        with key:
+                            candidates.append(winreg.QueryValue(key, None))
+                    except OSError:
+                        continue
+        except ImportError:
+            pass
+        for env, sub in (("ProgramFiles(x86)", r"Microsoft\Edge\Application\msedge.exe"),
+                         ("ProgramFiles", r"Microsoft\Edge\Application\msedge.exe"),
+                         ("LOCALAPPDATA", r"Google\Chrome\Application\chrome.exe"),
+                         ("ProgramFiles", r"Google\Chrome\Application\chrome.exe"),
+                         ("ProgramFiles(x86)", r"Google\Chrome\Application\chrome.exe")):
+            base = os.environ.get(env)
+            if base:
+                candidates.append(os.path.join(base, sub))
+        return next((c for c in candidates if c and os.path.isfile(c.strip('"'))), None)
+    if sys.platform == "darwin":
+        for app in ("/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+                    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"):
+            if os.path.isfile(app):
+                return app
+    for name in ("microsoft-edge", "google-chrome", "google-chrome-stable", "chromium", "chromium-browser"):
+        path = shutil.which(name)
+        if path:
+            return path
+    return None
+
+
+def open_window(url: str, profile_dir: Path) -> subprocess.Popen | None:
+    """Oeffnet das App-Fenster. None = es wurde der Standardbrowser benutzt (oder nichts)."""
+    browser = find_browser()
+    if browser:
+        try:
+            profile_dir.mkdir(parents=True, exist_ok=True)
+            return subprocess.Popen(
+                [browser.strip('"'), f"--app={url}", f"--user-data-dir={profile_dir}",
+                 "--window-size=1200,860", "--no-first-run", "--no-default-browser-check",
+                 "--disable-features=Translate"],
+                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+        except OSError as exc:
+            logger.warning("App-Fenster konnte nicht geoeffnet werden: %s", exc)
+    webbrowser.open(url)
+    return None
+
+
+def _info_file(root: Path) -> Path:
+    return Path(root) / "data" / "app.json"
+
+
+def open_existing_window(root: Path, pid: int) -> bool:
+    """Laeuft die App schon: einfach ein weiteres Fenster dazu oeffnen."""
+    try:
+        info = json.loads(_info_file(root).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    if int(info.get("pid", 0)) != pid or not info.get("url"):
+        return False
+    open_window(info["url"], Path(root) / "data" / "app-fenster")
+    return True
+
+
+def spawn_app(root: Path, wait_for_pid: int | None = None) -> bool:
+    """Startet die KI als App in einem eigenen Prozess (unter Windows ohne Konsole)."""
+    env = dict(os.environ)
+    if wait_for_pid:
+        env["KI_NEUSTART_VON"] = str(wait_for_pid)
+    if getattr(sys, "frozen", False):
+        cmd = [sys.executable, "--app"]
+        env = {k: v for k, v in env.items() if not k.startswith("_PYI_")}
+        env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+    else:
+        exe = sys.executable
+        pythonw = os.path.join(os.path.dirname(exe), "pythonw.exe")
+        if sys.platform == "win32" and os.path.exists(pythonw):
+            exe = pythonw
+        cmd = [exe, "-m", "assistant", "--app"]
+    flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+    try:
+        subprocess.Popen(cmd, cwd=str(root), env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, creationflags=flags if sys.platform == "win32" else 0,
+                         start_new_session=sys.platform != "win32")
+        return True
+    except OSError as exc:
+        logger.warning("App konnte nicht gestartet werden: %s", exc)
+        return False
+
+
+def create_desktop_shortcut(root: Path, name: str) -> str:
+    """Legt eine Verknuepfung auf dem Desktop an, die die KI als App oeffnet."""
+    root = Path(root)
+    if sys.platform != "win32":
+        raise OSError("Verknuepfungen gibt es hier nur unter Windows - nutze ./start.sh app")
+    if getattr(sys, "frozen", False):
+        target, args, workdir = sys.executable, "--app", str(Path(sys.executable).parent)
+    else:
+        target, args, workdir = str(root / "start-app.bat"), "", str(root)
+    safe_name = "".join(c for c in name if c not in '\\/:*?"<>|').strip() or "KI"
+    script = (
+        "$s = New-Object -ComObject WScript.Shell; "
+        "$d = [Environment]::GetFolderPath('Desktop'); "
+        f"$l = $s.CreateShortcut((Join-Path $d '{safe_name}.lnk')); "
+        f"$l.TargetPath = '{target}'; $l.Arguments = '{args}'; $l.WorkingDirectory = '{workdir}'; "
+        "$l.WindowStyle = 7; $l.Description = 'Selbst-lernende KI als App'; $l.Save(); "
+        "Write-Output (Join-Path $d '" + safe_name + ".lnk')"
+    )
+    proc = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+                          capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL)
+    if proc.returncode != 0:
+        raise OSError((proc.stderr or proc.stdout).strip() or "Verknuepfung konnte nicht angelegt werden")
+    return proc.stdout.strip()
+
+
+def message_box(text: str, title: str = "Selbst-lernende KI") -> None:
+    """Meldung, auch ohne Konsole (die App laeuft unter Windows mit pythonw)."""
+    if sys.platform == "win32":
+        try:
+            import ctypes
+
+            ctypes.windll.user32.MessageBoxW(None, text, title, 0x40)
+            return
+        except Exception:  # noqa: BLE001
+            pass
+    try:
+        print(text)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def run_app(config, started_by: str | None = None) -> int:
+    """Startet Server + Fenster; kehrt zurueck, wenn das Fenster geschlossen ist."""
+    root = Path(config.project_root)
+    server = AppServer(lambda broadcast: AppController(config, broadcast, started_by=started_by))
+    server.start()
+    ctl = server.controller
+    quit_now = threading.Event()
+    result = {"code": 0}
+
+    def on_quit(code: int) -> None:
+        result["code"] = code
+        quit_now.set()
+
+    ctl.on_quit = on_quit
+    info = _info_file(root)
+    try:
+        info.parent.mkdir(parents=True, exist_ok=True)
+        info.write_text(json.dumps({"pid": os.getpid(), "url": server.url}), encoding="utf-8")
+    except OSError as exc:
+        logger.info("app.json nicht schreibbar: %s", exc)
+
+    open_window(server.url, root / "data" / "app-fenster")
+    ctl.startup()
+    began = time.monotonic()
+    fallback_done = False
+    try:
+        while not quit_now.wait(1.0):
+            hub = server.hub
+            if hub.connected:
+                continue
+            if hub.ever_connected:
+                if time.monotonic() - hub.last_seen > _CLOSED_AFTER:
+                    break  # Fenster geschlossen
+            elif time.monotonic() - began > _FIRST_CONNECT and not fallback_done:
+                fallback_done = True
+                webbrowser.open(server.url)
+            elif time.monotonic() - began > _GIVE_UP:
+                message_box("Das App-Fenster liess sich nicht oeffnen. Starte die KI mit start.bat im Terminal.")
+                break
+    except KeyboardInterrupt:
+        pass
+    finally:
+        ctl.shutdown()
+        server.stop()
+        try:
+            if json.loads(info.read_text(encoding="utf-8")).get("pid") == os.getpid():
+                info.unlink()
+        except (OSError, ValueError):
+            pass
+    return result["code"]
