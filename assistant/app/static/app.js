@@ -116,6 +116,11 @@
     palette: '<circle cx="13.5" cy="6.5" r="1.2"/><circle cx="17.5" cy="10.5" r="1.2"/><circle cx="8.5" cy="7.5" r="1.2"/><circle cx="6.5" cy="12.5" r="1.2"/><path d="M12 2a10 10 0 0 0 0 20c.9 0 1.6-.7 1.6-1.6 0-.4-.2-.8-.4-1.1-.3-.3-.4-.7-.4-1.1 0-.9.7-1.6 1.6-1.6h2A5.6 5.6 0 0 0 22 11c0-5-4.5-9-10-9z"/>',
     flame: '<path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.4-.5-2-1-3-1.1-2.1-.2-4 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.2.4-2.3 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>',
     tag: '<path d="M12.6 2.6A2 2 0 0 0 11.2 2H4a2 2 0 0 0-2 2v7.2a2 2 0 0 0 .6 1.4l8.7 8.7a2.4 2.4 0 0 0 3.4 0l6.6-6.6a2.4 2.4 0 0 0 0-3.4z"/><circle cx="7.5" cy="7.5" r="1.2"/>',
+    compass: '<circle cx="12" cy="12" r="10"/><path d="m16.24 7.76-2.12 6.36-6.36 2.12 2.12-6.36z"/>',
+    chat: '<path d="M21 12a8.5 8.5 0 0 1-12.4 7.5L3 21l1.5-5.6A8.5 8.5 0 1 1 21 12z"/>',
+    play: '<path d="M7 4.5v15l12-7.5z" fill="currentColor" stroke="none"/>',
+    shieldOff: '<path d="M19.7 14a6.9 6.9 0 0 0 .3-2V5l-8-3-3.2 1.2"/><path d="m2 2 20 20"/><path d="M4.7 4.7 4 5v7c0 6 8 10 8 10a20.3 20.3 0 0 0 5.6-4.4"/>',
+    zap: '<path d="M13 2 3 14h9l-1 8 10-12h-9z"/>',
   };
 
   function icon(name, cls) {
@@ -386,6 +391,22 @@
   let everConnected = false;
   let ended = false; // Ereignis "bye": die KI wurde beendet
   const pendingToggle = {};
+  const pendingVal = {};   // Schalter, deren Aenderung gerade gesendet wird (Wert schon anzeigen)
+
+  // Ebenen ueber dem Chat (Jarvis-Modus, Tour, Bestaetigung) – frueh, weil updateInert sie kennt
+  const jvEl = byId('jarvis');
+  const tourEl = byId('tour');
+  const cmodal = byId('cmodal');
+  const jv = {
+    open: false, starting: false, cancelStart: false, closing: false, closeTimer: 0, closeWaiters: [],
+    leaveTimer: 0, openedAt: 0, state: 'starting', label: '', labelTimer: 0, working: false,
+    live: null, setupText: '', setupFailed: false, focusBack: null, noteTimer: 0,
+    words: [], heardFinal: false, heardStale: false, heardTimer: 0, subsTimer: 0,
+  };
+  const tour = {
+    open: false, paused: false, loading: false, steps: [], i: 0, demo: false, waiting: false, sawBusy: false,
+    waitTimer: 0, target: null, follow: 0, sbOpened: false, doneSent: false,
+  };
 
   const app = byId('app');
   const msgs = byId('messages');
@@ -430,9 +451,24 @@
     if (pos < meaning.length) el.append(meaning.slice(pos));
   }
 
+  /** Farbe einer CSS-Variable als "#rrggbb" (fuer das Symbol im Fensterrahmen). */
+  function cssColor(name, fallback) {
+    const probe = h('span');
+    probe.style.cssText = 'position:absolute;width:0;height:0;overflow:hidden;color:var(' + name + ')';
+    document.body.append(probe);
+    const c = getComputedStyle(probe).color || '';
+    probe.remove();
+    let m = c.match(/rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/);
+    let rgb = m ? [+m[1], +m[2], +m[3]] : null;
+    if (!rgb && (m = c.match(/color\(srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)/))) rgb = [m[1] * 255, m[2] * 255, m[3] * 255];
+    if (!rgb) return fallback;
+    return '#' + rgb.map((x) => Math.max(0, Math.min(255, Math.round(x))).toString(16).padStart(2, '0')).join('');
+  }
+
   function setFavicon(letter) {
     const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">' +
-      '<stop offset="0" stop-color="#6366f1"/><stop offset="1" stop-color="#a855f7"/></linearGradient></defs>' +
+      '<stop offset="0" stop-color="' + cssColor('--grad-a', '#6366f1') + '"/><stop offset="1" stop-color="' +
+      cssColor('--grad-b', '#a855f7') + '"/></linearGradient></defs>' +
       '<rect width="64" height="64" rx="18" fill="url(#g)"/><text x="32" y="43" font-family="Segoe UI,Arial,sans-serif" font-size="32" font-weight="700" fill="#fff" text-anchor="middle">' +
       esc(letter) + '</text></svg>';
     byId('favicon').href = 'data:image/svg+xml,' + encodeURIComponent(svg);
@@ -446,7 +482,9 @@
     document.title = name;
     byId('sb-name').textContent = name;
     byId('tb-name').textContent = name;
-    byId('empty-title').textContent = 'Hallo! Ich bin ' + name + '.';
+    renderGreeting();
+    byId('tour-cta-title').textContent = 'Tour starten – ' + name + ' zeigt dir alles';
+    byId('jv-name').textContent = name;
     // optional: Bedeutung des Namens (z.B. "Neugierige, Offene, Vernetzte Assistenz")
     const meaning = s.meaning ? String(s.meaning).trim() : '';
     fillMeaning(byId('empty-meaning'), name, meaning);
@@ -471,9 +509,8 @@
     byId('sb-eur').textContent = fmtEur(s.eur);
     byId('sb-tokens').textContent = fmtInt(s.tokens) + ' Token';
 
-    // Schalter
-    if (!pendingToggle.auto_confirm) setSwitch(byId('sw-erlauben'), !!s.auto_confirm);
-    if (!pendingToggle.speak) setSwitch(byId('sw-vorlesen'), !!s.speak);
+    // Schalter (Seitenleiste und Reiter "Sicherheit")
+    renderSwitches();
 
     // Fusszeile: sicherer Modus
     const foot = byId('sb-foot');
@@ -497,6 +534,61 @@
     commands = Array.isArray(s.commands) ? s.commands.filter((c) => c && typeof c.cmd === 'string') : [];
     setBusy(!!s.busy);
     profileNames();
+    updateEmpty();
+    // Jarvis-Modus laeuft beim Server (z.B. nach dem Neuverbinden), Fenster zeigt ihn nicht – oder umgekehrt
+    if (s.jarvis === true && !jv.open && !jv.closing && !ended) openJarvisView(false);
+    else if (s.jarvis === false && jv.open && !jv.starting && performance.now() - jv.openedAt > 2500) closeJarvisView();
+  }
+
+  const WHEELS_SUB = {
+    an: 'fragt vor Änderungen, nur Arbeitsordner',
+    aus: 'darf am ganzen PC alles ohne Fragen',
+    teilweise: 'teilweise – eigene Einstellungen',
+  };
+  const WHEELS_BADGE = { an: 'An', aus: 'Abgenommen', teilweise: 'Teilweise' };
+
+  function wheelsState() {
+    if (own(pendingVal, 'stuetzraeder')) return pendingVal.stuetzraeder ? 'an' : 'aus';
+    const w = String(state.stuetzraeder || '');
+    return own(WHEELS_SUB, w) ? w : '';
+  }
+
+  function renderSwitches() {
+    const s = state;
+    const val = (key) => (own(pendingVal, key) ? !!pendingVal[key] : !!s[key]);
+    for (const id of ['sw-erlauben', 'sec-sw-erlauben']) setSwitch(byId(id), val('auto_confirm'));
+    setSwitch(byId('sw-vorlesen'), val('speak'));
+    const w = wheelsState();
+    const row = document.querySelector('.switch-row[data-toggle="stuetzraeder"]');
+    row.hidden = !w;
+    row.dataset.state = w;
+    byId('sec-wheels').dataset.state = w || 'teilweise';
+    for (const id of ['sw-stuetzraeder', 'sec-sw-stuetzraeder']) {
+      const b = byId(id);
+      setSwitch(b, w === 'an');
+      b.classList.toggle('mixed', w === 'teilweise');
+    }
+    if (w) byId('sub-stuetzraeder').textContent = WHEELS_SUB[w];
+    const n = kiName();
+    byId('sec-wheels-badge').textContent = WHEELS_BADGE[w] || '–';
+    byId('sec-wheels-text').textContent = w === 'an'
+      ? 'Sind dran: ' + n + ' fragt vor jeder Änderung und bleibt im Arbeitsordner.'
+      : w === 'aus' ? 'Sind ab: ' + n + ' darf am ganzen PC alles ohne Rückfrage.'
+        : 'Teilweise: Einzelne Schutzfunktionen sind anders eingestellt. Einschalten macht alles wieder sicher.';
+    byId('sec-title').textContent = 'Was ' + n + ' ohne Nachfrage darf';
+    const facts = byId('sec-facts');
+    facts.replaceChildren();
+    const fact = (k, v, cls, ic) => {
+      const d = h('div', 'sec-fact');
+      const vv = h('div', 'sf-v ' + cls);
+      vv.append(icon(ic), h('span', null, v));
+      d.append(h('div', 'sf-k', k), vv);
+      facts.append(d);
+    };
+    fact('Sicherer Modus', s.safe_mode ? 'An' : 'Aus', s.safe_mode ? 'good' : 'bad', s.safe_mode ? 'shield' : 'shieldOff');
+    fact('Zugriff', s.full_access ? 'Ganzer PC' : 'Nur Arbeitsordner', s.full_access ? 'bad' : 'good', s.full_access ? 'monitor' : 'folder');
+    fact('Rückfragen', val('auto_confirm') ? 'Aus – fragt nicht' : 'An – fragt vorher', val('auto_confirm') ? 'mid' : 'good',
+      val('auto_confirm') ? 'zap' : 'checkCircle');
   }
 
   function renderAlerts() {
@@ -550,6 +642,7 @@
     }
     updateSendBtn();
     updateStatus();
+    tourBusy(busy);
   }
 
   function updateSendBtn() {
@@ -569,26 +662,43 @@
     byId('status-text').textContent = t;
   }
 
-  // Schalter in der Seitenleiste
-  const TOGGLES = { erlauben: 'auto_confirm', vorlesen: 'speak' };
-  for (const row of document.querySelectorAll('[data-toggle]')) {
-    row.addEventListener('click', async () => {
-      const name = row.dataset.toggle;
-      const key = TOGGLES[name];
-      const btn = row.querySelector('.switch');
-      if (pendingToggle[key]) return;
-      const value = btn.getAttribute('aria-checked') !== 'true';
-      setSwitch(btn, value);
-      pendingToggle[key] = true;
-      const r = await post('/api/toggle', { name, value });
-      pendingToggle[key] = false;
-      if (r.ok && r.state) applyState(r.state);
-      else if (r.ok) state[key] = value;
-      else {
-        setSwitch(btn, !!state[key]);
-        toast(r.error || 'Die Einstellung konnte nicht geändert werden.', 'error');
+  // Schalter (Seitenleiste und Reiter "Sicherheit")
+  const TOGGLES = { erlauben: 'auto_confirm', vorlesen: 'speak', stuetzraeder: 'stuetzraeder' };
+  async function toggleSetting(name) {
+    const key = pick(TOGGLES, name);
+    if (!key || ended || pendingToggle[key]) return;
+    let value;
+    if (key === 'stuetzraeder') {
+      value = state.stuetzraeder !== 'an'; // aus/teilweise -> an (sofort); an -> ab (erst warnen)
+      if (!value) {
+        pendingToggle[key] = true; // waehrend der Warnung kein zweiter Klick
+        const ok = await wheelsWarning();
+        pendingToggle[key] = false;
+        if (!ok || ended) return;
       }
-    });
+    } else value = !state[key];
+    pendingToggle[key] = true;
+    pendingVal[key] = value;
+    renderSwitches();
+    const r = await post('/api/toggle', { name, value });
+    pendingToggle[key] = false;
+    delete pendingVal[key];
+    if (r.ok && r.state) applyState(r.state);
+    else {
+      if (r.ok && key !== 'stuetzraeder') state[key] = value;
+      renderSwitches();
+      if (!r.ok) toast(r.error || 'Die Einstellung konnte nicht geändert werden.', 'error');
+    }
+    if (r.ok && key === 'stuetzraeder') {
+      toast(value ? 'Stützräder sind dran – ich frage vor Änderungen.' : 'Stützräder sind ab – ich darf jetzt alles ohne Rückfrage.',
+        value ? 'ok' : 'info', 4200);
+    }
+  }
+  for (const row of document.querySelectorAll('[data-toggle]')) {
+    row.addEventListener('click', () => toggleSetting(row.dataset.toggle));
+  }
+  for (const b of document.querySelectorAll('[data-switch]')) {
+    b.addEventListener('click', () => toggleSetting(b.dataset.switch));
   }
 
   // Befehls-Knoepfe
@@ -603,17 +713,17 @@
 
   // Seitenleiste als Schublade (schmale Fenster)
   const menuBtn = byId('menu-btn');
-  function openSidebar() {
+  function openSidebar(noFocus) {
     app.classList.add('sb-open');
     menuBtn.setAttribute('aria-expanded', 'true');
-    setTimeout(() => byId('sb-close').focus(), 50);
+    if (noFocus !== true) setTimeout(() => byId('sb-close').focus(), 50);
   }
   function closeSidebar() {
     if (!app.classList.contains('sb-open')) return;
     app.classList.remove('sb-open');
     menuBtn.setAttribute('aria-expanded', 'false');
   }
-  menuBtn.addEventListener('click', openSidebar);
+  menuBtn.addEventListener('click', () => openSidebar());
   byId('sb-close').addEventListener('click', () => { closeSidebar(); menuBtn.focus(); });
   byId('scrim').addEventListener('click', closeSidebar);
 
@@ -679,7 +789,10 @@
     lastTop = top;
     if (stick) jumpBtn.hidden = true;
   }, { passive: true });
-  scroller.addEventListener('wheel', (e) => { if (e.deltaY < 0 && scroller.scrollTop > 0) userUp(); }, { passive: true });
+  scroller.addEventListener('wheel', (e) => {
+    if (e.ctrlKey) return; // Zoomen (auch Touchpad-Spreizen) ist kein Hochscrollen
+    if (e.deltaY < 0 && scroller.scrollTop > 0) userUp();
+  }, { passive: true });
   scroller.addEventListener('keydown', (e) => {
     if (['ArrowUp', 'PageUp', 'Home'].includes(e.key)) userUp();
   });
@@ -726,6 +839,7 @@
     const talked = !!msgs.querySelector('.msg');
     emptyEl.hidden = !historyReady || talked;
     byId('tb-new').hidden = !talked || ended;
+    byId('tour-offer').hidden = !historyReady || state.tutorial_done !== false || tourLater || tour.open || ended;
   }
   function added() { updateEmpty(); keepBottom(); }
 
@@ -1224,10 +1338,23 @@
 
   async function send(text, fromInput) {
     text = String(text || '').trim();
-    if (!text || ended) return;
+    if (!text || ended) return false;
+    // /jarvis und /tutorial oeffnen die Ansichten direkt im Fenster (nicht senden)
+    const low = text.toLowerCase();
+    if (low === '/jarvis' || low === '/tutorial' || low === '/tour') {
+      if (fromInput) {
+        input.value = '';
+        autosize();
+        closeCmdPop();
+      }
+      rememberOwn(text);
+      recallIdx = -1;
+      if (low === '/jarvis') startJarvis(); else startTour();
+      return true;
+    }
     if (busy) {
       toast('Ich arbeite noch an der letzten Nachricht – „Stopp“ oder Esc hält sie an.');
-      return;
+      return false;
     }
     const row = addUser(text);
     const p = { text, row, t: Date.now() };
@@ -1248,7 +1375,43 @@
       updateEmpty();
       if (fromInput && !input.value) { input.value = text; autosize(); }
       toast(r.error || 'Senden hat nicht geklappt.', 'error');
+      return false;
     }
+    return true;
+  }
+
+  /** Ereignis "retract": die letzte Frage wurde mit einem Nachtrag zusammengefasst –
+   *  ihre Blase und die angefangene (leere) Antwort verschwinden; die neue Frage kommt gleich. */
+  function onRetract() {
+    let el;
+    if (reply) {
+      el = reply.row.previousElementSibling;
+      reply.dispose();
+      reply.row.remove();
+      reply = null;
+    } else el = msgs.lastElementChild;
+    // nur ueber Systemkarten/-zeilen hinweg suchen, nie eine aeltere Antwort ueberspringen
+    while (el && !el.classList.contains('msg')) el = el.previousElementSibling;
+    if (el && el.classList.contains('user')) {
+      const text = el.querySelector('.bubble') ? el.querySelector('.bubble').textContent.trim() : '';
+      const k = pendingSent.findIndex((p) => p.row === el);
+      if (k >= 0) pendingSent.splice(k, 1);
+      if (ownMsgs[ownMsgs.length - 1] === text) ownMsgs.pop();
+      el.remove();
+    }
+    updateEmpty();
+  }
+
+  /** Info-Zeile ausserhalb einer Antwort (z.B. "Live-Mitschrift: 40 % geladen") – keine leere Blase. */
+  function addInfoLine(text) {
+    const progress = /^Live-Mitschrift:\s*\d+\s*%/i.test(text);
+    const lastEl = msgs.lastElementChild;
+    if (progress && lastEl && lastEl.dataset.kind === 'live-progress') {
+      lastEl.querySelector('span:not(.ic)').textContent = text;
+      return;
+    }
+    addSysLine('info', text);
+    if (progress) msgs.lastElementChild.dataset.kind = 'live-progress';
   }
 
   function onUserEcho(text) {
@@ -1287,7 +1450,7 @@
   /** Eingabefeld fokussieren – aber nie einem offenen Dialog den Fokus wegnehmen. */
   function focusInput() {
     if (!modal.hidden) { askFocusBack = input; return false; }
-    if (!pmodal.hidden || ended) return false;
+    if (!pmodal.hidden || ended || jv.open || !cmodal.hidden) return false;
     input.focus();
     return true;
   }
@@ -1673,9 +1836,14 @@
   /** Alles hinter einem offenen Dialog ist nicht bedienbar (auch nicht per Tab oder Fokus). */
   function updateInert() {
     const askOpen = !modal.hidden;
+    const confOpen = !cmodal.hidden;
     const profOpen = !pmodal.hidden;
-    app.inert = askOpen || profOpen;
-    pmodal.inert = askOpen;
+    const jvOpen = jv.open;
+    app.inert = askOpen || confOpen || profOpen || jvOpen;
+    pmodal.inert = askOpen || confOpen || jvOpen; // Jarvis liegt ueber dem Profil-Fenster
+    jvEl.inert = askOpen || confOpen;             // Rueckfragen liegen ueber Jarvis
+    tourEl.inert = askOpen || confOpen || profOpen || jvOpen;
+    modal.inert = confOpen;
   }
 
   function nextAsk() {
@@ -1687,6 +1855,7 @@
       updateInert();
       if (wasOpen) {
         if (askFocusBack && document.contains(askFocusBack) && !askFocusBack.closest('[inert]')) askFocusBack.focus();
+        else if (jv.open) jvEl.focus();
         else if (!pmodal.hidden) panel.focus();
         else focusInput();
       }
@@ -1703,6 +1872,7 @@
     byId('dlg-title').textContent = askCur.kind === 'permission' ? 'Darf ich das tun?' : 'Kurze Rückfrage';
     byId('dlg-risk').textContent = risk ? risk.label : askCur.kind === 'permission' ? 'Erlaubnis nötig' : '';
     byId('dlg-text').textContent = String(askCur.text || ''); // reiner Text, keine Formatierung
+    updateDlgVoice();
 
     const foot = byId('dlg-foot');
     foot.replaceChildren();
@@ -1799,7 +1969,8 @@
   const memSearch = byId('mem-search');
   const memAddBtn = byId('mem-add-btn');
   const pconfirm = byId('pn-confirm');
-  const TABS = ['charakter', 'stil', 'ueber', 'werte', 'gedaechtnis'];
+  const TABS = ['charakter', 'stil', 'ueber', 'werte', 'gedaechtnis', 'sicherheit'];
+  const NO_PROFILE_TABS = new Set(['gedaechtnis', 'sicherheit']); // brauchen das geladene Profil nicht
   const LONG_ABOUT = new Set(['interessen', 'projekte', 'wichtig', 'nicht', 'sonstiges']);
   const CHAR_ICONS = {
     freundlich: 'smile', sachlich: 'briefcase', butler: 'bowtie', mentor: 'cap',
@@ -1880,7 +2051,8 @@
     showTab(tab && TABS.includes(tab) ? tab : profTab, false);
     loadProfile();
     loadMemory();
-    requestAnimationFrame(() => byId('tab-' + profTab).focus());
+    renderSwitches();
+    requestAnimationFrame(() => { byId('tab-' + profTab).focus(); updateTabFade(); });
   }
 
   function requestClose() {
@@ -1962,19 +2134,30 @@
     const tabBtn = byId('tab-' + t);
     if (focus) tabBtn.focus();
     tabBtn.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    updateTabFade();
     if (t === 'gedaechtnis' && !mem.loaded && !mem.loading) loadMemory();
   }
 
   function renderPanes() {
     const ready = panelState === 'ready';
-    const memTab = profTab === 'gedaechtnis';
-    byId('pn-loading').hidden = memTab || panelState !== 'loading';
-    byId('pn-error').hidden = memTab || panelState !== 'error';
-    for (const t of TABS) byId('pane-' + t).hidden = t !== profTab || (t !== 'gedaechtnis' && !ready);
+    const free = NO_PROFILE_TABS.has(profTab);
+    byId('pn-loading').hidden = free || panelState !== 'loading';
+    byId('pn-error').hidden = free || panelState !== 'error';
+    for (const t of TABS) byId('pane-' + t).hidden = t !== profTab || (!NO_PROFILE_TABS.has(t) && !ready);
     if (ready && profTab === 'ueber') for (const el of Object.values(aboutEls)) grow(el);
   }
 
   for (const t of TABS) byId('tab-' + t).addEventListener('click', () => showTab(t, false));
+
+  // Reiter-Leiste: weicher Rand, wo es weitergeht (schmale Fenster)
+  const tabsEl = byId('pn-tabs');
+  function updateTabFade() {
+    const max = tabsEl.scrollWidth - tabsEl.clientWidth;
+    tabsEl.classList.toggle('fade-l', max > 2 && tabsEl.scrollLeft > 2);
+    tabsEl.classList.toggle('fade-r', max > 2 && max - tabsEl.scrollLeft > 2);
+  }
+  tabsEl.addEventListener('scroll', updateTabFade, { passive: true });
+  if (window.ResizeObserver) new ResizeObserver(updateTabFade).observe(tabsEl);
   byId('pn-tabs').addEventListener('keydown', (e) => {
     const i = TABS.indexOf(profTab);
     let n = -1;
@@ -2126,6 +2309,7 @@
         b.type = 'button';
         b.setAttribute('role', 'radio');
         b.dataset.value = o.value;
+        b.dataset.key = key;
         b.addEventListener('click', () => pickStyle(key, o.value, seg));
         seg.append(b);
       }
@@ -2242,8 +2426,8 @@
     if (!prof) return ch;
     const name = pfName.value.trim();
     const meaning = pfMeaning.value.trim();
-    // Name und Bedeutung immer zusammen schicken (der Server speichert die Bedeutung nur mit Namen)
-    if (name !== prof.name || meaning !== prof.meaning) { ch.name = name; ch.meaning = meaning; }
+    if (name !== prof.name) ch.name = name;
+    if (meaning !== prof.meaning) ch.meaning = meaning; // darf auch allein geschickt werden
     if (pSel.character !== prof.character && pSel.character !== 'eigen') ch.character = pSel.character;
     else if (pfPersona.value !== prof.persona) { ch.character = 'eigen'; ch.persona_text = pfPersona.value; }
     const st = dict();
@@ -2258,9 +2442,8 @@
   function nameProblem(ch) {
     if (!('name' in ch)) return '';
     if (!ch.name) return 'Bitte gib ihr einen Namen.';
-    if (/["\\\n]/.test(ch.name)) return 'Bitte einen Namen ohne Anführungszeichen oder Backslash.';
+    if (/["\\\n]/.test(ch.name)) return 'Bitte einen Namen ohne Anführungszeichen (") oder Backslash (\\).';
     if (ch.name.length > 40) return 'Der Name ist zu lang (höchstens 40 Zeichen).';
-    if (/[\\\n]/.test(ch.meaning || '')) return 'Bitte die Bedeutung ohne Backslash (\\) schreiben.';
     return '';
   }
 
@@ -2268,7 +2451,7 @@
     const ch = profChanges();
     const n = Object.keys(ch).length;
     const td = {
-      charakter: 'name' in ch || 'character' in ch,
+      charakter: 'name' in ch || 'meaning' in ch || 'character' in ch,
       stil: 'style' in ch,
       ueber: 'about' in ch,
       werte: 'values_text' in ch,
@@ -2327,6 +2510,7 @@
       if (andNew) startNewConversation();
       return true;
     }
+    const focusKey = profFocusKey(); // vor dem Speichern merken (Knoepfe werden kurz gesperrt)
     profSaving = true;
     profError = '';
     updateDirty();
@@ -2335,6 +2519,7 @@
     if (!r.ok) {
       profError = r.error || 'Speichern hat nicht geklappt.';
       updateDirty();
+      restoreProfFocus(focusKey);
       toast(profError, 'error');
       return false;
     }
@@ -2345,8 +2530,35 @@
     } else {
       savedNote = true;
       updateDirty();
+      restoreProfFocus(focusKey);
     }
     return true;
+  }
+
+  /** Welches Element im Fenster hat den Fokus? (Karten/Knoepfe werden beim Speichern neu gebaut) */
+  function profFocusKey() {
+    const a = document.activeElement;
+    if (!a || !panel.contains(a)) return null;
+    const k = { id: a.id || '', charId: '', styleKey: '', styleVal: '', sel: null };
+    if (a.classList.contains('char-card')) k.charId = a.dataset.id || '';
+    else if (a.classList.contains('segctl-btn')) { k.styleKey = a.dataset.key || ''; k.styleVal = a.dataset.value || ''; }
+    try { if (typeof a.selectionStart === 'number') k.sel = [a.selectionStart, a.selectionEnd]; } catch (_) { k.sel = null; }
+    return k;
+  }
+  function restoreProfFocus(k) {
+    if (!k || pmodal.hidden || !pconfirm.hidden) return;
+    let el = null;
+    if (k.charId) el = [...byId('char-grid').children].find((b) => b.dataset.id === k.charId) || null;
+    else if (k.styleKey) {
+      el = [...byId('style-list').querySelectorAll('.segctl-btn')]
+        .find((b) => b.dataset.key === k.styleKey && b.dataset.value === k.styleVal) || null;
+    } else if (k.id) el = byId(k.id);
+    if (el && el.id === 'pn-save' && el.disabled) el = byId('pn-save-new');
+    if (el && (el.disabled || el.offsetParent === null)) el = null;
+    (el || panel).focus();
+    if (el && k.sel && typeof el.setSelectionRange === 'function') {
+      try { el.setSelectionRange(k.sel[0], k.sel[1]); } catch (_) { /* egal */ }
+    }
   }
 
   function startNewConversation() {
@@ -2393,6 +2605,10 @@
     if (!pconfirm.hidden) {
       if (e.key === 'Escape') { e.preventDefault(); hideConfirm(); byId('pn-save').focus(); }
       else if (e.key === 'Tab') trapTab(e, pconfirm);
+      else if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 's') {
+        e.preventDefault(); // nicht "Seite speichern" des Browsers
+        byId('pc-save').click();
+      }
       return;
     }
     if (e.key === 'F2') { e.preventDefault(); return; }
@@ -2606,12 +2822,1365 @@
   });
 
   // =====================================================================
+  // Aussehen, das Nova anpasst (/api/appearance, /custom.css)
+  // Alle Werte werden hier geprueft und selbst formatiert – vom Server kommt
+  // nie fertiges CSS in ein <style>; eigenes CSS kommt nur als Datei /custom.css.
+  // =====================================================================
+  const look = { greeting: '', examples: [], gen: 0, cssGen: 0, cssLoaded: 0 };
+  const lookStyle = document.createElement('style');
+  lookStyle.id = 'appearance-vars';
+  byId('custom-css').before(lookStyle);
+  const sugBox = byId('suggestions');
+  const defaultSugs = [...sugBox.children];
+  const RADII = { eckig: '4px', normal: '12px', rund: '20px' };
+  const DENSITY = { kompakt: '.8', normal: '1', luftig: '1.25' };
+
+  const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+  function hexRgb(hex) {
+    let s = hex.slice(1);
+    if (s.length === 3) s = s.split('').map((c) => c + c).join('');
+    const n = parseInt(s, 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  }
+  function rgbHsl([r, g, b]) {
+    r /= 255; g /= 255; b /= 255;
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const l = (max + min) / 2;
+    let hh = 0;
+    let s = 0;
+    if (max !== min) {
+      const d = max - min;
+      s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+      if (max === r) hh = (g - b) / d + (g < b ? 6 : 0);
+      else if (max === g) hh = (b - r) / d + 2;
+      else hh = (r - g) / d + 4;
+      hh *= 60;
+    }
+    return [hh, s, l];
+  }
+  function hslRgb(hh, s, l) {
+    hh = ((hh % 360) + 360) % 360;
+    const c = (1 - Math.abs(2 * l - 1)) * s;
+    const x = c * (1 - Math.abs(((hh / 60) % 2) - 1));
+    const m = l - c / 2;
+    const [r, g, b] = hh < 60 ? [c, x, 0] : hh < 120 ? [x, c, 0] : hh < 180 ? [0, c, x]
+      : hh < 240 ? [0, x, c] : hh < 300 ? [x, 0, c] : [c, 0, x];
+    return [Math.round((r + m) * 255), Math.round((g + m) * 255), Math.round((b + m) * 255)];
+  }
+  function lum(rgb) {
+    const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+    return 0.2126 * f(rgb[0]) + 0.7152 * f(rgb[1]) + 0.0722 * f(rgb[2]);
+  }
+  function contrast(a, b) {
+    const x = lum(a);
+    const y = lum(b);
+    return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+  }
+  /** Helligkeit schrittweise aendern, bis der Kontrast zum Hintergrund reicht. */
+  function withContrast(hh, s, l, bg, min, dir) {
+    let rgb = hslRgb(hh, s, l);
+    for (let i = 0; i < 40 && contrast(rgb, bg) < min; i++) {
+      l = clamp(l + dir * 0.02, 0, 1);
+      rgb = hslRgb(hh, s, l);
+    }
+    return rgb;
+  }
+  const rgbCss = (c, a) => (a == null ? 'rgb(' + c.join(', ') + ')' : 'rgba(' + c.join(', ') + ', ' + a + ')');
+  const onColor = (bg) => (contrast(bg, [255, 255, 255]) >= 2.9 ? '#ffffff' : '#0b0d12');
+
+  function accentVars(hex) {
+    const base = hexRgb(hex);
+    const [hh, s, l] = rgbHsl(base);
+    const white = [255, 255, 255];
+    const darkBg = [24, 27, 33];
+    const v = (o) => Object.entries(o).map(([k, val]) => '--' + k + ':' + val + ';').join('');
+    const hover = hslRgb(hh, s, clamp(l - 0.07, 0, 1));
+    const gradB = hslRgb(hh + 34, s, l);
+    const light = v({
+      accent: rgbCss(base), 'accent-hover': rgbCss(hover),
+      'accent-soft': 'color-mix(in srgb, ' + rgbCss(base) + ' 11%, #fff)',
+      'accent-text': rgbCss(withContrast(hh, s, l, white, 4.6, -1)),
+      'on-accent': onColor(base), 'user-bg': rgbCss(base), 'user-text': onColor(base),
+      'grad-a': rgbCss(base), 'grad-b': rgbCss(gradB),
+    });
+    const accD = withContrast(hh, s, l, darkBg, 3.2, 1);
+    const [, , lD] = rgbHsl(accD);
+    const dark = v({
+      accent: rgbCss(accD), 'accent-hover': rgbCss(hslRgb(hh, s, clamp(lD + 0.06, 0, 1))),
+      'accent-soft': rgbCss(accD, 0.18),
+      'accent-text': rgbCss(withContrast(hh, s, Math.max(l, 0.62), darkBg, 6, 1)),
+      'on-accent': onColor(accD), 'user-bg': rgbCss(base), 'user-text': onColor(base),
+      'grad-a': rgbCss(base), 'grad-b': rgbCss(gradB),
+    });
+    return { light, dark };
+  }
+
+  function applyAppearance(s) {
+    s = s && typeof s === 'object' && !Array.isArray(s) ? s : {};
+    const hex = typeof s.akzentfarbe === 'string' && /^#(?:[0-9a-f]{3}){1,2}$/i.test(s.akzentfarbe.trim())
+      ? s.akzentfarbe.trim() : '';
+    const size = Number(s.schriftgroesse);
+    const scale = Number.isFinite(size) && size > 0 ? clamp(Math.round(size), 80, 140) / 100 : 1;
+    const radius = pick(RADII, String(s.ecken || '')) || '';
+    const dens = pick(DENSITY, String(s.dichte || '')) || '';
+    let root = '';
+    if (scale !== 1) root += '--font-scale:' + scale + ';';
+    if (radius) root += '--radius:' + radius + ';';
+    if (dens) root += '--density:' + dens + ';';
+    let css = '';
+    let dark = '';
+    if (hex) {
+      const a = accentVars(hex);
+      root += a.light;
+      dark = a.dark;
+    }
+    if (root) css += ':root{' + root + '}';
+    if (dark) {
+      css += '@media (prefers-color-scheme: dark){:root:where(:not([data-theme="light"])){' + dark + '}}' +
+        ':root:where([data-theme="dark"]){' + dark + '}';
+    }
+    lookStyle.textContent = css;
+    look.greeting = typeof s.begruessung === 'string' ? s.begruessung.trim().slice(0, 300) : '';
+    look.examples = (Array.isArray(s.beispiele) ? s.beispiele : [])
+      .map((x) => (typeof x === 'string' || typeof x === 'number' ? String(x).trim().slice(0, 160) : ''))
+      .filter(Boolean).slice(0, 6);
+    renderGreeting();
+    renderSuggestions();
+    setFavicon(initial());
+    orb.refreshColor();
+  }
+
+  function renderGreeting() {
+    const t = byId('empty-title');
+    const g = look.greeting;
+    t.textContent = g || 'Hallo! Ich bin ' + kiName() + '.';
+    t.classList.toggle('long', g.length > 48);
+  }
+
+  let sugKey = '';
+  function renderSuggestions() {
+    const ex = look.examples;
+    const key = ex.join('\u0001');
+    if (key === sugKey) return;
+    sugKey = key;
+    if (!ex.length) { sugBox.replaceChildren(...defaultSugs); return; }
+    const ICS = ['sparkles', 'book', 'globe', 'pen', 'compass', 'brain'];
+    sugBox.replaceChildren(...ex.map((text, k) => {
+      const b = h('button', 'suggestion custom');
+      b.type = 'button';
+      const tx = h('span', 'sg-text');
+      tx.append(h('span', 'sg-title', text));
+      b.append(icon(ICS[k % ICS.length]), tx);
+      b.addEventListener('click', () => send(text));
+      return b;
+    }));
+  }
+
+  /** Eigenes CSS neu laden – erst nach dem Laden das alte entfernen (kein Flackern). */
+  function reloadCustomCss() {
+    const gen = ++look.cssGen;
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.className = 'custom-css';
+    link.href = '/custom.css?v=' + Date.now();
+    const done = () => {
+      if (gen < look.cssLoaded) { link.remove(); return; } // ein neueres ist schon da
+      look.cssLoaded = gen;
+      for (const old of document.querySelectorAll('link#custom-css, link.custom-css')) if (old !== link) old.remove();
+      link.id = 'custom-css';
+      orb.refreshColor();
+    };
+    link.addEventListener('load', done);
+    link.addEventListener('error', done);
+    const last = [...document.querySelectorAll('link#custom-css, link.custom-css')].pop();
+    if (last) last.after(link); else document.head.append(link);
+  }
+
+  async function loadAppearance(reloadCss) {
+    const gen = ++look.gen;
+    if (reloadCss) reloadCustomCss();
+    const d = await getJson('/api/appearance');
+    if (gen !== look.gen || !d || typeof d !== 'object') return;
+    applyAppearance(d.settings);
+  }
+
+  // =====================================================================
+  // Bestaetigung (eigener Dialog, z.B. "Stuetzraeder abnehmen?")
+  // =====================================================================
+  let confirmState = null;
+  function confirmDialog(opts) {
+    if (confirmState) closeConfirm(false);
+    return new Promise((resolve) => {
+      confirmState = { resolve, back: document.activeElement };
+      byId('cdialog').className = 'dialog cdialog ' + (opts.cls || 'risk-none');
+      byId('cd-icon').replaceChildren(icon(opts.icon || 'alert'));
+      byId('cd-title').textContent = opts.title || '';
+      byId('cd-risk').textContent = opts.risk || '';
+      byId('cd-text').replaceChildren(opts.body || '');
+      byId('cd-ok').textContent = opts.ok || 'OK';
+      byId('cd-cancel').textContent = opts.cancel || 'Abbrechen';
+      cmodal.hidden = false;
+      updateInert();
+      byId('cd-cancel').focus(); // sicherer Standard
+    });
+  }
+  function closeConfirm(result) {
+    if (!confirmState) return;
+    const st = confirmState;
+    confirmState = null;
+    cmodal.hidden = true;
+    updateInert();
+    const back = st.back;
+    if (back && back !== document.body && document.contains(back) && !back.closest('[inert]')) back.focus();
+    else if (jv.open) jvEl.focus();
+    else if (!pmodal.hidden) panel.focus();
+    else focusInput();
+    st.resolve(!!result);
+  }
+  byId('cd-ok').addEventListener('click', () => closeConfirm(true));
+  byId('cd-cancel').addEventListener('click', () => closeConfirm(false));
+  cmodal.addEventListener('mousedown', (e) => { if (e.target === cmodal) closeConfirm(false); });
+  function confirmKey(e) {
+    if (e.key === 'Escape') { e.preventDefault(); closeConfirm(false); return; }
+    if (e.key === 'F2') { e.preventDefault(); return; }
+    if (e.key === 'Tab') trapTab(e, byId('cdialog'));
+  }
+
+  function wheelsWarning() {
+    const n = kiName();
+    const body = document.createDocumentFragment();
+    const p = h('p');
+    p.append('Ohne Stützräder darf ' + n + ' am ', h('b', null, 'GANZEN PC'),
+      ' Dateien ändern und löschen, Programme starten, Maus und Tastatur steuern – ohne zu fragen.');
+    const caps = h('ul', 'cd-caps');
+    for (const [ic, t] of [['trash', 'Dateien ändern und löschen'], ['terminal', 'Programme starten'],
+      ['mouse', 'Maus und Tastatur steuern']]) {
+      const li = h('li');
+      li.append(icon(ic), h('span', null, t));
+      caps.append(li);
+    }
+    const note = h('p', 'cd-note');
+    note.append(icon('power'), h('span', null, 'Automatische Starts fragt sie trotzdem.'));
+    body.append(p, caps, note);
+    return confirmDialog({
+      cls: 'risk-wheels', icon: 'shieldOff', title: 'Stützräder abnehmen?', risk: 'Voller Zugriff auf deinen PC',
+      body, ok: 'Stützräder abnehmen', cancel: 'Abbrechen',
+    });
+  }
+
+  // =====================================================================
+  // Jarvis-Modus: Vorlesen im Fenster (speechSynthesis)
+  //  - jeder Satz eine eigene Utterance (Chrome bricht lange ab)
+  //  - nach jedem Satz "spoken" mit seq (Fortschritt), nach say_end + leerer
+  //    Warteschlange einmal "spoken" ohne seq
+  //  - hush: sofort still, Warteschlange leer, kein "spoken"
+  // =====================================================================
+  const synth = window.speechSynthesis && typeof window.SpeechSynthesisUtterance === 'function'
+    ? window.speechSynthesis : null;
+  const tts = {
+    voice: null, voices: 0, waiting: false, waitTimer: 0, noVoice: !synth, blocked: false, fails: 0,
+    queue: [], cur: null, ends: new Map(), answered: new Set(), maxTurn: 0, cooldown: 0, pumpTimer: 0,
+  };
+
+  function voiceRank(v) {
+    const name = String(v.name || '');
+    let r = /natural/i.test(name) ? 0 : /online/i.test(name) ? 1 : v.localService === false ? 2 : 3;
+    if (!/^de[-_]de$/i.test(String(v.lang || ''))) r += 0.5; // de-DE vor de-AT/de-CH
+    return r;
+  }
+  function loadVoices() {
+    if (!synth) return 0;
+    let list = [];
+    try { list = synth.getVoices() || []; } catch (_) { list = []; }
+    tts.voices = list.length;
+    if (!list.length) return 0;
+    const de = list.filter((v) => /^de(?:$|[-_])/i.test(String(v.lang || '')));
+    let best = de.length ? [...de].sort((a, b) => voiceRank(a) - voiceRank(b))[0] : null;
+    let saved = '';
+    try { saved = localStorage.getItem('ki-stimme') || ''; } catch (_) { /* egal */ }
+    const old = saved && de.find((v) => v.voiceURI === saved);
+    if (old && best && voiceRank(old) <= voiceRank(best)) best = old; // gemerkte Stimme behalten
+    tts.voice = best;
+    if (best) { try { localStorage.setItem('ki-stimme', best.voiceURI); } catch (_) { /* egal */ } }
+    return list.length;
+  }
+  if (synth) {
+    const onVoices = () => {
+      if (!loadVoices()) return;
+      tts.noVoice = false;
+      if (tts.waiting) { tts.waiting = false; clearTimeout(tts.waitTimer); }
+      ttsPump();
+    };
+    if (typeof synth.addEventListener === 'function') synth.addEventListener('voiceschanged', onVoices);
+    else synth.onvoiceschanged = onVoices;
+    loadVoices();
+  }
+
+  /** Beim Start (Nutzer-Geste): stumme Utterance, damit der erste Satz sofort kommt. */
+  function ttsWarmup() {
+    if (!synth) return;
+    try {
+      synth.cancel();
+      const u = new SpeechSynthesisUtterance(' ');
+      u.volume = 0;
+      u.lang = 'de-DE';
+      synth.speak(u);
+    } catch (_) { /* egal */ }
+  }
+
+  /** Neue Jarvis-Sitzung: Runden fangen beim Server wieder bei 1 an. */
+  function ttsSession() {
+    ttsStop();
+    tts.answered.clear();
+    tts.maxTurn = 0;
+    tts.blocked = false;
+    tts.fails = 0;
+    if (!synth) { tts.noVoice = true; return; }
+    if (loadVoices()) { tts.noVoice = false; return; }
+    // Stimmen laden manchmal erst spaeter (voiceschanged) – kurz warten, dann ohne Stimme
+    tts.waiting = true;
+    clearTimeout(tts.waitTimer);
+    tts.waitTimer = setTimeout(() => {
+      tts.waiting = false;
+      if (!tts.voices) tts.noVoice = true;
+      ttsPump();
+    }, 1500);
+  }
+
+  function ttsCancelSynth() {
+    if (!synth) return;
+    try { synth.cancel(); } catch (_) { /* egal */ }
+    tts.cooldown = performance.now() + 140; // Chrome verschluckt sonst den naechsten Satz
+  }
+
+  function dropCur() {
+    const cur = tts.cur;
+    if (!cur) return null;
+    tts.cur = null;
+    clearTimeout(cur.timer);
+    clearTimeout(cur.subTimer);
+    orb.speaking(false);
+    return cur;
+  }
+
+  /** Alles anhalten (Fenster zu, neue Sitzung). */
+  function ttsStop() {
+    tts.queue.length = 0;
+    const had = dropCur();
+    tts.ends.clear();
+    clearTimeout(tts.pumpTimer);
+    clearTimeout(tts.waitTimer);
+    tts.waiting = false;
+    if (had || (synth && (synth.speaking || synth.pending))) ttsCancelSynth();
+  }
+
+  /** hush: sofort still, Warteschlange leeren – dafuer kein "spoken". */
+  function ttsHush() {
+    tts.queue.length = 0;
+    dropCur();
+    tts.ends.clear();
+    clearTimeout(tts.pumpTimer);
+    ttsCancelSynth();
+    markSubCut();
+  }
+
+  function speakMode(it) {
+    if (it.local || !synth || tts.noVoice || tts.blocked) return 'show';
+    return tts.waiting ? 'wait' : 'speak';
+  }
+
+  function ttsPump() {
+    clearTimeout(tts.pumpTimer);
+    tts.pumpTimer = 0;
+    while (!tts.cur && tts.queue.length) {
+      const it = tts.queue[0];
+      const mode = speakMode(it);
+      if (mode === 'wait') return;
+      const wait = tts.cooldown - performance.now();
+      if (mode === 'speak' && wait > 0) { tts.pumpTimer = setTimeout(ttsPump, wait + 5); return; }
+      tts.queue.shift();
+      if (mode === 'show') {
+        showSub(it.text);
+        orb.kick(0.8);
+        if (!it.local) reportSeq(it);
+        continue;
+      }
+      ttsSpeak(it);
+    }
+    ttsDrain();
+  }
+
+  function ttsSpeak(it) {
+    let u;
+    try { u = new SpeechSynthesisUtterance(it.text); } catch (_) { tts.noVoice = true; showSub(it.text); reportSeq(it); return; }
+    if (tts.voice) { u.voice = tts.voice; u.lang = tts.voice.lang; } else u.lang = 'de-DE';
+    const cur = { it, u, shown: false, timer: 0, subTimer: 0, extended: false };
+    tts.cur = cur;
+    const show = () => { if (!cur.shown) { cur.shown = true; showSub(it.text); } };
+    u.onstart = () => { if (tts.cur !== cur) return; show(); orb.speaking(true); };
+    u.onboundary = (e) => { if (tts.cur === cur && (!e.name || e.name === 'word')) orb.kick(1); };
+    u.onend = () => ttsDone(cur, '');
+    u.onerror = (e) => ttsDone(cur, (e && e.error) || 'error');
+    // Untertitel spaetestens nach kurzer Zeit zeigen (manche Stimmen melden "start" spaet)
+    cur.subTimer = setTimeout(() => { if (tts.cur === cur) show(); }, 900);
+    // Waechter: Chrome meldet "end" manchmal nie
+    cur.timer = setTimeout(() => ttsWatch(cur), 6000 + it.text.length * 110);
+    try { synth.speak(u); } catch (_) { ttsDone(cur, 'error'); }
+  }
+
+  function ttsWatch(cur) {
+    if (tts.cur !== cur) return;
+    if (!cur.extended && synth.speaking) {
+      cur.extended = true;
+      cur.timer = setTimeout(() => ttsWatch(cur), 4000 + cur.it.text.length * 60);
+      return;
+    }
+    ttsDone(cur, 'timeout');
+  }
+
+  function ttsDone(cur, err) {
+    if (tts.cur !== cur) return; // abgebrochen (hush) – Meldungen davon zaehlen nicht
+    dropCur();
+    if (!cur.shown) { cur.shown = true; showSub(cur.it.text); }
+    if (err === 'timeout') ttsCancelSynth();
+    if (err === 'not-allowed') {
+      tts.blocked = true;
+      showNote('Vorlesen ist hier gerade blockiert – ich zeige dir die Antwort als Untertitel.', 'soft', 6000);
+    } else if (err && err !== 'interrupted' && err !== 'canceled' && err !== 'timeout') {
+      if (++tts.fails >= 2) tts.noVoice = true; // Stimme geht nicht: nur noch Untertitel
+    } else if (!err) tts.fails = 0;
+    reportSeq(cur.it);
+    ttsPump();
+  }
+
+  /** Fortschritt: dieser Satz ist fertig (die KI weiss so genau, wann Nova still ist). */
+  function reportSeq(it) {
+    if (!it.seq || !jv.open || jv.closing) return;
+    post('/api/jarvis', { action: 'spoken', turn: it.turn, seq: it.seq });
+  }
+
+  /** Nach say_end: sobald von dieser Runde nichts mehr gesprochen wird oder wartet -> einmal "spoken". */
+  function ttsDrain() {
+    for (const [turn, key] of [...tts.ends]) {
+      const pending = (tts.cur && tts.cur.it.turn === turn) || tts.queue.some((it) => it.turn === turn);
+      if (pending) continue;
+      tts.ends.delete(turn);
+      if (tts.answered.has(key)) continue;
+      tts.answered.add(key);
+      if (jv.open && !jv.closing) post('/api/jarvis', { action: 'spoken', turn });
+    }
+  }
+
+  function onSay(ev) {
+    if (jv.closing || ended) return;
+    const turn = Number(ev.turn) || 0;
+    const text = String(ev.text == null ? '' : ev.text).trim();
+    if (!jv.open) openJarvisView(false); // Jarvis laeuft (z.B. von woanders gestartet)
+    if (turn && turn < tts.maxTurn) return; // veraltete Runde
+    if (turn > tts.maxTurn) {
+      // neue Runde: Reste der alten nicht mehr vorlesen
+      const old = tts.queue.filter((it) => it.turn < turn);
+      if (old.length) tts.queue = tts.queue.filter((it) => it.turn >= turn);
+      if (tts.cur && tts.cur.it.turn < turn) { dropCur(); ttsCancelSynth(); }
+      tts.maxTurn = turn;
+    }
+    if (!text) return;
+    tts.queue.push({ turn, seq: Number(ev.seq) || 0, text, local: !!ev.local });
+    ttsPump();
+  }
+
+  function onSayEnd(ev) {
+    if (jv.closing || ended || !jv.open) return;
+    const turn = Number(ev.turn) || 0;
+    const key = turn + ':' + (Number(ev.count) || 0);
+    if (tts.answered.has(key)) return; // dieses say_end ist schon beantwortet
+    tts.ends.set(turn, key);
+    ttsDrain();
+  }
+
+  function onHush() {
+    if (jv.closing || ended || !jv.open) return;
+    ttsHush();
+  }
+
+  // =====================================================================
+  // Jarvis-Modus: der leuchtende Orb (Canvas, requestAnimationFrame)
+  // Pro Bild nur Zeichnen auf der Leinwand – kein Layout, kein DOM.
+  // =====================================================================
+  const orb = (() => {
+    const cv = byId('jv-orb');
+    const ctx = cv.getContext ? cv.getContext('2d') : null;
+    const motion = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : { matches: false };
+    const TAU = Math.PI * 2;
+    const N = 72;
+    const COS = new Float32Array(N);
+    const SIN = new Float32Array(N);
+    for (let i = 0; i < N; i++) { COS[i] = Math.cos((i / N) * TAU); SIN[i] = Math.sin((i / N) * TAU); }
+    const XS = new Float32Array(N);
+    const YS = new Float32Array(N);
+    // Zustaende: Bewegung, Pegel-Einfluss, Farbe (Farbton-Verschiebung), Extras
+    const PRESET = {
+      starting: { amp: 0.022, speed: 0.5, breathe: 0.03, gain: 0.25, glow: 0.45, spin: 0.6, ring: 0, wander: 0, hue: 0, talk: 0 },
+      listening: { amp: 0.026, speed: 0.55, breathe: 0.04, gain: 0.6, glow: 0.55, spin: 0, ring: 0, wander: 0, hue: 0, talk: 0 },
+      hearing: { amp: 0.045, speed: 1.15, breathe: 0.012, gain: 1.2, glow: 0.9, spin: 0, ring: 0, wander: 0, hue: -46, talk: 0 },
+      recognizing: { amp: 0.03, speed: 0.9, breathe: 0.02, gain: 0.25, glow: 0.62, spin: 1, ring: 0, wander: 0, hue: -18, talk: 0 },
+      thinking: { amp: 0.034, speed: 0.75, breathe: 0.03, gain: 0.2, glow: 0.66, spin: 0, ring: 0, wander: 1, hue: 40, talk: 0 },
+      working: { amp: 0.034, speed: 0.85, breathe: 0.03, gain: 0.2, glow: 0.72, spin: 0, ring: 1, wander: 1, hue: 62, talk: 0 },
+      speaking: { amp: 0.04, speed: 1.0, breathe: 0.02, gain: 0.1, glow: 0.88, spin: 0, ring: 0, wander: 0, hue: -62, talk: 1 },
+    };
+    const KEYS = Object.keys(PRESET.listening);
+    const P = Object.assign({}, PRESET.starting);
+    let T = PRESET.starting;
+    let running = false;
+    let raf = 0;
+    let last = 0;
+    let t = 0;
+    let lvl = 0;
+    let lvlT = 0;
+    let lvlAt = 0;
+    let prevLvl = 0;
+    let talking = false;
+    let talkEnv = 0;
+    let kickV = 0;
+    let flinch = 0;
+    let flinchV = 0;
+    let flash = 0;
+    let lastRipple = 0;
+    let baseHue = 243;
+    let W = 0;
+    let H = 0;
+    let dpr = 1;
+    const ripples = [];
+
+    function resize() {
+      const r = cv.getBoundingClientRect();
+      dpr = Math.min(2, window.devicePixelRatio || 1);
+      const w = Math.max(1, Math.min(1200, Math.round(r.width * dpr)));
+      const hh = Math.max(1, Math.min(1200, Math.round(r.height * dpr)));
+      if (w !== W || hh !== H) { W = cv.width = w; H = cv.height = hh; }
+    }
+    if (window.ResizeObserver) new ResizeObserver(() => { if (running) resize(); }).observe(cv);
+
+    /** Farbton aus der Akzentfarbe (folgt dem Aussehen, das Nova eingestellt hat). */
+    function refreshColor() {
+      const probe = h('span');
+      probe.style.cssText = 'position:absolute;width:0;height:0;overflow:hidden;color:var(--grad-a)';
+      document.body.append(probe);
+      const c = getComputedStyle(probe).color || '';
+      probe.remove();
+      let rgb = null;
+      let m = c.match(/rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/);
+      if (m) rgb = [+m[1], +m[2], +m[3]];
+      else if ((m = c.match(/color\(srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)/))) rgb = [m[1] * 255, m[2] * 255, m[3] * 255];
+      if (!rgb) return;
+      const [hh, s] = rgbHsl(rgb.map((x) => clamp(Math.round(x), 0, 255)));
+      baseHue = s < 0.12 ? 243 : hh; // grau -> Standard (Indigo)
+    }
+
+    const hsla = (hh, s, l, a) => 'hsla(' + hh.toFixed(1) + ',' + s + '%,' + l + '%,' + clamp(a, 0, 1).toFixed(3) + ')';
+
+    function shape(cx, cy, R, amp, tt) {
+      for (let i = 0; i < N; i++) {
+        const a = (i / N) * TAU;
+        const d = 1 + amp * (0.5 * Math.sin(3 * a + tt * 1.3) + 0.32 * Math.sin(5 * a - tt * 1.75 + 1.7) +
+          0.18 * Math.sin(2 * a + tt * 0.9 + 4.1));
+        XS[i] = cx + COS[i] * R * d;
+        YS[i] = cy + SIN[i] * R * d;
+      }
+      // weich: Kurven durch die Mittelpunkte
+      ctx.beginPath();
+      ctx.moveTo((XS[N - 1] + XS[0]) / 2, (YS[N - 1] + YS[0]) / 2);
+      for (let i = 0; i < N; i++) {
+        const j = (i + 1) % N;
+        ctx.quadraticCurveTo(XS[i], YS[i], (XS[i] + XS[j]) / 2, (YS[i] + YS[j]) / 2);
+      }
+      ctx.closePath();
+    }
+
+    function lobe(x, y, r, color) {
+      const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+      g.addColorStop(0, color);
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(x - r, y - r, r * 2, r * 2);
+    }
+
+    function draw(dt) {
+      const reduce = motion.matches;
+      const cx = W / 2;
+      const cy = H / 2;
+      const S = Math.min(W, H);
+      const R0 = S * 0.17; // Leinwand ist 1,6x so gross wie der Platz des Orbs
+      const syl = talkEnv * Math.max(0, 0.55 + 0.45 * Math.sin(t * 10.6) * Math.sin(t * 3.7 + 1.1));
+      const e = P.breathe * (0.5 + 0.5 * Math.sin(t * 1.7)) + lvl * P.gain * 0.5 + syl * 0.13 * P.talk + kickV * 0.1;
+      const R = R0 * (1 + e * 0.42 + flinch);
+      const hue = baseHue + P.hue;
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.clearRect(0, 0, W, H);
+
+      // 1. Leuchten
+      let g = ctx.createRadialGradient(cx, cy, R * 0.45, cx, cy, Math.min(S * 0.5, R0 * (2.3 + e * 0.6)));
+      g.addColorStop(0, hsla(hue, 90, 62, 0.4 * P.glow + 0.3 * e));
+      g.addColorStop(0.45, hsla(hue + 24, 88, 58, 0.13 * P.glow + 0.12 * e));
+      g.addColorStop(1, hsla(hue + 30, 85, 56, 0));
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, W, H);
+      if (flash > 0.02) {
+        g = ctx.createRadialGradient(cx, cy, R * 0.8, cx, cy, R * 1.7);
+        g.addColorStop(0, 'hsla(24,95%,62%,' + (0.45 * flash).toFixed(3) + ')');
+        g.addColorStop(1, 'hsla(24,95%,62%,0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, W, H);
+      }
+
+      // 2. Wellen (beim Sprechen / lauter Stimme)
+      for (let i = ripples.length - 1; i >= 0; i--) {
+        const rp = ripples[i];
+        rp.age += dt;
+        const k = rp.age / rp.life;
+        if (k >= 1) { ripples.splice(i, 1); continue; }
+        ctx.beginPath();
+        ctx.arc(cx, cy, R0 * (1.04 + k * 0.75), 0, TAU);
+        ctx.lineWidth = (1 + 1.6 * (1 - k)) * dpr;
+        ctx.strokeStyle = hsla(hue + rp.shift, 90, 72, rp.s * (1 - k) * (1 - k) * 0.55);
+        ctx.stroke();
+      }
+
+      // 3. Koerper
+      const amp = P.amp * (0.7 + e * 1.6) * (reduce ? 0.4 : 1);
+      shape(cx, cy, R, amp, t * P.speed);
+      const wx = cx + (Math.cos(t * 0.8) * 0.34 * P.wander - 0.22 * (1 - P.wander)) * R;
+      const wy = cy + (Math.sin(t * 1.1) * 0.3 * P.wander - 0.27 * (1 - P.wander)) * R;
+      g = ctx.createRadialGradient(wx, wy, R * 0.04, cx, cy, R * 1.08);
+      g.addColorStop(0, hsla(hue - 10, 96, 86, 1));
+      g.addColorStop(0.3, hsla(hue - 2, 90, 68, 1));
+      g.addColorStop(0.76, hsla(hue + 20, 82, 54, 1));
+      g.addColorStop(1, hsla(hue + 32, 78, 40, 1));
+      ctx.fillStyle = g;
+      ctx.fill();
+
+      // 4. innere Lichter (wirbeln), Schatten, Glanz – nur im Orb
+      ctx.save();
+      ctx.clip();
+      ctx.globalCompositeOperation = 'lighter';
+      const sp = P.speed;
+      lobe(cx + Math.cos(t * 0.63 * sp + 1) * R * 0.32, cy + Math.sin(t * 0.81 * sp) * R * 0.28, R * 0.75,
+        hsla(hue - 50, 94, 62, 0.4 + 0.3 * e));
+      lobe(cx + Math.cos(t * 0.47 * sp + 3.4) * R * 0.36, cy + Math.sin(t * 0.59 * sp + 2) * R * 0.32, R * 0.68,
+        hsla(hue + 64, 90, 62, 0.32 + 0.24 * e));
+      ctx.globalCompositeOperation = 'source-over';
+      g = ctx.createRadialGradient(cx - R * 0.28, cy - R * 0.34, R * 0.25, cx, cy, R * 1.12);
+      g.addColorStop(0, 'rgba(0,0,0,0)');
+      g.addColorStop(1, 'rgba(6,7,22,0.42)');
+      ctx.fillStyle = g;
+      ctx.fillRect(cx - R * 1.4, cy - R * 1.4, R * 2.8, R * 2.8);
+      lobe(cx - R * 0.36, cy - R * 0.42, R * 0.5, 'rgba(255,255,255,0.38)');
+      ctx.restore();
+      ctx.lineWidth = 1.2 * dpr;
+      ctx.strokeStyle = 'rgba(255,255,255,0.16)';
+      ctx.stroke();
+
+      // 5. Kreisen (erkennt Sprache)
+      if (P.spin > 0.02) {
+        const rr = R0 * 1.2;
+        ctx.lineCap = 'round';
+        ctx.lineWidth = 2.4 * dpr;
+        for (let k = 0; k < 2; k++) {
+          const a0 = t * 3.1 + k * Math.PI;
+          ctx.beginPath();
+          ctx.arc(cx, cy, rr, a0, a0 + 1.05);
+          if (ctx.createConicGradient) {
+            const cg = ctx.createConicGradient(a0, cx, cy);
+            cg.addColorStop(0, hsla(hue, 90, 78, 0));
+            cg.addColorStop(0.167, hsla(hue, 90, 78, 0.75 * P.spin));
+            cg.addColorStop(0.17, hsla(hue, 90, 78, 0));
+            ctx.strokeStyle = cg;
+          } else ctx.strokeStyle = hsla(hue, 90, 78, 0.5 * P.spin);
+          ctx.stroke();
+        }
+      }
+      // 6. feiner Ring (arbeitet mit Werkzeugen)
+      if (P.ring > 0.02) {
+        const rr = R0 * 1.3;
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(t * 0.45);
+        ctx.setLineDash([1.6 * dpr, 7 * dpr]);
+        ctx.lineWidth = 1.5 * dpr;
+        ctx.strokeStyle = hsla(hue + 20, 90, 82, 0.5 * P.ring);
+        ctx.beginPath();
+        ctx.arc(0, 0, rr, 0, TAU);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        const ba = t * 1.5;
+        ctx.fillStyle = hsla(hue + 20, 95, 86, 0.95 * P.ring);
+        ctx.shadowColor = hsla(hue + 20, 95, 70, 0.9 * P.ring);
+        ctx.shadowBlur = 10 * dpr;
+        ctx.beginPath();
+        ctx.arc(Math.cos(ba) * rr, Math.sin(ba) * rr, 2.6 * dpr, 0, TAU);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    function frame(now) {
+      raf = 0;
+      if (!running) return;
+      const dt = last ? Math.min(0.05, (now - last) / 1000) : 1 / 60;
+      last = now;
+      t += dt;
+      const k = 1 - Math.exp(-dt * 4.5);
+      for (const key of KEYS) P[key] += (T[key] - P[key]) * k;
+      if (now - lvlAt > 320) lvlT *= Math.exp(-dt * 5);
+      lvl += (lvlT - lvl) * (1 - Math.exp(-dt * (lvlT > lvl ? 22 : 5)));
+      talkEnv += ((talking ? 1 : P.talk > 0.5 ? 0.35 : 0) - talkEnv) * (1 - Math.exp(-dt * 6));
+      kickV *= Math.exp(-dt * 7);
+      const acc = -150 * flinch - 13 * flinchV;
+      flinchV += acc * dt;
+      flinch += flinchV * dt;
+      flash *= Math.exp(-dt * 3.2);
+      if (!motion.matches) {
+        // Wellen: beim Sprechen im Rhythmus, beim Zuhoeren bei lauter Stimme
+        if (talking && now - lastRipple > 560) { ripples.push({ age: 0, life: 1.5, s: 0.8, shift: -20 }); lastRipple = now; }
+        if (P.gain > 0.9 && lvl > 0.42 && prevLvl <= 0.42 && now - lastRipple > 220) {
+          ripples.push({ age: 0, life: 1.2, s: Math.min(1, lvl + 0.2), shift: 0 });
+          lastRipple = now;
+        }
+        if (ripples.length > 6) ripples.shift();
+      }
+      prevLvl = lvl;
+      if (ctx && W) draw(dt);
+      raf = requestAnimationFrame(frame);
+    }
+
+    return {
+      start() {
+        if (running) return;
+        running = true;
+        last = 0;
+        lvl = lvlT = 0;
+        ripples.length = 0;
+        refreshColor();
+        resize();
+        if (!raf) raf = requestAnimationFrame(frame);
+      },
+      stop() {
+        running = false;
+        if (raf) cancelAnimationFrame(raf);
+        raf = 0;
+        talking = false;
+      },
+      setState(st, working) {
+        T = pick(PRESET, st === 'thinking' && working ? 'working' : st) || PRESET.listening;
+      },
+      level(v) {
+        if (!Number.isFinite(v)) return;
+        lvlT = clamp(v, 0, 1);
+        lvlAt = performance.now();
+      },
+      kick(s) { kickV = Math.min(1.4, kickV + (s || 1)); },
+      speaking(on) { talking = !!on; },
+      flinch() { flinchV -= 2.4; flash = 1; },
+      refreshColor() { if (running) refreshColor(); },
+    };
+  })();
+
+  // =====================================================================
+  // Jarvis-Modus: Ansicht und Ablauf
+  // =====================================================================
+  const JV_STATES = new Set(['listening', 'hearing', 'recognizing', 'thinking', 'speaking']);
+  const JV_LABELS = {
+    starting: 'Starte …', listening: 'Ich höre zu …', hearing: 'Ich höre dich …', recognizing: 'Verstehe …',
+    thinking: 'Denke nach …', working: 'Arbeite …', speaking: 'Spreche …',
+  };
+  const youEl = byId('jv-you');
+  const subsEl = byId('jv-subs');
+
+  function jvLabelKey() { return jv.state === 'thinking' && jv.working ? 'working' : jv.state; }
+
+  function renderJvState() {
+    jvEl.dataset.state = jv.state;
+    jvEl.classList.toggle('working', jv.working);
+    const key = jvLabelKey();
+    // Zwischen zwei Saetzen nicht flackern: "Spreche" kurz stehen lassen
+    clearTimeout(jv.labelTimer);
+    const set = () => { byId('jv-state-text').textContent = pick(JV_LABELS, key) || ''; jv.label = key; };
+    if (jv.label === 'speaking' && (key === 'thinking' || key === 'listening')) jv.labelTimer = setTimeout(set, 650);
+    else set();
+  }
+
+  function renderLive() {
+    byId('jv-live').hidden = jv.live !== true;
+    const setup = byId('jv-setup');
+    setup.hidden = jv.live !== false;
+    if (jv.live === false) {
+      setup.querySelector('.spinner').hidden = jv.setupFailed;
+      byId('jv-setup-text').textContent = jv.setupFailed
+        ? 'Ohne Live-Mitschrift – ich verstehe dich trotzdem.'
+        : jv.setupText || 'Live-Mitschrift wird eingerichtet …';
+    }
+  }
+
+  /** Fortschritt der Einrichtung (z.B. "Live-Mitschrift: 40 % geladen"). */
+  function jvSetupInfo(text, level) {
+    if (/bereit/i.test(text) && level !== 'warn') { jv.setupText = 'Live-Mitschrift ist bereit …'; jv.setupFailed = false; }
+    else if (level === 'warn' || /nicht|ging nicht|fehl/i.test(text)) jv.setupFailed = true;
+    else jv.setupText = text.length > 60 ? 'Live-Mitschrift wird eingerichtet …' : text.replace(/\s*geladen\s*$/i, ' geladen …');
+    if (jv.open) renderLive();
+  }
+
+  function showNote(text, kind, ms) {
+    const n = byId('jv-note');
+    clearTimeout(jv.noteTimer);
+    n.hidden = true;
+    n.className = 'jv-note' + (kind ? ' ' + kind : '');
+    n.textContent = text;
+    void n.offsetWidth; // Animation neu starten (selten)
+    n.hidden = false;
+    jv.noteTimer = setTimeout(hideNote, ms || 4500);
+  }
+  function hideNote() { clearTimeout(jv.noteTimer); byId('jv-note').hidden = true; }
+
+  // ---------- Live-Mitschrift (Woerter blenden weich ein) ----------
+  function clearHeard() {
+    clearTimeout(jv.heardTimer);
+    youEl.replaceChildren();
+    youEl.className = 'jv-you';
+    jv.words = [];
+    jv.heardFinal = false;
+    jv.heardStale = false;
+  }
+  function renderHeard(text, final) {
+    clearTimeout(jv.heardTimer);
+    if (jv.heardStale || (jv.heardFinal && !final)) clearHeard(); // neue Aeusserung
+    youEl.classList.remove('stale', 'gone');
+    youEl.classList.toggle('partial', !final);
+    jv.heardFinal = !!final;
+    const words = text.split(/\s+/).filter(Boolean);
+    const cur = jv.words;
+    let i = 0;
+    while (i < cur.length && i < words.length && cur[i].w === words[i]) i++;
+    for (let k = cur.length - 1; k >= i; k--) {
+      const el = cur[k].el;
+      const sp = el.previousSibling;
+      if (sp && sp.nodeType === 3) sp.remove();
+      el.remove();
+    }
+    cur.length = i;
+    for (let k = i; k < words.length; k++) {
+      if (k > 0) youEl.append(' ');
+      const el = h('span', 'w', words[k]);
+      if (k > i) el.style.animationDelay = Math.min(260, (k - i) * 55) + 'ms';
+      youEl.append(el);
+      cur.push({ w: words[k], el });
+    }
+  }
+  function fadeHeard() {
+    jv.heardFinal = true;
+    youEl.classList.add('gone');
+    clearTimeout(jv.heardTimer);
+    jv.heardTimer = setTimeout(clearHeard, 420);
+  }
+  function staleHeard() {
+    if (!jv.words.length) return;
+    youEl.classList.add('stale');
+    jv.heardStale = true;
+  }
+
+  // ---------- Untertitel (gesprochener Satz gross, voriger klein) ----------
+  function showSub(text) {
+    if (!jv.open) return;
+    clearTimeout(jv.subsTimer);
+    subsEl.classList.remove('fading');
+    for (const l of [...subsEl.children]) {
+      if (l.classList.contains('out')) continue;
+      if (l.classList.contains('prev')) {
+        l.classList.add('out');
+        setTimeout(() => l.remove(), 420);
+      } else l.classList.add('prev');
+    }
+    subsEl.append(h('p', 'jv-line', text));
+    jvEl.classList.add('has-subs');
+  }
+  function markSubCut() {
+    const cur = subsEl.querySelector('.jv-line:not(.prev):not(.out)');
+    if (cur) cur.classList.add('cut');
+  }
+  function fadeSubs() {
+    if (!subsEl.childElementCount) { jvEl.classList.remove('has-subs'); return; }
+    subsEl.classList.add('fading');
+    clearTimeout(jv.subsTimer);
+    jv.subsTimer = setTimeout(() => {
+      subsEl.replaceChildren();
+      subsEl.classList.remove('fading');
+      jvEl.classList.remove('has-subs');
+    }, 360);
+  }
+  function clearSubs() {
+    clearTimeout(jv.subsTimer);
+    subsEl.replaceChildren();
+    subsEl.classList.remove('fading');
+    jvEl.classList.remove('has-subs');
+  }
+
+  // ---------- Oeffnen / Schliessen ----------
+  function openJarvisView(starting) {
+    if (ended) return;
+    clearTimeout(jv.leaveTimer);
+    jvEl.classList.remove('leaving');
+    if (jv.open) return;
+    jv.open = true;
+    jv.starting = !!starting;
+    jv.openedAt = performance.now();
+    jv.state = 'starting';
+    jv.label = '';
+    jv.working = false;
+    jv.live = null;
+    jv.setupFailed = false;
+    jv.focusBack = document.activeElement;
+    closeSidebar();
+    closeCmdPop();
+    ttsSession();
+    clearHeard();
+    clearSubs();
+    hideNote();
+    byId('jv-name').textContent = kiName();
+    renderJvState();
+    renderLive();
+    jvEl.hidden = false;
+    updateInert();
+    updateDlgVoice();
+    if (tour.open) tourPause(true);
+    orb.setState('starting', false);
+    orb.start();
+    requestAnimationFrame(() => { if (jv.open && modal.hidden && cmodal.hidden) jvEl.focus(); });
+  }
+
+  function closeJarvisView() {
+    if (!jv.open) return;
+    jv.open = false;
+    jv.starting = false;
+    ttsStop();
+    hideNote();
+    clearTimeout(jv.labelTimer);
+    jvEl.classList.add('leaving');
+    clearTimeout(jv.leaveTimer);
+    jv.leaveTimer = setTimeout(() => {
+      jvEl.hidden = true;
+      jvEl.classList.remove('leaving');
+      orb.stop();
+      clearHeard();
+      clearSubs();
+    }, 230);
+    updateInert();
+    updateDlgVoice();
+    if (tour.open) tourPause(false);
+    const back = jv.focusBack;
+    jv.focusBack = null;
+    if (modal.hidden && cmodal.hidden && pmodal.hidden) {
+      if (back && back !== document.body && document.contains(back) && !back.closest('[inert]')) back.focus();
+      else focusInput();
+    } else if (!pmodal.hidden && modal.hidden) panel.focus();
+  }
+
+  /** Schliessen lokal: bis "off" kommt, gehoeren Ereignisse noch zur alten Sitzung. */
+  function beginClosing() {
+    jv.closing = true;
+    clearTimeout(jv.closeTimer);
+    jv.closeTimer = setTimeout(endClosing, 3000);
+  }
+  function endClosing() {
+    clearTimeout(jv.closeTimer);
+    jv.closing = false;
+    const w = jv.closeWaiters;
+    jv.closeWaiters = [];
+    for (const f of w) f();
+  }
+  function waitClosed() {
+    if (!jv.closing) return Promise.resolve();
+    return new Promise((resolve) => jv.closeWaiters.push(resolve));
+  }
+
+  async function startJarvis() {
+    if (ended) return;
+    if (jv.open) { jvEl.focus(); return; }
+    ttsWarmup(); // braucht die Nutzer-Geste (Klick / Taste)
+    if (jv.closing) await waitClosed(); // alte Sitzung erst ganz beenden
+    if (ended || jv.open) return;
+    openJarvisView(true);
+    jv.cancelStart = false;
+    const r = await post('/api/jarvis', { action: 'start', tts: 'client' });
+    const cancelled = jv.cancelStart;
+    jv.cancelStart = false;
+    jv.starting = false;
+    if (cancelled) {
+      // schon wieder "Chat-Modus" gedrueckt, waehrend der Start lief
+      if (r.ok) { beginClosing(); post('/api/jarvis', { action: 'stop' }); }
+      return;
+    }
+    if (!r.ok) {
+      closeJarvisView();
+      if (r.setup) voiceFailed(r);
+      else toast(r.error || 'Der Jarvis-Modus konnte nicht starten.', 'error', 5000);
+      return;
+    }
+    if (jv.live === null) jv.live = !!r.live;
+    renderLive();
+  }
+
+  /** Esc, Knopf "Chat-Modus" oder X: zurueck zum Chat. */
+  function chatMode() {
+    if (!jv.open) return;
+    const wasStarting = jv.starting;
+    closeJarvisView();
+    if (wasStarting) { jv.cancelStart = true; return; }
+    beginClosing();
+    post('/api/jarvis', { action: 'stop' }).then((r) => {
+      if (!r.ok) toast(r.error || 'Der Jarvis-Modus ließ sich nicht beenden.', 'error');
+    });
+  }
+
+  /** Knopf "Stopp": Nova hoert auf zu reden und die Antwort wird angehalten. */
+  function jvHush() {
+    if (!jv.open) return;
+    ttsHush();
+    orb.kick(0.6);
+    post('/api/jarvis', { action: 'hush' });
+  }
+
+  function onJarvisEvent(ev) {
+    const st = String(ev.state || '');
+    if (st === 'off') {
+      endClosing();
+      if (jv.open) closeJarvisView();
+      else ttsStop();
+      if (ev.error) addError(String(ev.error));
+      return;
+    }
+    if (jv.closing || ended || !JV_STATES.has(st)) return;
+    if (!jv.open) openJarvisView(false); // z.B. serverseitig gestartet
+    const prev = jv.state;
+    jv.state = st;
+    jv.working = st === 'thinking' && !!ev.working;
+    if (st === 'hearing' && prev !== 'hearing') { staleHeard(); fadeSubs(); }
+    if (st === 'thinking' && ev.text) { renderHeard(String(ev.text), true); if (prev !== 'speaking') fadeSubs(); }
+    if (ev.interrupted) { orb.flinch(); showNote('Unterbrochen – ich höre dir zu.', 'soft', 1800); }
+    if (ev.error) {
+      const err = String(ev.error);
+      if (/Live-Mitschrift/i.test(err)) { jv.live = false; jv.setupFailed = true; renderLive(); }
+      showNote(err, '', 6000);
+    }
+    renderJvState();
+    orb.setState(st, jv.working);
+  }
+
+  function onHeard(ev) {
+    if (!jv.open || jv.closing) return;
+    const text = String(ev.text == null ? '' : ev.text).trim();
+    if (!ev.final) {
+      if (jv.live !== true) { jv.live = true; jv.setupFailed = false; renderLive(); }
+      if (text) renderHeard(text, false);
+    } else if (!text) fadeHeard();
+    else renderHeard(text, true);
+  }
+
+  /** Hinweis im Rueckfrage-Dialog: im Jarvis-Modus kann man antworten, indem man spricht. */
+  function updateDlgVoice() { byId('dlg-voice').hidden = !jv.open; }
+
+  function jarvisKey(e) {
+    if (e.key === 'Escape') { e.preventDefault(); chatMode(); return; }
+    if (e.key === 'F2') { e.preventDefault(); return; }
+    if (e.key === 'Tab') trapTab(e, jvEl);
+  }
+
+  byId('tb-jarvis').addEventListener('click', () => startJarvis());
+  byId('jv-chat').addEventListener('click', chatMode);
+  byId('jv-close').addEventListener('click', chatMode);
+  byId('jv-stop').addEventListener('click', jvHush);
+  window.addEventListener('pagehide', () => { if (synth) { try { synth.cancel(); } catch (_) { /* egal */ } } });
+
+  // =====================================================================
+  // Tour: Nova zeigt alles (Spotlight auf Elemente mit data-tour)
+  // =====================================================================
+  const tourCard = byId('tour-card');
+  const tourSpot = byId('tour-spot');
+  const tourDim = byId('tour-dim');
+  const TOUR_TARGETS = new Set(['eingabe', 'mikrofon', 'jarvis', 'profil', 'stuetzraeder']);
+  let tourLater = false;
+  try { tourLater = sessionStorage.getItem('ki-tour-spaeter') === '1'; } catch (_) { /* egal */ }
+  const isDrawer = () => window.matchMedia('(max-width: 800px)').matches;
+
+  async function startTour() {
+    if (ended) return;
+    if (tour.open) { if (!tour.paused) focusTour(); return; }
+    if (tour.loading) return;
+    tour.loading = true;
+    const d = await getJson('/api/tutorial');
+    tour.loading = false;
+    const steps = d && Array.isArray(d.steps) ? d.steps.filter((s) => s && typeof s === 'object').map((s) => ({
+      titel: str(s.titel).trim(),
+      text: str(s.text).trim(),
+      ziel: TOUR_TARGETS.has(str(s.ziel)) ? str(s.ziel) : '',
+      zeigen: str(s.zeigen).trim(),
+    })).filter((s) => s.titel || s.text) : [];
+    if (!steps.length) { toast('Die Tour konnte nicht geladen werden.', 'error'); return; }
+    if (ended || tour.open) return;
+    closeCmdPop();
+    tour.steps = steps;
+    tour.open = true;
+    tour.paused = jv.open;
+    tour.doneSent = false;
+    tour.sbOpened = false;
+    tourEl.hidden = tour.paused;
+    tourCard.classList.add('no-anim');
+    updateInert();
+    updateEmpty();
+    window.addEventListener('resize', tourReflow);
+    document.addEventListener('scroll', tourReflow, true);
+    tourStep(0);
+  }
+
+  function tourTarget(ziel) {
+    if (!ziel) return null;
+    for (const el of document.querySelectorAll('[data-tour]')) if (el.dataset.tour === ziel) return el;
+    return null;
+  }
+
+  function tourStep(i) {
+    tour.i = clamp(i, 0, tour.steps.length - 1);
+    tour.demo = false;
+    tour.waiting = false;
+    clearTimeout(tour.waitTimer);
+    const st = tour.steps[tour.i];
+    const target = tourTarget(st.ziel);
+    tour.target = target;
+    const inSidebar = !!target && byId('sidebar').contains(target);
+    if (inSidebar && isDrawer()) {
+      if (!app.classList.contains('sb-open')) { openSidebar(true); tour.sbOpened = true; }
+    } else if (tour.sbOpened) { closeSidebar(); tour.sbOpened = false; }
+    if (inSidebar) target.scrollIntoView({ block: 'nearest' });
+    if (target) {
+      const r = parseFloat(getComputedStyle(target).borderTopLeftRadius) || 10;
+      tourSpot.style.borderRadius = Math.min(28, r + 6) + 'px';
+    }
+    renderTour();
+    tourCard.classList.remove('fresh');
+    void tourCard.offsetWidth; // Einblende-Animation neu starten (einmal pro Schritt)
+    tourCard.classList.add('fresh');
+    tourFollow(520);
+    requestAnimationFrame(focusTour);
+  }
+
+  function focusTour() {
+    if (!tour.open || tour.paused) return;
+    const next = byId('tour-next');
+    if (!next.disabled) next.focus();
+    else tourCard.focus();
+  }
+
+  function renderTour() {
+    const st = tour.steps[tour.i];
+    const n = tour.steps.length;
+    const last = tour.i === n - 1;
+    byId('tour-step').textContent = 'Schritt ' + (tour.i + 1) + ' von ' + n;
+    byId('tour-bar').style.setProperty('--p', String((tour.i + 1) / n));
+    byId('tour-title').textContent = st.titel;
+    byId('tour-text').textContent = st.text;
+    byId('tour-back').hidden = tour.i === 0;
+    const show = byId('tour-show');
+    show.hidden = !st.zeigen;
+    show.disabled = tour.waiting;
+    const next = byId('tour-next');
+    next.textContent = last ? 'Fertig' : 'Weiter';
+    next.disabled = tour.waiting;
+    next.title = tour.waiting ? 'Geht weiter, sobald ' + kiName() + ' fertig ist' : '';
+    byId('tour-end').hidden = last;
+    const wait = byId('tour-wait');
+    wait.hidden = !tour.demo;
+    if (tour.demo) {
+      wait.classList.toggle('done', !tour.waiting);
+      wait.replaceChildren(tour.waiting ? h('span', 'spinner') : icon('checkCircle'),
+        h('span', null, tour.waiting ? kiName() + ' führt es dir gerade vor …' : 'Vorgeführt – das Ergebnis steht im Chat.'));
+    }
+    tourCard.classList.toggle('demo', tour.demo);
+  }
+
+  let tourQueued = false;
+  function tourReflow() {
+    if (tourQueued || !tour.open) return;
+    tourQueued = true;
+    requestAnimationFrame(() => { tourQueued = false; tourPlace(); });
+  }
+  /** Eine Weile jedem Bild folgen (z.B. waehrend die Seitenleiste hereingleitet). */
+  function tourFollow(ms) {
+    const until = performance.now() + ms;
+    cancelAnimationFrame(tour.follow);
+    const step = () => {
+      tourPlace();
+      if (performance.now() < until && tour.open) tour.follow = requestAnimationFrame(step);
+    };
+    tour.follow = requestAnimationFrame(step);
+  }
+
+  function tourPlace() {
+    if (!tour.open || tour.paused) return;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const narrow = vw <= 600;
+    const M = narrow ? 10 : 14;
+    // erst alles lesen, dann schreiben (kein Layout-Hin-und-Her)
+    let rect = null;
+    const t = tour.demo ? null : tour.target;
+    if (t && t.isConnected && !t.closest('[hidden]')) {
+      const r = t.getBoundingClientRect();
+      if (r.width && r.height && r.bottom > 0 && r.top < vh) rect = r;
+    }
+    const cw = tourCard.offsetWidth;
+    const ch = tourCard.offsetHeight;
+    const pad = 6;
+    let x;
+    let y;
+    if (tour.demo) {
+      // zur Seite ruecken, damit man Nova bei der Arbeit sieht
+      x = narrow ? (vw - cw) / 2 : vw - cw - 20;
+      y = narrow ? 62 : 70;
+    } else if (rect) {
+      const inSb = byId('sidebar').contains(t);
+      if (inSb && !narrow && rect.right + 18 + cw <= vw - M) {
+        x = rect.right + pad + 18;
+        y = rect.top + rect.height / 2 - ch / 2;
+      } else {
+        x = rect.left + rect.width / 2 - cw / 2;
+        if (rect.bottom + pad + 14 + ch <= vh - M) y = rect.bottom + pad + 14;
+        else if (rect.top - pad - 14 - ch >= M) y = rect.top - pad - 14 - ch;
+        else y = vh - ch - M;
+      }
+    } else {
+      x = (vw - cw) / 2;
+      y = narrow ? vh - ch - M : (vh - ch) / 2;
+    }
+    x = clamp(x, M, Math.max(M, vw - cw - M));
+    y = clamp(y, M, Math.max(M, vh - ch - M));
+    tourSpot.hidden = !rect;
+    tourDim.hidden = !!rect || tour.demo;
+    if (rect) {
+      tourSpot.style.transform = 'translate(' + Math.round(rect.left - pad) + 'px,' + Math.round(rect.top - pad) + 'px)';
+      tourSpot.style.width = Math.round(rect.width + pad * 2) + 'px';
+      tourSpot.style.height = Math.round(rect.height + pad * 2) + 'px';
+    }
+    tourCard.style.transform = 'translate(' + Math.round(x) + 'px,' + Math.round(y) + 'px)';
+    if (tourCard.classList.contains('no-anim')) requestAnimationFrame(() => tourCard.classList.remove('no-anim'));
+  }
+  if (window.ResizeObserver) new ResizeObserver(tourReflow).observe(tourCard);
+
+  function tourNext() {
+    if (!tour.open || tour.waiting) return;
+    if (tour.i >= tour.steps.length - 1) endTour(true);
+    else tourStep(tour.i + 1);
+  }
+  function tourBack() { if (tour.open && tour.i > 0) tourStep(tour.i - 1); }
+
+  /** "Zeig es mir": den Auftrag wirklich an Nova schicken. */
+  async function tourShow() {
+    const st = tour.steps[tour.i];
+    if (!tour.open || !st || !st.zeigen || tour.waiting) return;
+    if (busy) { toast('Moment – ich bin noch mit der letzten Antwort beschäftigt.'); return; }
+    const idx = tour.i;
+    tour.demo = true;
+    tour.waiting = true;
+    tour.sawBusy = false;
+    renderTour();
+    tourFollow(450);
+    const ok = await send(st.zeigen);
+    if (!tour.open || tour.i !== idx) return;
+    if (!ok) { tour.demo = false; tour.waiting = false; renderTour(); tourFollow(450); return; }
+    // Faellt "busy" nie (sehr schnelle Antwort), nicht ewig warten
+    clearTimeout(tour.waitTimer);
+    tour.waitTimer = setTimeout(() => { if (tour.waiting && !tour.sawBusy && !busy) tourDemoDone(); }, 8000);
+  }
+  function tourDemoDone() {
+    clearTimeout(tour.waitTimer);
+    tour.waiting = false;
+    renderTour();
+    tourReflow();
+    if (document.activeElement === document.body || tourCard.contains(document.activeElement)) focusTour();
+  }
+  /** Aus setBusy: die vorgefuehrte Antwort ist fertig. */
+  function tourBusy(b) {
+    if (!tour.open || !tour.waiting) return;
+    if (b) tour.sawBusy = true;
+    else if (tour.sawBusy) tourDemoDone();
+  }
+
+  function tourPause(p) {
+    if (!tour.open) return;
+    tour.paused = p;
+    tourEl.hidden = p;
+    updateInert();
+    if (!p) { tourFollow(300); requestAnimationFrame(focusTour); }
+  }
+
+  /** Tour schliessen; markDone: dem Server melden, dass sie erledigt ist. */
+  function endTour(finished, markDone = true) {
+    if (!tour.open) return;
+    tour.open = false;
+    tour.paused = false;
+    tour.waiting = false;
+    clearTimeout(tour.waitTimer);
+    cancelAnimationFrame(tour.follow);
+    tourEl.hidden = true;
+    tourSpot.hidden = true;
+    window.removeEventListener('resize', tourReflow);
+    document.removeEventListener('scroll', tourReflow, true);
+    if (tour.sbOpened) { closeSidebar(); tour.sbOpened = false; }
+    updateInert();
+    if (markDone && !tour.doneSent) {
+      tour.doneSent = true;
+      state.tutorial_done = true;
+      post('/api/tutorial', { action: 'done' });
+    }
+    updateEmpty();
+    if (finished) toast('Viel Spaß mit ' + kiName() + '! Die Tour findest du jederzeit in der Seitenleiste.', 'ok', 4500);
+    if (tourCard.contains(document.activeElement) || document.activeElement === document.body) focusInput();
+  }
+
+  byId('tour-next').addEventListener('click', tourNext);
+  byId('tour-back').addEventListener('click', tourBack);
+  byId('tour-show').addEventListener('click', tourShow);
+  byId('tour-end').addEventListener('click', () => endTour(false));
+  byId('tour-x').addEventListener('click', () => endTour(false));
+  byId('tour-start').addEventListener('click', () => startTour());
+  byId('sb-tour').addEventListener('click', () => { closeSidebar(); startTour(); });
+  byId('tour-later').addEventListener('click', () => {
+    tourLater = true;
+    try { sessionStorage.setItem('ki-tour-spaeter', '1'); } catch (_) { /* egal */ }
+    updateEmpty();
+    toast('Die Tour findest du jederzeit in der Seitenleiste.');
+    focusInput();
+  });
+  tourCard.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'BUTTON' && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) {
+      e.preventDefault();
+      if (e.key === 'ArrowRight') tourNext(); else tourBack();
+    }
+  });
+
+  // =====================================================================
   // Globale Tasten
   // =====================================================================
   document.addEventListener('keydown', (e) => {
+    if (!cmodal.hidden) { confirmKey(e); return; }
     if (askCur && !modal.hidden) { modalKey(e); return; }
+    if (jv.open) { jarvisKey(e); return; }
     if (!pmodal.hidden) { profileKey(e); return; }
     if (ended) return;
+    if (tour.open && !tour.paused && e.key === 'Escape' && tourCard.contains(document.activeElement)) {
+      e.preventDefault();
+      endTour(false);
+      return;
+    }
     if (e.key === 'F2') {
       e.preventDefault();
       if (!e.repeat) voicePress();
@@ -2644,8 +4213,9 @@
   let flushing = false;      // gepufferte Ereignisse werden gerade nachgespielt
   let resyncOnEnd = false;   // nach dem Ende der laufenden Antwort den Verlauf neu laden
   let resyncCount = 0;
+  let helloCount = 0;
   const FLOW = new Set(['user', 'start', 'thinking', 'chunk', 'tool', 'agent', 'info', 'done', 'stopped', 'error',
-    'notice', 'reset']);
+    'notice', 'reset', 'retract']);
 
   function setConnected(ok) {
     connected = ok;
@@ -2678,6 +4248,11 @@
     askQueue = [];
     if (askCur) { askCur = null; askFocusBack = null; modal.hidden = true; }
     if (!pmodal.hidden) closeProfile(true);
+    if (confirmState) closeConfirm(false);
+    if (jv.open) closeJarvisView();
+    ttsStop();
+    endClosing();
+    if (tour.open) endTour(false, false);
     updateInert();
     if (voice.phase !== 'idle') voiceReset();
     const banner = byId('conn-banner');
@@ -2689,6 +4264,9 @@
     input.disabled = true;
     micBtn.disabled = true;
     app.classList.add('ended');
+    for (const el of document.querySelectorAll('.sb-actions, .sb-section, .sb-alerts, .suggestions, .composer-wrap, #tb-jarvis, #tour-offer')) {
+      el.inert = true;
+    }
     closeCmdPop();
     setBusy(false);
     updateEmpty();
@@ -2820,6 +4398,7 @@
         setConnected(true);
         applyState(ev.state);
         loadHistory();
+        if (helloCount++ > 0) loadAppearance(true); // nach dem Neuverbinden: evtl. verpasste Aenderungen
         break;
       case 'state':
         applyState(ev.state);
@@ -2845,9 +4424,13 @@
       case 'agent':
         ensureReply().agent(ev.phase, ev.role, ev.task ? String(ev.task) : '');
         break;
-      case 'info':
-        ensureReply().info(String(ev.text || ''));
+      case 'info': {
+        const t = String(ev.text || '');
+        if (/^Live-Mitschrift/i.test(t)) jvSetupInfo(t, 'info');
+        if (reply) reply.info(t);
+        else addInfoLine(t); // ausserhalb einer Antwort keine leere Blase mit Tipp-Punkten
         break;
+      }
       case 'done':
         endReply('done');
         setBusy(false);
@@ -2865,7 +4448,11 @@
         maybeResync();
         break;
       case 'notice':
+        if (/Live-Mitschrift/i.test(String(ev.text || '')) && jv.live === false) jvSetupInfo(String(ev.text), ev.level);
         addCard(ev.level, String(ev.text || ''));
+        break;
+      case 'retract':
+        onRetract();
         break;
       case 'reset':
         clearChat();
@@ -2885,6 +4472,32 @@
       case 'bye':
         onBye();
         break;
+      case 'jarvis':
+        onJarvisEvent(ev);
+        break;
+      case 'heard':
+        onHeard(ev);
+        break;
+      case 'level':
+        if (jv.open && !jv.closing) orb.level(Number(ev.value));
+        break;
+      case 'say':
+        onSay(ev);
+        break;
+      case 'say_end':
+        onSayEnd(ev);
+        break;
+      case 'hush':
+        onHush(ev);
+        break;
+      case 'open':
+        if (ended) break;
+        if (ev.what === 'jarvis') { if (!jv.open && !jv.closing) { ttsWarmup(); openJarvisView(false); } }
+        else if (ev.what === 'tutorial') startTour();
+        break;
+      case 'appearance':
+        loadAppearance(true);
+        break;
       default:
         break;
     }
@@ -2894,6 +4507,8 @@
   autosize();
   setBusy(false);
   setConnected(false);
+  renderSwitches();
+  loadAppearance(false);
   connect();
   input.focus();
 })();

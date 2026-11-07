@@ -8,6 +8,7 @@
   <title>KI</title>
   <link rel="icon" id="favicon" href="data:,">
   <link rel="stylesheet" href="/static/app.css">
+  <link id="custom-css" rel="stylesheet" href="/custom.css">
 </head>
 <body>
 <div class="app" id="app">
@@ -26,7 +27,7 @@
 
     <div class="sb-actions">
       <button class="sb-new" id="sb-new" type="button" title="Neues Gespräch beginnen (/neu)"><span data-icon="plus"></span>Neues Gespräch</button>
-      <button class="sb-profile" id="sb-profile" type="button" aria-haspopup="dialog">
+      <button class="sb-profile" id="sb-profile" type="button" aria-haspopup="dialog" data-tour="profil">
         <span class="sbp-ic" data-icon="userCog"></span>
         <span class="sbp-text"><span class="sbp-title">Charakter &amp; Profil</span><span class="sbp-sub">Persönlichkeit, Stil, Über mich</span></span>
         <span class="sbp-chev" data-icon="chevronRight"></span>
@@ -50,6 +51,14 @@
 
     <section class="sb-section" aria-labelledby="h-settings">
       <h2 class="sb-heading" id="h-settings">Einstellungen</h2>
+      <div class="switch-row wheels" data-toggle="stuetzraeder" data-tour="stuetzraeder">
+        <div class="switch-text">
+          <span class="switch-title" id="lbl-stuetzraeder"><span data-icon="shield"></span>Stützräder</span>
+          <span class="switch-sub" id="sub-stuetzraeder">fragt vor Änderungen, nur Arbeitsordner</span>
+        </div>
+        <button class="switch" id="sw-stuetzraeder" type="button" role="switch" aria-checked="false"
+                aria-labelledby="lbl-stuetzraeder" aria-describedby="sub-stuetzraeder"><span class="knob"></span></button>
+      </div>
       <div class="switch-row" data-toggle="erlauben">
         <div class="switch-text">
           <span class="switch-title" id="lbl-erlauben">Alles erlauben</span>
@@ -70,6 +79,7 @@
 
     <nav class="sb-section" aria-labelledby="h-cmds">
       <h2 class="sb-heading" id="h-cmds">Befehle</h2>
+      <button class="sb-btn" type="button" id="sb-tour"><span data-icon="compass"></span>Tour starten</button>
       <button class="sb-btn" type="button" data-cmd="/status"><span data-icon="activity"></span>Status</button>
       <button class="sb-btn" type="button" data-cmd="/gedaechtnis"><span data-icon="book"></span>Gedächtnis</button>
       <button class="sb-btn" type="button" data-cmd="/kosten"><span data-icon="coins"></span>Kosten</button>
@@ -97,6 +107,10 @@
       <div class="tb-actions">
         <button class="pill-btn" id="tb-update" type="button" hidden><span data-icon="download"></span><span id="tb-update-text">Update verfügbar</span></button>
         <span class="model-chip" id="tb-model" hidden><span data-icon="sparkles"></span><span id="tb-model-text"></span></span>
+        <button class="jv-launch" id="tb-jarvis" type="button" data-tour="jarvis" aria-haspopup="dialog"
+                title="Jarvis-Modus: einfach mit mir reden (/jarvis)">
+          <span class="jl-orb" aria-hidden="true"><i></i></span><span class="jl-text">Jarvis-Modus</span>
+        </button>
         <button class="icon-btn" id="tb-new" type="button" aria-label="Neues Gespräch" title="Neues Gespräch (/neu)" data-icon="plusSquare" hidden></button>
         <button class="icon-btn" id="theme-btn" type="button" aria-label="Design wechseln" data-icon="contrast"></button>
       </div>
@@ -114,8 +128,16 @@
           <div class="avatar xl ai-avatar" aria-hidden="true">K</div>
           <h1 id="empty-title">Hallo!</h1>
           <div class="empty-meaning" id="empty-meaning" hidden></div>
-          <p>Frag mich etwas, gib mir eine Aufgabe – oder halte <kbd>F2</kbd> gedrückt und sprich mit mir.</p>
-          <div class="suggestions">
+          <p id="empty-text">Frag mich etwas, gib mir eine Aufgabe – oder halte <kbd>F2</kbd> gedrückt und sprich mit mir.</p>
+          <div class="tour-offer" id="tour-offer" hidden>
+            <button class="tour-cta" id="tour-start" type="button">
+              <span class="tcta-ic" data-icon="compass"></span>
+              <span class="tcta-text"><span class="tcta-title" id="tour-cta-title">Tour starten</span><span class="tcta-sub">In ein paar Schritten – mit Vorführung</span></span>
+              <span class="tcta-go" data-icon="chevronRight"></span>
+            </button>
+            <button class="link-btn tour-later" id="tour-later" type="button">Später</button>
+          </div>
+          <div class="suggestions" id="suggestions">
             <button class="suggestion" type="button" data-prompt="Was kannst du alles? Gib mir einen kurzen Überblick.">
               <span data-icon="sparkles"></span>
               <span class="sg-text"><span class="sg-title">Was kannst du alles?</span><span class="sg-sub">Ein kurzer Überblick über deine Fähigkeiten</span></span>
@@ -143,12 +165,12 @@
       <div class="composer-inner">
         <button class="jump" id="jump" type="button" hidden><span data-icon="arrowDown"></span>Neueste Nachrichten</button>
         <div class="cmd-pop" id="cmd-pop" role="listbox" aria-label="Befehle" hidden></div>
-        <div class="composer" id="composer">
+        <div class="composer" id="composer" data-tour="eingabe">
           <label class="sr-only" for="input">Nachricht</label>
           <textarea id="input" rows="1" placeholder="Schreib eine Nachricht …" autocomplete="off" spellcheck="true"
                     aria-autocomplete="list" aria-controls="cmd-pop" aria-expanded="false"></textarea>
           <button class="c-btn mic-btn" id="mic-btn" type="button" aria-label="Spracheingabe (gedrückt halten oder kurz drücken, F2)"
-                  title="Sprechen – gedrückt halten oder kurz drücken (F2)" aria-pressed="false" data-icon="mic"></button>
+                  title="Sprechen – gedrückt halten oder kurz drücken (F2)" aria-pressed="false" data-icon="mic" data-tour="mikrofon"></button>
           <button class="c-btn send-btn" id="send-btn" type="button" aria-label="Senden (Enter)" title="Senden (Enter)" disabled data-icon="send"></button>
         </div>
         <div class="composer-hint" id="hint">
@@ -179,7 +201,8 @@
         <span class="dlg-risk" id="dlg-risk"></span>
       </div>
     </div>
-    <div class="dlg-body"><p class="dlg-text" id="dlg-text"></p></div>
+    <div class="dlg-body"><p class="dlg-text" id="dlg-text"></p>
+      <p class="dlg-voice" id="dlg-voice" hidden><span data-icon="mic"></span><span>Du kannst auch einfach „ja“, „immer“ oder „nein“ sagen.</span></p></div>
     <div class="dlg-foot" id="dlg-foot"></div>
     <div class="dlg-keys" id="dlg-keys"></div>
   </div>
@@ -203,6 +226,7 @@
       <button class="pn-tab" type="button" role="tab" id="tab-ueber" data-tab="ueber" aria-controls="pane-ueber" aria-selected="false" tabindex="-1"><span data-icon="idCard"></span><span>Über mich</span><i class="tab-dot" aria-hidden="true"></i></button>
       <button class="pn-tab" type="button" role="tab" id="tab-werte" data-tab="werte" aria-controls="pane-werte" aria-selected="false" tabindex="-1"><span data-icon="scale"></span><span>Werte</span><i class="tab-dot" aria-hidden="true"></i></button>
       <button class="pn-tab" type="button" role="tab" id="tab-gedaechtnis" data-tab="gedaechtnis" aria-controls="pane-gedaechtnis" aria-selected="false" tabindex="-1"><span data-icon="brain"></span><span>Gedächtnis</span><span class="tab-count" id="tab-mem-count"></span></button>
+      <button class="pn-tab" type="button" role="tab" id="tab-sicherheit" data-tab="sicherheit" aria-controls="pane-sicherheit" aria-selected="false" tabindex="-1"><span data-icon="shield"></span><span>Sicherheit</span></button>
     </div>
 
     <div class="pn-body" id="pn-body">
@@ -242,6 +266,11 @@
             <p class="pn-desc">Wähle eine Persönlichkeit – du kannst sie danach unten noch frei anpassen.</p>
           </div>
           <div class="char-grid" id="char-grid" role="radiogroup" aria-label="Charakter"></div>
+          <div class="persona-note" id="persona-note" role="status" hidden>
+            <span data-icon="info"></span>
+            <span id="persona-note-text"></span>
+            <button class="btn small ghost" id="persona-keep" type="button">Doch meinen Text behalten</button>
+          </div>
         </div>
 
         <details class="pn-details" id="persona-details">
@@ -252,11 +281,6 @@
             <span class="pd-chev" data-icon="chevron"></span>
           </summary>
           <div class="pd-body">
-            <div class="persona-note" id="persona-note" hidden>
-              <span data-icon="info"></span>
-              <span id="persona-note-text"></span>
-              <button class="btn small ghost" id="persona-keep" type="button">Doch meinen Text behalten</button>
-            </div>
             <label class="sr-only" for="pf-persona">Persönlichkeit (Text)</label>
             <textarea class="input area tall" id="pf-persona" rows="14" spellcheck="true"></textarea>
             <p class="field-hint">Schreib in ganzen Sätzen, wie sie sein soll. Überschriften mit <code>#</code>, Aufzählungen mit <code>-</code>. Sobald du hier etwas änderst, wird daraus dein eigener Charakter.</p>
@@ -331,6 +355,42 @@
           <div class="mem-list" id="mem-list" aria-live="polite"></div>
         </div>
       </section>
+
+      <!-- 6. Sicherheit -->
+      <section class="pane" id="pane-sicherheit" role="tabpanel" aria-labelledby="tab-sicherheit" hidden>
+        <div class="pn-section">
+          <div class="pn-sec-head">
+            <h3 class="pn-h" id="sec-title">Was sie ohne Nachfrage darf</h3>
+            <p class="pn-desc">Änderungen hier gelten sofort – ohne Speichern.</p>
+          </div>
+          <div class="sec-card wheels" id="sec-wheels" data-state="an">
+            <div class="sec-ic" data-icon="shield"></div>
+            <div class="sec-main">
+              <div class="sec-top">
+                <span class="sec-title" id="sec-lbl-stuetzraeder">Stützräder</span>
+                <span class="sec-badge" id="sec-wheels-badge">An</span>
+              </div>
+              <p class="sec-text" id="sec-wheels-text"></p>
+              <ul class="sec-list">
+                <li><b>An:</b> fragt vor jeder Änderung, bleibt im Arbeitsordner – ohne Shell und PC-Steuerung.</li>
+                <li><b>Aus:</b> darf am ganzen PC alles ohne Fragen. Automatische Starts fragt sie trotzdem.</li>
+              </ul>
+            </div>
+            <button class="switch" id="sec-sw-stuetzraeder" type="button" role="switch" aria-checked="false"
+                    data-switch="stuetzraeder" aria-labelledby="sec-lbl-stuetzraeder" aria-describedby="sec-wheels-text"><span class="knob"></span></button>
+          </div>
+          <div class="sec-card" id="sec-confirm">
+            <div class="sec-ic" data-icon="checkCircle"></div>
+            <div class="sec-main">
+              <div class="sec-top"><span class="sec-title" id="sec-lbl-erlauben">Alles erlauben</span></div>
+              <p class="sec-text" id="sec-erlauben-text">Nur die Rückfragen: Ist es an, fragt sie nicht mehr, bevor sie etwas ändert. Alle anderen Grenzen bleiben, wie sie sind.</p>
+            </div>
+            <button class="switch" id="sec-sw-erlauben" type="button" role="switch" aria-checked="false"
+                    data-switch="erlauben" aria-labelledby="sec-lbl-erlauben" aria-describedby="sec-erlauben-text"><span class="knob"></span></button>
+          </div>
+          <div class="sec-facts" id="sec-facts" aria-live="polite"></div>
+        </div>
+      </section>
     </div>
 
     <footer class="pn-foot">
@@ -352,6 +412,77 @@
           <button class="btn primary" id="pc-save" type="button">Speichern</button>
         </div>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- Jarvis-Modus (reiner Sprachmodus) -->
+<div class="jv" id="jarvis" data-state="listening" role="dialog" aria-modal="true" aria-labelledby="jv-title" aria-describedby="jv-hint" tabindex="-1" hidden>
+  <div class="jv-aurora" aria-hidden="true"><i class="a1"></i><i class="a2"></i><i class="a3"></i></div>
+  <header class="jv-top">
+    <div class="jv-brand">
+      <div class="avatar ai-avatar" aria-hidden="true">K</div>
+      <h2 class="jv-title" id="jv-title"><span id="jv-name">KI</span><span class="sr-only"> – Jarvis-Modus</span></h2>
+      <span class="jv-live" id="jv-live" hidden><i aria-hidden="true"></i>LIVE</span>
+    </div>
+    <div class="jv-setup" id="jv-setup" role="status" hidden><span class="spinner" aria-hidden="true"></span><span id="jv-setup-text">Live-Mitschrift wird eingerichtet …</span></div>
+    <button class="jv-x" id="jv-close" type="button" aria-label="Zurück zum Chat (Esc)" title="Zurück zum Chat (Esc)" data-icon="x"></button>
+  </header>
+  <div class="jv-stage">
+    <div class="jv-orb" id="jv-orb-wrap" aria-hidden="true"><canvas id="jv-orb"></canvas></div>
+    <div class="jv-state" id="jv-state" role="status"><i class="jv-dot" aria-hidden="true"></i><span id="jv-state-text">Starte …</span></div>
+    <div class="jv-note" id="jv-note" role="alert" hidden></div>
+    <div class="jv-text" id="jv-text">
+      <p class="jv-you" id="jv-you" aria-live="off"></p>
+      <div class="jv-subs" id="jv-subs" aria-live="polite"></div>
+    </div>
+  </div>
+  <footer class="jv-foot">
+    <div class="jv-btns">
+      <button class="jv-btn" id="jv-stop" type="button" title="Nova hört auf zu reden und hält die Antwort an"><span data-icon="stop"></span><span>Stopp</span></button>
+      <button class="jv-btn primary" id="jv-chat" type="button" title="Zurück zum Chat (Esc)"><span data-icon="chat"></span><span>Chat-Modus</span></button>
+    </div>
+    <p class="jv-hint" id="jv-hint">Sag „Chat-Modus“, um zurückzukehren – du kannst mich jederzeit unterbrechen.</p>
+  </footer>
+</div>
+
+<!-- Tour -->
+<div class="tour" id="tour" hidden>
+  <div class="tour-dim" id="tour-dim" hidden></div>
+  <div class="tour-spot" id="tour-spot" hidden></div>
+  <div class="tour-card" id="tour-card" role="dialog" aria-modal="false" aria-labelledby="tour-title" aria-describedby="tour-text" tabindex="-1">
+    <div class="tc-head">
+      <span class="tour-step" id="tour-step">Schritt 1 von 1</span>
+      <button class="icon-btn tour-x" id="tour-x" type="button" aria-label="Tour beenden" title="Tour beenden (Esc)" data-icon="x"></button>
+    </div>
+    <div class="tour-bar" aria-hidden="true"><i id="tour-bar"></i></div>
+    <h2 class="tour-title" id="tour-title"></h2>
+    <p class="tour-text" id="tour-text"></p>
+    <div class="tour-wait" id="tour-wait" role="status" hidden><span class="spinner" aria-hidden="true"></span><span id="tour-wait-text">Ich führe es dir vor …</span></div>
+    <div class="tour-btns">
+      <button class="btn small ghost tour-end" id="tour-end" type="button">Tour beenden</button>
+      <span class="tour-gap"></span>
+      <button class="btn secondary" id="tour-back" type="button">Zurück</button>
+      <button class="btn secondary" id="tour-show" type="button"><span data-icon="play"></span>Zeig es mir</button>
+      <button class="btn primary" id="tour-next" type="button">Weiter</button>
+    </div>
+  </div>
+</div>
+
+<!-- Bestaetigung (z.B. Stuetzraeder abnehmen) -->
+<div class="modal cmodal" id="cmodal" hidden>
+  <div class="dialog cdialog" id="cdialog" role="alertdialog" aria-modal="true" aria-labelledby="cd-title" aria-describedby="cd-text" tabindex="-1">
+    <div class="dlg-head">
+      <div class="dlg-icon" id="cd-icon"></div>
+      <div class="dlg-titles">
+        <h2 class="dlg-title" id="cd-title"></h2>
+        <span class="dlg-risk" id="cd-risk"></span>
+      </div>
+    </div>
+    <div class="dlg-body"><div class="cd-text" id="cd-text"></div></div>
+    <div class="dlg-foot">
+      <button class="btn ghost" id="cd-cancel" type="button">Abbrechen</button>
+      <button class="btn primary" id="cd-ok" type="button">OK</button>
     </div>
   </div>
 </div>
