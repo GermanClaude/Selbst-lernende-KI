@@ -170,6 +170,24 @@ class AnthropicProvider(LLMProvider):
     def history_chars(self) -> int:
         return sum(_content_chars(m["content"]) for m in self.messages)
 
+    def ask_once(self, prompt: str, max_tokens: int = 1500) -> str:
+        try:
+            resp = self.client.messages.create(
+                model=self.config.claude.model,
+                # Denken ist bei Opus 5.5 immer an und zaehlt mit -> etwas Luft lassen.
+                max_tokens=max_tokens + 2000,
+                system=self._ask_system(),
+                messages=[{"role": "user", "content": prompt}],
+                output_config={"effort": "low"},
+            )
+            self._track_usage(getattr(resp, "usage", None))
+            if getattr(resp, "stop_reason", None) == "refusal":
+                return ""
+            return "".join(b.text for b in resp.content if getattr(b, "type", None) == "text").strip()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Kurzfrage fehlgeschlagen: %s", exc)
+            return ""
+
     def summarize_history(self) -> str:
         if len(self.messages) < 2:
             return ""

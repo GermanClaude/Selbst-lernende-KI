@@ -162,6 +162,25 @@ class VoiceSettings:
     enabled: bool = False
     speak_responses: bool = False
     wake_word: str = ""
+    # F2 = Sprechtaste: halten = sprechen, kurz druecken = Mikrofon an/aus.
+    f2_aufnahme: bool = True
+    # Spracherkennung: "auto" (Whisper, falls installiert, sonst Google),
+    # "whisper" (offline, faster-whisper) oder "google" (online, kostenlos).
+    erkennung: str = "auto"
+    whisper_modell: str = "small"
+    sprache: str = "de"
+
+
+@dataclass
+class UpdateSettings:
+    # "automatisch" = neue Versionen selbst installieren, "fragen" = vorher fragen,
+    # "aus" = nie nachschauen.
+    modus: str = "automatisch"
+    repo: str = "GermanClaude/Selbst-lernende-KI"
+    # Leer = Standard-Branch des Repos (dort landen fertige Versionen).
+    branch: str = ""
+    pruefen_alle_stunden: int = 24
+    alte_versionen_behalten: int = 5
 
 
 @dataclass
@@ -193,6 +212,7 @@ class Config:
     anthropic_api_key: str | None
     deepseek_api_key: str | None
     settings_file: Path | None = None  # tatsaechlich gelesene Einstellungsdatei
+    update: UpdateSettings = field(default_factory=UpdateSettings)
 
     # -- Komfort-Eigenschaften ---------------------------------------------
     @property
@@ -306,6 +326,7 @@ def load_config(project_root: Path | None = None) -> Config:
         anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY"),
         deepseek_api_key=os.environ.get("DEEPSEEK_API_KEY"),
         settings_file=settings_path,
+        update=_merge(UpdateSettings(), raw.get("update", {})),
     )
     # Relative Pfade gelten ab dem Programmordner, nicht ab dem aktuellen Verzeichnis.
     db_path = Path(cfg.memory.db_path).expanduser()

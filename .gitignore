@@ -18,6 +18,7 @@ config/permissions.toml
 data/
 logs/
 workspace/
+versionen/
 *.sqlite3
 *.db
 

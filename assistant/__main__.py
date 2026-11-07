@@ -51,8 +51,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Fehlende Abhaengigkeit: {exc}\nBitte 'pip install -r requirements.txt' ausfuehren.")
         return 1
 
-    run_cli(config)
-    return 0
+    return run_cli(config)
 
 
 def _first_setup(config) -> None:

@@ -15,7 +15,9 @@ beautifulsoup4>=4.12
 # Optionale Extras - die KI laeuft auch ohne sie (mit freundlichem Hinweis).
 # Installiere sie nur, wenn du die jeweilige Funktion willst:
 #
-#   Sprachsteuerung (Mikrofon -> Text):   pip install SpeechRecognition openai-whisper sounddevice
+#   Sprechtaste F2 (Mikrofon -> Text):    im Chat "/sprache einrichten"
+#                                         (= pip install sounddevice SpeechRecognition)
+#   ... offline statt Google:             pip install faster-whisper
 #   Sprachausgabe (Text -> Stimme):       pip install pyttsx3
 #   PC-Steuerung (Maus/Tastatur lokal):   pip install pyautogui pillow
 #   Build zur .exe:                       pip install pyinstaller

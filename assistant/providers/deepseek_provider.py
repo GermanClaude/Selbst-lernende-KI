@@ -223,6 +223,25 @@ class DeepSeekProvider(LLMProvider):
                 total += len(tc["function"]["arguments"] or "")
         return total
 
+    def ask_once(self, prompt: str, max_tokens: int = 1500) -> str:
+        if self.client is None:
+            return ""
+        try:
+            resp = self.client.chat.completions.create(
+                model=self.config.deepseek.model,
+                messages=[
+                    {"role": "system", "content": self._ask_system()},
+                    {"role": "user", "content": prompt},
+                ],
+                max_tokens=max_tokens,
+                stream=False,
+            )
+            self._track_usage(getattr(resp, "usage", None))
+            return (resp.choices[0].message.content or "").strip()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("DeepSeek-Kurzfrage fehlgeschlagen: %s", exc)
+            return ""
+
     def summarize_history(self) -> str:
         if self.client is None or self.history_length() < 2:
             return ""

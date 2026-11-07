@@ -90,9 +90,36 @@ max_werkzeug_runden = 60
 
 
 [voice]
-enabled = false
+# Sprechtaste F2: gedrueckt HALTEN und sprechen (loslassen = fertig) - oder kurz
+# druecken = Mikrofon an, nochmal F2 = fertig. Der Text landet in der Eingabezeile.
+# Einrichten im Chat mit:  /sprache einrichten
+f2_aufnahme = true
+# Spracherkennung: "auto" (Whisper, falls installiert, sonst Google),
+# "google" (online, kostenlos) oder "whisper" (offline: pip install faster-whisper).
+erkennung = "auto"
+# Whisper-Modell: tiny | base | small | medium (groesser = genauer, langsamer)
+whisper_modell = "small"
+sprache = "de"
+# Antworten vorlesen (pip install pyttsx3) - im Chat: /sprache vorlesen
 speak_responses = false
+# Alter Dauer-Sprachmodus (braucht PyAudio) - meist reicht F2.
+enabled = false
 wake_word = ""
+
+
+# ----------------------------------------------------------------------------
+#  UPDATES - neue Versionen kommen automatisch aus dem GitHub-Repo.
+# ----------------------------------------------------------------------------
+[update]
+# "automatisch" = selbst installieren (die alte Version wird gesichert),
+# "fragen" = vorher fragen, "aus" = nie nachschauen.
+modus = "automatisch"
+repo = "GermanClaude/Selbst-lernende-KI"
+# Leer = Standard-Branch des Repos (dort landen fertige Versionen).
+branch = ""
+pruefen_alle_stunden = 24
+# So viele alte Versionen bleiben im Ordner "versionen" (/versionen, /zurueck).
+alte_versionen_behalten = 5
 
 
 # ----------------------------------------------------------------------------

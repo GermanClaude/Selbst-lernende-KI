@@ -200,18 +200,44 @@ Für einen echten „macht alles von allein“-Modus zusätzlich `auto_confirm =
 
 ---
 
-## Sprachsteuerung aktivieren (optional)
+## Sprechen per F2
 
-```bash
-pip install SpeechRecognition pyttsx3 sounddevice
+- **F2 gedrückt halten** und sprechen – loslassen, fertig.
+- Oder **F2 kurz drücken**: „Mikrofon AN“ erscheint, sprich so lange du willst,
+  dann **nochmal F2** (Esc bricht ab).
+- Der erkannte Text steht danach in der Eingabezeile – prüfen, ggf. korrigieren,
+  **Enter**.
+
+Einmalig einrichten – im Chat:
 ```
-Dann in `config/settings.toml`:
-```toml
-[voice]
-enabled = true
-speak_responses = true
+/sprache einrichten
 ```
-Im Chat schaltet `/sprache` den Sprachmodus an/aus.
+Das installiert `sounddevice` und `SpeechRecognition` (Erkennung über Google,
+online, kostenlos). Offline-Erkennung: zusätzlich `pip install faster-whisper`
+(beim ersten Sprechen wird das Modell geladen). Einstellungen unter `[voice]`.
+Antworten vorlesen lassen: `/sprache vorlesen` (braucht `pip install pyttsx3`).
+
+## Automatische Updates
+
+Einmal am Tag schaut die KI im GitHub-Repo nach einer neuen Version. Gibt es eine,
+erklärt dir deine KI (Claude oder DeepSeek) in eigenen Worten, was neu ist, und
+installiert sie – die bisherige Version wird vorher im Ordner `versionen\`
+gesichert. Danach startet sie von selbst neu (über `start.bat` / `start.sh`).
+
+- `/update` – sofort nachschauen
+- `/versionen` – gesicherte alte Versionen anzeigen
+- `/zurueck <Nr>` – zu einer alten Version zurück (automatische Updates pausieren
+  dann, bis du wieder `/update` eingibst)
+
+Deine Daten bleiben bei jedem Update unangetastet: `.env`, `config\settings.toml`,
+`config\persona.md`, `config\werte.md`, Gedächtnis (`data\`) und Arbeitsordner.
+Einstellen unter `[update]` (`modus = "automatisch" | "fragen" | "aus"`).
+Die `KI.exe` holt sich neue Versionen aus den GitHub-Releases.
+
+**Neue Version veröffentlichen:** in `assistant/__init__.py` die `__version__`
+erhöhen, in `CHANGELOG.md` oben einen Abschnitt dazu schreiben und auf den
+Standard-Branch bringen. Alle Installationen holen sie sich dann selbst; die
+GitHub-Action baut dazu automatisch eine neue `KI.exe`.
 
 ## PC-Steuerung (Maus/Tastatur) aktivieren (optional)
 
@@ -231,7 +257,12 @@ stoppt die Steuerung sofort.
 | `/status` | Einstellungen & Sicherheitslage zeigen |
 | `/gedaechtnis` | anzeigen, was die KI gelernt hat |
 | `/kosten` | Token-Verbrauch & geschätzte Kosten dieser Sitzung |
-| `/sprache` | Sprachmodus an/aus |
+| `/sprache` | Stand der Spracheingabe (F2) |
+| `/sprache einrichten` | Spracheingabe installieren |
+| `/sprache vorlesen` | Antworten vorlesen an/aus |
+| `/update` | jetzt nach einer neuen Version schauen |
+| `/versionen` | gesicherte alte Versionen anzeigen |
+| `/zurueck <Nr>` | zu einer alten Version zurückkehren |
 | `/beenden` | Sitzung beenden (speichert eine Zusammenfassung) |
 
 ---
@@ -250,7 +281,8 @@ assistant/
     base.py          Token-/Kostenzählung, Werkzeug-Hilfen
     anthropic_provider.py   Claude
     deepseek_provider.py    DeepSeek (OpenAI-kompatibel)
-  voice.py         optionale Sprachein-/-ausgabe
+  voice.py         Sprachein-/-ausgabe (F2-Sprechtaste)
+  updater.py       automatische Updates + gesicherte alte Versionen
   tools/           Werkzeuge: Dateien, Shell, Web, System, Gedächtnis, PC
   ui/cli.py        die Chat-Oberfläche
 config/            persona.md, werte.md, settings(.example).toml

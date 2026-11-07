@@ -40,6 +40,19 @@ if [ ! -f .env ]; then
 fi
 
 # --- 5) Los geht's ---
+# Die Schleife wird komplett eingelesen, bevor sie laeuft - ein Update darf diese
+# Datei also ersetzen. Rueckgabecode 42 = Update installiert -> neu starten.
 echo
 echo "Starte die KI..."
-python -m assistant
+export KI_NEUSTART=1
+while true; do
+  set +e
+  python -m assistant
+  code=$?
+  set -e
+  if [ "$code" -ne 42 ]; then
+    exit "$code"
+  fi
+  echo
+  exec bash "$0"
+done

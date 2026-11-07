@@ -159,8 +159,19 @@ Standardmäßig ist **Claude** eingestellt. Für **DeepSeek** (billig):
 | `/status` | zeigt Gehirn, Modell und Sicherheitslage |
 | `/kosten` | zeigt Token-Verbrauch und geschätzte Kosten der Sitzung |
 | `/gedaechtnis` | zeigt, was die KI gelernt hat |
-| `/sprache` | Sprachsteuerung an/aus (falls eingerichtet) |
+| `/sprache einrichten` | Spracheingabe per F2 einrichten (einmalig) |
+| `/update` | nach einer neuen Version schauen |
+| `/versionen` / `/zurueck <Nr>` | alte Versionen anzeigen / zurückholen |
 | `/beenden` | Sitzung beenden |
+
+**Sprechen statt tippen:** einmal `/sprache einrichten` eingeben. Danach
+**F2 gedrückt halten** und sprechen (loslassen = fertig) – oder **F2 kurz
+drücken**, sprechen, **nochmal F2**. Der Text erscheint in der Eingabezeile,
+dann Enter.
+
+**Updates kommen von allein:** Einmal am Tag schaut die KI nach einer neuen
+Version, erklärt dir, was neu ist, sichert die alte Version und startet neu.
+Deine Schlüssel, Einstellungen und das Gedächtnis bleiben dabei erhalten.
 
 ---
 

@@ -94,6 +94,19 @@ class LLMProvider(ABC):
     @abstractmethod
     def history_length(self) -> int: ...
 
+    def ask_once(self, prompt: str, max_tokens: int = 1500) -> str:
+        """Einmalige Frage ohne Verlauf und Werkzeuge (z.B. Update-Neuigkeiten erklaeren).
+
+        Gibt "" zurueck, wenn es nicht klappt - Aufrufer haben einen Rueckfall.
+        """
+        return ""
+
+    def _ask_system(self) -> str:
+        return (
+            f"Du bist {self.config.ki.name}, ein freundlicher KI-Assistent, der lokal auf dem "
+            "Computer deines Menschen laeuft. Antworte auf Deutsch, kurz und klar."
+        )
+
     def user_turns(self) -> int:
         """Anzahl der Nachrichten vom Menschen (Werkzeug-Schritte zaehlen nicht)."""
         return self.history_length()
