@@ -191,7 +191,10 @@ class CLI:
             if not ok:
                 print(_c(message, YELLOW))
             elif packages == ["pyttsx3"]:
-                print(_c("Vorlesen ist eingerichtet - schalte es mit /sprache vorlesen ein.", CYAN))
+                if VoiceOutput(True).enabled:
+                    print(_c("Vorlesen ist eingerichtet - schalte es mit /sprache vorlesen ein.", CYAN))
+                else:
+                    print(_c("Installiert - bitte starte die KI einmal neu, dann /sprache vorlesen.", YELLOW))
             else:
                 problem = self.voice_capture.problem()
                 print(_c(problem or "Spracheingabe ist eingerichtet. Halte F2 gedrueckt und sprich.",

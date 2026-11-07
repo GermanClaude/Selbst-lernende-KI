@@ -12,7 +12,7 @@ permissions:
 
 # Laeufe nacheinander: der zweite sieht dann das fertige Release und ueberspringt.
 concurrency:
-  group: release-exe
+  group: release-exe-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:

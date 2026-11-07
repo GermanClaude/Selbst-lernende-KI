@@ -20,10 +20,17 @@ if [ ! -d .venv ]; then
   # shellcheck disable=SC1091
   source .venv/bin/activate
   python -m pip install --upgrade pip >/dev/null
-  pip install -r requirements.txt
+  pip install -r requirements.txt && cp requirements.txt .venv/requirements.installiert.txt
 else
   # shellcheck disable=SC1091
   source .venv/bin/activate
+fi
+
+# Hat ein Update requirements.txt geaendert (oder ist eine Installation
+# gescheitert), die Pakete jetzt nachinstallieren.
+if ! cmp -s requirements.txt .venv/requirements.installiert.txt; then
+  echo "Installiere neue Pakete..."
+  pip install -r requirements.txt && cp requirements.txt .venv/requirements.installiert.txt || true
 fi
 
 # --- 3) Einstellungsdatei anlegen ---

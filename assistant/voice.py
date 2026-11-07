@@ -304,6 +304,12 @@ def install_voice_packages(run=None, packages: list[str] | None = None) -> tuple
         tail = "\n".join(((result.stdout or "") + (result.stderr or "")).splitlines()[-6:])
         return False, "Installation fehlgeschlagen:\n" + tail
     import importlib
+    import site
 
     importlib.invalidate_caches()
+    # .pth-Dateien neuer Pakete (z.B. pywin32 fuer pyttsx3) wirken sonst erst nach
+    # einem Neustart.
+    for path in list(sys.path):
+        if path.rstrip("/\\").endswith("site-packages"):
+            site.addsitedir(path)
     return True, "Installiert."

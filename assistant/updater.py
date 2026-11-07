@@ -509,6 +509,9 @@ def _extract_zip(data: bytes, tmp: Path) -> Path:
             dest.parent.mkdir(parents=True, exist_ok=True)
             with archive.open(member) as src, dest.open("wb") as out:
                 shutil.copyfileobj(src, out)
+            mode = (member.external_attr >> 16) & 0o777
+            if member.create_system == 3 and mode & 0o111:  # ausfuehrbar (start.sh)
+                os.chmod(dest, dest.stat().st_mode | 0o111)
     if not (target / "assistant" / "__init__.py").is_file():
         raise UpdateError("Im Download fehlt das Programm (assistant/) - nichts geaendert.")
     return target

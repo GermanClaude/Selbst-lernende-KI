@@ -399,3 +399,23 @@ def test_git_checkout_offer_is_only_a_hint(tmp_path, capsys):
     info = UpdateInfo("0.1.0", "0.2.0", "neu", ZIP, "quelle")
     assert cli._offer_update(info, ask=False) is False
     assert "git pull" in capsys.readouterr().out
+
+
+def test_executable_bit_survives_update(tmp_path):
+    import os
+    import stat
+
+    root = _install_dir(tmp_path)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        for rel, content in REMOTE_FILES.items():
+            z.writestr(f"top/{rel}", content)
+        info = zipfile.ZipInfo("top/start.sh")
+        info.create_system = 3
+        info.external_attr = (stat.S_IFREG | 0o755) << 16
+        z.writestr(info, "#!/bin/bash\n")
+    routes = _routes()
+    routes[ZIP] = buf.getvalue()
+    up = _updater(root, routes)
+    up.install(up.check(), say=lambda m: None)
+    assert os.stat(root / "start.sh").st_mode & 0o111

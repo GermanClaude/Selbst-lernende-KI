@@ -358,3 +358,18 @@ def test_windows_structures_match_win32_layout():
     assert _RECORD.Event.offset == 4
     assert lineinput._utf16_units("ä😀") == [0xE4, 0xD83D, 0xDE00]
     assert lineinput._utf16_units("\ud83d") == [0xD83D]  # einzelne Emoji-Haelfte: kein Absturz
+
+
+def test_windows_modifier_keys_do_not_count_as_first_key():
+    # Alt+Tab (Alt runter, Fokus weg/wieder da, Alt hoch) bzw. Strg zum Kopieren, dann F2
+    records = [_rec(0x12, mods=0x2), _rec(0, etype=0x10), _rec(0x12, down=False),
+               _rec(0x11, mods=0x8), _rec(0x11, down=False), _rec(VK_F2)]
+    con = _win(records)
+    assert con.wait_first_key().is_f2
+    assert con._k32.queue == []
+
+
+def test_windows_shift_letter_is_typing():
+    con = _win([_rec(0x10, mods=0x10), _rec(0x41, "A", mods=0x10)])
+    key = con.wait_first_key()
+    assert key.char == "A" and len(con._k32.queue) == 1  # Umschalt-Druck weg, "A" bleibt fuer input()

@@ -104,6 +104,9 @@ def _utf16_units(text: str) -> list[int]:
 
 
 _MODIFIERS = 0x001F  # Alt (rechts/links), Strg (rechts/links), Umschalt
+# Tasten ohne Zeichen, die nur "nebenbei" gedrueckt werden (Alt+Tab, Strg+C zum
+# Kopieren, Win, Feststelltaste): zaehlen nicht als erste Taste der Zeile.
+_MODIFIER_VKS = {0x10, 0x11, 0x12, 0x13, 0x14, 0x5B, 0x5C, 0x90, 0x91, 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5}
 
 
 class WindowsConsole:
@@ -183,8 +186,8 @@ class WindowsConsole:
                 skip = 0
                 for rec in records:
                     key = self._key_of(rec)
-                    if key is None:
-                        skip += 1  # Loslassen, Maus, Fokus: fuer die Eingabe bedeutungslos
+                    if key is None or (key.vk in _MODIFIER_VKS and not key.char):
+                        skip += 1  # Loslassen, Maus, Fokus, Alt/Strg/Win: bedeutungslos
                         continue
                     if key.is_f2:
                         self._records(skip + 1, remove=True)
