@@ -49,11 +49,34 @@ def _is_app_exe() -> bool:
     return getattr(sys, "frozen", False) and Path(sys.executable).stem.lower() == "ki-app"
 
 
+def _open_console() -> None:
+    """KI-App.exe --terminal: ein Konsolenfenster oeffnen (die App-Exe hat sonst keins)."""
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+
+        kernel = ctypes.windll.kernel32
+        if not kernel.GetConsoleWindow() and kernel.AllocConsole():
+            kernel.SetConsoleOutputCP(65001)
+            kernel.SetConsoleCP(65001)
+            sys.stdin = open("CONIN$", "r", encoding="utf-8", errors="replace")  # noqa: SIM115
+            sys.stdout = open("CONOUT$", "w", encoding="utf-8", errors="replace", buffering=1)  # noqa: SIM115
+            sys.stderr = sys.stdout
+    except Exception:  # noqa: BLE001 - dann eben ohne Konsole
+        pass
+
+
 def main() -> int:
     # Projektpfad in sys.path aufnehmen (fuer den Start aus dem Quellordner).
     sys.path.insert(0, str(Path(__file__).resolve().parent))
-    if _is_app_exe() and "--app" not in sys.argv:
+    if _is_app_exe() and "--terminal" in sys.argv:
+        _open_console()  # aus der App heraus: Terminal-Version im eigenen Fenster
+    elif _is_app_exe() and "--app" not in sys.argv:
         sys.argv.append("--app")
+    from assistant.__main__ import safe_streams
+
+    safe_streams()  # ohne Konsole: kein Absturz bei print()/isatty()
     try:
         _ensure_runtime_dir()
         from assistant.__main__ import main as app_main
@@ -61,7 +84,7 @@ def main() -> int:
         code = app_main()
     except Exception:  # noqa: BLE001 - in der .exe sonst unsichtbar
         traceback.print_exc()
-        if _is_app_exe():  # kein Konsolenfenster: Fehler als Meldung zeigen
+        if "--app" in sys.argv:  # kein Konsolenfenster: Fehler als Meldung zeigen
             try:
                 from assistant.app.launcher import message_box
 
@@ -71,7 +94,7 @@ def main() -> int:
         code = 1
     # Die .exe schliesst ihr Fenster sofort - Fehler sonst nicht lesbar.
     # (43 = "laeuft schon in einem anderen Fenster" - dann still schliessen.)
-    if code and code != 43 and getattr(sys, "frozen", False) and not _is_app_exe():
+    if code and code != 43 and getattr(sys, "frozen", False) and "--app" not in sys.argv:
         try:
             input("\nEnter druecken zum Schliessen...")
         except (EOFError, KeyboardInterrupt):

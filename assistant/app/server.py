@@ -165,6 +165,8 @@ class AppServer:
                     return self._json(ctl.tutorial())
                 if url.path == "/api/appearance":
                     return self._json(ctl.appearance())
+                if url.path == "/api/setup":
+                    return self._json(ctl.setup_info())
                 return self._deny(404)
 
             def do_POST(self):  # noqa: N802
@@ -215,6 +217,8 @@ class AppServer:
                                                  body.get("turn"), body.get("seq"), bool(body.get("progress"))))
                 if url.path == "/api/tutorial":
                     return self._json(ctl.tutorial_action(str(body.get("action", ""))))
+                if url.path == "/api/setup":
+                    return self._json(ctl.setup_save(body))
                 return self._deny(404)
 
             def _static(self, name: str) -> None:

@@ -118,3 +118,23 @@ def test_exit_phrases():
 
     assert _is_exit_phrase("Chat-Modus bitte") and _is_exit_phrase("Beenden.")
     assert not _is_exit_phrase("Wie wird das Wetter morgen?")
+
+
+def test_nova_can_choose_her_sphere(tmp_path):
+    reg = build_registry()
+    ctx = _ctx(tmp_path)
+    out, _ = reg.execute(ctx, "app_anpassen", {"aktion": "setzen", "avatar": "sphaere", "sphaere_farbe": "#a855f7",
+                                               "bewegung": "lebhaft"})
+    assert aussehen.load(tmp_path) == {"avatar": "sphaere", "sphaere_farbe": "#a855f7", "bewegung": "lebhaft"}
+    out, _ = reg.execute(ctx, "app_anpassen", {"aktion": "setzen", "bewegung": "wild"})
+    assert "Nicht geaendert" in out
+
+
+def test_mic_level_reaches_the_window():
+    from assistant.voice import VoiceCapture
+
+    seen = []
+    cap = VoiceCapture(SimpleNamespace(erkennung="auto"))
+    cap.on_level = seen.append
+    cap._on_audio(array("h", [3000, -3000] * 400).tobytes(), 800, None, None)
+    assert seen and 0.9 <= seen[0] <= 1.0 and cap.seconds() > 0

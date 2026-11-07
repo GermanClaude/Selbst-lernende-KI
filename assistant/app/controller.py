@@ -28,7 +28,7 @@ from ..cancel import Abgebrochen
 from ..config import Config, save_setting, toml_string
 from ..logging_setup import get_logger
 from ..permissions import Risk
-from ..ui.cli import CLI, JARVIS_HINT, _is_exit_phrase
+from ..ui.cli import CLI, JARVIS_HINT, KEY_HINT, _is_exit_phrase
 from ..voice import VoiceOutput
 
 logger = get_logger()
@@ -62,6 +62,8 @@ COMMANDS = [
     ("/name", "der KI einen anderen Namen geben"),
     ("/sprache", "Stand der Spracheingabe"),
     ("/sprache einrichten", "Spracheingabe installieren"),
+    ("/gehirn", "DeepSeek oder Claude - Schluessel einfach in den Chat einfuegen"),
+    ("/terminal", "zur Terminal-Version wechseln"),
     ("/hilfe", "alle Befehle"),
     ("/beenden", "App schliessen"),
 ]
@@ -110,6 +112,8 @@ class AppController(CLI):
         self._live_setup_failed = False
         self._speaker = None
         self.tool_ctx.extra["on_appearance"] = lambda: self._event({"type": "appearance"})
+        # Sphaere: reagiert auf deine Stimme beim Mikrofon-Knopf / F2
+        self.voice_capture.on_level = lambda value: self._event({"type": "mic", "level": value})
 
     # -- Ereignisse -----------------------------------------------------------
     def _event(self, event: dict) -> None:
@@ -143,6 +147,8 @@ class AppController(CLI):
             "tokens": usage.total_tokens,
             "eur": round(eur, 4),
             "api_key_missing": not self.config.api_key,
+            "provider_name": schoen({"deepseek": "DeepSeek", "claude": "Claude (Anthropic)"}.get(
+                self.config.active_provider, self.config.active_provider)),
             "update": {"new": self._pending_update.new} if self._pending_update else None,
             "jarvis": self._jarvis_active(),
             "jarvis_state": self._live.state if self._jarvis_active() else "off",  # fuer ein neu geoeffnetes Fenster
@@ -241,6 +247,15 @@ class AppController(CLI):
         text = (text or "").strip()
         if not text:
             return False, "Leere Nachricht"
+        shown = None
+        from ..schluessel import find_key, mask
+
+        key = find_key(text)
+        if key and not text.startswith("/"):
+            # Schluessel eingefuegt: einrichten statt an die KI schicken; angezeigt wird er nur gekuerzt
+            text, shown = f"/schluessel {key}", f"\U0001F511 Schl\u00fcssel {mask(key)}"
+        elif key:
+            shown = text.replace(key, mask(key))
         with self._lock:
             if self.busy:
                 return False, "Ich arbeite noch an der letzten Nachricht - Stopp, um sie anzuhalten."
@@ -248,7 +263,8 @@ class AppController(CLI):
             self._live_turn = live
             self._drop_turn = False
         self.brain.provider.cancel_event.clear()
-        threading.Thread(target=self._work, args=(text, None, model_text), name="ki-antwort", daemon=True).start()
+        threading.Thread(target=self._work, args=(text, None, model_text, shown), name="ki-antwort",
+                         daemon=True).start()
         return True, ""
 
     def run_background(self, fn: Callable[[], Any]) -> None:
@@ -260,7 +276,8 @@ class AppController(CLI):
         self.brain.provider.cancel_event.clear()
         threading.Thread(target=self._work, args=(None, fn), name="ki-hintergrund", daemon=True).start()
 
-    def _work(self, text: str | None, fn: Callable[[], Any] | None = None, model_text: str | None = None) -> None:
+    def _work(self, text: str | None, fn: Callable[[], Any] | None = None, model_text: str | None = None,
+              shown: str | None = None) -> None:
         self._state_changed()
         writer = _NoticeWriter(self._notice)
         self._writer = writer
@@ -270,14 +287,21 @@ class AppController(CLI):
                 if fn is not None:
                     quit_code = fn()
                 elif text.startswith("/"):
+                    self.history.append({"role": "user", "text": shown or text})
+                    self._event({"type": "user", "text": shown or text})
+                    quit_code = self._command(text)
+                elif not self.config.api_key:
                     self.history.append({"role": "user", "text": text})
                     self._event({"type": "user", "text": text})
-                    quit_code = self._command(text)
+                    self._notice(KEY_HINT.replace("\n  ", "\n- "), "warn")
                 else:
                     self._answer(text, model_text)
         except Exception as exc:  # noqa: BLE001 - die App darf daran nicht sterben
             logger.exception("Fehler in der App")
-            message = f"Da ist etwas schiefgegangen: {exc}"
+            from ..schluessel import friendly_error
+
+            hint = friendly_error(exc, self.config.active_provider)
+            message = schoen(hint) if hint else f"Da ist etwas schiefgegangen: {exc}"
             self.history.append({"role": "error", "text": message})
             self._event({"type": "error", "text": message})
         finally:
@@ -296,6 +320,8 @@ class AppController(CLI):
         if text.split()[0].lower() == "/app":
             print("Du bist schon in der App.")
             return None
+        if text.split()[0].lower() == "/terminal":
+            return self._open_terminal()
         quit_now = self._handle_command(text)  # /beenden, oder Neustart nach Update
         if text.split()[0].lower() == "/name":
             self._state_changed()  # neuer Name gleich in der Seitenleiste
@@ -332,7 +358,15 @@ class AppController(CLI):
         self._event({"type": "done"})
         self._last_answer = "".join(self._answer_parts) or answer
         if self.voice_out.enabled and not self._jarvis_active():
-            threading.Thread(target=self.voice_out.speak, args=(answer,), daemon=True).start()
+            threading.Thread(target=self._speak_aloud, args=(answer,), daemon=True).start()
+
+    def _speak_aloud(self, answer: str) -> None:
+        """Vorlesen am PC (Schalter 'Vorlesen') - die Sphaere spricht mit."""
+        self._event({"type": "speaking", "on": True})
+        try:
+            self.voice_out.speak(answer)
+        finally:
+            self._event({"type": "speaking", "on": False})
 
     def stop(self) -> None:
         if self._live is not None:
@@ -415,6 +449,55 @@ class AppController(CLI):
         self.history.clear()
         self._event({"type": "reset"})  # Fenster leert den Chat
         self._state_changed()
+
+    def _after_provider_change(self) -> None:
+        self._state_changed()
+
+    def _open_terminal(self) -> int | None:
+        """Zur Terminal-Version wechseln: Terminal oeffnen, App schliessen (dasselbe Gedaechtnis)."""
+        from .launcher import spawn_terminal
+
+        if not spawn_terminal(self.config.project_root, wait_for_pid=os.getpid()):
+            print("Das Terminal liess sich hier nicht oeffnen - starte start.bat (bzw. KI.exe).")
+            return None
+        print("Ich oeffne die Terminal-Version und schliesse die App …")
+        self._event({"type": "bye"})
+        return 0
+
+    # -- Gehirn & Schluessel (Einstellungen in der App) -----------------------------
+    def setup_info(self) -> dict:
+        from ..schluessel import describe
+
+        info = describe(self.config)
+        for item in info["providers"]:
+            item["name"], item["info"] = schoen(item["name"]), schoen(item["info"])
+        return info
+
+    def setup_save(self, data: dict) -> dict:
+        """Schluessel pruefen und speichern, Gehirn waehlen."""
+        from ..schluessel import PROVIDERS, find_key, setup
+
+        provider = str(data.get("provider") or "").lower() or None
+        if provider and provider not in PROVIDERS:
+            return {"ok": False, "kind": "other", "error": f"Unbekanntes Gehirn '{provider}'."}
+        raw = str(data.get("api_key") or "").strip()
+        key = find_key(raw) or (raw or None)
+        with self._lock:
+            if self.busy:
+                return {"ok": False, "kind": "busy", "error": "Ich arbeite gerade - gleich nochmal versuchen."}
+            self.busy = True
+        try:
+            result = setup(self.config, key=key, provider=provider, test=not data.get("force"))
+            if not result["ok"]:
+                return {"ok": False, "kind": result["kind"], "error": schoen(result["message"])}
+            fresh = self.brain.switch_provider()
+            message = result["message"] + (" Wir beginnen ein neues Gespraech." if fresh else "")
+            self._notice(message)
+            return {"ok": True, "message": schoen(message), "setup": self.setup_info()}
+        finally:
+            with self._lock:
+                self.busy = False
+            self._state_changed()
 
     # In der App oeffnen /jarvis und /tutorial die Ansichten im Fenster (statt der Terminal-Versionen).
     def _jarvis_terminal(self) -> None:
@@ -624,9 +707,7 @@ class AppController(CLI):
     def startup(self) -> None:
         """Nach dem Oeffnen des Fensters: Hinweise und (hoechstens taeglich) Update-Pruefung."""
         if not self.config.api_key:
-            key = "DEEPSEEK_API_KEY" if self.config.active_provider == "deepseek" else "ANTHROPIC_API_KEY"
-            self._notice(f"Kein **{key}** gefunden. Trag deinen Schluessel in diese Datei ein:\n\n"
-                         f"`{self.config.project_root / '.env'}`", "warn")
+            self._notice(KEY_HINT.replace("\n  ", "\n- "), "warn")
         self._start_update_watch()
 
         def check() -> int | None:

@@ -9,6 +9,7 @@ oder nach Installation:
 from __future__ import annotations
 
 import argparse
+import io
 import sys
 
 from .config import PROJECT_ROOT, ConfigError, load_config
@@ -35,18 +36,13 @@ def main(argv: list[str] | None = None) -> int:
         # KI.exe --app: das schwarze Konsolenfenster verschwinden lassen
         try:
             import ctypes
-            import io
 
-            ctypes.windll.kernel32.FreeConsole()
-            sys.stdout = sys.stderr = io.StringIO()
+            if ctypes.windll.kernel32.GetConsoleWindow():
+                ctypes.windll.kernel32.FreeConsole()
+                sys.stdin = sys.stdout = sys.stderr = None
         except Exception:  # noqa: BLE001
             pass
-
-    if app_mode and sys.stdout is None:
-        # pythonw (App ohne Konsole): Ausgaben ins Leere statt Absturz
-        import io
-
-        sys.stdout = sys.stderr = io.StringIO()
+    safe_streams()
 
     if args.version:
         from . import __version__
@@ -92,7 +88,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Die KI laeuft schon in einem anderen Fenster (PID {other}) - dieses schliesst sich.")
         if unexpected:
             print(f"Gestartet {started_by}. Im KI-Fenster zeigt /autostart, woher das kommt.")
-        if sys.stdin.isatty():
+        if sys.stdin is not None and sys.stdin.isatty():
             import time
 
             time.sleep(4)
@@ -123,6 +119,27 @@ def main(argv: list[str] | None = None) -> int:
         return run_cli(config, started_by=started_by if unexpected else None)
     finally:
         guard.release()
+
+
+class _Nowhere(io.TextIOBase):
+    """Ausgabe ins Leere (App ohne Konsole) - wie /dev/null, aber ohne Datei."""
+
+    def write(self, text: str) -> int:
+        return len(text)
+
+    def isatty(self) -> bool:
+        return False
+
+
+def safe_streams() -> None:
+    """KI-App.exe / pythonw haben keine Konsole: sys.stdin/stdout/stderr sind dann None.
+    Ersatz einsetzen, sonst stuerzt alles ab, was print() oder isatty() benutzt."""
+    if sys.stdin is None:
+        sys.stdin = io.StringIO("")
+    if sys.stdout is None:
+        sys.stdout = _Nowhere()
+    if sys.stderr is None:
+        sys.stderr = _Nowhere()
 
 
 def _first_setup(config) -> None:

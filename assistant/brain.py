@@ -194,6 +194,26 @@ class Brain:
         new.effort_override = getattr(old, "effort_override", None)  # z.B. Jarvis-Modus: schnell antworten
         self.provider = new
 
+    def switch_provider(self) -> bool:
+        """Nach neuem Schluessel oder anderem Gehirn: Anbieter neu aufbauen.
+
+        Gleiches Gehirn: das Gespraech laeuft weiter (nur neuer Schluessel). Anderes Gehirn:
+        neues Gespraech (das Format der Verlaeufe passt nicht zusammen). True = neues Gespraech."""
+        old = self.provider
+        same = getattr(old, "name", "") == self.config.active_provider
+        if not same:
+            try:
+                self.end_session_summary()  # bisheriges Gespraech ins Gedaechtnis (wenn moeglich)
+            except Exception as exc:  # noqa: BLE001 - z.B. alter Schluessel ungueltig
+                logger.info("Zusammenfassung beim Gehirn-Wechsel: %s", exc)
+        new = build_provider(self.config, self.system_prompt, self.registry, self.tool_ctx)
+        if same:
+            new.messages = old.messages
+        new.usage, new.wait_fn, new.cancel_event = old.usage, old.wait_fn, old.cancel_event
+        new.effort_override = getattr(old, "effort_override", None)
+        self.provider = new
+        return not same
+
     def end_session_summary(self) -> None:
         if self.provider.user_turns() < 1 or self.provider.history_length() < 2:
             return

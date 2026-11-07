@@ -29,6 +29,7 @@ def app(tmp_path):
     def make(scripted, **perm):
         cfg = load_config(tmp_path)
         cfg.update.modus = "aus"
+        cfg.anthropic_api_key = cfg.anthropic_api_key or "sk-ant-test-schluessel"
         for key, value in perm.items():
             setattr(cfg.permissions, key, value)
         server = AppServer(lambda broadcast: AppController(cfg, broadcast))

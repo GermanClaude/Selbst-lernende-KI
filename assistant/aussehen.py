@@ -19,6 +19,8 @@ _MAX_CSS = 30_000
 CHOICES = {
     "ecken": ("eckig", "normal", "rund"),
     "dichte": ("kompakt", "normal", "luftig"),
+    "avatar": ("sphaere", "buchstabe"),           # Novas Gesicht: leuchtende Sphaere oder Buchstabe
+    "bewegung": ("ruhig", "normal", "lebhaft"),   # wie lebendig die Sphaere sich bewegt
 }
 _HEX = re.compile(r"^#(?:[0-9a-fA-F]{3}){1,2}$")
 
@@ -49,9 +51,9 @@ def validate(changes: dict) -> dict:
         if value is None or value == "":
             clean[key] = None  # = zuruecksetzen
             continue
-        if key == "akzentfarbe":
+        if key in ("akzentfarbe", "sphaere_farbe"):
             if not _HEX.match(str(value)):
-                raise ValueError("akzentfarbe bitte als Hex-Farbe, z.B. #22c55e")
+                raise ValueError(f"{key} bitte als Hex-Farbe, z.B. #22c55e")
             clean[key] = str(value)
         elif key == "schriftgroesse":
             size = int(value)

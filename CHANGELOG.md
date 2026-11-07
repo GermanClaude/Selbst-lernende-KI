@@ -4,6 +4,22 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.4.1 – 2026-11-08
+
+- **KI-App.exe startet wieder.** Sie brach beim Öffnen mit einer Fehlermeldung
+  („NoneType … isatty“) ab – behoben.
+- **Schlüssel einfach im Chat einfügen** – in der App und im Terminal: Kopier deinen
+  DeepSeek-Schlüssel (`sk-…`) oder Claude-Schlüssel (`sk-ant-…`) in das Eingabefeld
+  und drück Enter. Nova erkennt, wofür er ist, probiert ihn kurz aus, speichert ihn
+  und schaltet das passende Gehirn ein. Der Schlüssel wird nie an die KI geschickt
+  und nur gekürzt angezeigt.
+- **Verständliche Meldungen**, wenn der Schlüssel nicht geht: falsch kopiert,
+  Guthaben leer (mit Hinweis, wo du aufladen kannst) oder keine Internetverbindung.
+- `/gehirn` zeigt, welches Gehirn aktiv ist, und wechselt zwischen DeepSeek und
+  Claude. `/terminal` öffnet aus der App die Terminal-Version – eine Datei für beides.
+- Ein in der App eingetragener Schlüssel hat jetzt Vorrang vor einem alten Schlüssel,
+  der irgendwo in Windows hinterlegt ist.
+
 ## 0.4.0 – 2026-11-07
 
 **Die KI als App**

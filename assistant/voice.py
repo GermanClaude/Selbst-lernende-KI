@@ -114,6 +114,8 @@ class VoiceCapture:
         self._stream = None
         self._frames: list[bytes] = []
         self._whisper = None
+        self.on_level = None   # z.B. die App: Sphaere reagiert auf deine Stimme (0..1, ~10x pro Sekunde)
+        self._level_at = 0.0
 
     # -- Verfuegbarkeit -----------------------------------------------------
     def backend(self) -> str | None:
@@ -173,7 +175,18 @@ class VoiceCapture:
             raise VoiceError(f"Mikrofon konnte nicht gestartet werden: {exc}") from exc
 
     def _on_audio(self, indata, frames, time_info, status) -> None:  # noqa: ARG002
-        self._frames.append(bytes(indata))
+        data = bytes(indata)
+        self._frames.append(data)
+        if self.on_level is not None:
+            import time
+
+            now = time.monotonic()
+            if now - self._level_at >= 0.1:
+                self._level_at = now
+                try:
+                    self.on_level(round(min(1.0, _rms(data) / 3000.0), 3))
+                except Exception:  # noqa: BLE001 - Anzeige darf die Aufnahme nie stoeren
+                    pass
 
     def seconds(self) -> float:
         return sum(len(f) for f in self._frames) / (2 * _SAMPLE_RATE)
