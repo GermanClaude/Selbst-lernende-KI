@@ -378,3 +378,16 @@ def test_custom_css_and_appearance_api(app, tmp_path):
     assert _req(server, "/api/appearance")[1]["settings"] == {"akzentfarbe": "#16a34a"}
     state = _req(server, "/api/state")[1]
     assert state["stuetzraeder"] in ("an", "aus", "teilweise") and state["tutorial_done"] is False
+
+
+def test_typed_jarvis_and_tutorial_commands_open_the_views(app, monkeypatch):
+    server = app([])
+    ctl = server.controller
+    _fake_ear(monkeypatch, ctl)
+    _req(server, "/api/send", {"text": "/jarvis"})
+    events = _events_until(server, "open")
+    assert events[-1]["what"] == "jarvis" and ctl._jarvis_active()
+    _req(server, "/api/jarvis", {"action": "stop"})
+    time.sleep(0.3)
+    _req(server, "/api/send", {"text": "/tutorial"})
+    assert _events_until(server, "open")[-1]["what"] == "tutorial"

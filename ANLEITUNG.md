@@ -171,6 +171,12 @@ Standardmäßig ist **Claude** eingestellt. Für **DeepSeek** (billig):
 drücken**, sprechen, **nochmal F2**. Der Text erscheint in der Eingabezeile,
 dann Enter.
 
+**Einfach reden wie mit Jarvis:** `/jarvis` eingeben (in der App: Knopf
+**Jarvis-Modus**). Jetzt einfach sprechen – Nova schreibt mit, während du redest,
+antwortet laut und hört dann wieder zu. Du kannst sie jederzeit unterbrechen.
+Zurück zum Tippen: „Chat-Modus“ sagen. Beim ersten Mal lädt sie einmalig ein
+deutsches Sprachmodell (~50 MB) – das dauert kurz.
+
 **Updates kommen von allein:** Einmal am Tag schaut die KI nach einer neuen
 Version, erklärt dir, was neu ist, sichert die alte Version und startet neu.
 Deine Schlüssel, Einstellungen und das Gedächtnis bleiben dabei erhalten.

@@ -217,6 +217,31 @@ online, kostenlos). Offline-Erkennung: zusätzlich `pip install faster-whisper`
 (beim ersten Sprechen wird das Modell geladen). Einstellungen unter `[voice]`.
 Antworten vorlesen lassen: `/sprache vorlesen` (braucht `pip install pyttsx3`).
 
+## Jarvis-Modus: einfach reden (live)
+
+`/jarvis` (oder in der App der Knopf **Jarvis-Modus**) – und du redest einfach mit
+Nova, ganz ohne Tastatur. Zurück: „Chat-Modus“ sagen, Esc oder Strg+C.
+
+So schnell wie möglich:
+- **Live-Mitschrift:** Nova schreibt mit, *während* du sprichst (Vosk, offline,
+  kostenlos – das deutsche Modell, ~50 MB, lädt sie beim ersten Mal selbst nach
+  `data/sprachmodelle/`).
+- **Kurze Sprechpause genügt** (Standard 0,6 s). Endet der Satz auf „und“, „weil“
+  o.ä., wartet sie etwas länger.
+- **Sie spricht ab dem ersten fertigen Satz**, während der Rest der Antwort noch
+  entsteht.
+- **Unterbrechen:** Fang einfach an zu reden – sie hört sofort auf (mit Kopfhörer
+  am zuverlässigsten). „Stopp“ hält auch eine laufende Aufgabe an.
+- **Nachtrag:** „Wie wird das Wetter morgen?“ … „in Berlin“ wird zu einer Frage.
+- **Rückfragen** beantwortest du mit „ja“, „immer“ oder „nein“.
+- Claude denkt im Sprachmodus weniger tief nach (`live_denktiefe = "low"`), damit
+  die Antwort schneller kommt.
+
+Ehrlich: Ganz ohne Wartezeit wie bei Gemini Live geht es nicht – Gemini hört und
+spricht direkt, DeepSeek und Claude verstehen nur Text. Bis Nova anfängt zu
+sprechen, vergehen meist 1–2 Sekunden. Einstellungen unter `[voice]`
+(`pause`, `unterbrechen`, `live_mitschrift`, `live_genau`, `live_denktiefe`).
+
 ## Charakter & Profil
 
 Wie Nova sein soll, stellst du selbst ein – in der App unter **„Charakter &
@@ -300,6 +325,7 @@ stoppt die Steuerung sofort.
 | `/sprache` | Stand der Spracheingabe (F2) |
 | `/sprache einrichten` | Spracheingabe installieren |
 | `/sprache vorlesen` | Antworten vorlesen an/aus |
+| `/jarvis` | Jarvis-Modus: einfach reden, live (zurück: „Chat-Modus“ sagen) |
 | `/update` | jetzt nach einer neuen Version schauen |
 | `/versionen` | gesicherte alte Versionen anzeigen |
 | `/zurueck <Nr>` | zu einer alten Version zurückkehren |
@@ -327,6 +353,7 @@ assistant/
     anthropic_provider.py   Claude
     deepseek_provider.py    DeepSeek (OpenAI-kompatibel)
   voice.py         Sprachein-/-ausgabe (F2-Sprechtaste)
+  live.py          Jarvis-Modus: durchgehend zuhoeren, live mitschreiben, unterbrechen
   updater.py       automatische Updates + gesicherte alte Versionen
   app/             die KI als App: Server, Fenster, Oberflaeche (static/)
   tools/           Werkzeuge: Dateien, Shell, Web, System, Gedächtnis, PC

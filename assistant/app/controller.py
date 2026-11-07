@@ -406,6 +406,17 @@ class AppController(CLI):
         self._event({"type": "reset"})  # Fenster leert den Chat
         self._state_changed()
 
+    # In der App oeffnen /jarvis und /tutorial die Ansichten im Fenster (statt der Terminal-Versionen).
+    def _jarvis_terminal(self) -> None:
+        result = self.jarvis("start", "client")
+        if result.get("ok"):
+            self._event({"type": "open", "what": "jarvis"})
+        else:
+            print(result.get("error") or "Der Jarvis-Modus ging nicht.")
+
+    def _tutorial_terminal(self) -> None:
+        self._event({"type": "open", "what": "tutorial"})
+
     # -- Jarvis-Modus: freihaendig und live reden (live.py) ---------------------------
     def _jarvis_active(self) -> bool:
         return self._live is not None and not self._live.stop_event.is_set()
