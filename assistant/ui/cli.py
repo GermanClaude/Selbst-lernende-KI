@@ -330,46 +330,36 @@ class CLI:
 
     # -- Jarvis-Modus im Terminal -------------------------------------------------
     def _jarvis_terminal(self) -> None:
-        from ..voice import Speaker, listen_utterance
+        from ..live import LiveLoop, LocalVoice, live_available, recognizer_factory, setup_live
+        from ..voice import Speaker
 
         problem = self.voice_capture.problem()
         if problem:
             print(_c(problem, YELLOW))
             return
-        speaker = Speaker(self.config.voice.sprache or "de")
+        root, settings = self.config.project_root, self.config.voice
+        if settings.live_mitschrift and not live_available(root, settings) and not getattr(sys, "frozen", False):
+            print(_c("Ich richte einmalig die Live-Mitschrift ein (~50 MB) …", GREY))
+            ok, message = setup_live(root, settings, progress=_progress_line)
+            print(_c("\r" + message + " " * 10, CYAN if ok else YELLOW))
+        speaker = Speaker(settings.sprache or "de")
         if not speaker.available:
             print(_c("Zum Vorlesen fehlt pyttsx3 - tippe /sprache einrichten vorlesen. Ich antworte dann nur als Text.",
                      YELLOW))
-        print(_c("\n[Jarvis-Modus] Sprich einfach mit mir. 'Chat-Modus' sagen oder Strg+C = zurueck.", BOLD))
+        host = _TerminalLiveHost(self)
+        loop = LiveLoop(host, LocalVoice(speaker), settings, recognizer_factory=recognizer_factory(root, settings))
+        host.loop = loop
+        provider = self.brain.provider
+        provider.effort_override = (settings.live_denktiefe or "").strip() or None
+        print(_c("\n[Jarvis-Modus] Sprich einfach - ich hoere die ganze Zeit zu und du kannst mich jederzeit "
+                 "unterbrechen. 'Chat-Modus' sagen oder Strg+C = zurueck.", BOLD))
         try:
-            while True:
-                print(_c("\r[hoere zu …]          ", GREY), end="", flush=True)
-                pcm = listen_utterance(silence=1.0)
-                if not pcm:
-                    continue
-                print(_c("\r[verstehe …]          ", GREY), end="", flush=True)
-                try:
-                    text = self.voice_capture.transcribe(pcm).strip()
-                except Exception as exc:  # noqa: BLE001
-                    print(_c(f"\r{exc}", YELLOW))
-                    continue
-                if not text:
-                    continue
-                if _is_exit_phrase(text):
-                    break
-                print(_c(f"\rDu: {text}", GREEN))
-                print(_c(f"{self.config.ki.name}: ", CYAN), end="", flush=True)
-                snapshot = self.brain.provider.history_snapshot()
-                try:
-                    answer = self.brain.respond(text + JARVIS_HINT, on_text=self._emit)
-                except KeyboardInterrupt:
-                    self.brain.provider.abort_turn(snapshot, text)
-                    speaker.stop()
-                    raise
-                print()
-                speaker.say(answer)
-                speaker.wait()
+            loop.run()
         except KeyboardInterrupt:
+            pass
+        finally:
+            provider.effort_override = None
+            host.wait()
             speaker.stop()
         print(_c("\n[Zurueck im Chat-Modus]", GREY))
 
@@ -621,6 +611,13 @@ class CLI:
                          YELLOW if problem else CYAN))
                 if not problem:
                     self.reader.warm_up()
+                    if self.config.voice.live_mitschrift:
+                        from ..live import setup_live
+
+                        print(_c("Lade die Live-Mitschrift fuer den Jarvis-Modus (Vosk, ~50 MB) …", GREY))
+                        ok, message = setup_live(self.config.project_root, self.config.voice,
+                                                 progress=_progress_line)
+                        print(_c("\r" + message + " " * 10, CYAN if ok else YELLOW))
         elif sub == "vorlesen":
             if not self.voice_out.enabled:
                 self.voice_out = VoiceOutput(True)
@@ -929,3 +926,102 @@ def _yes(question: str, default: bool = False) -> bool:
 
 def run_cli(config: Config, started_by: str | None = None) -> int:
     return CLI(config, started_by=started_by).run()
+
+
+def _progress_line(done: int, total: int) -> None:
+    if total:
+        print(_c(f"\r  Sprachmodell: {done * 100 // total} % ({done // 1_000_000} von {total // 1_000_000} MB)",
+                 GREY), end="", flush=True)
+
+
+class _TerminalLiveHost:
+    """Jarvis-Modus im Terminal: Antworten laufen in einem eigenen Thread, damit
+    Nova weiter zuhoert (und unterbrochen werden kann), waehrend sie antwortet."""
+
+    def __init__(self, cli: "CLI"):
+        self.cli = cli
+        self.loop = None
+        self.worker: threading.Thread | None = None
+        self.drop = False
+
+    def event(self, event: dict) -> None:
+        kind = event.get("type")
+        if kind == "heard":
+            text = event.get("text", "")
+            if event.get("final"):
+                print("\r\x1b[K" + (_c(f"Du: {text}", GREEN) + "\n" if text else ""), end="", flush=True)
+            elif text:
+                print("\r\x1b[K" + _c(f"Du: {text} …", GREY), end="", flush=True)
+        elif kind == "jarvis":
+            if event.get("error"):
+                print(_c(f"\n{event['error']}", YELLOW))
+            state = event.get("state")
+            if state == "listening":
+                print("\r\x1b[K" + _c("[hoere zu …]", GREY), end="", flush=True)
+            elif state == "recognizing":
+                print("\r\x1b[K" + _c("[verstehe …]", GREY), end="", flush=True)
+
+    def busy(self) -> bool:
+        return self.worker is not None and self.worker.is_alive()
+
+    def start_turn(self, text: str) -> bool:
+        if self.busy():
+            return False
+        provider = self.cli.brain.provider
+        provider.cancel_event.clear()
+        self.cli.tool_ctx.extra["cancel_event"] = provider.cancel_event
+        model_text = text + JARVIS_HINT
+        print(_c(f"{self.cli.config.ki.name}: ", CYAN), end="", flush=True)
+
+        def work() -> None:
+            snapshot = provider.history_snapshot()
+            cancelled = False
+            try:
+                self.cli.brain.respond(model_text, on_text=self._on_text)
+            except KeyboardInterrupt:  # angehalten (Dazwischenreden, Stopp)
+                cancelled = True
+                if not (self.drop and provider.drop_turn(snapshot, model_text)):
+                    provider.abort_turn(snapshot, text)
+            except Exception as exc:  # noqa: BLE001
+                provider.abort_turn(snapshot, text)
+                print(_c(f"\nFehler: {exc}", YELLOW))
+            finally:
+                self.drop = False
+                print()
+                if self.loop is not None:
+                    self.loop.on_turn_end(cancelled)
+
+        self.worker = threading.Thread(target=work, name="jarvis-antwort", daemon=True)
+        self.worker.start()
+        return True
+
+    def _on_text(self, chunk: str) -> None:
+        from ..live import split_tool_lines
+
+        self.cli._emit(chunk)
+        text, tool = split_tool_lines(chunk)
+        if tool:
+            self.loop.on_tool()
+        if text.strip():
+            self.loop.on_text(text)
+
+    def cancel_turn(self, drop: bool) -> None:
+        self.drop = drop
+        self.cli.brain.provider.cancel()
+
+    def transcribe(self, pcm: bytes) -> str:
+        return self.cli.voice_capture.transcribe(pcm)
+
+    def pending_ask(self) -> dict | None:
+        return None
+
+    def answer_ask(self, ask_id: str, value: str) -> None:  # noqa: ARG002
+        return None
+
+    def is_exit(self, text: str) -> bool:
+        return _is_exit_phrase(text)
+
+    def wait(self, timeout: float = 30.0) -> None:
+        if self.worker is not None and self.worker.is_alive():
+            self.cli.brain.provider.cancel()
+            self.worker.join(timeout)

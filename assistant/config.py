@@ -195,6 +195,16 @@ class VoiceSettings:
     erkennung: str = "auto"
     whisper_modell: str = "small"
     sprache: str = "de"
+    # Live-Sprachmodus (Jarvis): Mitschrift waehrend des Sprechens (Vosk, offline),
+    # Sprechpause bis zur Antwort, Dazwischenreden stoppt Nova.
+    live_mitschrift: bool = True
+    pause: float = 0.6
+    unterbrechen: bool = True
+    # True = den Satz zusaetzlich mit Google/Whisper erkennen (genauer, ~1 s langsamer)
+    live_genau: bool = False
+    # Wie tief Claude im Sprachmodus nachdenkt: "low" = schnell, "" = wie im Chat
+    live_denktiefe: str = "low"
+    live_modell: str = ""  # leer = passendes kleines Vosk-Modell zur Sprache
 
 
 @dataclass

@@ -50,7 +50,7 @@ class AnthropicProvider(LLMProvider):
             # "summarized": waehrend des Nachdenkens kommen weiter Daten - sonst wirkt eine
             # lange Denkpause wie eine tote Verbindung (Zeitlimit) und Strg+C reagiert spaet.
             "thinking": {"type": "adaptive", "display": "summarized"},
-            "output_config": {"effort": self.config.claude.effort},
+            "output_config": {"effort": self.effort_override or self.config.claude.effort},
             # Automatisches Prompt-Caching: der wachsende Verlauf wird bei jedem
             # Werkzeug-Schritt erneut gesendet - aus dem Cache kostet er ~10 %.
             "extra_body": {"cache_control": {"type": "ephemeral"}},

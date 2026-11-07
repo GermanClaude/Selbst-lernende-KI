@@ -101,9 +101,11 @@ class AppController(CLI):
         self._ask_ids = itertools.count(1)
         self._writer: _NoticeWriter | None = None
         self._voice_lock = threading.Lock()
-        self._jarvis_stop: threading.Event | None = None
-        self._jarvis_spoken = threading.Event()
-        self._jarvis_client_tts = True
+        self._live = None            # laufender Jarvis-Modus (live.LiveLoop)
+        self._live_turn = False      # laeuft gerade eine Antwort, die der Jarvis-Modus gestartet hat?
+        self._drop_turn = False      # die angehaltene Antwort ganz zuruecknehmen (Nachtrag im Sprachmodus)
+        self._live_setup = False     # Live-Mitschrift wird gerade eingerichtet
+        self._live_setup_failed = False
         self._speaker = None
         self.tool_ctx.extra["on_appearance"] = lambda: self._event({"type": "appearance"})
 
@@ -139,7 +141,7 @@ class AppController(CLI):
             "eur": round(eur, 4),
             "api_key_missing": not self.config.api_key,
             "update": {"new": self._pending_update.new} if self._pending_update else None,
-            "jarvis": self._jarvis_stop is not None and not self._jarvis_stop.is_set(),
+            "jarvis": self._jarvis_active(),
             "stuetzraeder": self.training_wheels_state(),
             "full_access": bool(self.permissions.settings.allow_full_filesystem),
             "tutorial_done": self._tutorial_done(),
@@ -159,10 +161,13 @@ class AppController(CLI):
             for line in chunk.split("\n"):
                 if m := _AGENT_TOOL.match(line):
                     self._event({"type": "tool", "name": m.group(2), "agent": m.group(1)})
+                    self._live_hook("tool")
                 elif m := _TOOL_LINE.match(line):
                     self._event({"type": "tool", "name": m.group(1), "agent": None})
+                    self._live_hook("tool")
                 elif m := _AGENT_START.match(line):
                     self._event({"type": "agent", "phase": "start", "role": m.group(1), "task": m.group(2)})
+                    self._live_hook("tool")
                 elif m := _AGENT_END.match(line):
                     self._event({"type": "agent", "phase": "end", "role": m.group(1), "task": ""})
                 elif m := _INFO_LINE.match(line):
@@ -173,6 +178,7 @@ class AppController(CLI):
             if not chunk.strip():
                 return
         self._answer_parts.append(chunk)
+        self._live_hook("text", chunk)
         self._event({"type": "chunk", "text": chunk})
 
     # -- Rueckfragen als Dialog -------------------------------------------------
@@ -182,10 +188,12 @@ class AppController(CLI):
         if self._writer:
             self._writer.flush_notice()  # erst zeigen, was vor der Frage ausgegeben wurde
         ask_id = f"q{next(self._ask_ids)}"
-        waiter = {"event": threading.Event(), "value": default}
+        waiter = {"event": threading.Event(), "value": default, "options": [v for v, _ in options]}
         self._asks[ask_id] = waiter
-        self._event({"type": "ask", "id": ask_id, "kind": kind, "risk": risk, "text": _ANSI.sub("", text).strip(),
+        clean = _ANSI.sub("", text).strip()
+        self._event({"type": "ask", "id": ask_id, "kind": kind, "risk": risk, "text": clean,
                      "options": [{"value": v, "label": label} for v, label in options]})
+        self._live_hook("ask", clean)
         cancel = self.brain.provider.cancel_event
         try:
             while not waiter["event"].wait(0.25):
@@ -267,7 +275,10 @@ class AppController(CLI):
             writer.flush_notice()
             self._writer = None
             self.busy = False
+            live_turn, self._live_turn = self._live_turn, False
             self._state_changed()
+            if live_turn and self._live is not None:
+                self._live.on_turn_end()
         if quit_code is not None:
             self.on_quit(quit_code)
 
@@ -281,14 +292,24 @@ class AppController(CLI):
         return self.exit_code if quit_now else None
 
     def _answer(self, text: str, model_text: str | None = None) -> None:
-        self.history.append({"role": "user", "text": text})
+        entry = {"role": "user", "text": text}
+        self.history.append(entry)
         self._event({"type": "user", "text": text})
         self._event({"type": "start"})
         self._answer_parts: list[str] = []
+        self._drop_turn = False
         snapshot = self.brain.provider.history_snapshot()
         try:
             answer = self.brain.respond(model_text or text, on_text=self._emit)
         except KeyboardInterrupt:  # Stopp-Knopf (Abgebrochen) - oder Strg+C im Hintergrund
+            drop, self._drop_turn = self._drop_turn, False
+            if drop and self.brain.provider.drop_turn(snapshot, model_text or text):
+                # Sprachmodus: "Wie wird das Wetter?" ... "in Berlin" -> eine Frage
+                if entry in self.history:
+                    self.history.remove(entry)
+                self._event({"type": "thinking", "on": False})
+                self._event({"type": "retract"})
+                return
             self.brain.provider.abort_turn(snapshot, text)
             self.history.append({"role": "assistant", "text": "".join(self._answer_parts) + "\n\n*(angehalten)*"})
             self._event({"type": "thinking", "on": False})
@@ -305,9 +326,8 @@ class AppController(CLI):
             threading.Thread(target=self.voice_out.speak, args=(answer,), daemon=True).start()
 
     def stop(self) -> None:
-        if self._speaker:
-            self._speaker.stop()
-        self._jarvis_spoken.set()
+        if self._live is not None:
+            self._live.hush()
         self.brain.provider.cancel()
         for waiter in list(self._asks.values()):
             waiter["event"].set()
@@ -383,97 +403,108 @@ class AppController(CLI):
         self._event({"type": "reset"})  # Fenster leert den Chat
         self._state_changed()
 
-    # -- Jarvis-Modus: freihaendig reden ------------------------------------------
+    # -- Jarvis-Modus: freihaendig und live reden (live.py) ---------------------------
     def _jarvis_active(self) -> bool:
-        return self._jarvis_stop is not None and not self._jarvis_stop.is_set()
+        return self._live is not None and not self._live.stop_event.is_set()
 
-    def jarvis(self, action: str, tts: str = "client") -> dict:
+    def _live_hook(self, kind: str, text: str = "") -> None:
+        live = self._live
+        if live is None or not self._live_turn:
+            return
+        if kind == "text":
+            live.on_text(text)
+        elif kind == "tool":
+            live.on_tool()
+        elif kind == "ask":
+            live.on_ask(text)
+
+    def jarvis(self, action: str, tts: str = "client", turn: Any = None) -> dict:
+        from ..live import LiveLoop, LocalVoice, WindowVoice, live_available, recognizer_factory
+
         if action == "start":
             if self._jarvis_active():
-                return {"ok": True}
+                return {"ok": True, "live": self._live.ear.live}
             problem = self.voice_capture.problem()
             if problem:
                 return {"ok": False, "error": problem, "setup": not getattr(sys, "frozen", False)}
-            self._jarvis_client_tts = tts != "server"
-            self._jarvis_stop = threading.Event()
-            threading.Thread(target=self._jarvis_loop, args=(self._jarvis_stop,), name="jarvis", daemon=True).start()
+            root = self.config.project_root
+            if tts == "server":
+                from ..voice import Speaker
+
+                if self._speaker is None:
+                    self._speaker = Speaker(self.config.voice.sprache or "de")
+                voice_out = LocalVoice(self._speaker, emit=self._event)
+            else:
+                voice_out = WindowVoice(self._event)
+            factory = recognizer_factory(root, self.config.voice)
+            loop = LiveLoop(_LiveHost(self), voice_out, self.config.voice, recognizer_factory=factory)
+            self._live = loop
+            self.brain.provider.effort_override = (self.config.voice.live_denktiefe or "").strip() or None
+            threading.Thread(target=self._run_live, args=(loop,), name="jarvis", daemon=True).start()
+            if factory is None and self.config.voice.live_mitschrift and not live_available(root, self.config.voice):
+                self._setup_live_in_background(loop)
             self._state_changed()
-            return {"ok": True}
+            return {"ok": True, "live": factory is not None}
         if action == "stop":
-            if self._jarvis_stop:
-                self._jarvis_stop.set()
-            self._jarvis_spoken.set()
-            if self._speaker:
-                self._speaker.stop()
+            if self._live is not None:
+                self._live.stop()
             self._state_changed()
             return {"ok": True}
         if action == "spoken":  # Fenster hat fertig vorgelesen -> weiter zuhoeren
-            self._jarvis_spoken.set()
+            if self._live is not None:
+                try:
+                    self._live.spoken(int(turn) if turn is not None else None)
+                except (TypeError, ValueError):
+                    self._live.spoken(None)
+            return {"ok": True}
+        if action == "hush":  # Stopp im Jarvis-Fenster
+            if self._live is not None:
+                self._live.hush()
             return {"ok": True}
         return {"ok": False, "error": f"Unbekannt: {action}"}
 
-    def _jarvis_loop(self, stop: threading.Event) -> None:
-        from ..voice import Speaker, listen_utterance
-
-        last_level = [0.0]
-
-        def level(value: float) -> None:
-            now = time.monotonic()
-            if now - last_level[0] >= 0.1:  # hoechstens ~10 Anzeigen pro Sekunde
-                last_level[0] = now
-                self._event({"type": "level", "value": round(value, 3)})
-
-        if not self._jarvis_client_tts and self._speaker is None:
-            self._speaker = Speaker(self.config.voice.sprache or "de")
+    def _run_live(self, loop) -> None:
         try:
-            while not stop.is_set():
-                while self.busy and not stop.is_set():
-                    time.sleep(0.1)
-                self._event({"type": "jarvis", "state": "listening"})
-                try:
-                    pcm = listen_utterance(on_level=level, stop_event=stop, silence=1.0)
-                except Exception as exc:  # noqa: BLE001 - kein Mikrofon o.ae.
-                    self._event({"type": "jarvis", "state": "off", "error": f"Mikrofon: {exc}"})
-                    break
-                if pcm is None or stop.is_set():
-                    break
-                if not pcm:
-                    continue
-                self._event({"type": "jarvis", "state": "recognizing"})
-                try:
-                    text = self.voice_capture.transcribe(pcm).strip()
-                except Exception as exc:  # noqa: BLE001
-                    self._event({"type": "jarvis", "state": "listening", "error": str(exc)})
-                    time.sleep(1)
-                    continue
-                if not text:
-                    continue
-                if _is_exit_phrase(text):
-                    break
-                self._event({"type": "jarvis", "state": "thinking", "text": text})
-                ok, _err = self.send(text, model_text=text + JARVIS_HINT)
-                if not ok:
-                    continue
-                time.sleep(0.2)
-                while self.busy and not stop.is_set():
-                    time.sleep(0.1)
-                if stop.is_set():
-                    break
-                answer = getattr(self, "_last_answer", "")
-                self._jarvis_spoken.clear()
-                self._event({"type": "jarvis", "state": "speaking", "text": answer})
-                if self._jarvis_client_tts:
-                    self._jarvis_spoken.wait(timeout=180)  # Fenster liest vor
-                elif self._speaker and self._speaker.available:
-                    self._speaker.say(answer)
-                    while not self._speaker.wait(0.2):
-                        if stop.is_set():
-                            self._speaker.stop()
-                            break
+            loop.run()
+        except Exception as exc:  # noqa: BLE001 - die App darf daran nicht sterben
+            logger.exception("Jarvis-Modus")
+            self._event({"type": "jarvis", "state": "off", "error": f"Sprachmodus: {exc}"})
         finally:
-            stop.set()
-            self._event({"type": "jarvis", "state": "off"})
+            if self._live is loop:
+                self._live = None
+                self.brain.provider.effort_override = None
             self._state_changed()
+
+    def _setup_live_in_background(self, loop) -> None:
+        """Erster Jarvis-Start: Live-Mitschrift (vosk + Modell) nebenbei einrichten."""
+        from ..live import recognizer_factory, setup_live
+
+        if self._live_setup or self._live_setup_failed or getattr(sys, "frozen", False):
+            return
+        self._live_setup = True
+
+        def work() -> None:
+            try:
+                self._notice("Ich richte einmalig die Live-Mitschrift ein (~50 MB). Bis dahin verstehe ich "
+                             "dich trotzdem - nur ohne Mitschreiben beim Sprechen.")
+                last = [0.0]
+
+                def progress(done: int, total: int) -> None:
+                    now = time.monotonic()
+                    if total and now - last[0] > 1.0:
+                        last[0] = now
+                        self._event({"type": "info", "text": f"Live-Mitschrift: {done * 100 // total} % geladen"})
+
+                ok, message = setup_live(self.config.project_root, self.config.voice, progress=progress)
+                self._live_setup_failed = not ok  # nicht bei jedem Start erneut versuchen
+                self._notice(message, "info" if ok else "warn")
+                factory = recognizer_factory(self.config.project_root, self.config.voice) if ok else None
+                if factory is not None and self._live is loop:
+                    loop.ear.enable_live(factory)
+            finally:
+                self._live_setup = False
+
+        threading.Thread(target=work, name="live-einrichten", daemon=True).start()
 
     # -- Tutorial & Aussehen --------------------------------------------------------
     def _tutorial_done(self) -> bool:
@@ -593,8 +624,8 @@ class AppController(CLI):
         return True
 
     def shutdown(self) -> None:
-        if self._jarvis_stop:
-            self._jarvis_stop.set()
+        if self._live is not None:
+            self._live.stop()
         self._stop_watch.set()
         self.stop()
         try:
@@ -602,3 +633,41 @@ class AppController(CLI):
                 self._shutdown()  # Zusammenfassung ins Gedaechtnis, Datenbank schliessen
         except Exception as exc:  # noqa: BLE001
             logger.warning("Beim Beenden: %s", exc)
+
+
+class _LiveHost:
+    """Verbindet den Jarvis-Modus (live.LiveLoop) mit der App."""
+
+    def __init__(self, ctl: AppController):
+        self.ctl = ctl
+
+    def event(self, event: dict) -> None:
+        self.ctl._event(event)
+
+    def busy(self) -> bool:
+        return bool(self.ctl.busy)
+
+    def start_turn(self, text: str) -> bool:
+        self.ctl._live_turn = True
+        ok, _err = self.ctl.send(text, model_text=text + JARVIS_HINT)
+        if not ok:
+            self.ctl._live_turn = False
+        return ok
+
+    def cancel_turn(self, drop: bool) -> None:
+        self.ctl._drop_turn = drop
+        self.ctl.brain.provider.cancel()
+
+    def transcribe(self, pcm: bytes) -> str:
+        return self.ctl.voice_capture.transcribe(pcm)
+
+    def pending_ask(self) -> dict | None:
+        for ask_id, waiter in reversed(list(self.ctl._asks.items())):
+            return {"id": ask_id, "options": waiter.get("options", [])}
+        return None
+
+    def answer_ask(self, ask_id: str, value: str) -> None:
+        self.ctl.answer(ask_id, value)
+
+    def is_exit(self, text: str) -> bool:
+        return _is_exit_phrase(text)

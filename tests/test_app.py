@@ -265,41 +265,105 @@ def test_new_conversation_clears_the_window(app):
     assert all(m["role"] != "assistant" for m in hist["messages"])
 
 
-def test_jarvis_loop_listens_answers_and_waits_for_speaking(app, monkeypatch):
-    from assistant import voice
+def _fake_ear(monkeypatch, ctl):
+    """Jarvis-Modus ohne Mikrofon: der Test 'spricht' ueber ears[0].post(...)."""
+    from assistant import live
 
-    server = app([_streamed("Morgen wird es sonnig.")])
-    ctl = server.controller
-    said = iter([b"x" * 32000, None])
+    ears = []
+
+    class FakeEar:
+        live = False
+
+        def __init__(self, post, **kw):
+            self.post = post
+            self.nova = []
+            ears.append(self)
+
+        def start(self):
+            pass
+
+        def stop(self):
+            pass
+
+        def set_nova_speaking(self, value):
+            self.nova.append(value)
+
+        def enable_live(self, factory):
+            pass
+
     monkeypatch.setattr(ctl.voice_capture, "problem", lambda: None)
-    monkeypatch.setattr(ctl.voice_capture, "transcribe", lambda pcm: "Wie wird das Wetter?")
+    monkeypatch.setattr(live, "Ear", FakeEar)
+    monkeypatch.setattr(live, "setup_live", lambda *a, **k: (False, "im Test nicht"))
+    return ears
 
-    def fake_listen(on_level=None, stop_event=None, **kw):
-        if on_level:
-            on_level(0.6)
-        value = next(said)
-        if value is None:
-            stop_event.wait(5)
-        return value
 
-    monkeypatch.setattr(voice, "listen_utterance", fake_listen)
-    assert _req(server, "/api/jarvis", {"action": "start"})[1] == {"ok": True}
-    events = _events_until(server, "speaking" if False else "done")
+def test_jarvis_live_speaks_while_answer_streams_and_waits_for_window(app, monkeypatch):
+    from assistant import live
+
+    server = app([_streamed("Morgen wird es sonnig. Am Nachmittag bis 24 Grad - perfekt fuer draussen.")])
+    ctl = server.controller
+    ears = _fake_ear(monkeypatch, ctl)
+    status, body = _req(server, "/api/jarvis", {"action": "start"})
+    assert body["ok"] is True and body["live"] is False
+    assert ctl.brain.provider.effort_override == "low"                  # schneller antworten
+    ears[0].post("level", 0.6)
+    ears[0].post("partial", "Wie wird das")
+    ears[0].post("utterance", live.Utterance("Wie wird das Wetter morgen", b"", 1.0))
+    events = _events_until(server, "say_end")
     kinds = [(e["type"], e.get("state")) for e in events]
-    assert ("jarvis", "listening") in kinds and ("jarvis", "thinking") in kinds
-    assert any(e["type"] == "level" for e in events)
-    events = _events_until(server, "jarvis")
-    assert events[-1]["state"] == "speaking" and "sonnig" in events[-1]["text"]
+    assert ("jarvis", "listening") in kinds and ("jarvis", "thinking") in kinds and ("level", None) in kinds
+    assert {"type": "heard", "text": "Wie wird das", "final": False} in events
+    says = [e for e in events if e["type"] == "say"]
+    assert says[0]["text"] == "Morgen wird es sonnig." and says[0]["seq"] == 1
+    assert "24 Grad" in says[-1]["text"]
     sent = ctl.brain.provider.messages[0]["content"]
-    assert sent.startswith("Wie wird das Wetter?") and "Sprachmodus" in sent  # Hinweis nur fuer die KI
+    assert sent.startswith("Wie wird das Wetter morgen") and "Sprachmodus" in sent  # Hinweis nur fuer die KI
+    assert ctl.brain.provider.client.messages.last_kwargs["output_config"] == {"effort": "low"}
     status, hist = _req(server, "/api/history")
-    assert hist["messages"][0]["text"] == "Wie wird das Wetter?"           # Anzeige ohne Hinweis
-    _req(server, "/api/jarvis", {"action": "spoken"})
+    assert [m["text"] for m in hist["messages"] if m["role"] == "user"] == ["Wie wird das Wetter morgen"]
+    _req(server, "/api/jarvis", {"action": "spoken", "turn": says[0]["turn"]})
+    events = _events_until(server, "jarvis")
+    assert events[-1]["state"] == "listening" and ears[0].nova[-1] is False
     _req(server, "/api/jarvis", {"action": "stop"})
     events = _events_until(server, "jarvis")
     while events[-1].get("state") != "off":
         events = _events_until(server, "jarvis")
+    time.sleep(0.1)
     assert _req(server, "/api/state")[1]["jarvis"] is False
+    assert ctl.brain.provider.effort_override is None
+
+
+def test_jarvis_afterthought_replaces_the_question(app, monkeypatch):
+    import threading
+
+    from assistant import live
+
+    gate = threading.Event()
+
+    def slow():
+        gate.wait(5)  # Nova "denkt nach"
+        yield SimpleNamespace(type="text", text="Sonnig.")
+
+    server = app([(anthro_msg([text_block("Sonnig.")]), slow()),
+                  _streamed("In Berlin wird es morgen sonnig.")])
+    ctl = server.controller
+    ears = _fake_ear(monkeypatch, ctl)
+    _req(server, "/api/jarvis", {"action": "start"})
+    ears[0].post("utterance", live.Utterance("Wie wird das Wetter morgen", b"", 1.0))
+    _events_until(server, "start")
+    ears[0].post("utterance", live.Utterance("in Berlin", b"", 0.5))
+    end = time.monotonic() + 5
+    while not ctl.brain.provider.cancel_event.is_set() and time.monotonic() < end:
+        time.sleep(0.02)
+    gate.set()
+    events = _events_until(server, "say_end")
+    assert any(e["type"] == "retract" for e in events)
+    assert [e["text"] for e in events if e["type"] == "user"][-1] == "Wie wird das Wetter morgen in Berlin"
+    msgs = ctl.brain.provider.messages
+    assert msgs[0]["content"].startswith("Wie wird das Wetter morgen in Berlin") and len(msgs) == 2
+    status, hist = _req(server, "/api/history")
+    assert [m["text"] for m in hist["messages"] if m["role"] == "user"] == ["Wie wird das Wetter morgen in Berlin"]
+    _req(server, "/api/jarvis", {"action": "stop"})
 
 
 def test_custom_css_and_appearance_api(app, tmp_path):

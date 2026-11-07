@@ -124,6 +124,17 @@ erkennung = "auto"
 # Whisper-Modell: tiny | base | small | medium (groesser = genauer, langsamer)
 whisper_modell = "small"
 sprache = "de"
+# Live-Sprachmodus (Jarvis, /jarvis): Nova schreibt mit, WAEHREND du sprichst
+# (Vosk, offline - das deutsche Modell, ~45 MB, kommt mit /sprache einrichten).
+live_mitschrift = true
+# So viele Sekunden Sprechpause, dann antwortet sie (kleiner = schneller).
+pause = 0.6
+# Dazwischenreden stoppt Nova sofort (mit Kopfhoerer am zuverlaessigsten).
+unterbrechen = true
+# true = den Satz zusaetzlich mit Google/Whisper pruefen (genauer, ~1 s langsamer)
+live_genau = false
+# Wie tief Claude im Sprachmodus nachdenkt: "low" = schnelle Antworten, "" = wie im Chat
+live_denktiefe = "low"
 # Antworten vorlesen (pip install pyttsx3) - im Chat: /sprache vorlesen
 speak_responses = false
 # Alter Dauer-Sprachmodus (braucht PyAudio) - meist reicht F2.

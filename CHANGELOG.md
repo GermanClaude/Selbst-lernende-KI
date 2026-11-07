@@ -31,6 +31,31 @@ deine KI erklärt sie dir in eigenen Worten.
   `/werte bearbeiten`. Mit **`/neu`** beginnt ein neues Gespräch, in dem alles
   gleich gilt.
 
+**Jarvis-Modus: einfach mit Nova reden – live**
+- Ein Knopf (oder `/jarvis`) und du redest einfach mit ihr, ganz ohne Tippen.
+  Zurück zum Chat: „Chat-Modus“ sagen oder den Knopf drücken.
+- Nova **schreibt mit, während du sprichst** (offline, ohne Kosten), und legt
+  schon nach einer **kurzen Sprechpause** los. Sie **spricht ab dem ersten
+  fertigen Satz**, statt auf die ganze Antwort zu warten.
+- **Du kannst sie jederzeit unterbrechen** – sie hört sofort auf zu reden und hört
+  dir zu. Sagst du kurz nach deiner Frage noch etwas („… in Berlin“), nimmt sie
+  das mit dazu.
+- Rückfragen („Darf ich die Datei ändern?“) beantwortest du einfach mit „ja“,
+  „immer“ oder „nein“.
+- Beim ersten Mal lädt sie dafür einmalig ein deutsches Sprachmodell (~50 MB).
+  Ganz ohne Wartezeit wie bei Gemini geht es nicht, weil DeepSeek und Claude nur
+  Text verstehen – aber meist antwortet sie nach 1–2 Sekunden.
+
+**Nova gestaltet die App, Tutorial, Stützräder**
+- Sag Nova, wie die App aussehen soll („mach alles grün“, „größere Schrift“,
+  „eckige Knöpfe“) – sie ändert es sofort. `/aussehen zuruecksetzen` holt das
+  Original zurück.
+- **Tutorial:** Nova stellt sich vor und zeigt dir an Beispielen, was sie kann
+  (`/tutorial` oder Knopf „Tour“).
+- **Stützräder** an/aus direkt im Programm: an = sie fragt vor Änderungen und
+  bleibt im Arbeitsordner; aus = sie darf am ganzen PC alles ohne zu fragen
+  (automatische Starts fragt sie trotzdem).
+
 **Neuer Name: NOVA**
 - Die KI heißt jetzt **Nova** – **N**eugierige, **O**ffene, **V**ernetzte
   **A**ssistenz. Wer noch „Aria“ eingestellt hatte, bekommt den neuen Namen

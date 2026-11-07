@@ -99,6 +99,8 @@ class LLMProvider(ABC):
         self.cancel_event = threading.Event()
         self._active_stream: Any = None
         self._children: list["LLMProvider"] = []  # laufende Agenten (mit anhalten)
+        # Sprachmodus: schneller antworten (Claude denkt weniger tief). None = Einstellung.
+        self.effort_override: str | None = None
 
     # -- von Unterklassen zu implementieren ---------------------------------
     @abstractmethod
@@ -130,6 +132,22 @@ class LLMProvider(ABC):
         if messages[-1].get("role") != "assistant":
             messages.append({"role": "assistant", "content": ABORT_NOTE})
         self.hit_limit = False
+
+    def drop_turn(self, snapshot: int | None, user_text: str) -> bool:
+        """Nimmt eine gerade angefangene Runde ganz zurueck - nur, wenn darin noch
+        nichts passiert ist (kein Werkzeug). Fuer den Sprachmodus: "Wie wird das
+        Wetter?" ... "in Berlin" wird zu einer Frage zusammengefasst."""
+        messages = getattr(self, "messages", None)
+        if messages is None or snapshot is None or not 0 <= snapshot < len(messages):
+            return False
+        first = messages[snapshot]
+        if first.get("role") != "user" or _plain_text(first.get("content")).strip() != user_text.strip():
+            return False
+        if any(_has_tool_parts(m) for m in messages[snapshot:]):
+            return False
+        del messages[snapshot:]
+        self.hit_limit = False
+        return True
 
     def _close_open_tool_calls(self, messages: list) -> None:
         """Von den Providern ueberschrieben: offene Werkzeugaufrufe schliessen."""
@@ -213,3 +231,27 @@ class LLMProvider(ABC):
         return self.config.cost_estimate(
             self.usage.input_full_tokens, self.usage.cache_hit_tokens, self.usage.output_tokens
         )
+
+
+def _plain_text(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    parts = []
+    for block in content or []:
+        if isinstance(block, dict) and block.get("type") == "text":
+            parts.append(block.get("text", ""))
+        elif getattr(block, "type", None) == "text":
+            parts.append(getattr(block, "text", ""))
+    return "".join(parts)
+
+
+def _has_tool_parts(message: dict) -> bool:
+    if message.get("role") == "tool" or message.get("tool_calls"):
+        return True
+    content = message.get("content")
+    if isinstance(content, list):
+        for block in content:
+            kind = block.get("type") if isinstance(block, dict) else getattr(block, "type", None)
+            if kind in ("tool_use", "tool_result", "server_tool_use"):
+                return True
+    return False
