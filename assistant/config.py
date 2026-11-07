@@ -109,6 +109,8 @@ class DeepSeekSettings:
 class KISettings:
     name: str = "Aria"
     language: str = "de"
+    # Laeuft die KI schon, oeffnet sich kein zweites Fenster.
+    nur_ein_fenster: bool = True
 
 
 @dataclass
@@ -155,6 +157,11 @@ class ConversationSettings:
     # So viele Werkzeug-Schritte darf die KI pro Nachricht machen, bevor sie
     # anhaelt und fragt, ob sie weitermachen soll.
     max_werkzeug_runden: int = 60
+    # Am Schritt-Limit automatisch so oft weiterarbeiten, bevor sie nachfragt
+    # (0 = immer nachfragen). Strg+C haelt jederzeit an.
+    automatisch_weiter: int = 3
+    # So viele Werkzeug-Schritte darf ein Agent (agent_beauftragen) machen.
+    agent_runden: int = 40
 
 
 @dataclass

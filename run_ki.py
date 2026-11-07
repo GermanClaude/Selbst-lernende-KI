@@ -56,7 +56,8 @@ def main() -> int:
         traceback.print_exc()
         code = 1
     # Die .exe schliesst ihr Fenster sofort - Fehler sonst nicht lesbar.
-    if code and getattr(sys, "frozen", False):
+    # (43 = "laeuft schon in einem anderen Fenster" - dann still schliessen.)
+    if code and code != 43 and getattr(sys, "frozen", False):
         try:
             input("\nEnter druecken zum Schliessen...")
         except (EOFError, KeyboardInterrupt):

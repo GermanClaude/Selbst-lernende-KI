@@ -95,6 +95,7 @@ REM --- 5) Los geht's ----------------------------------------
 REM Alles in EINEM Klammerblock: cmd liest ihn komplett ein, bevor er laeuft.
 REM So stoert es nicht, wenn ein Update diese Datei waehrend des Laufs ersetzt.
 REM Rueckgabecode 42 = Update installiert -> mit der neuen Version neu starten.
+REM Rueckgabecode 43 = KI laeuft schon in einem anderen Fenster -> still schliessen.
 echo.
 echo Starte die KI...
 (
@@ -105,6 +106,7 @@ echo Starte die KI...
         call "%~f0"
         exit /b
     )
+    if errorlevel 43 if not errorlevel 44 exit /b
     echo.
     pause
     exit /b

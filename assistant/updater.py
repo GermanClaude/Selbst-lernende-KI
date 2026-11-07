@@ -453,6 +453,7 @@ class Updater:
         # alten KI.exe und nutzt deren entpackte Dateien - die gleich geloescht werden.
         env = {k: v for k, v in os.environ.items() if not k.startswith("_PYI_")}
         env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+        env["KI_NEUSTART_VON"] = str(os.getpid())  # die neue KI wartet, bis diese sich beendet
         subprocess.Popen([str(self.exe_path)], cwd=str(self.exe_path.parent), creationflags=flags, env=env)
 
 

@@ -7,13 +7,13 @@ nutzen kann.
 """
 from __future__ import annotations
 
-from . import computer, filesystem, memory_tools, shell, system_info, web
+from . import agents, computer, filesystem, memory_tools, shell, system_info, web
 from .base import Tool, ToolContext, ToolRegistry
 
-__all__ = ["Tool", "ToolContext", "ToolRegistry", "build_registry"]
+__all__ = ["READ_ONLY_TOOLS", "Tool", "ToolContext", "ToolRegistry", "build_registry", "subset"]
 
 
-def build_registry(include_computer: bool = True) -> ToolRegistry:
+def build_registry(include_computer: bool = True, include_agents: bool = True) -> ToolRegistry:
     registry = ToolRegistry()
     memory_tools.register(registry)
     filesystem.register(registry)
@@ -22,4 +22,20 @@ def build_registry(include_computer: bool = True) -> ToolRegistry:
     shell.register(registry)
     if include_computer:
         computer.register(registry)
+    if include_agents:
+        agents.register(registry)
     return registry
+
+
+# Werkzeuge, die nur lesen - fuer Agenten, die nichts veraendern sollen.
+READ_ONLY_TOOLS = ("datei_lesen", "ordner_auflisten", "web_suche", "web_abrufen", "system_info", "erinnern")
+
+
+def subset(registry: ToolRegistry, names) -> ToolRegistry:
+    """Neues Registry mit nur den genannten Werkzeugen (die es im Original gibt)."""
+    result = ToolRegistry()
+    for name in names:
+        tool = registry.get(name)
+        if tool is not None:
+            result.register(tool)
+    return result

@@ -41,6 +41,8 @@ temperature = 0.6
 # Anzeigename deiner KI.
 name = "Aria"
 language = "de"
+# Laeuft die KI schon, oeffnet sich kein zweites Fenster.
+nur_ein_fenster = true
 
 
 # ----------------------------------------------------------------------------
@@ -87,6 +89,11 @@ max_verlauf_zeichen = 400000
 # So viele Werkzeug-Schritte (Datei lesen, schreiben, ...) darf die KI pro Nachricht
 # machen. Danach haelt sie an und du schreibst "weiter".
 max_werkzeug_runden = 60
+# Am Schritt-Limit so oft von selbst weiterarbeiten, bevor sie fragt (0 = immer
+# fragen). Strg+C haelt jederzeit an.
+automatisch_weiter = 3
+# So viele Werkzeug-Schritte darf ein Agent (Recherche/Helfer/Pruefer) machen.
+agent_runden = 40
 
 
 [voice]

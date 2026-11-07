@@ -24,6 +24,15 @@ from pathlib import Path
 from typing import Callable
 
 from .config import PermissionSettings
+from .selbststart import is_autostart_path, sets_up_autostart, starts_the_ki
+
+AUTOSTART_WARNING = (
+    "ACHTUNG: Das richtet einen AUTOMATISCHEN START ein (Aufgabenplanung/Autostart). "
+    "Danach kann sich ein Programm immer wieder von selbst oeffnen."
+)
+SELF_START_WARNING = (
+    "ACHTUNG: Das wuerde die KI ein weiteres Mal starten (neues Fenster)."
+)
 
 
 class Risk(enum.IntEnum):
@@ -80,6 +89,22 @@ class PermissionManager:
             return Decision(True)
         return Decision(False, "Vom Nutzer abgelehnt.")
 
+    def confirm_always(self, description: str) -> Decision:
+        """Fragt IMMER nach - auch bei auto_confirm (fuer Autostart & Co.)."""
+        if self.confirm_fn(description, Risk.DANGEROUS):
+            return Decision(True)
+        return Decision(
+            False,
+            "Vom Nutzer abgelehnt. Richte keinen automatischen Start ein und starte die KI "
+            "nicht selbst, ausser dein Mensch bittet ausdruecklich darum.",
+        )
+
+    def check_path_write(self, path: Path) -> Decision:
+        """Schreiben in einen Autostart-Ordner nur mit ausdruecklicher Zustimmung."""
+        if is_autostart_path(path):
+            return self.confirm_always(f"{AUTOSTART_WARNING}\n    Datei: {path}")
+        return Decision(True)
+
     def require(self, risk: Risk, description: str) -> None:
         """Wie check(), wirft aber bei Ablehnung eine Ausnahme."""
         decision = self.check(risk, description)
@@ -134,6 +159,12 @@ class PermissionManager:
                 "Safe Mode ist aktiv - Shell-Befehle sind gesperrt. "
                 "Zum Freischalten 'safe_mode = false' setzen.",
             )
+        # Diese beiden fragen IMMER nach, auch bei auto_confirm: genau daraus entstehen
+        # KI-Fenster, die sich "von selbst" immer wieder oeffnen.
+        if sets_up_autostart(command):
+            return self.confirm_always(f"{AUTOSTART_WARNING}\n    {command}")
+        if starts_the_ki(command):
+            return self.confirm_always(f"{SELF_START_WARNING}\n    {command}")
         first_word = lowered.split()[0] if lowered.split() else ""
         if self.settings.auto_confirm:
             return Decision(True)

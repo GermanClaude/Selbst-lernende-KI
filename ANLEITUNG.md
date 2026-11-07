@@ -162,6 +162,7 @@ Standardmäßig ist **Claude** eingestellt. Für **DeepSeek** (billig):
 | `/sprache einrichten` | Spracheingabe per F2 einrichten (einmalig) |
 | `/update` | nach einer neuen Version schauen |
 | `/versionen` / `/zurueck <Nr>` | alte Versionen anzeigen / zurückholen |
+| `/autostart` | zeigen und abstellen, was die KI von selbst startet |
 | `/beenden` | Sitzung beenden |
 
 **Sprechen statt tippen:** einmal `/sprache einrichten` eingeben. Danach
@@ -242,6 +243,14 @@ falsch kopiert. Guthaben prüfen, Schlüssel neu kopieren.
 **DeepSeek-Modell wird nicht gefunden** → In `config/settings.toml` unter
 `[deepseek]` `model` von `deepseek-chat` auf `deepseek-flash` oder
 `deepseek-v4-pro` ändern.
+
+**Die KI öffnet sich immer wieder von selbst** → Im KI-Fenster `/autostart`
+eingeben. Es zeigt, was sie automatisch startet (oft hat sie sich selbst in die
+Windows-Aufgabenplanung eingetragen), und `/autostart entfernen alle` stellt es ab.
+Seit Version 0.3.0 fragt sie vorher immer nach, bevor sie so etwas einrichtet.
+
+**Die KI scheint zu hängen** → Steht „denkt nach (… s)“ da, arbeitet sie noch.
+Mit **Strg+C** hältst du die Antwort an, ohne die KI zu schließen.
 
 **Die KI liest beim Programmieren nur Dateien, zeigt die Kostenzeile und macht
 nichts** → Ab dieser Version hält sie nach `max_werkzeug_runden` Schritten mit

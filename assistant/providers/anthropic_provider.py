@@ -5,7 +5,9 @@ from typing import Any
 
 from ..logging_setup import get_logger
 from .base import (
+    CONNECT_TIMEOUT,
     LIMIT_NOTE,
+    READ_TIMEOUT,
     REFUSAL_PLACEHOLDER,
     SUMMARY_INSTRUCTION,
     TRUNCATED_NOTE,
@@ -31,7 +33,10 @@ class AnthropicProvider(LLMProvider):
         import anthropic
 
         key = self.config.anthropic_api_key
-        return anthropic.Anthropic(api_key=key) if key else anthropic.Anthropic()
+        timeout = anthropic.Timeout(READ_TIMEOUT, connect=CONNECT_TIMEOUT)
+        if key:
+            return anthropic.Anthropic(api_key=key, timeout=timeout, max_retries=3)
+        return anthropic.Anthropic(timeout=timeout, max_retries=3)
 
     # -- Request ------------------------------------------------------------
     def _stream_kwargs(self) -> dict[str, Any]:
@@ -59,13 +64,19 @@ class AnthropicProvider(LLMProvider):
 
     # -- Hauptschleife ------------------------------------------------------
     def respond(
-        self, user_text: str, on_text: StreamFn | None = None, max_tool_rounds: int | None = None
+        self,
+        user_text: str,
+        on_text: StreamFn | None = None,
+        max_tool_rounds: int | None = None,
+        announce_limit: bool = True,
     ) -> str:
         self.messages.append({"role": "user", "content": user_text})
         final_parts: list[str] = []
         rounds = self._rounds(max_tool_rounds)
+        self.hit_limit = False
 
         for _ in range(rounds):
+            self._waiting()
             response = self._one_turn(on_text)
             if response is None:
                 return "Es gab ein Problem bei der Verbindung zum Modell."
@@ -124,10 +135,12 @@ class AnthropicProvider(LLMProvider):
             self.messages.append({"role": "user", "content": tool_results})
         else:
             # Schritt-Limit erreicht: Bescheid geben statt stumm aufzuhoeren.
-            note = LIMIT_NOTE.format(n=rounds)
-            final_parts.append(note.strip())
-            if on_text:
-                on_text(note)
+            self.hit_limit = True
+            if announce_limit:
+                note = LIMIT_NOTE.format(n=rounds)
+                final_parts.append(note.strip())
+                if on_text:
+                    on_text(note)
 
         return "\n".join(final_parts).strip() or "(keine Textantwort)"
 

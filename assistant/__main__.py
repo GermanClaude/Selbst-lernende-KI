@@ -40,6 +40,23 @@ def main(argv: list[str] | None = None) -> int:
         print(exc)
         return 1
 
+    from .selbststart import SILENT_EXIT_CODE, StartGuard
+
+    guard = StartGuard(config.project_root)
+    started_by, unexpected = guard.record_start()
+    other = guard.running_pid() if config.ki.nur_ein_fenster else None
+    if other:
+        # Kein zweites Fenster: sonst stapeln sich KI-Fenster, wenn etwas sie
+        # automatisch startet. /autostart im laufenden Fenster zeigt, was das ist.
+        print(f"Die KI laeuft schon in einem anderen Fenster (PID {other}) - dieses schliesst sich.")
+        if unexpected:
+            print(f"Gestartet {started_by}. Im KI-Fenster zeigt /autostart, woher das kommt.")
+        if sys.stdin.isatty():
+            import time
+
+            time.sleep(4)
+        return SILENT_EXIT_CODE
+
     if args.einrichten:
         _first_setup(config)
         return 0
@@ -51,7 +68,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Fehlende Abhaengigkeit: {exc}\nBitte 'pip install -r requirements.txt' ausfuehren.")
         return 1
 
-    return run_cli(config)
+    guard.acquire()
+    try:
+        return run_cli(config, started_by=started_by if unexpected else None)
+    finally:
+        guard.release()
 
 
 def _first_setup(config) -> None:

@@ -26,6 +26,12 @@ TRUNCATED_TOOL_ERROR = (
     "abgeschnitten, die Eingabe dieses Werkzeugs ist unvollstaendig. Schreibe grosse "
     "Dateien in mehreren kleineren Teilen (datei_schreiben mit anhaengen=true)."
 )
+# Steht im Verlauf, wenn du eine Antwort mit Strg+C abgebrochen hast.
+ABORT_NOTE = "(Mein Mensch hat diese Antwort mit Strg+C abgebrochen. Ich warte auf seine naechste Nachricht.)"
+# Zeitlimits fuer die Verbindung zum Modell: kommt so lange nichts an, gilt die
+# Verbindung als tot (statt bis zu 10 Minuten zu warten) - dann neuer Versuch.
+CONNECT_TIMEOUT = 15.0
+READ_TIMEOUT = 180.0
 # Platzhalter im Verlauf, wenn das Modell eine Anfrage abgelehnt hat (die Teil-
 # Antwort darf nicht im Verlauf bleiben, sonst lehnt die API jede Folgeanfrage ab).
 REFUSAL_PLACEHOLDER = "(Diese Anfrage habe ich abgelehnt.)"
@@ -84,12 +90,43 @@ class LLMProvider(ABC):
         self.tool_ctx = tool_ctx
         self.client = client
         self.usage = Usage()
+        self.hit_limit = False          # hat die letzte Antwort am Schritt-Limit aufgehoert?
+        self.wait_fn: Callable[[], None] | None = None  # "denkt nach"-Anzeige der Oberflaeche
 
     # -- von Unterklassen zu implementieren ---------------------------------
     @abstractmethod
     def respond(
-        self, user_text: str, on_text: StreamFn | None = None, max_tool_rounds: int | None = None
+        self,
+        user_text: str,
+        on_text: StreamFn | None = None,
+        max_tool_rounds: int | None = None,
+        announce_limit: bool = True,
     ) -> str: ...
+
+    # -- Abbrechen mit Strg+C ------------------------------------------------
+    def history_snapshot(self) -> int:
+        return len(getattr(self, "messages", []))
+
+    def abort_turn(self, snapshot: int, user_text: str) -> None:
+        """Nach Strg+C: angefangene Antwort verwerfen, damit der Verlauf gueltig bleibt.
+
+        Ein halb fertiger Werkzeugaufruf ohne Ergebnis wuerde sonst jede weitere
+        Anfrage scheitern lassen. Das Getane (z.B. geschriebene Dateien) bleibt.
+        """
+        messages = getattr(self, "messages", None)
+        if messages is None:
+            return
+        del messages[snapshot:]
+        messages.append({"role": "user", "content": user_text})
+        messages.append({"role": "assistant", "content": ABORT_NOTE})
+        self.hit_limit = False
+
+    def _waiting(self) -> None:
+        if self.wait_fn:
+            try:
+                self.wait_fn()
+            except Exception:  # noqa: BLE001 - Anzeige darf nie stoeren
+                pass
 
     @abstractmethod
     def history_length(self) -> int: ...

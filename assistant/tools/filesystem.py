@@ -103,6 +103,9 @@ class WriteFileTool(Tool):
 
     def run(self, ctx: ToolContext, pfad: str, inhalt: str, anhaengen: bool = False) -> str:
         path = ctx.permissions.resolve_path(pfad)
+        decision = ctx.permissions.check_path_write(path)
+        if not decision.allowed:
+            return f"Nicht ausgefuehrt: {decision.reason}"
         existed = path.exists()
         if anhaengen and existed:
             action = "Anhaengen an"
@@ -136,6 +139,9 @@ class EditFileTool(Tool):
 
     def run(self, ctx: ToolContext, pfad: str, suchen: str, ersetzen: str) -> str:
         path = ctx.permissions.resolve_path(pfad, must_exist=True)
+        decision = ctx.permissions.check_path_write(path)
+        if not decision.allowed:
+            return f"Nicht ausgefuehrt: {decision.reason}"
         ctx.permissions.require(Risk.MODERATE, f"Bearbeiten: {path}")
         text = path.read_text(encoding="utf-8")
         count = text.count(suchen)

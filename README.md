@@ -217,6 +217,18 @@ online, kostenlos). Offline-Erkennung: zusätzlich `pip install faster-whisper`
 (beim ersten Sprechen wird das Modell geladen). Einstellungen unter `[voice]`.
 Antworten vorlesen lassen: `/sprache vorlesen` (braucht `pip install pyttsx3`).
 
+## Agenten, Durcharbeiten und Selbstkontrolle
+
+- Große Aufgaben gibt die KI teilweise an **Agenten** ab – eigene KI-Sitzungen mit
+  frischem Kopf: `recherche` (sucht und fasst zusammen, ändert nichts), `helfer`
+  (erledigt eine Teilaufgabe), `pruefer` (sucht kritisch nach Fehlern, ändert
+  nichts). Im Chat siehst du `>> Agent 'recherche' startet …`. Für Agenten gelten
+  dieselben Werte (`werte.md`) und Berechtigungen.
+- Am Schritt-Limit (`max_werkzeug_runden`) arbeitet sie bis zu
+  `automatisch_weiter`-mal von selbst weiter.
+- Vor dem Abschluss größerer Arbeiten prüft sie ihr Ergebnis selbst.
+- **Strg+C** hält die laufende Antwort an, ohne die KI zu beenden.
+
 ## Automatische Updates
 
 Einmal am Tag schaut die KI im GitHub-Repo nach einer neuen Version. Gibt es eine,
@@ -263,6 +275,7 @@ stoppt die Steuerung sofort.
 | `/update` | jetzt nach einer neuen Version schauen |
 | `/versionen` | gesicherte alte Versionen anzeigen |
 | `/zurueck <Nr>` | zu einer alten Version zurückkehren |
+| `/autostart` | zeigen (und abstellen), was die KI automatisch startet |
 | `/beenden` | Sitzung beenden (speichert eine Zusammenfassung) |
 
 ---

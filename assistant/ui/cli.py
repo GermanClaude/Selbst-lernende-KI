@@ -15,13 +15,17 @@ Sonderbefehle (mit '/' beginnen):
   /update             - jetzt nach einer neuen Version schauen
   /versionen          - gesicherte alte Versionen anzeigen
   /zurueck <Nr>       - zu einer gesicherten alten Version zurueckkehren
+  /autostart          - zeigen, was die KI automatisch startet (und es abstellen)
   /beenden            - Sitzung beenden (speichert eine Zusammenfassung)
+
+Strg+C waehrend einer Antwort haelt die KI an - du kannst gleich weiterschreiben.
 """
 from __future__ import annotations
 
 import os
 import sys
 import threading
+import time
 
 from .. import __version__
 from ..brain import Brain
@@ -29,6 +33,7 @@ from ..config import Config
 from ..logging_setup import get_logger
 from ..memory import Memory
 from ..permissions import PermissionManager, Risk
+from ..selbststart import StartGuard, entferne, finde_autostarts
 from ..tools import ToolContext, build_registry
 from ..updater import RESTART_EXIT_CODE, UpdateError, UpdateInfo, Updater
 from ..voice import VoiceCapture, VoiceInput, VoiceOutput, install_voice_packages
@@ -61,16 +66,63 @@ def _confirm(message: str, risk: Risk) -> bool:
     return answer in ("j", "ja", "y", "yes")
 
 
+class _Thinking:
+    """Zeigt "denkt nach (12 s)", solange das Modell noch nichts geschickt hat -
+    damit klar ist, dass die KI arbeitet und nicht haengt."""
+
+    def __init__(self, enabled: bool):
+        self.enabled = enabled
+        self._lock = threading.Lock()
+        self._active = False
+        self._shown = 0
+        self._token = 0
+
+    def start(self) -> None:
+        if not self.enabled:
+            return
+        with self._lock:
+            if self._active:
+                return
+            self._active = True
+            self._token += 1
+            token = self._token
+        threading.Thread(target=self._run, args=(token, time.monotonic()), daemon=True).start()
+
+    def _run(self, token: int, began: float) -> None:
+        time.sleep(1.5)  # kurze Antworten ohne Flackern
+        while True:
+            with self._lock:
+                if not self._active or token != self._token:
+                    return
+                msg = f" … denkt nach ({int(time.monotonic() - began)} s, Strg+C = anhalten)"
+                sys.stdout.write("\b" * self._shown + msg + " " * max(0, self._shown - len(msg))
+                                 + "\b" * max(0, self._shown - len(msg)))
+                sys.stdout.flush()
+                self._shown = len(msg)
+            time.sleep(1.0)
+
+    def stop(self) -> None:
+        with self._lock:
+            self._active = False
+            if self._shown:
+                sys.stdout.write("\b" * self._shown + " " * self._shown + "\b" * self._shown)
+                sys.stdout.flush()
+                self._shown = 0
+
+
 class CLI:
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, started_by: str | None = None):
         self.config = config
+        self.started_by = started_by  # gesetzt, wenn die KI unerwartet automatisch gestartet wurde
         self.memory = Memory(config.memory.db_path)
+        self.thinking = _Thinking(sys.stdout.isatty())
         self.permissions = PermissionManager(
-            config.permissions, config.workspace_path, confirm_fn=_confirm
+            config.permissions, config.workspace_path, confirm_fn=self._confirm
         )
         self.registry = build_registry(include_computer=True)
         self.tool_ctx = ToolContext(permissions=self.permissions, memory=self.memory)
         self.brain = Brain(config, self.memory, self.registry, self.tool_ctx)
+        self.brain.provider.wait_fn = self.thinking.start
         self.voice_out = VoiceOutput(config.voice.speak_responses)
         self.voice_in = VoiceInput(config.voice.enabled)
         self.voice_mode = config.voice.enabled and self.voice_in.available()
@@ -83,10 +135,22 @@ class CLI:
         self._pending_shown = False
         self._stop_watch = threading.Event()
 
+    def _confirm(self, message: str, risk: Risk) -> bool:
+        self.thinking.stop()
+        return _confirm(message, risk)
+
     # -- Start --------------------------------------------------------------
     def run(self) -> int:
         """Gibt den Rueckgabecode zurueck (42 = nach einem Update neu starten)."""
         self._print_banner()
+        if self.started_by:
+            print(
+                _c(
+                    f"\n[Hinweis] Ich wurde automatisch gestartet - {self.started_by}. Wenn du das "
+                    "nicht willst: /autostart zeigt, was mich startet, und stellt es ab.",
+                    YELLOW,
+                )
+            )
         if not self.config.api_key:
             key_name = "DEEPSEEK_API_KEY" if self.config.active_provider == "deepseek" else "ANTHROPIC_API_KEY"
             env_path = self.config.project_root / ".env"
@@ -124,9 +188,18 @@ class CLI:
                     break
                 continue
 
-            # Antwort streamen.
+            # Antwort streamen. Strg+C haelt nur diese Antwort an, nicht die ganze KI.
             print(_c(f"\n{self.config.ki.name}: ", CYAN), end="", flush=True)
-            answer = self.brain.respond(user_text, on_text=self._emit)
+            snapshot = self.brain.provider.history_snapshot()
+            try:
+                answer = self.brain.respond(user_text, on_text=self._emit)
+            except KeyboardInterrupt:
+                self.thinking.stop()
+                self.brain.provider.abort_turn(snapshot, user_text)
+                print(_c("\n[Angehalten. Schreib einfach weiter - z.B. was sie anders machen soll.]", YELLOW))
+                continue
+            finally:
+                self.thinking.stop()
             print()
             if self.config.economy.aktiv:
                 self._print_cost_line()
@@ -136,6 +209,7 @@ class CLI:
 
     # -- Ein-/Ausgabe -------------------------------------------------------
     def _emit(self, chunk: str) -> None:
+        self.thinking.stop()
         print(chunk, end="", flush=True)
 
     def _get_input(self) -> str | None:
@@ -177,6 +251,8 @@ class CLI:
             self._print_versions()
         elif base in ("/zurueck", "/zurück"):
             return self._restore_command(cmd.split()[1:])
+        elif base == "/autostart":
+            self._autostart_command(cmd.split()[1:])
         else:
             print(_c(f"Unbekannter Befehl: {base}. /hilfe zeigt alle.", YELLOW))
         return False
@@ -234,6 +310,40 @@ class CLI:
             return
         self.voice_mode = not self.voice_mode
         print(_c(f"Sprachmodus ist jetzt {'AN' if self.voice_mode else 'AUS'}.", CYAN))
+
+    # -- Automatische Starts ------------------------------------------------
+    def _autostart_command(self, args: list[str]) -> None:
+        print(_c("Suche, was die KI automatisch startet … (kann einige Sekunden dauern)", GREY))
+        entries = finde_autostarts(self.config.project_root, self.config.workspace_path)
+        if args[:1] == ["entfernen"] and entries:
+            chosen = entries if args[1:2] == ["alle"] else [
+                entries[int(a) - 1] for a in args[1:] if a.isdigit() and 1 <= int(a) <= len(entries)
+            ]
+            if not chosen:
+                print(_c("Welche? z.B. /autostart entfernen 1  oder  /autostart entfernen alle", YELLOW))
+                return
+            for entry in chosen:
+                if not _yes(f"\n{entry.describe()}\nEntfernen? [j/N] "):
+                    continue
+                try:
+                    print(_c(entferne(entry, self.config.project_root), GREEN))
+                except Exception as exc:  # noqa: BLE001
+                    print(_c(f"Konnte nicht entfernt werden: {exc}", YELLOW))
+            return
+        if not entries:
+            print(_c("Nichts gefunden: Weder Aufgabenplanung noch Autostart noch ein Hintergrund-"
+                     "Skript startet die KI.", CYAN))
+        else:
+            print(_c("\nDas startet die KI (oder Skripte aus ihrem Ordner) automatisch:", BOLD))
+            for i, entry in enumerate(entries, start=1):
+                print(f"  {i}) {entry.describe()}")
+            print(_c("\nAbstellen: /autostart entfernen <Nr>   (oder: /autostart entfernen alle)", GREY))
+        starts = StartGuard(self.config.project_root).starts()[-8:]
+        if starts:
+            print(_c("\nLetzte Starts der KI:", BOLD))
+            for s in starts:
+                mark = "  <- unerwartet" if s.get("unerwartet") else ""
+                print(f"  {s.get('zeit', '?').replace('T', ' ')}  gestartet {s.get('gestartet', '?')}{mark}")
 
     # -- Updates ------------------------------------------------------------
     def _startup_update(self) -> bool:
@@ -460,5 +570,5 @@ def _yes(question: str, default: bool = False) -> bool:
     return answer in ("j", "ja", "y", "yes")
 
 
-def run_cli(config: Config) -> int:
-    return CLI(config).run()
+def run_cli(config: Config, started_by: str | None = None) -> int:
+    return CLI(config, started_by=started_by).run()

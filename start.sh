@@ -59,6 +59,9 @@ while true; do
   python -m assistant
   code=$?
   set -e
+  if [ "$code" -eq 43 ]; then
+    exit 0  # laeuft schon in einem anderen Fenster
+  fi
   if [ "$code" -ne 42 ]; then
     exit "$code"
   fi

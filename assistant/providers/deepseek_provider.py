@@ -12,7 +12,9 @@ from typing import Any
 
 from ..logging_setup import get_logger
 from .base import (
+    CONNECT_TIMEOUT,
     LIMIT_NOTE,
+    READ_TIMEOUT,
     SUMMARY_INSTRUCTION,
     TRUNCATED_NOTE,
     TRUNCATED_TOOL_ERROR,
@@ -49,12 +51,24 @@ class DeepSeekProvider(LLMProvider):
         key = self.config.deepseek_api_key
         if not key:
             return None
-        return OpenAI(api_key=key, base_url=self.config.deepseek.base_url)
+        from openai import Timeout
+
+        return OpenAI(
+            api_key=key,
+            base_url=self.config.deepseek.base_url,
+            timeout=Timeout(READ_TIMEOUT, connect=CONNECT_TIMEOUT),
+            max_retries=3,
+        )
 
     # -- Hauptschleife ------------------------------------------------------
     def respond(
-        self, user_text: str, on_text: StreamFn | None = None, max_tool_rounds: int | None = None
+        self,
+        user_text: str,
+        on_text: StreamFn | None = None,
+        max_tool_rounds: int | None = None,
+        announce_limit: bool = True,
     ) -> str:
+        self.hit_limit = False
         if self.client is None:
             if on_text:
                 on_text(_INSTALL_HINT)
@@ -66,6 +80,7 @@ class DeepSeekProvider(LLMProvider):
 
         for _ in range(rounds):
             self._finish_reason = None
+            self._waiting()
             text, tool_calls = self._one_turn(on_text)
             if text is None:
                 return "Es gab ein Problem bei der Verbindung zu DeepSeek."
@@ -112,10 +127,12 @@ class DeepSeekProvider(LLMProvider):
                 )
         else:
             # Schritt-Limit erreicht: Bescheid geben statt stumm aufzuhoeren.
-            note = LIMIT_NOTE.format(n=rounds)
-            final_parts.append(note.strip())
-            if on_text:
-                on_text(note)
+            self.hit_limit = True
+            if announce_limit:
+                note = LIMIT_NOTE.format(n=rounds)
+                final_parts.append(note.strip())
+                if on_text:
+                    on_text(note)
 
         return "\n".join(final_parts).strip() or "(keine Textantwort)"
 
