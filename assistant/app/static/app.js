@@ -125,10 +125,15 @@
     return span;
   }
 
-  // Platzhalter data-icon im HTML mit Symbolen fuellen
+  // Platzhalter data-icon im HTML mit Symbolen fuellen. Ein leeres <span> ohne Klasse
+  // wird durch das Symbol ersetzt (damit Regeln wie ".suggestion > .ic" greifen).
   for (const el of document.querySelectorAll('[data-icon]')) {
-    el.prepend(icon(el.dataset.icon));
-    el.removeAttribute('data-icon');
+    const ic = icon(el.dataset.icon);
+    if (el.tagName === 'SPAN' && !el.className && !el.childNodes.length) el.replaceWith(ic);
+    else {
+      el.prepend(ic);
+      el.removeAttribute('data-icon');
+    }
   }
 
   // =====================================================================
@@ -656,20 +661,41 @@
   // =====================================================================
   let stick = true;
   let lastTop = 0;
+  let userUpAt = 0;      // wann der Nutzer zuletzt nach oben gescrollt hat (Rad, Tasten)
+  let dragging = false;  // Bildlaufleiste oder Finger wird gerade gezogen
   const jumpBtn = byId('jump');
   const distBottom = () => scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
+  const userActive = () => dragging || performance.now() - userUpAt < 350;
+  function userUp() { userUpAt = performance.now(); stick = false; }
   scroller.addEventListener('scroll', () => {
-    // Jedes Hochscrollen loest das Mitlaufen (auch kleine Touchpad-Schritte);
-    // waechst oder schrumpft nur der Inhalt, bleibt es an.
+    // Jedes Hochscrollen loest das Mitlaufen (auch kleine Touchpad-Schritte). Schrumpft nur
+    // der Inhalt (Browser schiebt die Position nach oben, bleibt aber ganz unten), bleibt es an.
     const top = scroller.scrollTop;
     const d = distBottom();
-    if (d < 2) stick = true;
-    else if (top < lastTop - 2) stick = false;
-    else if (d < 70) stick = true;
+    const active = userActive();
+    if (top < lastTop - 0.5 && (d >= 2 || active)) stick = false;
+    else if (!active && d < 2) stick = true;
+    else if (!active && top > lastTop && d < 70) stick = true; // selbst wieder nach unten gescrollt
     lastTop = top;
     if (stick) jumpBtn.hidden = true;
   }, { passive: true });
-  scroller.addEventListener('wheel', (e) => { if (e.deltaY < 0 && distBottom() > 4) stick = false; }, { passive: true });
+  scroller.addEventListener('wheel', (e) => { if (e.deltaY < 0 && scroller.scrollTop > 0) userUp(); }, { passive: true });
+  scroller.addEventListener('keydown', (e) => {
+    if (['ArrowUp', 'PageUp', 'Home'].includes(e.key)) userUp();
+  });
+  scroller.addEventListener('mousedown', (e) => {
+    // Klick auf die Bildlaufleiste
+    if (e.offsetX >= scroller.clientWidth) { dragging = true; stick = false; }
+  });
+  scroller.addEventListener('touchstart', () => { dragging = true; }, { passive: true });
+  const endDrag = () => {
+    if (!dragging) return;
+    dragging = false;
+    if (distBottom() < 2) stick = true;
+  };
+  window.addEventListener('mouseup', endDrag);
+  window.addEventListener('touchend', endDrag, { passive: true });
+  window.addEventListener('touchcancel', endDrag, { passive: true });
   let scrollQueued = false;
   function toBottom(force) {
     if (force) stick = true;
@@ -886,7 +912,7 @@
     const n = String(name || 'werkzeug');
     const known = pick(TOOL_INFO, n);
     if (known) return known;
-    const label = n.replace(/_/g, ' ');
+    const label = n.replace(/_/g, ' ').trim() || 'Werkzeug';
     return ['wrench', label.charAt(0).toUpperCase() + label.slice(1)];
   }
   const ROLE_NAMES = { recherche: 'Recherche', helfer: 'Helfer', pruefer: 'Prüfer', 'prüfer': 'Prüfer' };
@@ -1933,7 +1959,9 @@
     }
     renderPanes();
     byId('pn-body').scrollTop = 0;
-    if (focus) byId('tab-' + t).focus();
+    const tabBtn = byId('tab-' + t);
+    if (focus) tabBtn.focus();
+    tabBtn.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     if (t === 'gedaechtnis' && !mem.loaded && !mem.loading) loadMemory();
   }
 
@@ -2089,12 +2117,12 @@
       title.id = 'st-title-' + idx;
       lab.append(title);
       if (info[1]) lab.append(h('div', 'style-sub', info[1]));
-      const seg = h('div', 'seg');
+      const seg = h('div', 'segctl');
       seg.setAttribute('role', 'radiogroup');
       seg.setAttribute('aria-labelledby', title.id);
       seg.style.setProperty('--n', String(opts.length));
       for (const o of opts) {
-        const b = h('button', 'seg-btn', o.label);
+        const b = h('button', 'segctl-btn', o.label);
         b.type = 'button';
         b.setAttribute('role', 'radio');
         b.dataset.value = o.value;
@@ -2232,6 +2260,7 @@
     if (!ch.name) return 'Bitte gib ihr einen Namen.';
     if (/["\\\n]/.test(ch.name)) return 'Bitte einen Namen ohne Anführungszeichen oder Backslash.';
     if (ch.name.length > 40) return 'Der Name ist zu lang (höchstens 40 Zeichen).';
+    if (/[\\\n]/.test(ch.meaning || '')) return 'Bitte die Bedeutung ohne Backslash (\\) schreiben.';
     return '';
   }
 
@@ -2316,7 +2345,6 @@
     } else {
       savedNote = true;
       updateDirty();
-      toast('Gespeichert', 'ok', 2400);
     }
     return true;
   }
@@ -2547,7 +2575,7 @@
     if (Array.isArray(r.facts)) setFacts(r);
     else row.classList.remove('removing');
     if (!r.ok) { toast(r.error || 'Das hat nicht geklappt.', 'error'); return; }
-    toast('Vergessen', 'ok', 2000);
+    toast('Vergessen', 'ok', 1600);
     // Fokus auf den naechsten Eintrag (oder das Eingabefeld)
     const left = [...byId('mem-list').querySelectorAll('.fact-del')];
     const next = left[Math.min(idx, left.length - 1)];
@@ -2569,7 +2597,6 @@
       memNew.value = '';
       memSearch.value = '';
       memFlash = content;
-      toast('Gemerkt', 'ok', 2000);
     } else {
       toast(r.error || 'Hinzufügen hat nicht geklappt.', 'error');
     }
@@ -2661,6 +2688,7 @@
     banner.querySelector('.spinner').hidden = true;
     input.disabled = true;
     micBtn.disabled = true;
+    app.classList.add('ended');
     closeCmdPop();
     setBusy(false);
     updateEmpty();
