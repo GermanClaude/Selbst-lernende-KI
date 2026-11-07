@@ -440,10 +440,12 @@ class AppController(CLI):
         elif kind == "ask":
             live.on_ask(text)
 
-    def jarvis(self, action: str, tts: str = "client", turn: Any = None, seq: Any = None) -> dict:
+    def jarvis(self, action: str, tts: str = "client", turn: Any = None, seq: Any = None,
+               progress: bool = False) -> dict:
+        """progress=True: das Fenster meldet jeden gesagten Satz (spoken mit seq)."""
         if action in ("start", "stop"):
             with self._jarvis_lock:  # Doppelklick / Befehl + Knopf: nur EIN Jarvis-Modus
-                return self._jarvis_start_stop(action, tts)
+                return self._jarvis_start_stop(action, tts, bool(progress))
         if action == "spoken":  # Fenster hat vorgelesen (seq = ein Satz, ohne seq = alles) -> weiter zuhoeren
             if self._live is not None:
                 self._live.spoken(_int_or_none(turn), _int_or_none(seq))
@@ -454,7 +456,7 @@ class AppController(CLI):
             return {"ok": True}
         return {"ok": False, "error": f"Unbekannt: {action}"}
 
-    def _jarvis_start_stop(self, action: str, tts: str) -> dict:
+    def _jarvis_start_stop(self, action: str, tts: str, progress: bool = False) -> dict:
         from ..live import LiveLoop, LocalVoice, WindowVoice, live_available, recognizer_factory
 
         if action == "start":
@@ -471,7 +473,7 @@ class AppController(CLI):
                     self._speaker = Speaker(self.config.voice.sprache or "de")
                 voice_out = LocalVoice(self._speaker, emit=self._event)
             else:
-                voice_out = WindowVoice(self._event)
+                voice_out = WindowVoice(self._event, progress=progress)
             factory = recognizer_factory(root, self.config.voice)
             host = _LiveHost(self)
             loop = LiveLoop(host, voice_out, self.config.voice, recognizer_factory=factory)
@@ -495,9 +497,10 @@ class AppController(CLI):
             logger.exception("Jarvis-Modus")
             self._event({"type": "jarvis", "state": "off", "error": f"Sprachmodus: {exc}"})
         finally:
-            if self._live is loop:
-                self._live = None
-                self.brain.provider.effort_override = None
+            with self._jarvis_lock:  # nicht mit einem gleichzeitigen Neustart kreuzen
+                if self._live is loop:
+                    self._live = None
+                    self.brain.provider.effort_override = None
             self._state_changed()
 
     def _setup_live_in_background(self, loop) -> None:

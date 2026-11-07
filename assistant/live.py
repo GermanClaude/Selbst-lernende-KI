@@ -493,6 +493,8 @@ class Ear:
         loud = quiet = speech = total = 0.0
         clock = last_level = 0.0
         nova_before, nova_since, nova_heard, nova_quiet_since = False, 0.0, None, -1.0
+        audible_run = learned = 0
+        onset_threshold = 350.0
         recognizer = None
         last_partial = ""
         last_block = time.monotonic()
@@ -509,8 +511,10 @@ class Ear:
             clock += dur
             level = _rms(block)
             nova = self._nova.is_set()
-            if nova and not nova_before:
-                nova_since, nova_heard = clock, None
+            just_started = nova and not nova_before
+            if just_started:
+                nova_since, nova_heard, audible_run, learned = clock, None, 0, 0
+                echo.clear()  # pro Abschnitt neu lernen (sonst bliebe evtl. deine Stimme "Echo")
             elif nova_before and not nova:
                 nova_quiet_since = clock
             nova_before = nova
@@ -530,23 +534,30 @@ class Ear:
                 pre_time += dur
                 while pre_time > 0.45 and len(pre) > 1:
                     pre_time -= len(pre.popleft()) / (2 * RATE)
-                if nova:
+                if nova and just_started and loud > 0.0:
+                    pass  # du sprichst schon, als Nova anfaengt: das ist kein Echo -> unten wie Sprechbeginn
+                elif nova:
                     if not self.barge_in:
                         loud = 0.0
                         continue
-                    if nova_heard is None and (level > threshold or clock - nova_since > 2.0):
-                        nova_heard = clock  # ab hier ist Nova (oder nichts) zu hoeren
-                    if nova_heard is None or clock - nova_heard < 0.5:
+                    audible_run = audible_run + 1 if level > threshold else 0
+                    if nova_heard is None and audible_run >= 2:
+                        nova_heard = clock  # ab hier ist Nova zu hoeren (ein einzelner Klick zaehlt nicht)
+                    if nova_heard is not None and learned < 8:
                         if level > threshold:
                             echo.append(level)  # erst hoeren, wie laut Nova selbst im Mikrofon ist
+                            learned += 1
                         loud = 0.0
                         continue
-                    limit = max(threshold * 3.0, _echo_limit(echo))
+                    if nova_heard is None and clock - nova_since < 2.5:
+                        loud = 0.0  # noch nichts von ihr zu hoeren (Stimme startet gleich)
+                        continue
+                    limit = max(threshold * 3.0, _echo_limit(echo))  # ohne Echo (Kopfhoerer): 3x Rauschen
                     if level > limit:
                         loud += dur
                     else:
                         loud = max(0.0, loud - dur / 2)  # kurze Luecken ("Stopp") nicht gleich vergessen
-                        if level > threshold:
+                        if level > threshold and loud == 0.0:
                             echo.append(level)
                     if loud < 0.2:
                         continue
@@ -558,7 +569,10 @@ class Ear:
                     if loud < 0.1:
                         continue
                     self.post("onset", None)
+                if nova and just_started and loud > 0.0:
+                    self.post("onset", None)
                 talking, voiced, quiet, speech, total = True, list(pre), 0.0, loud, pre_time
+                onset_threshold = threshold
                 pre.clear()
                 pre_time = loud = 0.0
                 recognizer, last_partial = self._recognizer, ""
@@ -573,7 +587,9 @@ class Ear:
 
             voiced.append(block)
             total += dur
-            if level >= threshold * 0.8:
+            # Schwelle beim Sprechbeginn festhalten: sonst gilt deine eigene Stimme bei langen
+            # Saetzen irgendwann als "Rauschen" (Luefter-Fall bleibt erkannt: hoechstens 3x).
+            if level >= min(threshold, onset_threshold * 3.0) * 0.8:
                 quiet = 0.0
                 speech += dur
             else:
@@ -616,14 +632,14 @@ class WindowVoice:
     genau, wann Nova still ist), und 'spoken' ohne seq, wenn nach say_end alles
     gesagt ist."""
 
-    def __init__(self, emit):
+    def __init__(self, emit, progress: bool = False):
         self.emit = emit
         self._idle = threading.Event()
         self._idle.set()
         self.turn = 0
         self.sent = 0
         self.finished = 0
-        self.progress = False  # meldet das Fenster einzelne Saetze?
+        self.progress = progress  # meldet das Fenster einzelne Saetze? (sonst ab der ersten Meldung)
 
     def begin(self, turn: int) -> None:
         self.turn, self.sent, self.finished = turn, 0, 0
@@ -654,9 +670,9 @@ class WindowVoice:
         if self.finished >= self.sent:
             self._idle.set()
 
-    def done_seq(self) -> int | None:
-        """Bis zu welchem Satz ist vorgelesen? None = weiss das Fenster nicht."""
-        return self.finished if self.progress else None
+    def done_seq(self) -> int:
+        """Bis zu welchem Satz ist vorgelesen? (0 = noch keiner)"""
+        return self.finished
 
     def idle(self) -> bool:
         return self._idle.is_set()
@@ -673,10 +689,13 @@ class LocalVoice:
         self.emit = emit
         self.turn = 0
         self._order: list[int] = []
+        self._before = 0
         self._base = getattr(speaker, "completed", 0)
 
     def begin(self, turn: int) -> None:
         self.turn = turn
+        self._order, self._before = [], 0
+        self._base = getattr(self.speaker, "completed", 0)
 
     def say(self, text: str, seq: int) -> None:
         self._order.append(seq)
@@ -688,6 +707,7 @@ class LocalVoice:
         pass
 
     def stop(self) -> None:
+        self._before = self.done_seq() or 0  # bis hier war vorgelesen (fuer das Weitermachen)
         self.speaker.stop()
         self._order = []
         self._base = getattr(self.speaker, "completed", 0)
@@ -699,9 +719,9 @@ class LocalVoice:
         if not hasattr(self.speaker, "completed"):
             return None
         done = self.speaker.completed - self._base
-        if done <= 0:
-            return 0
-        return self._order[min(done, len(self._order)) - 1] if self._order else 0
+        if done <= 0 or not self._order:
+            return self._before
+        return self._order[min(done, len(self._order)) - 1]
 
     def idle(self) -> bool:
         return self.speaker.wait(0)
@@ -728,6 +748,10 @@ def is_stop(text: str) -> bool:
     words = _words(text)
     if not words or len(words) > 4:
         return False
+    if words[0] in ("wann", "was", "wie", "warum", "wo", "wer", "welche", "welcher", "wieso", "weshalb"):
+        return False  # "Wann soll ich aufhoeren?" ist eine Frage
+    if any(w in ("nicht", "nie", "kein", "keine", "motion") for w in words):
+        return False  # "Nicht aufhoeren", "Stop Motion"
     joined = " ".join(words)
     if re.search(r"\b(stopp?|abbrechen|aufh(?:oe|\u00f6)ren|h(?:oe|\u00f6)r auf|sei still|ruhe)\b", joined):
         return True
@@ -743,8 +767,11 @@ def voice_choice(text: str, options: list[str]) -> str | None:
     strong_no = any(w in _STRONG_NO for w in words)
     always = "immer" in options and any(p in joined for p in _ALWAYS)
     yes = any(w in _YES for w in words)
+    negated = any(w in _WEAK_NO or w in ("nie", "kein", "keine", "niemals") for w in words)
     if strong_no and (yes or always):
         return None  # "ja ... nein" - lieber nochmal fragen
+    if always and negated:
+        return None  # "Nicht immer" - auf keinen Fall dauerhaft erlauben, lieber nochmal fragen
     if strong_no:
         return "nein" if "nein" in options else None
     if always:
@@ -793,6 +820,9 @@ class LiveLoop:
         self.hearing = False          # du sprichst gerade
         self.speaking = False         # Nova spricht (oder hat noch etwas in der Warteschlange)
         self.recent: deque = deque(maxlen=12)  # (Zeit, Woerter) - was Nova zuletzt gesagt hat
+        self.quiet_at = 0.0           # seit wann Nova still ist
+        self.ask_text: str | None = None
+        self.ask_said_at: float | None = None
         self._reset_turn("")
 
     def _reset_turn(self, text: str) -> None:
@@ -868,7 +898,7 @@ class LiveLoop:
             self._state("hearing")
         elif self.speaking:
             self._state("speaking")
-        elif self.turn_active:
+        elif self.turn_active or self.pending is not None:
             self._state("thinking", working=True if self.tool_running else None)
         else:
             self._state("listening")
@@ -881,16 +911,19 @@ class LiveLoop:
         self.host.event({"type": "jarvis", "state": self.state, "error": text})
 
     def _on_onset(self, _data) -> None:
+        if self.speaking or not self.voice_out.idle():  # Nova spricht (noch) - also wie Dazwischenreden
+            self._on_barge(None)
+            return
         self.hearing = True
-        if not self.speaking:
-            self._state("hearing")
+        self._state("hearing")
 
     def _on_barge(self, _data) -> None:
         # Sofort still sein. Angehalten wird die Antwort erst, wenn wirklich etwas
         # gesagt wurde - war es nur ein Geraeusch, redet Nova weiter (_on_dropped).
         self.hearing = True
-        if self.speaking:
-            self.resume_after = self.voice_out.done_seq() if hasattr(self.voice_out, "done_seq") else None
+        if self.speaking or not self.voice_out.idle():
+            done = self.voice_out.done_seq() if hasattr(self.voice_out, "done_seq") else None
+            self.resume_after = done if done is not None else 0  # lieber wiederholen als verlieren
             self.barged = True
             self._hush()
         self._state("hearing")
@@ -922,7 +955,11 @@ class LiveLoop:
                 self.host.event({"type": "jarvis", "state": "listening", "error": str(exc)})
                 text = text or ""
         text = text.strip()
-        if text and self._is_echo(text):
+        started = time.monotonic() - utt.seconds
+        nova_near = self.barged or self.speaking or started < self.quiet_at + 1.5
+        short_answer = len(_words(text)) <= 3 and self.ask_text is not None and voice_choice(
+            text, ["einmal", "immer", "nein", "ja"]) is not None  # "Ja, immer" ist eine Antwort, kein Echo
+        if text and nova_near and not short_answer and self._is_echo(text):  # nur, wenn Nova zu hoeren war
             logger.info("Eigenes Echo ignoriert: %s", text)
             text = ""
         self.host.event({"type": "heard", "text": text, "final": True})
@@ -930,10 +967,22 @@ class LiveLoop:
             self._carry_on()
             self._idle_state()
             return
+        if self.host.is_exit(text):
+            self.stop_event.set()
+            return
         ask = self.host.pending_ask()
+        heard_question = self.ask_said_at is not None and started >= self.ask_said_at - 0.6  # 0,45 s Vorlauf
+        if ask and not heard_question:
+            # Die Frage kam, waehrend du gesprochen hast: erst die Frage vorlesen, dein Satz
+            # war keine Antwort darauf.
+            self._carry_on(resume=False)
+            self.pending = text if self.pending is None else f"{self.pending} {text}"
+            self._idle_state()
+            return
         if ask:
             value = voice_choice(text, [o for o in ask.get("options", [])])
             if value:
+                self.ask_text = self.ask_said_at = None
                 self.host.answer_ask(ask["id"], value)
                 self._carry_on(resume=False)
             else:
@@ -942,16 +991,20 @@ class LiveLoop:
                 self._close_speech()
             self._idle_state()
             return
-        if self.host.is_exit(text):
-            self.stop_event.set()
-            return
         if self.turn_active:
             if is_stop(text):
                 if self.speaking:
                     self._hush()
-                self._cancel(drop=False)
+                if not self.cancelled:
+                    self._cancel(drop=False)
                 self.pending = None
                 self._state("listening")
+                return
+            if self.cancelled:
+                # Die alte Antwort wird schon angehalten: nur merken (nicht nochmal anhalten,
+                # nicht mit der alten Frage zusammenfassen).
+                self.pending = text if self.pending is None else f"{self.pending} {text}"
+                self._state("thinking", text=self.pending)
                 return
             if self.said == 0 and not self.tool_used and self.pending is None:
                 # Nachtrag ("... in Berlin"): Frage neu stellen, alte Runde zuruecknehmen
@@ -975,7 +1028,12 @@ class LiveLoop:
             self._hush()
         self.held, self.barged = [], False
         if is_stop(text):
+            self.pending = None
             self._state("listening")
+            return
+        if self.pending is not None:  # wartet schon (z.B. App beschaeftigt): Nachtrag anhaengen
+            self.pending = f"{self.pending} {text}"
+            self._state("thinking", text=self.pending)
             return
         self._send(text)
 
@@ -1001,9 +1059,11 @@ class LiveLoop:
         if self.cancelled:
             self.held, self.barged = [], False
             return
-        if self.barged and resume and self.resume_after is not None:
+        if self.barged and self.resume_after is not None:
             again = [text for seq, text in self.sent if seq > self.resume_after]
-            self.held = again + self.held  # dort weitermachen, wo sie unterbrochen wurde
+            self.sent = [(seq, text) for seq, text in self.sent if seq <= self.resume_after]
+            if resume:
+                self.held = again + self.held  # dort weitermachen, wo sie unterbrochen wurde
         self.barged, self.resume_after = False, None
         held, self.held = self.held, []
         for sentence in held:
@@ -1035,7 +1095,9 @@ class LiveLoop:
         # Pfade nur als Dateiname vorlesen ("C:\\...\\spiel\\figuren.py" -> "figuren.py")
         spoken = re.sub(r"(?:[A-Za-z]:)?[^\s:]*[\\/]([^\s\\/]+)", r"\1", speech_text(text))
         question = spoken.split(". ")[0][:220].rstrip(".")
-        self._queue(schoen(f"Kurze Rueckfrage: {question}. Sag ja, immer oder nein."))
+        self.ask_text = schoen(f"Kurze Rueckfrage: {question}. Sag ja, immer oder nein.")
+        self.ask_said_at = None
+        self._queue(self.ask_text)
         self._close_speech()  # das Fenster meldet, wenn die Frage gesagt ist -> dann normal zuhoeren
 
     def _on_turn_end(self, cancelled) -> None:  # noqa: ARG002
@@ -1074,8 +1136,8 @@ class LiveLoop:
         self.voice_out.begin(self.turn)
         self._reset_turn(text)
         if self.host.busy():
-            self.pending = text  # sobald frei, nochmal versuchen
-            self._state("thinking", text=text)
+            self.pending = f"{self.pending} {text}" if self.pending else text  # sobald frei, nochmal
+            self._state("thinking", text=self.pending)
             return
         if not self.host.start_turn(text):
             self._state("listening", error="Das konnte ich gerade nicht annehmen - versuch es nochmal.")
@@ -1098,6 +1160,8 @@ class LiveLoop:
         self.speech_chars += len(sentence)
         self.sent.append((self.said, sentence))
         now = time.monotonic()
+        if sentence == self.ask_text:
+            self.ask_said_at = now  # ab jetzt kann die Antwort kommen
         self.recent.append((now, set(_words(sentence))))
         self.speak_until = max(self.speak_until, now) + 0.3 + 0.085 * len(sentence)
         if not self.speaking:
@@ -1117,6 +1181,7 @@ class LiveLoop:
         self.voice_out.stop()
         self.unended = 0
         self.speaking = False
+        self.quiet_at = time.monotonic()
         self.ear.set_nova_speaking(False)
         self._state("hearing", interrupted=True)
 
@@ -1126,13 +1191,13 @@ class LiveLoop:
             overdue = not self.unended and now - self.closed_at > 20 + 0.12 * self.speech_chars
             # Meldet das Fenster keine einzelnen Saetze, nach geschaetzter Sprechdauer wieder normal
             # zuhoeren (sonst bliebe das Ohr waehrend langer Werkzeug-Arbeit im strengen Modus).
-            unknown = getattr(self.voice_out, "done_seq", lambda: 0)() is None
+            unknown = not getattr(self.voice_out, "progress", True)
             guessed = unknown and self.turn_active and now > self.speak_until + 1.5
             if self.voice_out.idle() or overdue or guessed:
                 self.speaking = False
+                self.quiet_at = now
                 self.ear.set_nova_speaking(False)
-                if self.pending is None:
-                    self._idle_state()
+                self._idle_state()
         if (self.pending is not None and not self.turn_active and not self.speaking and not self.hearing
                 and not self.host.busy()):
             text, self.pending = self.pending, None

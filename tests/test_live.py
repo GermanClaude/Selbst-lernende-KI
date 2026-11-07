@@ -329,7 +329,7 @@ def test_questions_can_be_answered_by_voice_and_exit_phrase_ends():
     host.ask = {"id": "q1", "options": ["einmal", "immer", "nein"]}
     step(loop, "ask", "Die KI moechte figuren.py schreiben. Risiko: mittel")
     assert voice_.said[-1].startswith("Kurze Rückfrage: Die KI möchte figuren.py schreiben")
-    step(loop, "utterance", Utterance("Ja klar", b"", 0.5))
+    step(loop, "utterance", Utterance("Ja klar", b"", 0.0))
     assert host.answers == [("q1", "einmal")] and host.cancels == []
     host.ask = None
     step(loop, "turn_end")
@@ -515,7 +515,7 @@ def test_answering_a_question_by_voice_keeps_the_rest_of_the_answer():
     assert "figuren.py" in voice_.said[-1] and "Spiel" not in voice_.said[-1]
     assert voice_.ended                                 # Fenster meldet, wenn die Frage gesagt ist
     step(loop, "barge")                                 # "Ja" waehrend sie noch fragt
-    step(loop, "utterance", Utterance("Ja", b"", 0.4))
+    step(loop, "utterance", Utterance("Ja", b"", 0.0))
     assert host.answers == [("q1", "einmal")]
     host.ask = None
     step(loop, "text", "Erledigt, die Datei ist da.")
@@ -548,12 +548,20 @@ def test_nova_does_not_talk_over_you_and_ambiguous_answers_are_asked_again():
 
 def test_speech_outside_a_turn_finishes_and_novas_own_echo_is_ignored():
     loop, host, voice_ = _ploop()
+    step(loop, "utterance", Utterance("Schreib die Datei", b"", 1.0))
+    step(loop, "tool")
     host.ask = {"id": "q1", "options": ["einmal", "nein"]}
-    step(loop, "utterance", Utterance("Was meinst du damit", b"", 1.0))
-    assert voice_.said == ["Sag bitte ja, immer oder nein."] and voice_.ended
-    step(loop, "utterance", Utterance("Sag bitte ja immer oder nein", b"", 1.5))   # Echo aus dem Lautsprecher
-    assert host.answers == []
+    step(loop, "ask", "Neu anlegen: figuren.py")
     voice_.finish(1)
+    step(loop, "spoken")
+    step(loop, "utterance", Utterance("Was meinst du damit", b"", 0.0))
+    assert voice_.said[-1] == "Sag bitte ja, immer oder nein." and voice_.ended
+    step(loop, "utterance", Utterance("Sag bitte ja immer oder nein", b"", 0.0))   # Echo aus dem Lautsprecher
+    assert host.answers == []
+    step(loop, "utterance", Utterance("Ja, immer", b"", 0.0))     # genau das, was sie vorschlaegt
+    assert host.answers == [("q1", "einmal")] or host.answers == [("q1", "immer")]
+    host.ask = None
+    voice_.finish(voice_.last)
     step(loop, "spoken")
     assert not loop.speaking and loop.ear.nova[-1] is False
 
@@ -612,3 +620,151 @@ def test_window_voice_reports_each_sentence():
     assert not wv.idle()
     wv.spoken(3, 2)
     assert wv.idle()
+
+
+# -- Zweite Pruefung (Regressionstests) -------------------------------------------
+def test_not_always_never_means_always():
+    opts = ["einmal", "immer", "nein"]
+    for text in ("Nicht immer", "Ja, aber nicht immer", "Immer nicht", "Nie immer"):
+        assert voice_choice(text, opts) != "immer", text
+    assert voice_choice("Ja immer", opts) == "immer" and voice_choice("Immer erlauben", opts) == "immer"
+    for text in ("Wann soll ich aufhören", "Was bedeutet Ruhe", "Nicht aufhören", "Stop Motion erklären"):
+        assert not live.is_stop(text), text
+
+
+def test_short_follow_up_after_nova_was_quiet_is_not_taken_for_echo():
+    loop, host, voice_ = _ploop()
+    step(loop, "utterance", Utterance("Wie wird das Wetter", b"", 0.0))
+    step(loop, "text", "Morgen wird es in Berlin sonnig. ")
+    step(loop, "turn_end")
+    voice_.finish(1)
+    step(loop, "spoken")
+    loop.quiet_at -= 5                                         # Nova ist seit Sekunden still
+    step(loop, "utterance", Utterance("In Berlin?", b"", 0.5))
+    assert host.turns[-1] == "In Berlin?"
+
+
+def test_two_coughs_do_not_repeat_sentences_twice():
+    loop, host, voice_ = _ploop()
+    step(loop, "utterance", Utterance("Erzaehl was", b"", 0.0))
+    step(loop, "text", "Satz eins ist da. Satz zwei kommt jetzt und ist etwas laenger als sechzig Zeichen. "
+                       "Satz drei ist der letzte in dieser kleinen Geschichte und auch recht lang. ")
+    step(loop, "turn_end")
+    voice_.finish(1)
+    step(loop, "barge")
+    step(loop, "dropped")
+    step(loop, "barge")
+    step(loop, "dropped")
+    tail = voice_.said[3:]
+    assert len(tail) == 4 and tail[:2] == tail[2:]             # B, C - und nach dem 2. Husten wieder B, C
+    assert [t for t, _ in [(s, 0) for s in tail]].count(tail[0]) == 2
+
+
+def test_first_cough_of_a_session_keeps_the_answer():
+    host = FakeHost()
+    wv = live.WindowVoice(lambda e: None)                       # Fenster hat noch nichts gemeldet
+    loop = LiveLoop(host, wv, SETTINGS, ear=FakeEar())
+    step(loop, "utterance", Utterance("Erzaehl was", b"", 0.0))
+    step(loop, "text", "Es war einmal ein König. Der hatte drei Töchter, die alle sehr klug waren und lasen. ")
+    step(loop, "turn_end")
+    step(loop, "barge")
+    step(loop, "dropped")
+    assert loop.speaking and wv.sent >= 3                       # lieber wiederholt als verloren
+
+
+def test_local_voice_counts_per_turn():
+    class Spk:
+        completed = 0
+
+        def say(self, text):
+            pass
+
+        def stop(self):
+            pass
+
+        def wait(self, t):
+            return False
+
+    spk = Spk()
+    lv = live.LocalVoice(spk)
+    lv.begin(1)
+    for i in (1, 2, 3):
+        lv.say("x", i)
+    spk.completed = 3
+    lv.begin(2)
+    lv.say("a", 1)
+    assert lv.done_seq() == 0                                   # nicht die 3 der letzten Runde
+    spk.completed = 4
+    assert lv.done_seq() == 1
+    lv.stop()
+    assert lv.done_seq() == 1                                   # Stand bleibt nach stop()
+
+
+def test_second_afterthought_and_stop_then_new_wish():
+    loop, host, voice_ = _loop()
+    step(loop, "utterance", Utterance("Wie wird das Wetter morgen", b"", 0.0))
+    step(loop, "utterance", Utterance("in Berlin", b"", 0.0))
+    step(loop, "utterance", Utterance("bitte ausführlich", b"", 0.0))
+    assert host.cancels == [True]                               # nicht nochmal (ohne Zuruecknehmen) anhalten
+    step(loop, "turn_end", True)
+    assert host.turns[-1] == "Wie wird das Wetter morgen in Berlin bitte ausführlich"
+    loop2, host2, _ = _loop()
+    step(loop2, "utterance", Utterance("Wie wird das Wetter", b"", 0.0))
+    step(loop2, "utterance", Utterance("Stopp", b"", 0.0))
+    step(loop2, "utterance", Utterance("Erzähl einen Witz", b"", 0.0))
+    step(loop2, "turn_end", True)
+    assert host2.turns[-1] == "Erzähl einen Witz" and host2.cancels == [False]
+
+
+def test_while_busy_afterthoughts_are_joined_and_stop_clears():
+    loop, host, voice_ = _loop()
+    host.is_busy = True
+    step(loop, "utterance", Utterance("Wie wird das Wetter morgen", b"", 0.0))
+    step(loop, "utterance", Utterance("in Berlin", b"", 0.0))
+    host.is_busy = False
+    step(loop, "tick") if hasattr(loop, "_on_tick") else loop._tick()
+    assert host.turns == ["Wie wird das Wetter morgen in Berlin"]
+    loop2, host2, _ = _loop()
+    host2.is_busy = True
+    step(loop2, "utterance", Utterance("Wie spät ist es", b"", 0.0))
+    step(loop2, "utterance", Utterance("Stopp", b"", 0.0))
+    host2.is_busy = False
+    loop2._tick()
+    assert host2.turns == []
+
+
+def test_onset_while_nova_speaks_counts_as_interruption_and_exit_works_during_a_question():
+    loop, host, voice_ = _ploop()
+    step(loop, "utterance", Utterance("Wie wird das Wetter", b"", 0.0))
+    step(loop, "text", "Morgen wird es sonnig. ")
+    step(loop, "onset")
+    assert voice_.stopped == 1 and not loop.speaking
+    loop2, host2, _ = _ploop()
+    step(loop2, "utterance", Utterance("Schreib die Datei", b"", 0.0))
+    step(loop2, "tool")
+    host2.ask = {"id": "q1", "options": ["einmal", "nein"]}
+    step(loop2, "ask", "Neu anlegen: a.txt")
+    step(loop2, "utterance", Utterance("Chat-Modus", b"", 0.0))
+    assert loop2.stop_event.is_set()
+
+
+def test_question_asked_while_you_talk_is_not_answered_by_that_sentence():
+    loop, host, voice_ = _ploop()
+    step(loop, "utterance", Utterance("Räum die Fotos auf", b"", 0.0))
+    step(loop, "tool")
+    step(loop, "onset")                                         # du redest schon
+    host.ask = {"id": "q1", "options": ["einmal", "nein"]}
+    step(loop, "ask", "Löschen: C:\\Daten\\Fotos (312 Dateien)")
+    step(loop, "utterance", Utterance("Ja und mach danach noch Musik an", b"", 2.0))
+    assert host.answers == []                                   # die Frage hattest du noch nicht gehoert
+    assert "Fotos" in voice_.said[-1]                           # jetzt wird sie vorgelesen
+
+
+def test_long_even_speech_is_not_cut_by_the_rising_noise_floor():
+    import random
+
+    random.seed(1)
+    quiet = _block(40)
+    speech = [_block(random.randint(2000, 4000)) if random.random() > 0.05 else quiet for _ in range(200)]
+    seen, _ = _run_ear([quiet] * 12 + speech + [quiet] * 16, "utterance", pause=0.6, max_seconds=40.0)
+    assert [d for k, d in seen if k == "utterance"][0].seconds > 9.5

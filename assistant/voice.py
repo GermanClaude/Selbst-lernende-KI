@@ -448,6 +448,8 @@ class Speaker:
         self._engine = None
         self.completed = 0      # fertig gesprochene Saetze (fuer den Jarvis-Modus)
         self._generation = 0    # stop() beginnt eine neue Zaehlung
+        self._pending = 0       # eingereiht, noch nicht fertig
+        self._lock = threading.Lock()
         self.available = _importable("pyttsx3")
         self._thread = threading.Thread(target=self._run, name="vorlesen", daemon=True) if self.available else None
         if self._thread:
@@ -478,36 +480,49 @@ class Speaker:
             if item is None:
                 return
             generation, text = item
+            with self._lock:
+                if generation != self._generation:
+                    continue  # nach stop() nichts Altes mehr sprechen
+                try:
+                    self._engine.say(text)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("Vorlese-Fehler: %s", exc)
             try:
-                self._engine.say(text)
                 self._engine.runAndWait()
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Vorlese-Fehler: %s", exc)
-            if generation == self._generation:
-                self.completed += 1
-            if self._queue.empty():
-                self._idle.set()
+            with self._lock:
+                if generation == self._generation:
+                    self.completed += 1
+                    self._pending -= 1
+                    if self._pending <= 0:
+                        self._pending = 0
+                        self._idle.set()
 
     def say(self, text: str) -> None:
         text = speech_text(text)
         if not text or not self.available:
             return
-        self._idle.clear()
-        self._queue.put((self._generation, text))
+        with self._lock:
+            self._pending += 1
+            self._idle.clear()
+            self._queue.put((self._generation, text))
 
     def wait(self, timeout: float | None = None) -> bool:
         return self._idle.wait(timeout)
 
     def stop(self) -> None:
-        self._generation += 1
-        try:
-            while not self._queue.empty():
-                self._queue.get_nowait()
-        except Exception:  # noqa: BLE001
-            pass
+        with self._lock:
+            self._generation += 1
+            try:
+                while not self._queue.empty():
+                    self._queue.get_nowait()
+            except Exception:  # noqa: BLE001
+                pass
+            self._pending = 0
+            self._idle.set()
         try:
             if self._engine:
                 self._engine.stop()
         except Exception:  # noqa: BLE001
             pass
-        self._idle.set()
