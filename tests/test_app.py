@@ -391,3 +391,14 @@ def test_typed_jarvis_and_tutorial_commands_open_the_views(app, monkeypatch):
     time.sleep(0.3)
     _req(server, "/api/send", {"text": "/tutorial"})
     assert _events_until(server, "open")[-1]["what"] == "tutorial"
+
+
+def test_bad_requests_get_an_answer_and_meaning_with_backslash_is_saved(app, tmp_path):
+    server = app([])
+    assert _req(server, "/api/memory", {"action": "delete", "id": "abc"})[0] == 400   # Antwort statt Abbruch
+    assert _req(server, "/api/profile", {"style": ["kaputt"]})[0] == 400
+    status, body = _req(server, "/api/profile", {"meaning": 'Mein "Assistent" C:\\Users'})
+    assert body["ok"] is True and body["profile"]["meaning"] == 'Mein "Assistent" C:\\Users'
+    from assistant.config import load_config
+
+    assert load_config(tmp_path).ki.bedeutung == 'Mein "Assistent" C:\\Users'

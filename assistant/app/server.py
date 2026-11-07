@@ -178,6 +178,17 @@ class AppServer:
                     body = json.loads(self.rfile.read(length) or b"{}") if length else {}
                 except (ValueError, json.JSONDecodeError):
                     return self._json({"ok": False, "error": "ungueltige Anfrage"}, 400)
+                if not isinstance(body, dict):
+                    return self._json({"ok": False, "error": "ungueltige Anfrage"}, 400)
+                try:
+                    return self._post(url, body)
+                except (TypeError, ValueError, AttributeError, KeyError) as exc:  # kaputte Anfrage
+                    return self._json({"ok": False, "error": f"ungueltige Anfrage: {exc}"}, 400)
+                except Exception as exc:  # noqa: BLE001 - Antwort statt abgebrochener Verbindung
+                    logger.exception("Fehler bei %s", url.path)
+                    return self._json({"ok": False, "error": str(exc)}, 500)
+
+            def _post(self, url, body: dict):
                 ctl = server.controller
                 if url.path == "/api/send":
                     ok, error = ctl.send(str(body.get("text", "")))

@@ -25,7 +25,7 @@ from typing import Any, Callable
 from .. import __version__
 from ..anzeige import schoen, schoen_alles
 from ..cancel import Abgebrochen
-from ..config import Config, save_setting
+from ..config import Config, save_setting, toml_string
 from ..logging_setup import get_logger
 from ..permissions import Risk
 from ..ui.cli import CLI, JARVIS_HINT, _is_exit_phrase
@@ -271,8 +271,9 @@ class AppController(CLI):
                     self._answer(text, model_text)
         except Exception as exc:  # noqa: BLE001 - die App darf daran nicht sterben
             logger.exception("Fehler in der App")
-            self.history.append({"role": "error", "text": str(exc)})
-            self._event({"type": "error", "text": f"Da ist etwas schiefgegangen: {exc}"})
+            message = f"Da ist etwas schiefgegangen: {exc}"
+            self.history.append({"role": "error", "text": message})
+            self._event({"type": "error", "text": message})
         finally:
             writer.flush_notice()
             self._writer = None
@@ -362,13 +363,16 @@ class AppController(CLI):
         from ..profil import apply_character, save_about, save_persona, save_values, set_style
 
         name = str(data.get("name", "")).strip()
-        if name and (name != self.config.ki.name or "meaning" in data):
-            meaning = str(data.get("meaning", self.config.ki.bedeutung)).replace('"', "'").strip()
+        if name and name != self.config.ki.name:
             if len(name) > 40 or any(c in name for c in '\n"\\'):
                 raise ValueError("Bitte einen kurzen Namen ohne Anfuehrungszeichen.")
-            save_setting(self.config.project_root, "ki", "name", f'"{name}"')
-            save_setting(self.config.project_root, "ki", "bedeutung", f'"{meaning}"')
-            self.config.ki.name, self.config.ki.bedeutung = name, meaning
+            save_setting(self.config.project_root, "ki", "name", toml_string(name))
+            self.config.ki.name = name
+        if "meaning" in data:
+            meaning = " ".join(str(data.get("meaning") or "").split())[:200]
+            if meaning != self.config.ki.bedeutung:
+                save_setting(self.config.project_root, "ki", "bedeutung", toml_string(meaning))
+                self.config.ki.bedeutung = meaning
         if data.get("character") and data["character"] != "eigen":
             apply_character(self.config, str(data["character"]))
         elif isinstance(data.get("persona_text"), str) and data["persona_text"] != self.config.persona_text:

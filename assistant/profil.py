@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from .config import save_setting
+from .config import save_setting, toml_string
 
 ABOUT_FILE = "ueber_mich.json"
 
@@ -168,7 +168,7 @@ def apply_character(config, key: str) -> Character:
         shutil.copy2(persona, backup_dir / f"persona_{datetime.now():%Y-%m-%d_%H%M%S}.md")
     persona.parent.mkdir(parents=True, exist_ok=True)
     persona.write_text(chosen.text, encoding="utf-8")
-    save_setting(root, "ki", "charakter", f'"{chosen.key}"')
+    save_setting(root, "ki", "charakter", toml_string(chosen.key))
     config.persona_text = chosen.text
     config.ki.charakter = chosen.key
     return chosen
@@ -196,7 +196,7 @@ def set_style(config, key: str, value: str) -> None:
     if value.lower() not in allowed:
         raise ValueError(f"Fuer {key} geht: {', '.join(v for v, _ in STYLE_OPTIONS[key])}")
     value = allowed[value.lower()]
-    save_setting(config.project_root, "stil", key, f'"{value}"')
+    save_setting(config.project_root, "stil", key, toml_string(value))
     setattr(config.style, key, value)
 
 

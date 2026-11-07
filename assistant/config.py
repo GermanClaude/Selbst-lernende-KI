@@ -310,6 +310,13 @@ def _first_existing(*paths: Path) -> Path | None:
     return next((p for p in paths if p.is_file()), None)
 
 
+def toml_string(text: str) -> str:
+    """Text als TOML-Zeichenkette (Anfuehrungszeichen, Backslashes usw. sicher maskiert)."""
+    import json
+
+    return json.dumps(str(text), ensure_ascii=False)
+
+
 def save_setting(root: Path, section: str, key: str, value: str) -> Path:
     """Schreibt 'key = value' (TOML-Literal, z.B. 'true') dauerhaft in config/settings.toml.
 

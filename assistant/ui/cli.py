@@ -43,7 +43,7 @@ import time
 
 from .. import __version__
 from ..brain import Brain
-from ..config import Config, save_setting
+from ..config import Config, save_setting, toml_string
 from ..logging_setup import get_logger
 from ..memory import Memory
 from ..permissions import PermissionManager, Risk
@@ -399,8 +399,8 @@ class CLI:
         meaning = meaning.replace('"', "'")
         self.config.ki.name, self.config.ki.bedeutung = name, meaning
         try:
-            save_setting(self.config.project_root, "ki", "name", f'"{name}"')
-            save_setting(self.config.project_root, "ki", "bedeutung", f'"{meaning}"')
+            save_setting(self.config.project_root, "ki", "name", toml_string(name))
+            save_setting(self.config.project_root, "ki", "bedeutung", toml_string(meaning))
         except Exception as exc:  # noqa: BLE001
             print(_c(f"Konnte den Namen nicht speichern: {exc}", YELLOW))
             return
