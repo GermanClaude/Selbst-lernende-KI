@@ -105,9 +105,15 @@ class DeepSeekSettings:
     temperature: float = 0.6
 
 
+DEFAULT_NAME = "Nova"
+DEFAULT_MEANING = "Neugierige, Offene, Vernetzte Assistenz"
+
+
 @dataclass
 class KISettings:
-    name: str = "Aria"
+    name: str = DEFAULT_NAME
+    # Wofuer die Buchstaben des Namens stehen (wird angezeigt; leer = nichts).
+    bedeutung: str = DEFAULT_MEANING
     language: str = "de"
     # Laeuft die KI schon, oeffnet sich kein zweites Fenster.
     nur_ein_fenster: bool = True
@@ -356,6 +362,9 @@ def load_config(project_root: Path | None = None) -> Config:
         deepseek.max_tokens = DeepSeekSettings.max_tokens
     if claude.max_tokens == 16000:
         claude.max_tokens = ClaudeSettings.max_tokens
+    ki = _merge(KISettings(), raw.get("ki", {}))
+    if ki.name.strip().lower() == "aria" and "bedeutung" not in raw.get("ki", {}):
+        ki.name = DEFAULT_NAME  # frueherer Standardname -> neuer Name
 
     # Modell per Umgebungsvariable erzwingen (zielt auf den aktiven Provider).
     if os.environ.get("KI_MODEL"):
@@ -368,7 +377,7 @@ def load_config(project_root: Path | None = None) -> Config:
         provider=provider,
         claude=claude,
         deepseek=deepseek,
-        ki=_merge(KISettings(), raw.get("ki", {})),
+        ki=ki,
         economy=_merge(EconomySettings(), raw.get("sparsam", {})),
         prices=_merge(PriceSettings(), raw.get("preise", {})),
         memory=_merge(MemorySettings(), raw.get("memory", {})),

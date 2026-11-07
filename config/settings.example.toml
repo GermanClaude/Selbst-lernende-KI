@@ -39,7 +39,9 @@ temperature = 0.6
 
 [ki]
 # Anzeigename deiner KI.
-name = "Aria"
+name = "Nova"
+# Wofuer die Buchstaben stehen - wird beim Start und in der App angezeigt.
+bedeutung = "Neugierige, Offene, Vernetzte Assistenz"
 language = "de"
 # Laeuft die KI schon, oeffnet sich kein zweites Fenster.
 nur_ein_fenster = true

@@ -19,6 +19,12 @@ deine KI erklärt sie dir in eigenen Worten.
 - `/app` wechselt aus dem Terminal in die App, `/verknuepfung` legt ein Symbol auf
   den Desktop. Wer immer die App will: `oberflaeche = "app"` unter `[ki]`.
 
+**Neuer Name: NOVA**
+- Die KI heißt jetzt **Nova** – **N**eugierige, **O**ffene, **V**ernetzte
+  **A**ssistenz. Wer noch „Aria“ eingestellt hatte, bekommt den neuen Namen
+  automatisch. Mit `/name` kannst du ihr jederzeit einen anderen Namen geben,
+  z.B. `/name MAX = Mein Assistent X`.
+
 ## 0.3.2 – 2026-11-07
 
 - **Einmal zustimmen reicht:** Bei jeder Rückfrage kannst du jetzt **a** eingeben

@@ -17,8 +17,8 @@ from .config import Config
 from .memory import Memory
 
 _FRAME = """\
-Du bist {name}, ein persoenlicher KI-Assistent, der lokal auf dem Computer deines
-Menschen laeuft. Du fuehrst ein natuerliches Gespraech in vollstaendigen, klaren
+Du bist {name}{meaning}, ein persoenlicher KI-Assistent, der lokal auf dem Computer
+deines Menschen laeuft. Das ist dein Name - auch wenn du frueher anders hiesst. Du fuehrst ein natuerliches Gespraech in vollstaendigen, klaren
 Saetzen und kannst mit Werkzeugen echte Dinge auf dem Computer tun.
 
 So arbeitest du:
@@ -122,7 +122,8 @@ def build_agent_prompt(config: Config, role: str) -> str:
 
 def build_system_prompt(config: Config, memory: Memory) -> str:
     """Setzt den vollstaendigen System-Prompt zusammen."""
-    frame = _FRAME.format(name=config.ki.name)
+    meaning = config.ki.bedeutung.strip()
+    frame = _FRAME.format(name=config.ki.name, meaning=f" ({meaning})" if meaning else "")
     memory_block = memory.context_block(max_facts=config.memory.max_facts_in_context)
 
     persona = config.persona_text.strip() or "(Keine Persona-Datei gefunden.)"

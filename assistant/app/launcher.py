@@ -248,7 +248,8 @@ def run_app(config, started_by: str | None = None) -> int:
     except OSError as exc:
         logger.info("app.json nicht schreibbar: %s", exc)
 
-    title = f"{config.ki.name} - Selbst-lernende KI"
+    meaning = config.ki.bedeutung.strip()
+    title = f"{config.ki.name} - {meaning}" if meaning else f"{config.ki.name} - Selbst-lernende KI"
     try:
         if run_native_window(server, ctl, title, root / "data" / "app-fenster", holder):
             return result["code"]

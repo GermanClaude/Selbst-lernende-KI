@@ -24,7 +24,7 @@ def test_save_setting_adds_missing_section_and_file(tmp_path):
     (tmp_path / "config" / "settings.example.toml").write_text("[ki]\nname = \"Aria\"\n", encoding="utf-8")
     save_setting(tmp_path, "permissions", "auto_confirm", "true")  # Datei fehlt -> aus Vorlage
     cfg = load_config(tmp_path)
-    assert cfg.permissions.auto_confirm is True and cfg.ki.name == "Aria"
+    assert cfg.permissions.auto_confirm is True and cfg.ki.name == "Nova"  # alter Standardname "Aria"
 
 
 def _cli(tmp_path, answers, monkeypatch):
@@ -75,3 +75,30 @@ def test_autostart_question_can_be_switched_off(tmp_path):
     pm = PermissionManager(PermissionSettings(safe_mode=False, auto_confirm=True, autostart_immer_fragen=False),
                            tmp_path, confirm_fn=lambda m, r: asked.append(m) or False)
     assert pm.check_shell("schtasks /create /tn x /tr y").allowed and asked == []
+
+
+def test_new_name_nova_and_old_default_migrates(tmp_path):
+    cfg = load_config(tmp_path)
+    assert cfg.ki.name == "Nova" and cfg.ki.bedeutung == "Neugierige, Offene, Vernetzte Assistenz"
+    (tmp_path / "config").mkdir(exist_ok=True)
+    (tmp_path / "config" / "settings.toml").write_text('[ki]\nname = "Aria"\n', encoding="utf-8")
+    assert load_config(tmp_path).ki.name == "Nova"          # alter Standard -> neuer Name
+    (tmp_path / "config" / "settings.toml").write_text('[ki]\nname = "Max"\n', encoding="utf-8")
+    assert load_config(tmp_path).ki.name == "Max"           # selbst gewaehlter Name bleibt
+
+
+def test_name_command_saves_name_and_meaning(tmp_path, monkeypatch):
+    c = _cli(tmp_path, [], monkeypatch)
+    c._name_command("JONA = Jederzeit Online, Nachdenkend, Aufmerksam")
+    cfg = load_config(tmp_path)
+    assert cfg.ki.name == "JONA" and cfg.ki.bedeutung.startswith("Jederzeit")
+
+
+def test_system_prompt_knows_name_and_meaning(tmp_path):
+    from assistant.memory import Memory
+    from assistant.personality import build_system_prompt
+
+    mem = Memory(tmp_path / "m.sqlite3")
+    prompt = build_system_prompt(load_config(tmp_path), mem)
+    assert "Du bist Nova (Neugierige, Offene, Vernetzte Assistenz)" in prompt
+    mem.close()

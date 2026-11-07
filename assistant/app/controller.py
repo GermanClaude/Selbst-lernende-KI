@@ -50,6 +50,7 @@ COMMANDS = [
     ("/erlauben alles", "nie mehr nachfragen"),
     ("/erlauben fragen", "wieder nachfragen"),
     ("/verknuepfung", "Symbol fuer die App auf den Desktop"),
+    ("/name", "der KI einen anderen Namen geben"),
     ("/sprache", "Stand der Spracheingabe"),
     ("/sprache einrichten", "Spracheingabe installieren"),
     ("/hilfe", "alle Befehle"),
@@ -112,6 +113,7 @@ class AppController(CLI):
         problem = self.voice_capture.problem() if self.config.voice.f2_aufnahme else None
         return {
             "name": self.config.ki.name,
+            "meaning": self.config.ki.bedeutung,
             "version": __version__,
             "provider": self.config.active_provider,
             "model": self.config.active_model,
@@ -255,9 +257,10 @@ class AppController(CLI):
         if text.split()[0].lower() == "/app":
             print("Du bist schon in der App.")
             return None
-        if self._handle_command(text):  # /beenden, oder Neustart nach Update
-            return self.exit_code
-        return None
+        quit_now = self._handle_command(text)  # /beenden, oder Neustart nach Update
+        if text.split()[0].lower() == "/name":
+            self._state_changed()  # neuer Name gleich in der Seitenleiste
+        return self.exit_code if quit_now else None
 
     def _answer(self, text: str) -> None:
         self.history.append({"role": "user", "text": text})

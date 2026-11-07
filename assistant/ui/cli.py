@@ -16,6 +16,7 @@ Sonderbefehle (mit '/' beginnen):
   /versionen          - gesicherte alte Versionen anzeigen
   /zurueck <Nr>       - zu einer gesicherten alten Version zurueckkehren
   /autostart          - zeigen, was die KI automatisch startet (und es abstellen)
+  /name <Name> [= Bedeutung] - der KI einen anderen Namen geben
   /app                - zur App wechseln (eigenes Fenster statt Terminal)
   /verknuepfung       - Symbol fuer die App auf den Desktop legen
   /erlauben alles     - nie mehr nachfragen, alles erlauben (dauerhaft)
@@ -183,6 +184,29 @@ class CLI:
         else:
             print(_c(f"[Ab jetzt frage ich vor jeder Aktion wieder nach ({where}).]", GREEN))
 
+    def _name_command(self, text: str) -> None:
+        """'/name Max' oder '/name MAX = Mein Assistent X' - dauerhaft speichern."""
+        name, _, meaning = text.partition("=")
+        name, meaning = name.strip().strip('"'), meaning.strip().strip('"')
+        if not name:
+            k = self.config.ki
+            print(_c(f"Ich heisse {k.name}" + (f" ({k.bedeutung})" if k.bedeutung else "")
+                     + ". Aendern: /name Neuer Name = Bedeutung", CYAN))
+            return
+        if len(name) > 40 or any(c in name for c in '\n"\\'):
+            print(_c("Bitte einen kurzen Namen ohne Anfuehrungszeichen.", YELLOW))
+            return
+        meaning = meaning.replace('"', "'")
+        self.config.ki.name, self.config.ki.bedeutung = name, meaning
+        try:
+            save_setting(self.config.project_root, "ki", "name", f'"{name}"')
+            save_setting(self.config.project_root, "ki", "bedeutung", f'"{meaning}"')
+        except Exception as exc:  # noqa: BLE001
+            print(_c(f"Konnte den Namen nicht speichern: {exc}", YELLOW))
+            return
+        print(_c(f"Ich heisse jetzt {name}" + (f" ({meaning})" if meaning else "")
+                 + ". Im Gespraech wirkt der neue Name ab dem naechsten Start ganz.", GREEN))
+
     def _switch_to_app(self) -> bool:
         from ..app.launcher import spawn_app
 
@@ -344,6 +368,8 @@ class CLI:
             self._allow_command(cmd.split()[1:])
         elif base == "/app":
             return self._switch_to_app()
+        elif base == "/name":
+            self._name_command(cmd.split(None, 1)[1] if len(cmd.split(None, 1)) > 1 else "")
         elif base in ("/verknuepfung", "/verknüpfung"):
             self._shortcut_command()
         else:
@@ -622,7 +648,8 @@ class CLI:
 
     def _print_banner(self) -> None:
         name = self.config.ki.name
-        print(_c(f"\n=== {name} - deine lernfaehige KI ===", BOLD))
+        meaning = self.config.ki.bedeutung.strip()
+        print(_c(f"\n=== {name}{' - ' + meaning if meaning else ' - deine lernfaehige KI'} ===", BOLD))
         print(
             _c(
                 f"Gehirn: {self.config.active_provider} ({self.config.active_model})"

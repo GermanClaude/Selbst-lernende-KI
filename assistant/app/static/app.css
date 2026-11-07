@@ -142,6 +142,7 @@ button:disabled { cursor: default; }
 /* Symbole */
 .ic { display: inline-flex; flex: none; width: 1.15em; height: 1.15em; }
 .ic svg {
+  display: block;
   width: 100%; height: 100%;
   fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
 }
@@ -179,7 +180,7 @@ button:disabled { cursor: default; }
 .sb-id { min-width: 0; flex: 1; }
 .sb-name { font-size: 17px; font-weight: 650; letter-spacing: -.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sb-version { font-size: 12.5px; color: var(--text-3); }
-.sb-close { display: none; }
+.sb-head .sb-close { display: none; }
 
 .avatar {
   display: grid; place-items: center; flex: none;
@@ -303,7 +304,7 @@ button:disabled { cursor: default; }
   border-bottom: 1px solid var(--border);
   background: var(--bg);
 }
-.menu-btn { display: none; position: relative; }
+.topbar .menu-btn { display: none; position: relative; }
 .menu-dot {
   position: absolute; top: 7px; right: 7px;
   width: 8px; height: 8px; border-radius: 50%;
@@ -377,7 +378,7 @@ button:disabled { cursor: default; }
   min-height: 100%;
   display: flex; flex-direction: column;
 }
-.messages { display: flex; flex-direction: column; gap: 18px; }
+.messages { display: flex; flex-direction: column; gap: 16px; }
 
 /* Leerer Zustand */
 .empty {
@@ -451,7 +452,7 @@ button:disabled { cursor: default; }
 /* Fusszeile unter der KI-Blase */
 .meta {
   display: flex; align-items: center; gap: 6px;
-  min-height: 26px; padding: 3px 4px 0;
+  min-height: 24px; margin-bottom: -6px; padding: 2px 4px 0;
   font-size: 12px; color: var(--text-3);
 }
 .meta:empty { display: none; }
@@ -614,8 +615,21 @@ button:disabled { cursor: default; }
 .md li > ul, .md li > ol { margin: .2em 0 .25em; }
 .md li::marker { color: var(--text-3); }
 .md ol > li::marker { font-variant-numeric: tabular-nums; font-weight: 600; }
-.md li.task { list-style: none; margin-left: -1.3em; }
-.md li.task input { margin: 0 .45em 0 0; vertical-align: -2px; accent-color: var(--accent); }
+.md li.task { list-style: none; margin-left: -1.35em; }
+.md .task-box {
+  display: inline-block; position: relative;
+  width: 15px; height: 15px; margin-right: .55em; vertical-align: -2px;
+  border: 1.5px solid var(--border-strong); border-radius: 4px;
+  background: var(--surface);
+}
+.md .task-box.done { background: var(--accent); border-color: var(--accent); }
+.md .task-box.done::after {
+  content: ""; position: absolute; left: 4px; top: 1px;
+  width: 4px; height: 8px;
+  border: solid #fff; border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.md li.task.done-item { color: var(--text-2); }
 .md a { color: var(--accent-text); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 2px; }
 .md a:hover { text-decoration-thickness: 2px; }
 .md strong { font-weight: 650; }
@@ -741,6 +755,7 @@ kbd {
 .voice-bar .rec-dot { width: 9px; height: 9px; border-radius: 50%; background: #ef4444; animation: pulse-dot 1s ease-in-out infinite; }
 .voice-bar .rec-time { font-variant-numeric: tabular-nums; }
 .voice-bar .rec-help { font-weight: 400; color: var(--text-3); }
+.voice-bar .rec-spin { width: 12px; height: 12px; }
 .voice-bar.recognizing { color: var(--accent-text); }
 
 /* Befehlsvorschlaege */
@@ -837,6 +852,7 @@ kbd {
 .dlg-icon .ic { width: 22px; height: 22px; }
 .dlg-titles { min-width: 0; }
 .dlg-title { margin: 0; font-size: 17.5px; font-weight: 650; letter-spacing: -.01em; }
+.dlg-risk:empty { display: none; }
 .dlg-risk {
   display: inline-block; margin-top: 3px;
   font-size: 12px; font-weight: 600; letter-spacing: .03em; text-transform: uppercase;
@@ -929,8 +945,8 @@ kbd {
     transition: opacity .2s;
   }
   .app.sb-open .scrim { opacity: 1; pointer-events: auto; }
-  .sb-close { display: inline-grid; }
-  .menu-btn { display: inline-grid; }
+  .sb-head .sb-close { display: inline-grid; }
+  .topbar .menu-btn { display: inline-grid; }
   .topbar { padding: 0 10px 0 8px; gap: 6px; }
   .tb-name { display: inline; }
   .model-chip { display: none; }
@@ -949,5 +965,6 @@ kbd {
   .empty h1 { font-size: 23px; }
   .dlg-foot { flex-direction: column-reverse; align-items: stretch; }
   .dlg-foot .btn { width: 100%; }
+  .dlg-keys { display: none; }
   .status #status-text { font-size: 12.5px; }
 }

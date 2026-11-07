@@ -153,6 +153,11 @@
       if (cut >= 0) { tail = url.slice(cut); url = url.slice(0, cut); }
       const t = url.match(/[.,;:!?)\]*_~]+$/);
       if (t) { tail = t[0] + tail; url = url.slice(0, -t[0].length); }
+      // ")" am Ende gehoert zur Adresse, wenn sie eine "(" enthaelt, z.B. Wikipedia
+      while (tail.startsWith(')') && (url.split('(').length > url.split(')').length)) {
+        url += ')';
+        tail = tail.slice(1);
+      }
       if (!/^https?:\/\/[^/]/.test(url)) return m;
       return keep(link(url, url)) + tail;
     });
@@ -269,7 +274,9 @@
       }
       const task = it.text.match(/^\[([ xX])\]\s+([\s\S]*)$/);
       if (task) {
-        html += '<li class="task"><input type="checkbox" disabled' + (task[1] === ' ' ? '' : ' checked') + '>' + mdInline(task[2]);
+        const done = task[1] !== ' ';
+        html += '<li class="task' + (done ? ' done-item' : '') + '"><span class="task-box' + (done ? ' done' : '') +
+          '" role="img" aria-label="' + (done ? 'erledigt' : 'offen') + '"></span>' + mdInline(task[2]);
       } else {
         html += '<li>' + mdInline(it.text);
       }
@@ -591,12 +598,18 @@
   // Scrollen: unten bleiben, ausser der Nutzer hat hochgescrollt
   // =====================================================================
   let stick = true;
+  let lastTop = 0;
   const jumpBtn = byId('jump');
   const distBottom = () => scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
   scroller.addEventListener('scroll', () => {
-    stick = distBottom() < 70;
+    // Nur echtes Hochscrollen loest das Mitlaufen – waechst der Inhalt, bleibt es an
+    const top = scroller.scrollTop;
+    if (distBottom() < 70) stick = true;
+    else if (top < lastTop - 2) stick = false;
+    lastTop = top;
     if (stick) jumpBtn.hidden = true;
   }, { passive: true });
+  scroller.addEventListener('wheel', (e) => { if (e.deltaY < 0 && distBottom() > 4) stick = false; }, { passive: true });
   let scrollQueued = false;
   function toBottom(force) {
     if (force) stick = true;
@@ -604,7 +617,10 @@
     scrollQueued = true;
     requestAnimationFrame(() => {
       scrollQueued = false;
-      if (stick) scroller.scrollTop = scroller.scrollHeight;
+      if (stick) {
+        scroller.scrollTop = scroller.scrollHeight;
+        lastTop = scroller.scrollTop;
+      }
     });
   }
   function keepBottom() {
@@ -1229,11 +1245,13 @@
         ? 'Nochmal drücken (oder F2) = fertig · Esc bricht ab'
         : 'Loslassen = fertig · Esc bricht ab';
       bar.querySelector('.rec-dot').hidden = false;
+      bar.querySelector('.rec-spin').hidden = true;
     } else if (recognizing) {
       byId('voice-label').textContent = 'Ich erkenne, was du gesagt hast …';
       byId('voice-time').textContent = '';
       byId('voice-help').textContent = '';
       bar.querySelector('.rec-dot').hidden = true;
+      bar.querySelector('.rec-spin').hidden = false;
     }
     if ((recording || recognizing) && !voice.timer) {
       voice.timer = setInterval(() => {
