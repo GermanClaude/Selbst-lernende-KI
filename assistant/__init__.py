@@ -7,8 +7,12 @@ Module:
     tools        - Werkzeuge (Dateien, Shell, Web, System, Computer)
     personality  - baut den System-Prompt aus Persona + Werte + Gedaechtnis
     brain        - Anbindung an das Claude-Modell + Agenten-Loop
-    voice        - optionale Sprachein-/-ausgabe
+    voice        - optionale Sprachein-/-ausgabe (F2-Sprechtaste)
+    updater      - automatische Updates aus dem GitHub-Repo, alte Versionen sichern
     ui.cli       - die Chat-Oberflaeche (Tastatur)
+
+Version: bei jeder Aenderung, die Nutzer bekommen sollen, __version__ erhoehen und
+CHANGELOG.md ergaenzen - daran erkennt der Updater neue Versionen.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.4.0"

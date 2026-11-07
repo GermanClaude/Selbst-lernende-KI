@@ -18,7 +18,7 @@ class FakeProvider(LLMProvider):
         self.reset_called = False
         self.usage = Usage(input_full_tokens=100, cache_hit_tokens=50, output_tokens=25)
 
-    def respond(self, user_text, on_text=None, max_tool_rounds=25):
+    def respond(self, user_text, on_text=None, max_tool_rounds=25, announce_limit=True):
         self._len += 2
         if on_text:
             on_text("Antwort")

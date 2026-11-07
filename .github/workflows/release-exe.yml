@@ -1,0 +1,71 @@
+# Baut bei jeder neuen Version auf dem Standard-Branch KI.exe + KI-App.exe und
+# veroeffentlicht sie als GitHub-Release "v<Version>". Die KI.exe-Updater laden
+# sie von dort. Neue Version = __version__ in assistant/__init__.py erhoehen.
+name: KI.exe bauen und veroeffentlichen
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# Laeufe nacheinander: der zweite sieht dann das fertige Release und ueberspringt.
+concurrency:
+  group: release-exe-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    # Nur der Standard-Branch erzeugt Versionen - andere Branches sind Entwuerfe.
+    if: github.ref_name == github.event.repository.default_branch
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Version bestimmen
+        id: version
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(python packaging/release_notes.py --version | tr -d '\r')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if gh release view "v$VERSION" > /dev/null 2>&1; then
+            echo "Version v$VERSION gibt es schon - nichts zu tun."
+            echo "neu=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "neu=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Pakete installieren
+        if: steps.version.outputs.neu == 'true'
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller pywebview sounddevice SpeechRecognition pyttsx3 pyautogui pillow
+
+      - name: Live-Mitschrift (vosk) dazu
+        if: steps.version.outputs.neu == 'true'
+        continue-on-error: true
+        shell: bash
+        run: pip install vosk || pip install --use-pep517 vosk
+
+      - name: KI.exe und KI-App.exe bauen
+        if: steps.version.outputs.neu == 'true'
+        run: pyinstaller packaging/ki.spec --noconfirm
+
+      - name: Release veroeffentlichen
+        if: steps.version.outputs.neu == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python packaging/release_notes.py > notes.md
+          gh release create "v${{ steps.version.outputs.version }}" dist/KI.exe dist/KI-App.exe \
+            --title "Version ${{ steps.version.outputs.version }}" \
+            --notes-file notes.md \
+            --target "${{ github.sha }}"

@@ -3,7 +3,9 @@
 #  Startet die KI direkt (ohne Build). Fuer Linux/macOS.
 # ============================================================
 set -e
-cd "$(dirname "$0")"
+# Absoluter Pfad dieses Skripts - fuer den Neustart nach einem Update.
+SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
+cd "$(dirname "$SELF")"
 
 # --- 1) Python vorhanden? ---
 if ! command -v python3 >/dev/null 2>&1; then
@@ -18,10 +20,17 @@ if [ ! -d .venv ]; then
   # shellcheck disable=SC1091
   source .venv/bin/activate
   python -m pip install --upgrade pip >/dev/null
-  pip install -r requirements.txt
+  pip install -r requirements.txt && cp requirements.txt .venv/requirements.installiert.txt
 else
   # shellcheck disable=SC1091
   source .venv/bin/activate
+fi
+
+# Hat ein Update requirements.txt geaendert (oder ist eine Installation
+# gescheitert), die Pakete jetzt nachinstallieren.
+if ! cmp -s requirements.txt .venv/requirements.installiert.txt; then
+  echo "Installiere neue Pakete..."
+  pip install -r requirements.txt && cp requirements.txt .venv/requirements.installiert.txt || true
 fi
 
 # --- 3) Einstellungsdatei anlegen ---
@@ -39,7 +48,29 @@ if [ ! -f .env ]; then
   "${EDITOR:-nano}" .env || true
 fi
 
+# --- 5a) Als App: ./start.sh app ---
+if [ "${1:-}" = "app" ]; then
+  nohup python -m assistant --app >/dev/null 2>&1 &
+  exit 0
+fi
+
 # --- 5) Los geht's ---
+# Die Schleife wird komplett eingelesen, bevor sie laeuft - ein Update darf diese
+# Datei also ersetzen. Rueckgabecode 42 = Update installiert -> neu starten.
 echo
 echo "Starte die KI..."
-python -m assistant
+export KI_NEUSTART=1
+while true; do
+  set +e
+  python -m assistant
+  code=$?
+  set -e
+  if [ "$code" -eq 43 ]; then
+    exit 0  # laeuft schon in einem anderen Fenster
+  fi
+  if [ "$code" -ne 42 ]; then
+    exit "$code"
+  fi
+  echo
+  exec bash "$SELF"
+done

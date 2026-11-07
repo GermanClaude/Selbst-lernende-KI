@@ -159,8 +159,27 @@ Standardmäßig ist **Claude** eingestellt. Für **DeepSeek** (billig):
 | `/status` | zeigt Gehirn, Modell und Sicherheitslage |
 | `/kosten` | zeigt Token-Verbrauch und geschätzte Kosten der Sitzung |
 | `/gedaechtnis` | zeigt, was die KI gelernt hat |
-| `/sprache` | Sprachsteuerung an/aus (falls eingerichtet) |
+| `/sprache einrichten` | Spracheingabe per F2 einrichten (einmalig) |
+| `/update` | nach einer neuen Version schauen |
+| `/versionen` / `/zurueck <Nr>` | alte Versionen anzeigen / zurückholen |
+| `/autostart` | zeigen und abstellen, was die KI von selbst startet |
+| `/erlauben alles` | nie mehr nachfragen (bei einer Rückfrage geht auch **a**) |
 | `/beenden` | Sitzung beenden |
+
+**Sprechen statt tippen:** einmal `/sprache einrichten` eingeben. Danach
+**F2 gedrückt halten** und sprechen (loslassen = fertig) – oder **F2 kurz
+drücken**, sprechen, **nochmal F2**. Der Text erscheint in der Eingabezeile,
+dann Enter.
+
+**Einfach reden wie mit Jarvis:** `/jarvis` eingeben (in der App: Knopf
+**Jarvis-Modus**). Jetzt einfach sprechen – Nova schreibt mit, während du redest,
+antwortet laut und hört dann wieder zu. Du kannst sie jederzeit unterbrechen.
+Zurück zum Tippen: „Chat-Modus“ sagen. Beim ersten Mal lädt sie einmalig ein
+deutsches Sprachmodell (~50 MB) – das dauert kurz.
+
+**Updates kommen von allein:** Einmal am Tag schaut die KI nach einer neuen
+Version, erklärt dir, was neu ist, sichert die alte Version und startet neu.
+Deine Schlüssel, Einstellungen und das Gedächtnis bleiben dabei erhalten.
 
 ---
 
@@ -186,10 +205,32 @@ pip install pyautogui pillow
 
 ---
 
+## Nova einstellen: Charakter, Stil, Über mich
+
+In der App: links auf **„Charakter & Profil“**. Dort wählst du einen Charakter
+(z.B. Butler, Kumpel, Mentor), stellst du/Sie, Antwortlänge, Humor und Emojis ein
+und trägst unter **„Über mich“** ein, was Nova über dich wissen soll. Im Terminal
+geht das mit `/charakter`, `/stil` und `/ueber-mich`. Danach **`/neu`** – dann
+gilt es sofort.
+
+## Als App statt im Terminal
+
+Doppelklick auf **`start-app.bat`** (oder **`KI-App.exe`**) – die KI öffnet sich
+als eigenes Programm mit Fenster und Knöpfen statt im schwarzen Terminal. Es öffnet
+sich kein Browser. Alles andere bleibt gleich (Gedächtnis,
+Einstellungen, Updates). Tipp: im Chat `/verknuepfung` eingeben, dann liegt ein
+Symbol auf dem Desktop. Das Terminal gibt es weiterhin mit `start.bat`.
+
 ## Schritt 8 (freiwillig) – Eine `.exe` zum Doppelklicken bauen
 
 Doppelklick auf `packaging\build.bat`. Nach ein paar Minuten liegt die Datei
 **`dist\KI.exe`** bereit.
+
+Die `.exe` im `dist`-Ordner benutzt deine `.env` und `config\settings.toml` aus
+dem Projektordner – du musst nichts kopieren. Ziehst du `KI.exe` woandershin
+(z.B. auf den Desktop), legt sie dort beim ersten Start eine eigene `.env` und
+`config\` an; trag dann dort deinen Schlüssel ein. Im Chat zeigt `/status`, welche
+Dateien sie gerade liest.
 
 ---
 
@@ -225,6 +266,27 @@ falsch kopiert. Guthaben prüfen, Schlüssel neu kopieren.
 **DeepSeek-Modell wird nicht gefunden** → In `config/settings.toml` unter
 `[deepseek]` `model` von `deepseek-chat` auf `deepseek-flash` oder
 `deepseek-v4-pro` ändern.
+
+**Die KI öffnet sich immer wieder von selbst** → Im KI-Fenster `/autostart`
+eingeben. Es zeigt, was sie automatisch startet (oft hat sie sich selbst in die
+Windows-Aufgabenplanung eingetragen), und `/autostart entfernen alle` stellt es ab.
+Seit Version 0.3.0 fragt sie vorher immer nach, bevor sie so etwas einrichtet.
+
+**Die KI scheint zu hängen** → Steht „denkt nach (… s)“ da, arbeitet sie noch.
+Mit **Strg+C** hältst du die Antwort an, ohne die KI zu schließen.
+
+**Die KI liest beim Programmieren nur Dateien, zeigt die Kostenzeile und macht
+nichts** → Ab dieser Version hält sie nach `max_werkzeug_runden` Schritten mit
+einem Hinweis an – schreib dann einfach **„weiter“**. Wenn deine
+`config/settings.toml` noch aus einer älteren Version stammt, prüfe dort:
+`[sparsam] verlauf_kompakt_nach` sollte nicht zu klein sein (Standard 24 – zählt
+jetzt nur deine Nachrichten), und bei DeepSeek `[deepseek] max_tokens = 8192`
+(mit 2048 werden große Dateien beim Schreiben abgeschnitten).
+
+**`UnicodeDecodeError: 'charmap' codec can't decode byte 0x81`** → In älteren
+Versionen hat das Shell-Werkzeug Umlaute in der Ausgabe von Windows-Befehlen
+falsch gelesen. Ist behoben. Ohne Update hilft: im Projektordner `cmd` öffnen,
+`chcp 1252` eingeben und dann `start.bat` starten.
 
 **Wo finde ich `.env`?** Direkt im Projektordner. Falls du sie nicht siehst:
 im Explorer oben **Ansicht → Anzeigen → Dateinamenerweiterungen** und

@@ -84,8 +84,15 @@ python -m assistant
 ```bat
 packaging\build.bat
 ```
-Danach liegt die fertige Datei unter `dist\KI.exe`. Doppelklick startet die KI
-in einem Konsolenfenster. (Unter Linux/macOS: `packaging/build.sh` → `dist/KI`.)
+Danach liegen zwei Programme in `dist\`: **`KI.exe`** (im Terminal) und
+**`KI-App.exe`** (eigenes Programmfenster). (Unter Linux/macOS: `packaging/build.sh` → `dist/KI`.)
+
+Wo die `.exe` ihre Dateien sucht:
+- Liegt sie im `dist`-Ordner des Projekts, nutzt sie `.env`, `config\`, `data\`
+  und `workspace\` des **Projektordners** – also dasselbe Gedächtnis wie `start.bat`.
+- Kopierst du sie woandershin, nutzt sie den **Ordner der `.exe`** und legt dort
+  beim ersten Start `.env` und `config\settings.toml` an.
+- `/status` im Chat zeigt, welche Einstellungs- und Schlüssel-Datei sie gerade liest.
 
 > Hinweis: Eine Windows-`.exe` muss **auf Windows** gebaut werden. Der Code ist
 > plattformübergreifend; die Build-Skripte gibt es für beide Welten.
@@ -193,18 +200,109 @@ Für einen echten „macht alles von allein“-Modus zusätzlich `auto_confirm =
 
 ---
 
-## Sprachsteuerung aktivieren (optional)
+## Sprechen per F2
 
-```bash
-pip install SpeechRecognition pyttsx3 sounddevice
+- **F2 gedrückt halten** und sprechen – loslassen, fertig.
+- Oder **F2 kurz drücken**: „Mikrofon AN“ erscheint, sprich so lange du willst,
+  dann **nochmal F2** (Esc bricht ab).
+- Der erkannte Text steht danach in der Eingabezeile – prüfen, ggf. korrigieren,
+  **Enter**.
+
+Einmalig einrichten – im Chat:
 ```
-Dann in `config/settings.toml`:
-```toml
-[voice]
-enabled = true
-speak_responses = true
+/sprache einrichten
 ```
-Im Chat schaltet `/sprache` den Sprachmodus an/aus.
+Das installiert `sounddevice` und `SpeechRecognition` (Erkennung über Google,
+online, kostenlos). Offline-Erkennung: zusätzlich `pip install faster-whisper`
+(beim ersten Sprechen wird das Modell geladen). Einstellungen unter `[voice]`.
+Antworten vorlesen lassen: `/sprache vorlesen` (braucht `pip install pyttsx3`).
+
+## Jarvis-Modus: einfach reden (live)
+
+`/jarvis` (oder in der App der Knopf **Jarvis-Modus**) – und du redest einfach mit
+Nova, ganz ohne Tastatur. Zurück: „Chat-Modus“ sagen, Esc oder Strg+C.
+
+So schnell wie möglich:
+- **Live-Mitschrift:** Nova schreibt mit, *während* du sprichst (Vosk, offline,
+  kostenlos – das deutsche Modell, ~50 MB, lädt sie beim ersten Mal selbst nach
+  `data/sprachmodelle/`).
+- **Kurze Sprechpause genügt** (Standard 0,6 s). Endet der Satz auf „und“, „weil“
+  o.ä., wartet sie etwas länger.
+- **Sie spricht ab dem ersten fertigen Satz**, während der Rest der Antwort noch
+  entsteht.
+- **Unterbrechen:** Fang einfach an zu reden – sie hört sofort auf (mit Kopfhörer
+  am zuverlässigsten). „Stopp“ hält auch eine laufende Aufgabe an.
+- **Nachtrag:** „Wie wird das Wetter morgen?“ … „in Berlin“ wird zu einer Frage.
+- **Rückfragen** beantwortest du mit „ja“, „immer“ oder „nein“.
+- Claude denkt im Sprachmodus weniger tief nach (`live_denktiefe = "low"`), damit
+  die Antwort schneller kommt.
+
+Ehrlich: Ganz ohne Wartezeit wie bei Gemini Live geht es nicht – Gemini hört und
+spricht direkt, DeepSeek und Claude verstehen nur Text. Bis Nova anfängt zu
+sprechen, vergehen meist 1–2 Sekunden. Einstellungen unter `[voice]`
+(`pause`, `unterbrechen`, `live_mitschrift`, `live_genau`, `live_denktiefe`).
+
+## Charakter & Profil
+
+Wie Nova sein soll, stellst du selbst ein – in der App unter **„Charakter &
+Profil“**, im Terminal mit Befehlen:
+
+| Befehl | Wirkung |
+|--------|---------|
+| `/charakter` | Charaktere zeigen; `/charakter butler` wählt einen (freundlich, sachlich, butler, mentor, kumpel, kreativ, coach) |
+| `/stil` | z.B. `/stil anrede Sie`, `/stil laenge kurz`, `/stil humor viel`, `/stil emojis an` |
+| `/ueber-mich` | was Nova über dich weiß; ändern z.B. `/ueber-mich projekte = SCP-Spiel` |
+| `/werte bearbeiten` | deine Regeln für Nova im Editor öffnen |
+| `/neu` | neues Gespräch – Änderungen gelten sofort |
+
+Die Persönlichkeit steht in `config/persona.md` (beim Wählen eines Charakters wird
+die alte in `data/persona-sicherungen/` gesichert), „Über mich“ in
+`config/ueber_mich.json`. Updates fassen beides nie an.
+
+## Als App oder im Terminal
+
+- **`start-app.bat`** bzw. **`KI-App.exe`** – die KI als eigenes Programm mit
+  eigenem Fenster (kein Browser; unter Windows zeigt die eingebaute Komponente
+  WebView2 die Oberfläche an – wie bei Teams oder Discord). Linux/macOS: `./start.sh app`.
+- **`start.bat`** bzw. **`KI.exe`** – wie bisher im Terminal.
+- Im Terminal wechselt `/app` in die App; `/verknuepfung` legt ein Desktop-Symbol an.
+  Mit `oberflaeche = "app"` unter `[ki]` öffnet auch `start.bat` die App.
+- Die App läuft nur lokal (`127.0.0.1`, mit geheimem Schlüssel in der Adresse) –
+  niemand sonst im Netz kann sie erreichen. Fenster zu = KI beendet.
+
+## Agenten, Durcharbeiten und Selbstkontrolle
+
+- Große Aufgaben gibt die KI teilweise an **Agenten** ab – eigene KI-Sitzungen mit
+  frischem Kopf: `recherche` (sucht und fasst zusammen, ändert nichts), `helfer`
+  (erledigt eine Teilaufgabe), `pruefer` (sucht kritisch nach Fehlern, ändert
+  nichts). Im Chat siehst du `>> Agent 'recherche' startet …`. Für Agenten gelten
+  dieselben Werte (`werte.md`) und Berechtigungen.
+- Am Schritt-Limit (`max_werkzeug_runden`) arbeitet sie bis zu
+  `automatisch_weiter`-mal von selbst weiter.
+- Vor dem Abschluss größerer Arbeiten prüft sie ihr Ergebnis selbst.
+- **Strg+C** hält die laufende Antwort an, ohne die KI zu beenden.
+
+## Automatische Updates
+
+Einmal am Tag schaut die KI im GitHub-Repo nach einer neuen Version. Gibt es eine,
+erklärt dir deine KI (Claude oder DeepSeek) in eigenen Worten, was neu ist, und
+installiert sie – die bisherige Version wird vorher im Ordner `versionen\`
+gesichert. Danach startet sie von selbst neu (über `start.bat` / `start.sh`).
+
+- `/update` – sofort nachschauen
+- `/versionen` – gesicherte alte Versionen anzeigen
+- `/zurueck <Nr>` – zu einer alten Version zurück (automatische Updates pausieren
+  dann, bis du wieder `/update` eingibst)
+
+Deine Daten bleiben bei jedem Update unangetastet: `.env`, `config\settings.toml`,
+`config\persona.md`, `config\werte.md`, Gedächtnis (`data\`) und Arbeitsordner.
+Einstellen unter `[update]` (`modus = "automatisch" | "fragen" | "aus"`).
+Die `KI.exe` holt sich neue Versionen aus den GitHub-Releases.
+
+**Neue Version veröffentlichen:** in `assistant/__init__.py` die `__version__`
+erhöhen, in `CHANGELOG.md` oben einen Abschnitt dazu schreiben und auf den
+Standard-Branch bringen. Alle Installationen holen sie sich dann selbst; die
+GitHub-Action baut dazu automatisch eine neue `KI.exe`.
 
 ## PC-Steuerung (Maus/Tastatur) aktivieren (optional)
 
@@ -224,7 +322,18 @@ stoppt die Steuerung sofort.
 | `/status` | Einstellungen & Sicherheitslage zeigen |
 | `/gedaechtnis` | anzeigen, was die KI gelernt hat |
 | `/kosten` | Token-Verbrauch & geschätzte Kosten dieser Sitzung |
-| `/sprache` | Sprachmodus an/aus |
+| `/sprache` | Stand der Spracheingabe (F2) |
+| `/sprache einrichten` | Spracheingabe installieren |
+| `/sprache vorlesen` | Antworten vorlesen an/aus |
+| `/jarvis` | Jarvis-Modus: einfach reden, live (zurück: „Chat-Modus“ sagen) |
+| `/update` | jetzt nach einer neuen Version schauen |
+| `/versionen` | gesicherte alte Versionen anzeigen |
+| `/zurueck <Nr>` | zu einer alten Version zurückkehren |
+| `/autostart` | zeigen (und abstellen), was die KI automatisch startet |
+| `/app` | zur App wechseln (eigenes Fenster) |
+| `/verknuepfung` | Desktop-Symbol für die App anlegen |
+| `/erlauben alles` | nie mehr nachfragen, alles erlauben (dauerhaft) |
+| `/erlauben fragen` | wieder vor jeder Aktion nachfragen |
 | `/beenden` | Sitzung beenden (speichert eine Zusammenfassung) |
 
 ---
@@ -243,7 +352,10 @@ assistant/
     base.py          Token-/Kostenzählung, Werkzeug-Hilfen
     anthropic_provider.py   Claude
     deepseek_provider.py    DeepSeek (OpenAI-kompatibel)
-  voice.py         optionale Sprachein-/-ausgabe
+  voice.py         Sprachein-/-ausgabe (F2-Sprechtaste)
+  live.py          Jarvis-Modus: durchgehend zuhoeren, live mitschreiben, unterbrechen
+  updater.py       automatische Updates + gesicherte alte Versionen
+  app/             die KI als App: Server, Fenster, Oberflaeche (static/)
   tools/           Werkzeuge: Dateien, Shell, Web, System, Gedächtnis, PC
   ui/cli.py        die Chat-Oberfläche
 config/            persona.md, werte.md, settings(.example).toml

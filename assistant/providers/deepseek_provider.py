@@ -11,7 +11,17 @@ import json
 from typing import Any
 
 from ..logging_setup import get_logger
-from .base import LLMProvider, StreamFn
+from .base import (
+    CONNECT_TIMEOUT,
+    LIMIT_NOTE,
+    READ_TIMEOUT,
+    SUMMARY_INSTRUCTION,
+    TRUNCATED_NOTE,
+    TRUNCATED_TOOL_ERROR,
+    LLMProvider,
+    StreamFn,
+    summary_input,
+)
 
 logger = get_logger()
 
@@ -27,6 +37,7 @@ class DeepSeekProvider(LLMProvider):
 
     def __init__(self, *args: Any, **kwargs: Any):
         super().__init__(*args, **kwargs)
+        self._finish_reason: str | None = None
         # OpenAI-Format: System-Prompt ist die erste Nachricht.
         self.messages: list[dict[str, Any]] = [{"role": "system", "content": self.system_prompt}]
         if self.client is None:
@@ -40,10 +51,25 @@ class DeepSeekProvider(LLMProvider):
         key = self.config.deepseek_api_key
         if not key:
             return None
-        return OpenAI(api_key=key, base_url=self.config.deepseek.base_url)
+        from openai import Timeout
+
+        return OpenAI(
+            api_key=key,
+            base_url=self.config.deepseek.base_url,
+            timeout=Timeout(READ_TIMEOUT, connect=CONNECT_TIMEOUT),
+            max_retries=3,
+        )
 
     # -- Hauptschleife ------------------------------------------------------
-    def respond(self, user_text: str, on_text: StreamFn | None = None, max_tool_rounds: int = 25) -> str:
+    def respond(
+        self,
+        user_text: str,
+        on_text: StreamFn | None = None,
+        max_tool_rounds: int | None = None,
+        announce_limit: bool = True,
+        allow_tools: bool = True,
+    ) -> str:
+        self.hit_limit = False
         if self.client is None:
             if on_text:
                 on_text(_INSTALL_HINT)
@@ -51,13 +77,17 @@ class DeepSeekProvider(LLMProvider):
 
         self.messages.append({"role": "user", "content": user_text})
         final_parts: list[str] = []
+        rounds = self._rounds(max_tool_rounds)
 
-        for _ in range(max_tool_rounds):
-            text, tool_calls = self._one_turn(on_text)
+        for _ in range(rounds):
+            self._finish_reason = None
+            self._waiting()
+            text, tool_calls = self._one_turn(on_text, tool_choice="auto" if allow_tools else "none")
             if text is None:
                 return "Es gab ein Problem bei der Verbindung zu DeepSeek."
             if text:
                 final_parts.append(text)
+                self.last_text = text
 
             # Assistenten-Nachricht (OpenAI-Format) anhaengen.
             assistant_msg: dict[str, Any] = {"role": "assistant", "content": text or ""}
@@ -66,43 +96,68 @@ class DeepSeekProvider(LLMProvider):
                     {
                         "id": tc["id"],
                         "type": "function",
-                        "function": {"name": tc["name"], "arguments": tc["arguments"]},
+                        # Abgeschnittenes JSON nicht zurueckschicken (koennte die API ablehnen).
+                        "function": {
+                            "name": tc["name"],
+                            "arguments": _valid_json_or_empty(tc["arguments"]),
+                        },
                     }
                     for tc in tool_calls
                 ]
             self.messages.append(assistant_msg)
 
             if not tool_calls:
+                if self._finish_reason == "length":
+                    final_parts.append(TRUNCATED_NOTE.strip())
+                    if on_text:
+                        on_text(TRUNCATED_NOTE)
                 break
 
             for tc in tool_calls:
-                if on_text:
-                    on_text(f"\n  … nutze Werkzeug: {tc['name']}\n")
                 try:
                     parsed = json.loads(tc["arguments"]) if tc["arguments"] else {}
                 except json.JSONDecodeError:
-                    parsed = {}
-                output, _is_error = self._exec_tool(tc["name"], parsed)
+                    # Fast immer: Antwort bei max_tokens abgeschnitten. Nicht mit
+                    # leeren Argumenten ausfuehren, sondern der KI erklaeren, was los ist.
+                    output = TRUNCATED_TOOL_ERROR
+                else:
+                    if on_text:
+                        on_text(f"\n  … nutze Werkzeug: {tc['name']}\n")
+                    output, _is_error = self._exec_tool(tc["name"], parsed)
                 self.messages.append(
                     {"role": "tool", "tool_call_id": tc["id"], "content": output}
                 )
+        else:
+            # Schritt-Limit erreicht: Bescheid geben statt stumm aufzuhoeren.
+            self.hit_limit = True
+            if announce_limit:
+                note = LIMIT_NOTE.format(n=rounds)
+                final_parts.append(note.strip())
+                if on_text:
+                    on_text(note)
 
         return "\n".join(final_parts).strip() or "(keine Textantwort)"
 
-    def _one_turn(self, on_text: StreamFn | None):
+    def _one_turn(self, on_text: StreamFn | None, tool_choice: str = "auto", retried: bool = False):
         """Ein Modell-Durchlauf (gestreamt). Gibt (text, tool_calls) zurueck."""
         try:
             stream = self.client.chat.completions.create(
                 model=self.config.deepseek.model,
                 messages=self.messages,
                 tools=self.registry.specs_openai(),
-                tool_choice="auto",
+                tool_choice=tool_choice,
                 max_tokens=self.config.deepseek.max_tokens,
                 temperature=self.config.deepseek.temperature,
                 stream=True,
                 stream_options={"include_usage": True},
             )
         except Exception as exc:  # noqa: BLE001
+            self._check_cancel()
+            # Kontext voll (sehr viele/grosse Dateien gelesen): alte Werkzeug-Ausgaben
+            # kuerzen und einmal neu versuchen, statt bei jedem "weiter" erneut zu scheitern.
+            if not retried and _is_context_error(exc) and self._shrink_old_tool_outputs():
+                logger.warning("Kontext voll - aeltere Werkzeug-Ausgaben gekuerzt.")
+                return self._one_turn(on_text, tool_choice, retried=True)
             logger.error("DeepSeek-Fehler: %s", exc)
             if on_text:
                 on_text(f"\n[DeepSeek-Fehler: {exc}]")
@@ -112,12 +167,16 @@ class DeepSeekProvider(LLMProvider):
         # tool_calls nach Index sammeln (Fragmente kommen verteilt an).
         tool_acc: dict[int, dict[str, str]] = {}
 
+        self._active_stream = stream
         try:
             for chunk in stream:
+                self._check_cancel()
                 if getattr(chunk, "usage", None):
                     self._track_usage(chunk.usage)
                 if not chunk.choices:
                     continue
+                if getattr(chunk.choices[0], "finish_reason", None):
+                    self._finish_reason = chunk.choices[0].finish_reason
                 delta = chunk.choices[0].delta
                 if getattr(delta, "content", None):
                     text_parts.append(delta.content)
@@ -135,10 +194,14 @@ class DeepSeekProvider(LLMProvider):
                         if getattr(fn, "arguments", None):
                             slot["arguments"] += fn.arguments
         except Exception as exc:  # noqa: BLE001
+            self._check_cancel()
             logger.error("DeepSeek-Streamfehler: %s", exc)
             if on_text:
                 on_text(f"\n[DeepSeek-Streamfehler: {exc}]")
             return (None, None)
+
+        finally:
+            self._active_stream = None
 
         tool_calls = [tool_acc[i] for i in sorted(tool_acc) if tool_acc[i]["name"]]
         return ("".join(text_parts), tool_calls)
@@ -164,6 +227,58 @@ class DeepSeekProvider(LLMProvider):
         # System-Nachricht nicht mitzaehlen.
         return max(0, len(self.messages) - 1)
 
+    def user_turns(self) -> int:
+        return sum(1 for m in self.messages if m.get("role") == "user")
+
+    def _close_open_tool_calls(self, messages: list) -> None:
+        idx = next((i for i in range(len(messages) - 1, -1, -1)
+                    if messages[i].get("role") == "assistant"), None)
+        if idx is None or not messages[idx].get("tool_calls"):
+            return
+        answered = {m.get("tool_call_id") for m in messages[idx + 1 :] if m.get("role") == "tool"}
+        for tc in messages[idx]["tool_calls"]:
+            if tc["id"] not in answered:
+                messages.append({"role": "tool", "tool_call_id": tc["id"],
+                                 "content": "Abgebrochen (Strg+C) - nicht ausgefuehrt."})
+
+    def _shrink_old_tool_outputs(self, keep_last: int = 2) -> bool:
+        """Ersetzt grosse, aeltere Werkzeug-Ausgaben durch einen kurzen Hinweis."""
+        tool_msgs = [m for m in self.messages if m.get("role") == "tool"]
+        changed = False
+        for m in tool_msgs[: max(0, len(tool_msgs) - keep_last)]:
+            content = m.get("content") or ""
+            if len(content) > 500:
+                m["content"] = content[:300] + _SHRUNK_NOTE
+                changed = True
+        return changed
+
+    def history_chars(self) -> int:
+        total = 0
+        for m in self.messages[1:]:
+            total += len(m.get("content") or "")
+            for tc in m.get("tool_calls") or []:
+                total += len(tc["function"]["arguments"] or "")
+        return total
+
+    def ask_once(self, prompt: str, max_tokens: int = 1500) -> str:
+        if self.client is None:
+            return ""
+        try:
+            resp = self.client.chat.completions.create(
+                model=self.config.deepseek.model,
+                messages=[
+                    {"role": "system", "content": self._ask_system()},
+                    {"role": "user", "content": prompt},
+                ],
+                max_tokens=max_tokens,
+                stream=False,
+            )
+            self._track_usage(getattr(resp, "usage", None))
+            return (resp.choices[0].message.content or "").strip()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("DeepSeek-Kurzfrage fehlgeschlagen: %s", exc)
+            return ""
+
     def summarize_history(self) -> str:
         if self.client is None or self.history_length() < 2:
             return ""
@@ -171,18 +286,16 @@ class DeepSeekProvider(LLMProvider):
             resp = self.client.chat.completions.create(
                 model=self.config.deepseek.model,
                 messages=[
-                    {
-                        "role": "system",
-                        "content": "Fasse das folgende Gespraech in 4-8 knappen deutschen "
-                        "Stichpunkten zusammen. Behalte Namen, Entscheidungen, offene "
-                        "Aufgaben und Vorlieben.",
-                    },
-                    {"role": "user", "content": _history_as_text(self.messages)[:30000]},
+                    {"role": "system", "content": SUMMARY_INSTRUCTION},
+                    {"role": "user", "content": summary_input(_history_as_text(self.messages))},
                 ],
-                max_tokens=600,
+                max_tokens=4000,
                 stream=False,
             )
             self._track_usage(getattr(resp, "usage", None))
+            if getattr(resp.choices[0], "finish_reason", "stop") == "length":
+                logger.warning("DeepSeek-Zusammenfassung abgeschnitten - Verlauf bleibt.")
+                return ""
             return (resp.choices[0].message.content or "").strip()
         except Exception as exc:  # noqa: BLE001
             logger.warning("DeepSeek-Zusammenfassung fehlgeschlagen: %s", exc)
@@ -196,6 +309,23 @@ class DeepSeekProvider(LLMProvider):
         ]
 
 
+_SHRUNK_NOTE = "\n…(aeltere Ausgabe gekuerzt, weil der Kontext voll war - bei Bedarf neu lesen)"
+_CONTEXT_ERROR_HINTS = ("context length", "context_length", "maximum context", "too many tokens", "too long")
+
+
+def _is_context_error(exc: Exception) -> bool:
+    text = str(exc).lower()
+    return any(hint in text for hint in _CONTEXT_ERROR_HINTS)
+
+
+def _valid_json_or_empty(arguments: str) -> str:
+    try:
+        json.loads(arguments or "{}")
+        return arguments or "{}"
+    except json.JSONDecodeError:
+        return "{}"
+
+
 def _history_as_text(messages: list[dict[str, Any]]) -> str:
     lines: list[str] = []
     for msg in messages:
@@ -203,9 +333,13 @@ def _history_as_text(messages: list[dict[str, Any]]) -> str:
         if role == "system":
             continue
         content = msg.get("content")
+        if role == "tool":
+            lines.append(f"werkzeug-ergebnis: {str(content or '')[:600]}")
+            continue
         if isinstance(content, str) and content:
             lines.append(f"{role}: {content}")
         if msg.get("tool_calls"):
             for tc in msg["tool_calls"]:
-                lines.append(f"{role}: [Werkzeug {tc['function']['name']}]")
+                args = (tc["function"].get("arguments") or "")[:200]
+                lines.append(f"{role}: [Werkzeug {tc['function']['name']}: {args}]")
     return "\n".join(lines)

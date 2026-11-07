@@ -11,11 +11,16 @@ tomli>=2.0 ; python_version < "3.11"
 requests>=2.31
 beautifulsoup4>=4.12
 
+# App-Fenster (start-app.bat / KI-App.exe): echtes Programmfenster unter Windows
+pywebview>=6.2 ; sys_platform == "win32"
+
 # -----------------------------------------------------------------------------
 # Optionale Extras - die KI laeuft auch ohne sie (mit freundlichem Hinweis).
 # Installiere sie nur, wenn du die jeweilige Funktion willst:
 #
-#   Sprachsteuerung (Mikrofon -> Text):   pip install SpeechRecognition openai-whisper sounddevice
+#   Sprechtaste F2 (Mikrofon -> Text):    im Chat "/sprache einrichten"
+#                                         (= pip install sounddevice SpeechRecognition)
+#   ... offline statt Google:             pip install faster-whisper
 #   Sprachausgabe (Text -> Stimme):       pip install pyttsx3
 #   PC-Steuerung (Maus/Tastatur lokal):   pip install pyautogui pillow
 #   Build zur .exe:                       pip install pyinstaller

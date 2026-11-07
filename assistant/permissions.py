@@ -24,12 +24,22 @@ from pathlib import Path
 from typing import Callable
 
 from .config import PermissionSettings
+from .selbststart import is_autostart_path, sets_up_autostart, starts_the_ki
+
+AUTOSTART_WARNING = (
+    "ACHTUNG: Das richtet einen AUTOMATISCHEN START ein (Aufgabenplanung/Autostart). "
+    "Danach kann sich ein Programm immer wieder von selbst oeffnen."
+)
+SELF_START_WARNING = (
+    "ACHTUNG: Das wuerde die KI ein weiteres Mal starten (neues Fenster)."
+)
 
 
 class Risk(enum.IntEnum):
     SAFE = 0
     MODERATE = 1
     DANGEROUS = 2
+    AUTOSTART = 3  # automatischer Start / KI erneut starten - wird gesondert gefragt
 
 
 @dataclass
@@ -57,10 +67,12 @@ class PermissionManager:
         settings: PermissionSettings,
         workspace_root: Path,
         confirm_fn: ConfirmFn | None = None,
+        app_root: Path | None = None,
     ):
         self.settings = settings
         self.workspace_root = workspace_root.resolve()
         self.confirm_fn = confirm_fn or _default_confirm
+        self.app_root = app_root  # Ordner der KI (fuer "startet sich selbst")
 
     # -- Aktionsfreigabe ----------------------------------------------------
     def check(self, risk: Risk, description: str) -> Decision:
@@ -79,6 +91,27 @@ class PermissionManager:
         if self.confirm_fn(description, risk):
             return Decision(True)
         return Decision(False, "Vom Nutzer abgelehnt.")
+
+    def confirm_always(self, description: str) -> Decision:
+        """Fragt IMMER nach - auch bei auto_confirm (fuer Autostart & Co.).
+
+        Abschaltbar mit [permissions] autostart_immer_fragen = false.
+        """
+        if self.settings.auto_confirm and not self.settings.autostart_immer_fragen:
+            return Decision(True)
+        if self.confirm_fn(description, Risk.AUTOSTART):
+            return Decision(True)
+        return Decision(
+            False,
+            "Vom Nutzer abgelehnt. Richte keinen automatischen Start ein und starte die KI "
+            "nicht selbst, ausser dein Mensch bittet ausdruecklich darum.",
+        )
+
+    def check_path_write(self, path: Path) -> Decision:
+        """Schreiben in einen Autostart-Ordner nur mit ausdruecklicher Zustimmung."""
+        if is_autostart_path(path):
+            return self.confirm_always(f"{AUTOSTART_WARNING}\n    Datei: {path}")
+        return Decision(True)
 
     def require(self, risk: Risk, description: str) -> None:
         """Wie check(), wirft aber bei Ablehnung eine Ausnahme."""
@@ -122,7 +155,7 @@ class PermissionManager:
             return False
 
     # -- Shell-Pruefung -----------------------------------------------------
-    def check_shell(self, command: str) -> Decision:
+    def check_shell(self, command: str, cwd: str | None = None) -> Decision:
         """Prueft einen Shell-Befehl gegen Verbots-/Erlaubnisliste und Safe Mode."""
         lowered = command.lower().strip()
         for pattern in self.settings.shell_denylist:
@@ -134,6 +167,12 @@ class PermissionManager:
                 "Safe Mode ist aktiv - Shell-Befehle sind gesperrt. "
                 "Zum Freischalten 'safe_mode = false' setzen.",
             )
+        # Diese beiden fragen IMMER nach, auch bei auto_confirm: genau daraus entstehen
+        # KI-Fenster, die sich "von selbst" immer wieder oeffnen.
+        if sets_up_autostart(command):
+            return self.confirm_always(f"{AUTOSTART_WARNING}\n    {command}")
+        if starts_the_ki(command, self.app_root, cwd):
+            return self.confirm_always(f"{SELF_START_WARNING}\n    {command}")
         first_word = lowered.split()[0] if lowered.split() else ""
         if self.settings.auto_confirm:
             return Decision(True)

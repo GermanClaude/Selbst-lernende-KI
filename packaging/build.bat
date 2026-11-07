@@ -16,10 +16,11 @@ python -m pip install --upgrade pip >nul
 pip install -r requirements.txt
 pip install pyinstaller
 
-echo [3/3] KI.exe bauen...
+echo [3/3] KI.exe und KI-App.exe bauen...
 pyinstaller packaging\ki.spec --noconfirm
 
 echo.
-echo Fertig! Die Datei liegt hier: dist\KI.exe
-echo Trage vorher deinen Schluessel in die Datei .env ein.
+echo Fertig! Die Programme liegen hier: dist\KI.exe ^(Terminal^) und dist\KI-App.exe ^(App-Fenster^)
+echo Sie nutzt .env und config\ aus diesem Projektordner. Kopierst du KI.exe
+echo woandershin, legt sie dort beim ersten Start eigene Dateien an (.env, config\).
 pause
