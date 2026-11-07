@@ -885,7 +885,9 @@ class LiveLoop:
     def _on_ask(self, text: str) -> None:
         if self.interrupted:
             return
-        question = speech_text(text).split(". ")[0][:220].rstrip(".")
+        # Pfade nur als Dateiname vorlesen ("C:\\...\\spiel\\figuren.py" -> "figuren.py")
+        spoken = re.sub(r"(?:[A-Za-z]:)?[^\s:]*[\\/]([^\s\\/]+)", r"\1", speech_text(text))
+        question = spoken.split(". ")[0][:220].rstrip(".")
         self._say(schoen(f"Kurze Rueckfrage: {question}. Sag ja, immer oder nein."))
 
     def _on_turn_end(self, cancelled) -> None:  # noqa: ARG002
