@@ -320,3 +320,188 @@ def install_voice_packages(run=None, packages: list[str] | None = None) -> tuple
         if path.rstrip("/\\").endswith("site-packages"):
             site.addsitedir(path)
     return True, "Installiert."
+
+
+# ---------------------------------------------------------------------------
+#  Jarvis-Modus: freihaendig zuhoeren (Sprechpausen-Erkennung) und vorlesen
+# ---------------------------------------------------------------------------
+_BLOCK = 1600  # 100 ms bei 16 kHz
+
+
+def _rms(block: bytes) -> float:
+    from array import array
+
+    samples = array("h", block)
+    if not samples:
+        return 0.0
+    return (sum(s * s for s in samples) / len(samples)) ** 0.5
+
+
+def listen_utterance(on_level=None, stop_event=None, max_seconds: float = 40.0, silence: float = 1.0,
+                     start_timeout: float | None = None, sd_module=None) -> bytes | None:
+    """Wartet, bis jemand spricht, und nimmt auf, bis eine Sprechpause kommt.
+
+    Gibt die Aufnahme (16 kHz, 16 bit, mono) zurueck, b"" wenn in start_timeout
+    niemand gesprochen hat, oder None, wenn stop_event gesetzt wurde. on_level(0..1)
+    bekommt etwa 10-mal pro Sekunde die Lautstaerke (fuer die Anzeige).
+    """
+    import queue as queue_mod
+    import time
+    from collections import deque
+    from statistics import median
+
+    sd = sd_module
+    if sd is None:
+        import sounddevice as sd  # type: ignore
+
+    blocks: queue_mod.Queue = queue_mod.Queue()
+
+    def callback(indata, frames, time_info, status):  # noqa: ARG001
+        blocks.put(bytes(indata))
+
+    noise: list[float] = []
+    pre: deque = deque(maxlen=4)  # 400 ms vor dem ersten Laut mitnehmen
+    voiced: list[bytes] = []
+    speaking, loud, quiet = False, 0, 0
+    began = last_block = time.monotonic()
+    with sd.RawInputStream(samplerate=_SAMPLE_RATE, channels=1, dtype="int16", blocksize=_BLOCK,
+                           callback=callback):
+        while True:
+            if stop_event is not None and stop_event.is_set():
+                return None
+            try:
+                block = blocks.get(timeout=0.5)
+                last_block = time.monotonic()
+            except queue_mod.Empty:
+                # Kein Ton mehr vom Mikrofon (z.B. Headset abgezogen) oder niemand spricht.
+                if speaking and time.monotonic() - last_block > 3:
+                    return b"".join(voiced)
+                if not speaking and start_timeout and time.monotonic() - began > start_timeout:
+                    return b""
+                if time.monotonic() - last_block > 10:
+                    raise VoiceError("Vom Mikrofon kommt nichts an - ist es angeschlossen und erlaubt?")
+                continue
+            level = _rms(block)
+            if len(noise) < 5 and not speaking:  # erste halbe Sekunde: Grundrauschen messen
+                noise.append(level)
+                pre.append(block)
+                continue
+            threshold = max(median(noise) * 2.5, 350.0)
+            if on_level:
+                on_level(min(1.0, level / (threshold * 4)))
+            if not speaking:
+                pre.append(block)
+                loud = loud + 1 if level > threshold else 0
+                if loud >= 2:
+                    speaking, voiced, quiet = True, list(pre), 0
+                    continue
+                if level <= threshold:
+                    noise = (noise + [level])[-30:]  # Raum wird leiser/lauter: nachfuehren
+                if start_timeout and time.monotonic() - began > start_timeout:
+                    return b""
+            else:
+                voiced.append(block)
+                quiet = quiet + 1 if level < threshold * 0.8 else 0
+                if quiet * 0.1 >= silence or len(voiced) * 0.1 >= max_seconds:
+                    return b"".join(voiced)
+
+
+def speech_text(markdown: str) -> str:
+    """Macht aus einer Markdown-Antwort gut vorlesbaren Text."""
+    import re
+
+    text = re.sub(r"```.*?```", " (Code siehe Bildschirm) ", markdown, flags=re.S)
+    text = re.sub(r"```.*", " (Code siehe Bildschirm) ", text, flags=re.S)  # noch offener Codeblock
+    lines = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if re.fullmatch(r"\|?[\s:\-|]+\|?", stripped) and "-" in stripped:
+            continue  # Trennzeile einer Tabelle
+        if stripped.startswith("|"):
+            stripped = ", ".join(c.strip() for c in stripped.strip("|").split("|") if c.strip())
+        lines.append(stripped)
+    text = "\n".join(lines)
+    text = re.sub(r"!?\[([^\]]*)\]\([^)]*\)", r"\1", text)      # Links -> Linktext
+    text = re.sub(r"https?://\S+", "(Link)", text)
+    text = re.sub(r"`([^`]*)`", r"\1", text)
+    text = re.sub(r"^\s{0,3}#{1,6}\s*", "", text, flags=re.M)   # Ueberschriften
+    text = re.sub(r"^\s*[-*+]\s+", "", text, flags=re.M)         # Aufzaehlungen
+    text = re.sub(r"[*_~>#]+", "", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+class Speaker:
+    """Vorlesen im Hintergrund (pyttsx3) - mit deutscher Stimme, wenn vorhanden.
+
+    Ein eigener Thread besitzt die Sprach-Engine (unter Windows wichtig: SAPI mag
+    keine Thread-Wechsel). say() reiht ein, stop() bricht ab, wait() wartet.
+    """
+
+    def __init__(self, language: str = "de"):
+        import queue as queue_mod
+        import threading
+
+        self.language = language
+        self._queue: queue_mod.Queue = queue_mod.Queue()
+        self._idle = threading.Event()
+        self._idle.set()
+        self._engine = None
+        self.available = _importable("pyttsx3")
+        self._thread = threading.Thread(target=self._run, name="vorlesen", daemon=True) if self.available else None
+        if self._thread:
+            self._thread.start()
+
+    def _pick_voice(self, engine) -> None:
+        try:
+            for voice in engine.getProperty("voices") or []:
+                info = f"{voice.id} {voice.name} {getattr(voice, 'languages', '')}".lower()
+                if any(k in info for k in (self.language, "german", "deutsch", "hedda", "katja", "stefan")):
+                    engine.setProperty("voice", voice.id)
+                    return
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _run(self) -> None:
+        try:
+            import pyttsx3
+
+            self._engine = pyttsx3.init()
+            self._pick_voice(self._engine)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Vorlesen nicht verfuegbar: %s", exc)
+            self.available = False
+            return
+        while True:
+            text = self._queue.get()
+            if text is None:
+                return
+            try:
+                self._engine.say(text)
+                self._engine.runAndWait()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Vorlese-Fehler: %s", exc)
+            if self._queue.empty():
+                self._idle.set()
+
+    def say(self, text: str) -> None:
+        text = speech_text(text)
+        if not text or not self.available:
+            return
+        self._idle.clear()
+        self._queue.put(text)
+
+    def wait(self, timeout: float | None = None) -> bool:
+        return self._idle.wait(timeout)
+
+    def stop(self) -> None:
+        try:
+            while not self._queue.empty():
+                self._queue.get_nowait()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            if self._engine:
+                self._engine.stop()
+        except Exception:  # noqa: BLE001
+            pass
+        self._idle.set()

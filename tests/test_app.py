@@ -263,3 +263,54 @@ def test_new_conversation_clears_the_window(app):
     _events_until(server, "reset")
     status, hist = _req(server, "/api/history")
     assert all(m["role"] != "assistant" for m in hist["messages"])
+
+
+def test_jarvis_loop_listens_answers_and_waits_for_speaking(app, monkeypatch):
+    from assistant import voice
+
+    server = app([_streamed("Morgen wird es sonnig.")])
+    ctl = server.controller
+    said = iter([b"x" * 32000, None])
+    monkeypatch.setattr(ctl.voice_capture, "problem", lambda: None)
+    monkeypatch.setattr(ctl.voice_capture, "transcribe", lambda pcm: "Wie wird das Wetter?")
+
+    def fake_listen(on_level=None, stop_event=None, **kw):
+        if on_level:
+            on_level(0.6)
+        value = next(said)
+        if value is None:
+            stop_event.wait(5)
+        return value
+
+    monkeypatch.setattr(voice, "listen_utterance", fake_listen)
+    assert _req(server, "/api/jarvis", {"action": "start"})[1] == {"ok": True}
+    events = _events_until(server, "speaking" if False else "done")
+    kinds = [(e["type"], e.get("state")) for e in events]
+    assert ("jarvis", "listening") in kinds and ("jarvis", "thinking") in kinds
+    assert any(e["type"] == "level" for e in events)
+    events = _events_until(server, "jarvis")
+    assert events[-1]["state"] == "speaking" and "sonnig" in events[-1]["text"]
+    sent = ctl.brain.provider.messages[0]["content"]
+    assert sent.startswith("Wie wird das Wetter?") and "Sprachmodus" in sent  # Hinweis nur fuer die KI
+    status, hist = _req(server, "/api/history")
+    assert hist["messages"][0]["text"] == "Wie wird das Wetter?"           # Anzeige ohne Hinweis
+    _req(server, "/api/jarvis", {"action": "spoken"})
+    _req(server, "/api/jarvis", {"action": "stop"})
+    events = _events_until(server, "jarvis")
+    while events[-1].get("state") != "off":
+        events = _events_until(server, "jarvis")
+    assert _req(server, "/api/state")[1]["jarvis"] is False
+
+
+def test_custom_css_and_appearance_api(app, tmp_path):
+    from assistant import aussehen
+
+    server = app([])
+    aussehen.save(tmp_path, {"akzentfarbe": "#16a34a"})
+    aussehen.set_css(tmp_path, ".bubble{border-radius:2px}")
+    req = urllib.request.Request(f"http://127.0.0.1:{server.port}/custom.css")
+    with urllib.request.urlopen(req, timeout=5) as resp:
+        assert resp.read().decode() == ".bubble{border-radius:2px}" and "text/css" in resp.headers["Content-Type"]
+    assert _req(server, "/api/appearance")[1]["settings"] == {"akzentfarbe": "#16a34a"}
+    state = _req(server, "/api/state")[1]
+    assert state["stuetzraeder"] in ("an", "aus", "teilweise") and state["tutorial_done"] is False

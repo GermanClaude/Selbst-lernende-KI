@@ -18,6 +18,7 @@ import re
 import subprocess
 import sys
 import threading
+import time
 from contextlib import redirect_stdout
 from typing import Any, Callable
 
@@ -26,7 +27,7 @@ from ..cancel import Abgebrochen
 from ..config import Config, save_setting
 from ..logging_setup import get_logger
 from ..permissions import Risk
-from ..ui.cli import CLI
+from ..ui.cli import CLI, JARVIS_HINT, _is_exit_phrase
 from ..voice import VoiceOutput
 
 logger = get_logger()
@@ -50,6 +51,9 @@ COMMANDS = [
     ("/erlauben alles", "nie mehr nachfragen"),
     ("/erlauben fragen", "wieder nachfragen"),
     ("/neu", "neues Gespraech (Charakter & Profil frisch)"),
+    ("/tutorial", "Nova zeigt dir, was sie kann"),
+    ("/stuetzraeder", "Stuetzraeder an/aus"),
+    ("/aussehen zuruecksetzen", "App wieder im Original-Aussehen"),
     ("/charakter", "Charakter anzeigen oder waehlen"),
     ("/stil", "Anrede, Laenge, Humor, Emojis"),
     ("/ueber-mich", "was die KI ueber dich weiss"),
@@ -97,6 +101,11 @@ class AppController(CLI):
         self._ask_ids = itertools.count(1)
         self._writer: _NoticeWriter | None = None
         self._voice_lock = threading.Lock()
+        self._jarvis_stop: threading.Event | None = None
+        self._jarvis_spoken = threading.Event()
+        self._jarvis_client_tts = True
+        self._speaker = None
+        self.tool_ctx.extra["on_appearance"] = lambda: self._event({"type": "appearance"})
 
     # -- Ereignisse -----------------------------------------------------------
     def _event(self, event: dict) -> None:
@@ -130,6 +139,10 @@ class AppController(CLI):
             "eur": round(eur, 4),
             "api_key_missing": not self.config.api_key,
             "update": {"new": self._pending_update.new} if self._pending_update else None,
+            "jarvis": self._jarvis_stop is not None and not self._jarvis_stop.is_set(),
+            "stuetzraeder": self.training_wheels_state(),
+            "full_access": bool(self.permissions.settings.allow_full_filesystem),
+            "tutorial_done": self._tutorial_done(),
             "started_by": self.started_by,
             "commands": [{"cmd": c, "help": h} for c, h in COMMANDS],
         }
@@ -209,7 +222,8 @@ class AppController(CLI):
         self._state_changed()
 
     # -- Senden -----------------------------------------------------------------
-    def send(self, text: str) -> tuple[bool, str]:
+    def send(self, text: str, model_text: str | None = None) -> tuple[bool, str]:
+        """text = was angezeigt wird; model_text = was die KI bekommt (z.B. mit Sprachmodus-Hinweis)."""
         text = (text or "").strip()
         if not text:
             return False, "Leere Nachricht"
@@ -218,7 +232,7 @@ class AppController(CLI):
                 return False, "Ich arbeite noch an der letzten Nachricht - Stopp, um sie anzuhalten."
             self.busy = True
         self.brain.provider.cancel_event.clear()
-        threading.Thread(target=self._work, args=(text,), name="ki-antwort", daemon=True).start()
+        threading.Thread(target=self._work, args=(text, None, model_text), name="ki-antwort", daemon=True).start()
         return True, ""
 
     def run_background(self, fn: Callable[[], Any]) -> None:
@@ -230,7 +244,7 @@ class AppController(CLI):
         self.brain.provider.cancel_event.clear()
         threading.Thread(target=self._work, args=(None, fn), name="ki-hintergrund", daemon=True).start()
 
-    def _work(self, text: str | None, fn: Callable[[], Any] | None = None) -> None:
+    def _work(self, text: str | None, fn: Callable[[], Any] | None = None, model_text: str | None = None) -> None:
         self._state_changed()
         writer = _NoticeWriter(self._notice)
         self._writer = writer
@@ -244,7 +258,7 @@ class AppController(CLI):
                     self._event({"type": "user", "text": text})
                     quit_code = self._command(text)
                 else:
-                    self._answer(text)
+                    self._answer(text, model_text)
         except Exception as exc:  # noqa: BLE001 - die App darf daran nicht sterben
             logger.exception("Fehler in der App")
             self.history.append({"role": "error", "text": str(exc)})
@@ -266,14 +280,14 @@ class AppController(CLI):
             self._state_changed()  # neuer Name gleich in der Seitenleiste
         return self.exit_code if quit_now else None
 
-    def _answer(self, text: str) -> None:
+    def _answer(self, text: str, model_text: str | None = None) -> None:
         self.history.append({"role": "user", "text": text})
         self._event({"type": "user", "text": text})
         self._event({"type": "start"})
         self._answer_parts: list[str] = []
         snapshot = self.brain.provider.history_snapshot()
         try:
-            answer = self.brain.respond(text, on_text=self._emit)
+            answer = self.brain.respond(model_text or text, on_text=self._emit)
         except KeyboardInterrupt:  # Stopp-Knopf (Abgebrochen) - oder Strg+C im Hintergrund
             self.brain.provider.abort_turn(snapshot, text)
             self.history.append({"role": "assistant", "text": "".join(self._answer_parts) + "\n\n*(angehalten)*"})
@@ -286,10 +300,14 @@ class AppController(CLI):
         self.history.append({"role": "assistant", "text": "".join(self._answer_parts) or answer})
         self._event({"type": "thinking", "on": False})
         self._event({"type": "done"})
-        if self.voice_out.enabled:
+        self._last_answer = "".join(self._answer_parts) or answer
+        if self.voice_out.enabled and not self._jarvis_active():
             threading.Thread(target=self.voice_out.speak, args=(answer,), daemon=True).start()
 
     def stop(self) -> None:
+        if self._speaker:
+            self._speaker.stop()
+        self._jarvis_spoken.set()
         self.brain.provider.cancel()
         for waiter in list(self._asks.values()):
             waiter["event"].set()
@@ -365,8 +383,134 @@ class AppController(CLI):
         self._event({"type": "reset"})  # Fenster leert den Chat
         self._state_changed()
 
+    # -- Jarvis-Modus: freihaendig reden ------------------------------------------
+    def _jarvis_active(self) -> bool:
+        return self._jarvis_stop is not None and not self._jarvis_stop.is_set()
+
+    def jarvis(self, action: str, tts: str = "client") -> dict:
+        if action == "start":
+            if self._jarvis_active():
+                return {"ok": True}
+            problem = self.voice_capture.problem()
+            if problem:
+                return {"ok": False, "error": problem, "setup": not getattr(sys, "frozen", False)}
+            self._jarvis_client_tts = tts != "server"
+            self._jarvis_stop = threading.Event()
+            threading.Thread(target=self._jarvis_loop, args=(self._jarvis_stop,), name="jarvis", daemon=True).start()
+            self._state_changed()
+            return {"ok": True}
+        if action == "stop":
+            if self._jarvis_stop:
+                self._jarvis_stop.set()
+            self._jarvis_spoken.set()
+            if self._speaker:
+                self._speaker.stop()
+            self._state_changed()
+            return {"ok": True}
+        if action == "spoken":  # Fenster hat fertig vorgelesen -> weiter zuhoeren
+            self._jarvis_spoken.set()
+            return {"ok": True}
+        return {"ok": False, "error": f"Unbekannt: {action}"}
+
+    def _jarvis_loop(self, stop: threading.Event) -> None:
+        from ..voice import Speaker, listen_utterance
+
+        last_level = [0.0]
+
+        def level(value: float) -> None:
+            now = time.monotonic()
+            if now - last_level[0] >= 0.1:  # hoechstens ~10 Anzeigen pro Sekunde
+                last_level[0] = now
+                self._event({"type": "level", "value": round(value, 3)})
+
+        if not self._jarvis_client_tts and self._speaker is None:
+            self._speaker = Speaker(self.config.voice.sprache or "de")
+        try:
+            while not stop.is_set():
+                while self.busy and not stop.is_set():
+                    time.sleep(0.1)
+                self._event({"type": "jarvis", "state": "listening"})
+                try:
+                    pcm = listen_utterance(on_level=level, stop_event=stop, silence=1.0)
+                except Exception as exc:  # noqa: BLE001 - kein Mikrofon o.ae.
+                    self._event({"type": "jarvis", "state": "off", "error": f"Mikrofon: {exc}"})
+                    break
+                if pcm is None or stop.is_set():
+                    break
+                if not pcm:
+                    continue
+                self._event({"type": "jarvis", "state": "recognizing"})
+                try:
+                    text = self.voice_capture.transcribe(pcm).strip()
+                except Exception as exc:  # noqa: BLE001
+                    self._event({"type": "jarvis", "state": "listening", "error": str(exc)})
+                    time.sleep(1)
+                    continue
+                if not text:
+                    continue
+                if _is_exit_phrase(text):
+                    break
+                self._event({"type": "jarvis", "state": "thinking", "text": text})
+                ok, _err = self.send(text, model_text=text + JARVIS_HINT)
+                if not ok:
+                    continue
+                time.sleep(0.2)
+                while self.busy and not stop.is_set():
+                    time.sleep(0.1)
+                if stop.is_set():
+                    break
+                answer = getattr(self, "_last_answer", "")
+                self._jarvis_spoken.clear()
+                self._event({"type": "jarvis", "state": "speaking", "text": answer})
+                if self._jarvis_client_tts:
+                    self._jarvis_spoken.wait(timeout=180)  # Fenster liest vor
+                elif self._speaker and self._speaker.available:
+                    self._speaker.say(answer)
+                    while not self._speaker.wait(0.2):
+                        if stop.is_set():
+                            self._speaker.stop()
+                            break
+        finally:
+            stop.set()
+            self._event({"type": "jarvis", "state": "off"})
+            self._state_changed()
+
+    # -- Tutorial & Aussehen --------------------------------------------------------
+    def _tutorial_done(self) -> bool:
+        from ..tutorial import is_done
+
+        return is_done(self.config.project_root)
+
+    def tutorial(self) -> dict:
+        from ..tutorial import steps
+
+        return {"steps": steps(self.config), "done": self._tutorial_done()}
+
+    def tutorial_action(self, action: str) -> dict:
+        from ..tutorial import mark_done
+
+        if action == "done":
+            mark_done(self.config.project_root)
+            self._state_changed()
+        return {"ok": True}
+
+    def appearance(self) -> dict:
+        from .. import aussehen
+
+        return {"settings": aussehen.load(self.config.project_root),
+                "has_css": bool(aussehen.css(self.config.project_root))}
+
+    def custom_css(self) -> str:
+        from .. import aussehen
+
+        return aussehen.css(self.config.project_root)
+
     # -- Schalter -----------------------------------------------------------------
     def toggle(self, name: str, value: bool) -> None:
+        if name == "stuetzraeder":  # die Oberflaeche hat beim Abschalten schon gewarnt
+            self.set_training_wheels(bool(value))
+            self._state_changed()
+            return
         if name == "erlauben":
             self.permissions.settings.auto_confirm = bool(value)
             try:
@@ -449,6 +593,8 @@ class AppController(CLI):
         return True
 
     def shutdown(self) -> None:
+        if self._jarvis_stop:
+            self._jarvis_stop.set()
         self._stop_watch.set()
         self.stop()
         try:

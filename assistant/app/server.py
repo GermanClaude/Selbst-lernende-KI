@@ -6,8 +6,9 @@ fremde Webseiten im Browser nicht ueber Umwege (DNS-Rebinding) Befehle schicken
 koennen. Der Server spricht nur mit der eigenen Oberflaeche:
   GET  /, /static/*      Oberflaeche
   GET  /api/events       Ereignisstrom (Server-Sent Events)
-  GET  /api/state, /api/history, /api/profile, /api/memory
-  POST /api/send, /api/stop, /api/answer, /api/voice, /api/toggle, /api/profile, /api/memory
+  GET  /api/state, /api/history, /api/profile, /api/memory, /api/tutorial, /api/appearance, /custom.css
+  POST /api/send, /api/stop, /api/answer, /api/voice, /api/toggle, /api/profile, /api/memory,
+       /api/jarvis, /api/tutorial
 """
 from __future__ import annotations
 
@@ -145,6 +146,8 @@ class AppServer:
                     return self._static("index.html")
                 if url.path.startswith("/static/"):
                     return self._static(url.path[len("/static/"):])
+                if url.path == "/custom.css":  # Aussehen, das Nova angepasst hat
+                    return self._send(200, server.controller.custom_css().encode("utf-8"), "text/css; charset=utf-8")
                 if not self._token_ok(query):
                     return self._deny()
                 ctl = server.controller
@@ -158,6 +161,10 @@ class AppServer:
                     return self._json(ctl.profile())
                 if url.path == "/api/memory":
                     return self._json(ctl.memory_facts())
+                if url.path == "/api/tutorial":
+                    return self._json(ctl.tutorial())
+                if url.path == "/api/appearance":
+                    return self._json(ctl.appearance())
                 return self._deny(404)
 
             def do_POST(self):  # noqa: N802
@@ -192,6 +199,10 @@ class AppServer:
                         return self._json({"ok": False, "error": str(exc)})
                 if url.path == "/api/memory":
                     return self._json(ctl.memory_action(body))
+                if url.path == "/api/jarvis":
+                    return self._json(ctl.jarvis(str(body.get("action", "")), str(body.get("tts", "client"))))
+                if url.path == "/api/tutorial":
+                    return self._json(ctl.tutorial_action(str(body.get("action", ""))))
                 return self._deny(404)
 
             def _static(self, name: str) -> None:

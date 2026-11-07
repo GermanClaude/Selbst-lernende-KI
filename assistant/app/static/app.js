@@ -10,6 +10,9 @@
   // =====================================================================
   const TOKEN = new URLSearchParams(location.search).get('t') || '';
   const byId = (id) => document.getElementById(id);
+  /** Nur eigene Eintraege einer Tabelle (Namen vom Server wie "constructor" sind harmlos). */
+  const own = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
+  const pick = (obj, key) => (own(obj, key) ? obj[key] : undefined);
 
   /** Element bauen; Text immer per textContent (sicher). */
   function h(tag, cls, text) {
@@ -97,12 +100,28 @@
     key: '<circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6M15.5 7.5l3 3L22 7l-3-3"/>',
     pause: '<rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>',
     brain: '<path d="M9 18h6"/><path d="M10 22h4"/><path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5A4.61 4.61 0 0 1 8.91 14"/>',
+    plus: '<path d="M12 5v14M5 12h14"/>',
+    plusSquare: '<path d="M12 20h7a2 2 0 0 0 2-2v-7"/><path d="M18.4 2.6a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z"/><path d="M11 4H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2"/>',
+    user: '<circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/>',
+    userCog: '<circle cx="10" cy="8" r="4"/><path d="M2 21v-1a6 6 0 0 1 6-6h3"/><circle cx="18" cy="17" r="2.5"/><path d="M18 12.5v2M18 19.5v2M13.5 17h2M20.5 17h2M14.8 13.8l1.4 1.4M19.8 18.8l1.4 1.4M14.8 20.2l1.4-1.4M19.8 15.2l1.4-1.4"/>',
+    sliders: '<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/>',
+    idCard: '<rect x="2" y="4" width="20" height="16" rx="2"/><circle cx="8.5" cy="11" r="2.5"/><path d="M5 17a3.5 3.5 0 0 1 7 0"/><path d="M15 9h4M15 13h4"/>',
+    scale: '<path d="M12 3v18M7 21h10"/><path d="M5 7h14"/><path d="m5 7-3 7a3 3 0 0 0 6 0z"/><path d="m19 7-3 7a3 3 0 0 0 6 0z"/>',
+    chevronRight: '<path d="m9 6 6 6-6 6"/>',
+    smile: '<circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><path d="M9 9h.01M15 9h.01"/>',
+    briefcase: '<rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/><path d="M2 13h20"/>',
+    bowtie: '<path d="M3 7v10l7-3.2v-3.6z"/><path d="M21 7v10l-7-3.2v-3.6z"/><rect x="10" y="10" width="4" height="4" rx="1"/>',
+    cap: '<path d="M22 10 12 5 2 10l10 5z"/><path d="M6 12v5c3 2.5 9 2.5 12 0v-5"/><path d="M22 10v6"/>',
+    users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+    palette: '<circle cx="13.5" cy="6.5" r="1.2"/><circle cx="17.5" cy="10.5" r="1.2"/><circle cx="8.5" cy="7.5" r="1.2"/><circle cx="6.5" cy="12.5" r="1.2"/><path d="M12 2a10 10 0 0 0 0 20c.9 0 1.6-.7 1.6-1.6 0-.4-.2-.8-.4-1.1-.3-.3-.4-.7-.4-1.1 0-.9.7-1.6 1.6-1.6h2A5.6 5.6 0 0 0 22 11c0-5-4.5-9-10-9z"/>',
+    flame: '<path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.4-.5-2-1-3-1.1-2.1-.2-4 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.2.4-2.3 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>',
+    tag: '<path d="M12.6 2.6A2 2 0 0 0 11.2 2H4a2 2 0 0 0-2 2v7.2a2 2 0 0 0 .6 1.4l8.7 8.7a2.4 2.4 0 0 0 3.4 0l6.6-6.6a2.4 2.4 0 0 0 0-3.4z"/><circle cx="7.5" cy="7.5" r="1.2"/>',
   };
 
   function icon(name, cls) {
     const span = document.createElement('span');
     span.className = 'ic' + (cls ? ' ' + cls : '');
-    span.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">' + (ICONS[name] || ICONS.info) + '</svg>';
+    span.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">' + (pick(ICONS, name) || ICONS.info) + '</svg>';
     return span;
   }
 
@@ -144,7 +163,8 @@
     // 2. alles andere escapen
     s = esc(s);
     // 3. Links [Text](http...) – nur http/https
-    s = s.replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, (m, text, url) => keep(link(url, emph(text))));
+    s = s.replace(/\[([^\]\n]+)\]\((https?:\/\/(?:[^\s()\u0001\u0002]|\([^\s()\u0001\u0002]*\))+)\)/g,
+      (m, text, url) => keep(link(url, emph(text))));
     // 4. nackte Adressen
     s = s.replace(/https?:\/\/[^\s\u0001\u0002]+/g, (m) => {
       let url = m;
@@ -170,7 +190,8 @@
     return s;
   }
 
-  const RE_FENCE = /^(\s*)(`{3,}|~{3,})\s*([\w+#.\-]*)\s*$/;
+  // Sprache = erstes Wort nach dem Zaun (z.B. ```python title="main.py" oder ```py:main.py)
+  const RE_FENCE = /^(\s*)(`{3,}|~{3,})\s*([^\s`]*)[^`]*$/;
   const RE_HEAD = /^\s{0,3}(#{1,6})\s+(.*?)(?:\s+#+)?\s*$/;
   const RE_HR = /^\s{0,3}([-*_])(?:\s*\1){2,}\s*$/;
   const RE_QUOTE = /^\s{0,3}>\s?/;
@@ -358,6 +379,7 @@
   let busy = false;
   let connected = false;
   let everConnected = false;
+  let ended = false; // Ereignis "bye": die KI wurde beendet
   const pendingToggle = {};
 
   const app = byId('app');
@@ -381,6 +403,28 @@
 
   function setSwitch(btn, on) { btn.setAttribute('aria-checked', on ? 'true' : 'false'); }
 
+  /** Bedeutung des Namens; ergeben die Anfangsbuchstaben den Namen (N-O-V-A), werden sie betont. */
+  function fillMeaning(el, name, meaning) {
+    el.replaceChildren();
+    meaning = String(meaning || '').trim();
+    el.hidden = !meaning;
+    if (!meaning) return;
+    const words = meaning.match(/[\p{L}\p{N}][\p{L}\p{N}'\u2019-]*/gu) || [];
+    const letters = String(name || '').replace(/[^\p{L}\p{N}]/gu, '').toLowerCase();
+    const spells = words.length > 1 && letters && words.map((w) => w.charAt(0)).join('').toLowerCase() === letters;
+    if (!spells) { el.textContent = meaning; return; }
+    // Text Stueck fuer Stueck als Textknoten (sicher), Anfangsbuchstaben in <b>
+    const re = /[\p{L}\p{N}][\p{L}\p{N}'\u2019-]*/gu;
+    let pos = 0;
+    let m;
+    while ((m = re.exec(meaning))) {
+      if (m.index > pos) el.append(meaning.slice(pos, m.index));
+      el.append(h('b', null, m[0].charAt(0)), m[0].slice(1));
+      pos = m.index + m[0].length;
+    }
+    if (pos < meaning.length) el.append(meaning.slice(pos));
+  }
+
   function setFavicon(letter) {
     const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">' +
       '<stop offset="0" stop-color="#6366f1"/><stop offset="1" stop-color="#a855f7"/></linearGradient></defs>' +
@@ -399,10 +443,11 @@
     byId('tb-name').textContent = name;
     byId('empty-title').textContent = 'Hallo! Ich bin ' + name + '.';
     // optional: Bedeutung des Namens (z.B. "Neugierige, Offene, Vernetzte Assistenz")
-    const meaning = s.meaning ? String(s.meaning) : '';
-    byId('empty-meaning').textContent = meaning;
-    byId('empty-meaning').hidden = !meaning;
+    const meaning = s.meaning ? String(s.meaning).trim() : '';
+    fillMeaning(byId('empty-meaning'), name, meaning);
+    fillMeaning(byId('sb-meaning'), name, meaning);
     byId('sb-name').title = meaning ? name + ' – ' + meaning : name;
+    byId('sb-meaning').title = meaning;
     for (const a of document.querySelectorAll('.ai-avatar')) a.textContent = letter;
     setFavicon(letter);
     input.placeholder = 'Schreib ' + name + ' eine Nachricht …';
@@ -410,7 +455,8 @@
 
     // Gehirn
     const prov = String(s.provider || '');
-    byId('sb-provider').textContent = PROVIDERS[prov.toLowerCase()] || prov || '–';
+    byId('sb-provider').textContent = pick(PROVIDERS, prov.toLowerCase()) || prov || '–';
+    byId('sb-provider').title = byId('sb-provider').textContent;
     byId('sb-model').textContent = s.model || '–';
     byId('sb-model').title = s.model || '';
     byId('tb-model-text').textContent = s.model || '';
@@ -445,6 +491,7 @@
     renderAlerts();
     commands = Array.isArray(s.commands) ? s.commands.filter((c) => c && typeof c.cmd === 'string') : [];
     setBusy(!!s.busy);
+    profileNames();
   }
 
   function renderAlerts() {
@@ -501,14 +548,15 @@
   }
 
   function updateSendBtn() {
-    sendBtn.disabled = !busy && !input.value.trim();
+    sendBtn.disabled = ended || (!busy && !input.value.trim());
   }
 
   function updateStatus() {
     const st = byId('status');
     let s = 'ready';
     let t = 'Bereit';
-    if (!connected) { s = everConnected ? 'off' : 'connecting'; t = everConnected ? 'Getrennt' : 'Verbinde …'; }
+    if (ended) { s = 'off'; t = 'Beendet'; }
+    else if (!connected) { s = everConnected ? 'off' : 'connecting'; t = everConnected ? 'Getrennt' : 'Verbinde …'; }
     else if (voice.phase === 'recording' || voice.phase === 'starting' || voice.phase === 'remote') { s = 'rec'; t = 'Hört zu …'; }
     else if (voice.phase === 'stopping' || voice.phase === 'remote-rec') { s = 'busy'; t = 'Erkennt Sprache …'; }
     else if (busy) { s = 'busy'; t = 'Arbeitet …'; }
@@ -543,6 +591,10 @@
     b.addEventListener('click', () => { closeSidebar(); send(b.dataset.cmd); });
   }
   byId('tb-update').addEventListener('click', () => send('/update'));
+  const newChat = () => { closeSidebar(); send('/neu'); };
+  byId('sb-new').addEventListener('click', newChat);
+  byId('tb-new').addEventListener('click', newChat);
+  byId('sb-profile').addEventListener('click', () => openProfile());
 
   // Seitenleiste als Schublade (schmale Fenster)
   const menuBtn = byId('menu-btn');
@@ -607,10 +659,13 @@
   const jumpBtn = byId('jump');
   const distBottom = () => scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
   scroller.addEventListener('scroll', () => {
-    // Nur echtes Hochscrollen loest das Mitlaufen – waechst der Inhalt, bleibt es an
+    // Jedes Hochscrollen loest das Mitlaufen (auch kleine Touchpad-Schritte);
+    // waechst oder schrumpft nur der Inhalt, bleibt es an.
     const top = scroller.scrollTop;
-    if (distBottom() < 70) stick = true;
+    const d = distBottom();
+    if (d < 2) stick = true;
     else if (top < lastTop - 2) stick = false;
+    else if (d < 70) stick = true;
     lastTop = top;
     if (stick) jumpBtn.hidden = true;
   }, { passive: true });
@@ -641,7 +696,10 @@
   let historyReady = false;
 
   function updateEmpty() {
-    emptyEl.hidden = !historyReady || msgs.childElementCount > 0;
+    // Begruessung, solange noch niemand etwas gesagt hat (Systemkarten allein zaehlen nicht)
+    const talked = !!msgs.querySelector('.msg');
+    emptyEl.hidden = !historyReady || talked;
+    byId('tb-new').hidden = !talked || ended;
   }
   function added() { updateEmpty(); keepBottom(); }
 
@@ -659,13 +717,121 @@
     return row;
   }
 
+  // Ausgaben der Befehle (/status, /kosten, /hilfe) haben eingerueckte Spalten:
+  //   "  Provider:        deepseek"  oder  "  /hilfe              - Hilfe anzeigen"
+  const RE_KV_STRICT = /^\s{2,}([^\s:\-*+\u2022>|#`\d][^:]{0,40}?):\s{2,}(\S.*)$/;
+  const RE_KV = /^\s{2,}([^\s:\-*+\u2022>|#`\d][^:]{0,40}?):\s+(\S.*)$/;
+  const RE_CMDROW = /^\s{2,}(\/[^\s-]\S*(?: [^\s-]\S*)*?)\s+-\s+(\S.*)$/;
+
+  /** Zerlegt den Text in Markdown-Teile und Spalten-Bloecke. */
+  function splitColumns(text) {
+    const lines = String(text == null ? '' : text).replace(/\r\n?/g, '\n').split('\n');
+    const parts = [];
+    let md = [];
+    let fence = false;
+    let i = 0;
+    const flushMd = () => { if (md.length) parts.push({ md: md.join('\n') }); md = []; };
+    while (i < lines.length) {
+      const l = lines[i];
+      if (RE_FENCE.test(l)) fence = !fence;
+      if (fence || !/^\s{2,}\S/.test(l)) { md.push(l); i++; continue; }
+      // eingerueckter Abschnitt: nur umbauen, wenn er wirklich nach Spalten aussieht
+      let j = i;
+      let strong = 0;
+      while (j < lines.length && /^\s{2,}\S/.test(lines[j]) && !RE_FENCE.test(lines[j])) {
+        if (RE_KV_STRICT.test(lines[j]) || RE_CMDROW.test(lines[j])) strong++;
+        j++;
+      }
+      if (strong < 2) { md.push(...lines.slice(i, j)); i = j; continue; }
+      const rows = [];
+      let cmds = 0;
+      for (const row of lines.slice(i, j)) {
+        let m;
+        if ((m = row.match(RE_CMDROW))) { rows.push({ k: m[1], v: m[2], cmd: true }); cmds++; }
+        else if ((m = row.match(RE_KV))) rows.push({ k: m[1].trim(), v: m[2] });
+        else rows.push({ note: row.trim() });
+      }
+      // "Status:" direkt davor wird zur Ueberschrift des Blocks
+      let title = '';
+      const prev = md.length ? md[md.length - 1] : '';
+      if (prev && /^\S.{0,60}:\s*$/.test(prev)) { title = prev.trim().replace(/:$/, ''); md.pop(); }
+      flushMd();
+      parts.push({ rows, title, cmds: cmds > rows.length / 2 });
+      i = j;
+    }
+    flushMd();
+    return parts;
+  }
+
+  const RE_ONOFF = /^(AN|AUS|ja|nein|an|aus)\b/;
+  function kvValue(v) {
+    const el = h('div', 'kv-v');
+    const m = v.match(RE_ONOFF);
+    if (m) {
+      const on = /^(AN|ja|an)$/.test(m[1]);
+      el.append(h('span', 'kv-pill' + (on ? ' on' : ''), m[1]), v.slice(m[1].length));
+    } else {
+      if (/^(\/|[A-Za-z]:\\|~\/)/.test(v)) el.classList.add('path');
+      el.textContent = v;
+    }
+    return el;
+  }
+
+  function columnsBlock(part) {
+    const wrap = h('div', 'kv-block');
+    if (part.title) wrap.append(h('div', 'kv-title', part.title));
+    const grid = h('div', 'kv' + (part.cmds ? ' cmds' : ''));
+    for (const r of part.rows) {
+      if (r.note != null) { grid.append(h('div', 'kv-note', r.note)); continue; }
+      if (r.cmd) {
+        const b = h('button', 'kv-k kv-cmd', r.k);
+        b.type = 'button';
+        b.title = 'In die Eingabe übernehmen';
+        b.addEventListener('click', () => {
+          let v = r.k;
+          const ph = v.search(/\s[<[]/);
+          if (ph > 0) v = v.slice(0, ph);
+          input.value = v + (v !== r.k ? ' ' : '');
+          autosize();
+          focusInput();
+          input.setSelectionRange(input.value.length, input.value.length);
+          updateCmdPop();
+        });
+        grid.append(b, h('div', 'kv-v', r.v));
+      } else {
+        grid.append(h('div', 'kv-k', r.k), kvValue(r.v));
+      }
+    }
+    wrap.append(grid);
+    return wrap;
+  }
+
+  /** Markdown einer Systemkarte (mit Spalten-Bloecken) sicher einsetzen. */
+  function fillCardBody(body, text) {
+    const parts = splitColumns(text);
+    if (parts.length === 1 && parts[0].md != null) {
+      body.innerHTML = renderMarkdown(parts[0].md); // renderMarkdown escaped alles
+      return;
+    }
+    for (const part of parts) {
+      if (part.md != null) {
+        if (!part.md.trim()) continue;
+        const d = h('div', 'md');
+        d.innerHTML = renderMarkdown(part.md); // escaped
+        body.append(d);
+      } else {
+        body.append(columnsBlock(part));
+      }
+    }
+  }
+
   function addCard(level, mdText, opts) {
     const lv = ['info', 'warn', 'ok'].includes(level) ? level : 'info';
     const card = h('div', 'card ' + lv);
     card.setAttribute('role', 'note');
     card.append(icon(lv === 'warn' ? 'alert' : lv === 'ok' ? 'checkCircle' : 'info', 'card-ic'));
     const body = h('div', 'card-body md');
-    body.innerHTML = renderMarkdown(mdText); // renderMarkdown escaped alles
+    fillCardBody(body, mdText);
     if (opts && opts.button) {
       const b = h('button', 'btn small primary', opts.button.label);
       b.type = 'button';
@@ -718,12 +884,13 @@
   };
   function toolInfo(name) {
     const n = String(name || 'werkzeug');
-    if (TOOL_INFO[n]) return TOOL_INFO[n];
-    const label = n.replace(/_/g, ' ').replace(/ae/g, 'ä').replace(/oe/g, 'ö').replace(/ue/g, 'ü');
+    const known = pick(TOOL_INFO, n);
+    if (known) return known;
+    const label = n.replace(/_/g, ' ');
     return ['wrench', label.charAt(0).toUpperCase() + label.slice(1)];
   }
   const ROLE_NAMES = { recherche: 'Recherche', helfer: 'Helfer', pruefer: 'Prüfer', 'prüfer': 'Prüfer' };
-  const roleLabel = (r) => ROLE_NAMES[String(r).toLowerCase()] ||
+  const roleLabel = (r) => pick(ROLE_NAMES, String(r).toLowerCase()) ||
     (String(r).charAt(0).toUpperCase() + String(r).slice(1));
 
   function addChip(host, name) {
@@ -769,13 +936,16 @@
         this.steps++;
         cnt.textContent = this.steps === 1 ? '1 Schritt' : this.steps + ' Schritte';
       },
-      finish() {
+      /** kind: 'done' (Standard) oder 'stopped' (Antwort angehalten) */
+      finish(kind) {
         if (this.done) return;
         this.done = true;
+        const stopped = kind === 'stopped';
         el.classList.remove('running');
-        el.classList.add('done');
-        st.replaceChildren(icon('check'));
-        cnt.textContent = !this.steps ? 'fertig' : (this.steps === 1 ? '1 Schritt' : this.steps + ' Schritte') + ' · fertig';
+        el.classList.add(stopped ? 'stopped' : 'done');
+        st.replaceChildren(icon(stopped ? 'pause' : 'check'));
+        const word = stopped ? 'angehalten' : 'fertig';
+        cnt.textContent = !this.steps ? word : (this.steps === 1 ? '1 Schritt' : this.steps + ' Schritte') + ' · ' + word;
         if (!touched) el.open = false;
       },
     };
@@ -921,10 +1091,18 @@
       return !this.content.childElementCount || (!this.rawText() && !this.content.querySelector('.chip, .agent, .info-line'));
     }
 
+    /** Timer anhalten, wenn die Blase verworfen wird (z.B. neues Gespraech). */
+    dispose() {
+      for (const s of this.segs) if (s.timer) { clearTimeout(s.timer); s.timer = 0; }
+      this.thinking(false);
+      this.active = false;
+    }
+
     /** kind: 'done' | 'stopped' | 'error' */
     finish(kind) {
       this.flush();
       this.thinking(false);
+      for (const b of this.agents) b.finish(kind === 'stopped' ? 'stopped' : 'done');
       this.active = false;
       this.row.removeAttribute('aria-busy');
       this.updateLive();
@@ -1020,7 +1198,7 @@
 
   async function send(text, fromInput) {
     text = String(text || '').trim();
-    if (!text) return;
+    if (!text || ended) return;
     if (busy) {
       toast('Ich arbeite noch an der letzten Nachricht – „Stopp“ oder Esc hält sie an.');
       return;
@@ -1080,15 +1258,24 @@
     updateSendBtn();
   }
 
+  /** Eingabefeld fokussieren – aber nie einem offenen Dialog den Fokus wegnehmen. */
+  function focusInput() {
+    if (!modal.hidden) { askFocusBack = input; return false; }
+    if (!pmodal.hidden || ended) return false;
+    input.focus();
+    return true;
+  }
+
   function appendToInput(text) {
     const t = String(text || '').trim();
     if (!t) return;
     const v = input.value;
     input.value = v + (v && !/\s$/.test(v) ? ' ' : '') + t;
     autosize();
-    input.focus();
-    input.setSelectionRange(input.value.length, input.value.length);
-    updateCmdPop();
+    if (focusInput()) {
+      input.setSelectionRange(input.value.length, input.value.length);
+      updateCmdPop();
+    }
   }
 
   // Befehlsvorschlaege bei "/"
@@ -1279,11 +1466,15 @@
     renderVoice();
   }
 
+  let voiceSetupCard = null;
   function voiceFailed(r) {
     if (r.setup) {
-      addCard('warn', 'Die Spracheingabe ist noch nicht eingerichtet.' + (r.error ? '\n\n' + r.error : ''), {
+      // nur eine Einrichten-Karte: die alte verschwindet, die neue steht unten
+      if (voiceSetupCard) voiceSetupCard.remove();
+      voiceSetupCard = addCard('warn', 'Die Spracheingabe ist noch nicht eingerichtet.' + (r.error ? '\n\n' + r.error : ''), {
         button: { label: 'Spracheingabe einrichten', onClick: () => send('/sprache einrichten') },
       });
+      updateEmpty();
     } else {
       toast(r.error || 'Das Mikrofon konnte nicht gestartet werden.', 'error', 5000);
     }
@@ -1319,7 +1510,7 @@
     voiceReset();
     if (!r.ok) { toast(r.error || 'Die Spracherkennung hat nicht geklappt.', 'error', 5000); return; }
     const text = String(r.text || '').trim();
-    if (!text) { toast('Ich habe nichts verstanden – versuch es noch einmal.'); input.focus(); return; }
+    if (!text) { toast('Ich habe nichts verstanden – versuch es noch einmal.'); focusInput(); return; }
     appendToInput(text);
   }
 
@@ -1398,6 +1589,7 @@
     try { micBtn.setPointerCapture(e.pointerId); } catch (_) { /* egal */ }
     voicePress();
   });
+  micBtn.addEventListener('contextmenu', (e) => e.preventDefault());
   micBtn.addEventListener('pointerup', () => voiceRelease());
   micBtn.addEventListener('pointercancel', () => voiceRelease());
   // Tastatur auf dem Knopf (Leertaste/Enter)
@@ -1452,13 +1644,26 @@
     if (!askCur) nextAsk();
   }
 
+  /** Alles hinter einem offenen Dialog ist nicht bedienbar (auch nicht per Tab oder Fokus). */
+  function updateInert() {
+    const askOpen = !modal.hidden;
+    const profOpen = !pmodal.hidden;
+    app.inert = askOpen || profOpen;
+    pmodal.inert = askOpen;
+  }
+
   function nextAsk() {
     askCur = askQueue.shift() || null;
     askSending = false;
     if (!askCur) {
+      const wasOpen = !modal.hidden;
       modal.hidden = true;
-      if (askFocusBack && document.contains(askFocusBack)) askFocusBack.focus();
-      else input.focus();
+      updateInert();
+      if (wasOpen) {
+        if (askFocusBack && document.contains(askFocusBack) && !askFocusBack.closest('[inert]')) askFocusBack.focus();
+        else if (!pmodal.hidden) panel.focus();
+        else focusInput();
+      }
       askFocusBack = null;
       return;
     }
@@ -1466,7 +1671,7 @@
     if (!Array.isArray(askCur.options) || !askCur.options.length) {
       askCur.options = [{ value: 'ok', label: 'OK' }];
     }
-    const risk = RISKS[askCur.risk] || null;
+    const risk = (askCur.risk != null && pick(RISKS, String(askCur.risk))) || null;
     dialog.className = 'dialog ' + (risk ? risk.cls : 'risk-none');
     byId('dlg-icon').replaceChildren(icon(risk ? risk.ic : askCur.kind === 'permission' ? 'shield' : 'help'));
     byId('dlg-title').textContent = askCur.kind === 'permission' ? 'Darf ich das tun?' : 'Kurze Rückfrage';
@@ -1499,6 +1704,7 @@
     byId('dlg-keys').textContent = keys.length ? 'Tasten: ' + keys.join(' · ') : '';
 
     modal.hidden = false;
+    updateInert();
     askAt = performance.now();
     closeCmdPop();
     dialog.focus();
@@ -1553,10 +1759,832 @@
   }
 
   // =====================================================================
+  // Charakter & Profil (eigenes Fenster mit Reitern)
+  // Alle Texte vom Server kommen nur per textContent / value hinein.
+  // =====================================================================
+  const pmodal = byId('pmodal');
+  const panel = byId('panel');
+  const pfName = byId('pf-name');
+  const pfMeaning = byId('pf-meaning');
+  const pfPersona = byId('pf-persona');
+  const pfValues = byId('pf-values');
+  const memNew = byId('mem-new');
+  const memCat = byId('mem-cat');
+  const memSearch = byId('mem-search');
+  const memAddBtn = byId('mem-add-btn');
+  const pconfirm = byId('pn-confirm');
+  const TABS = ['charakter', 'stil', 'ueber', 'werte', 'gedaechtnis'];
+  const LONG_ABOUT = new Set(['interessen', 'projekte', 'wichtig', 'nicht', 'sonstiges']);
+  const CHAR_ICONS = {
+    freundlich: 'smile', sachlich: 'briefcase', butler: 'bowtie', mentor: 'cap',
+    kumpel: 'users', kreativ: 'palette', coach: 'flame', eigen: 'pen',
+  };
+  const STYLE_INFO = {
+    anrede: ['Anrede', 'Wie sie dich anspricht'],
+    laenge: ['Antwortlänge', 'Wie ausführlich ihre Antworten sind'],
+    humor: ['Humor', 'Wie viel Witz darf sein?'],
+    emojis: ['Emojis', 'Bunte Symbole in den Antworten'],
+  };
+  const MEM_CATS = ['notiz', 'vorliebe', 'person', 'projekt', 'regel', 'technik'];
+
+  const dict = () => Object.create(null);
+  const str = (v) => (v == null ? '' : String(v));
+  const nl = (v) => str(v).replace(/\r\n?/g, '\n');
+
+  let prof = null;                 // Stand vom Server (Original)
+  let pSel = { character: '', style: dict() };
+  let profTab = 'charakter';
+  let panelState = 'loading';      // loading | error | ready
+  let profFocusBack = null;
+  let profSaving = false;
+  let profError = '';
+  let savedNote = false;
+  let profLoadGen = 0;
+  let aboutEls = dict();
+  const mem = { facts: [], count: 0, loaded: false, loading: false, error: false, gen: 0 };
+  let memConfirm = null;
+  let memFlash = '';
+  let memAdding = false;
+
+  function normProfile(p) {
+    p = p && typeof p === 'object' ? p : {};
+    const arr = (v) => (Array.isArray(v) ? v.filter((x) => x && typeof x === 'object') : []);
+    const obj = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
+    const style = dict();
+    for (const k of Object.keys(obj(p.style))) style[k] = str(p.style[k]);
+    const styleOptions = dict();
+    for (const k of Object.keys(obj(p.style_options))) {
+      const opts = arr(p.style_options[k])
+        .map((o) => ({ value: str(o.value), label: str(o.label || o.value) }))
+        .filter((o) => o.value);
+      if (opts.length) styleOptions[k] = opts;
+    }
+    const about = dict();
+    for (const k of Object.keys(obj(p.about))) about[k] = str(p.about[k]);
+    return {
+      name: str(p.name).trim(),
+      meaning: str(p.meaning).trim(),
+      character: str(p.character) || 'eigen',
+      characters: arr(p.characters)
+        .map((c) => ({ id: str(c.id), name: str(c.name || c.id), description: str(c.description) }))
+        .filter((c) => c.id && c.id !== 'eigen'),
+      persona: nl(p.persona_text),
+      style,
+      styleOptions,
+      about,
+      aboutFields: arr(p.about_fields)
+        .map((f) => ({ key: str(f.key), label: str(f.label || f.key), placeholder: str(f.placeholder) }))
+        .filter((f) => f.key),
+      values: nl(p.values_text),
+    };
+  }
+
+  // ---------- Oeffnen / Schliessen ----------
+  function openProfile(tab) {
+    closeSidebar();
+    closeCmdPop();
+    if (ended) return;
+    if (!pmodal.hidden) { if (tab) showTab(tab, true); return; }
+    profFocusBack = document.activeElement;
+    pmodal.hidden = false;
+    updateInert();
+    profError = '';
+    savedNote = false;
+    hideConfirm();
+    showTab(tab && TABS.includes(tab) ? tab : profTab, false);
+    loadProfile();
+    loadMemory();
+    requestAnimationFrame(() => byId('tab-' + profTab).focus());
+  }
+
+  function requestClose() {
+    if (profSaving) return;
+    if (prof && Object.keys(profChanges()).length) { showConfirm(); return; }
+    closeProfile();
+  }
+
+  function closeProfile() {
+    hideConfirm();
+    memConfirmReset();
+    pmodal.hidden = true;
+    updateInert();
+    const back = profFocusBack;
+    profFocusBack = null;
+    if (!modal.hidden) return;
+    if (back && back !== document.body && document.contains(back)) back.focus();
+    if (document.activeElement !== back) focusInput();
+  }
+
+  function showConfirm() {
+    pconfirm.hidden = false;
+    for (const el of panel.children) if (el !== pconfirm) el.inert = true;
+    byId('pc-save').focus();
+  }
+  function hideConfirm() {
+    if (pconfirm.hidden) return;
+    pconfirm.hidden = true;
+    for (const el of panel.children) el.inert = false;
+  }
+
+  // ---------- Laden ----------
+  async function loadProfile() {
+    const gen = ++profLoadGen;
+    prof = null;
+    panelState = 'loading';
+    renderPanes();
+    updateDirty();
+    const data = await getJson('/api/profile');
+    if (gen !== profLoadGen || pmodal.hidden) return;
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      panelState = 'error';
+      renderPanes();
+      return;
+    }
+    fillProfile(data);
+    panelState = 'ready';
+    renderPanes();
+  }
+
+  function fillProfile(data) {
+    prof = normProfile(data);
+    pSel = { character: prof.character, style: Object.assign(dict(), prof.style) };
+    pfName.value = prof.name;
+    pfMeaning.value = prof.meaning;
+    pfPersona.value = prof.persona;
+    pfValues.value = prof.values;
+    renderChars();
+    renderStyles();
+    renderAbout();
+    updateIdentity();
+    updatePersona();
+    profileNames();
+    updateDirty();
+  }
+
+  // ---------- Reiter ----------
+  function showTab(t, focus) {
+    if (!TABS.includes(t)) t = 'charakter';
+    profTab = t;
+    for (const x of TABS) {
+      const b = byId('tab-' + x);
+      const on = x === t;
+      b.setAttribute('aria-selected', on ? 'true' : 'false');
+      b.tabIndex = on ? 0 : -1;
+    }
+    renderPanes();
+    byId('pn-body').scrollTop = 0;
+    if (focus) byId('tab-' + t).focus();
+    if (t === 'gedaechtnis' && !mem.loaded && !mem.loading) loadMemory();
+  }
+
+  function renderPanes() {
+    const ready = panelState === 'ready';
+    const memTab = profTab === 'gedaechtnis';
+    byId('pn-loading').hidden = memTab || panelState !== 'loading';
+    byId('pn-error').hidden = memTab || panelState !== 'error';
+    for (const t of TABS) byId('pane-' + t).hidden = t !== profTab || (t !== 'gedaechtnis' && !ready);
+    if (ready && profTab === 'ueber') for (const el of Object.values(aboutEls)) grow(el);
+  }
+
+  for (const t of TABS) byId('tab-' + t).addEventListener('click', () => showTab(t, false));
+  byId('pn-tabs').addEventListener('keydown', (e) => {
+    const i = TABS.indexOf(profTab);
+    let n = -1;
+    if (e.key === 'ArrowRight') n = (i + 1) % TABS.length;
+    else if (e.key === 'ArrowLeft') n = (i + TABS.length - 1) % TABS.length;
+    else if (e.key === 'Home') n = 0;
+    else if (e.key === 'End') n = TABS.length - 1;
+    if (n < 0) return;
+    e.preventDefault();
+    showTab(TABS[n], true);
+  });
+
+  /** Pfeiltasten in einer Knopfgruppe (role=radio) */
+  function arrowRadio(e, group, onPick) {
+    const keys = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
+    if (!own(keys, e.key)) return;
+    const items = [...group.querySelectorAll('[role="radio"]')];
+    const i = items.indexOf(document.activeElement);
+    if (i < 0) return;
+    e.preventDefault();
+    const next = items[(i + keys[e.key] + items.length) % items.length];
+    next.focus();
+    onPick(next);
+  }
+
+  // ---------- Charakter ----------
+  function updateIdentity() {
+    const n = pfName.value.trim() || (prof && prof.name) || 'KI';
+    byId('pf-avatar').textContent = (n.charAt(0) || 'K').toUpperCase();
+    byId('pf-name-preview').textContent = n;
+    fillMeaning(byId('pf-meaning-preview'), n, pfMeaning.value);
+  }
+
+  function charList() {
+    return [...prof.characters,
+      { id: 'eigen', name: 'Eigener Charakter', description: 'dein eigener Text – unten frei bearbeitbar' }];
+  }
+
+  function renderChars() {
+    const grid = byId('char-grid');
+    grid.replaceChildren();
+    charList().forEach((c, k) => {
+      const b = h('button', 'char-card t' + (c.id === 'eigen' ? 'e' : k % 7));
+      b.type = 'button';
+      b.setAttribute('role', 'radio');
+      b.dataset.id = c.id;
+      const ic = h('span', 'cc-ic');
+      ic.append(icon(pick(CHAR_ICONS, c.id) || 'sparkles'));
+      const tx = h('span', 'cc-text');
+      const nm = h('span', 'cc-name');
+      nm.append(h('span', null, c.name));
+      if (c.id === prof.character) nm.append(h('span', 'cc-now', 'aktuell'));
+      tx.append(nm);
+      if (c.description) tx.append(h('span', 'cc-desc', c.description));
+      const mark = h('span', 'cc-check');
+      mark.append(icon('check'));
+      b.append(ic, tx, mark);
+      b.addEventListener('click', () => chooseChar(c.id, true));
+      grid.append(b);
+    });
+    markChars();
+  }
+  byId('char-grid').addEventListener('keydown', (e) => arrowRadio(e, byId('char-grid'), (b) => chooseChar(b.dataset.id, false)));
+
+  function markChars() {
+    for (const b of byId('char-grid').children) {
+      const on = b.dataset.id === pSel.character;
+      b.setAttribute('aria-checked', on ? 'true' : 'false');
+      b.tabIndex = on ? 0 : -1;
+      b.classList.toggle('selected', on);
+    }
+  }
+
+  function chooseChar(id, byClick) {
+    if (!prof) return;
+    pSel.character = id;
+    if (id === 'eigen' && byClick) {
+      // eigener Text: Editor aufklappen (ohne Aenderung bleibt der gespeicherte Charakter)
+      byId('persona-details').open = true;
+      setTimeout(() => {
+        pfPersona.focus();
+        pfPersona.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      }, 30);
+    }
+    markChars();
+    updatePersona();
+    updateDirty();
+  }
+
+  /** Hinweis, wenn ein fertiger Charakter den Text beim Speichern ersetzt. */
+  function updatePersona() {
+    if (!prof) return;
+    const preset = pSel.character !== 'eigen' && pSel.character !== prof.character;
+    byId('persona-note').hidden = !preset;
+    pfPersona.readOnly = preset;
+    pfPersona.classList.toggle('replaced', preset);
+    if (preset) {
+      const c = prof.characters.find((x) => x.id === pSel.character);
+      byId('persona-note-text').textContent = 'Beim Speichern wird die Persönlichkeit durch „' +
+        (c ? c.name : pSel.character) + '“ ersetzt' +
+        (prof.character === 'eigen' ? ' – dein bisheriger Text wird vorher gesichert.' : '.');
+    }
+    byId('persona-badge').hidden = pSel.character !== 'eigen';
+    byId('persona-keep').textContent = prof.character === 'eigen' || pfPersona.value !== prof.persona
+      ? 'Doch meinen Text behalten' : 'Auswahl zurücksetzen';
+  }
+
+  byId('persona-keep').addEventListener('click', () => {
+    pSel.character = pfPersona.value !== prof.persona ? 'eigen' : prof.character;
+    markChars();
+    updatePersona();
+    updateDirty();
+  });
+
+  pfPersona.addEventListener('input', () => {
+    if (!prof || pfPersona.readOnly) return;
+    // Wird der Text geaendert, ist es ein eigener Charakter
+    if (pfPersona.value !== prof.persona) pSel.character = 'eigen';
+    else pSel.character = prof.character;
+    markChars();
+    updatePersona();
+    updateDirty();
+  });
+  for (const el of [pfName, pfMeaning]) {
+    el.addEventListener('input', () => { profError = ''; updateIdentity(); updateDirty(); });
+  }
+  pfValues.addEventListener('input', () => updateDirty());
+
+  // ---------- Stil ----------
+  function renderStyles() {
+    const list = byId('style-list');
+    list.replaceChildren();
+    const keys = Object.keys(prof.styleOptions);
+    keys.forEach((key, idx) => {
+      const opts = prof.styleOptions[key];
+      const info = pick(STYLE_INFO, key) || [key.charAt(0).toUpperCase() + key.slice(1), ''];
+      const row = h('div', 'style-row');
+      const lab = h('div', 'style-text');
+      const title = h('div', 'style-title', info[0]);
+      title.id = 'st-title-' + idx;
+      lab.append(title);
+      if (info[1]) lab.append(h('div', 'style-sub', info[1]));
+      const seg = h('div', 'seg');
+      seg.setAttribute('role', 'radiogroup');
+      seg.setAttribute('aria-labelledby', title.id);
+      seg.style.setProperty('--n', String(opts.length));
+      for (const o of opts) {
+        const b = h('button', 'seg-btn', o.label);
+        b.type = 'button';
+        b.setAttribute('role', 'radio');
+        b.dataset.value = o.value;
+        b.addEventListener('click', () => pickStyle(key, o.value, seg));
+        seg.append(b);
+      }
+      seg.addEventListener('keydown', (e) => arrowRadio(e, seg, (b) => pickStyle(key, b.dataset.value, seg)));
+      row.append(lab, seg);
+      list.append(row);
+      markSeg(seg, key);
+    });
+    if (!keys.length) list.append(h('p', 'pn-desc', 'Keine Stil-Einstellungen verfügbar.'));
+    updateStylePreview();
+  }
+
+  function pickStyle(key, value, seg) {
+    pSel.style[key] = value;
+    markSeg(seg, key);
+    updateStylePreview();
+    updateDirty();
+  }
+
+  function markSeg(seg, key) {
+    const cur = pick(pSel.style, key);
+    const btns = [...seg.children];
+    const hasSel = btns.some((b) => b.dataset.value === cur);
+    btns.forEach((b, k) => {
+      const on = b.dataset.value === cur;
+      b.setAttribute('aria-checked', on ? 'true' : 'false');
+      b.tabIndex = on || (!hasSel && k === 0) ? 0 : -1;
+      b.classList.toggle('changed', on && cur !== pick(prof.style, key));
+    });
+  }
+
+  function updateStylePreview() {
+    const st = pSel.style;
+    const sie = pick(st, 'anrede') === 'Sie';
+    const emo = pick(st, 'emojis') === 'an';
+    const len = pick(st, 'laenge');
+    const humor = pick(st, 'humor');
+    let t = sie ? 'Guten Tag! Sehr gern helfe ich Ihnen bei Ihrem Projekt.' : 'Hey! Klar, ich helfe dir gern bei deinem Projekt.';
+    if (emo) t = t.replace('!', '! 👋');
+    if (len === 'kurz') t += sie ? ' Was genau brauchen Sie?' : ' Was brauchst du?';
+    else if (len === 'ausfuehrlich') {
+      t += sie
+        ? ' Ich gehe Schritt für Schritt vor und erkläre Ihnen jeweils, was ich tue und warum – so behalten Sie jederzeit den Überblick. Womit sollen wir anfangen?'
+        : ' Ich gehe Schritt für Schritt vor und erkläre dir jeweils, was ich tue und warum – so behältst du jederzeit den Überblick. Womit wollen wir anfangen?';
+    } else t += sie ? ' Erzählen Sie mir kurz, worum es geht, dann lege ich los.' : ' Erzähl mir kurz, worum es geht, dann lege ich los.';
+    if (humor === 'viel') t += ' Versprochen: Ich beiße nicht – höchstens in Bugs.';
+    else if (humor === 'etwas') t += sie ? ' Kaffee steht schon bereit.' : ' Kaffee steht schon bereit.';
+    if (emo) t += ' 🚀';
+    byId('style-preview-text').textContent = t;
+  }
+
+  // ---------- Ueber mich ----------
+  function grow(el) {
+    if (el.tagName !== 'TEXTAREA' || !el.offsetParent) return;
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight + 2, 260) + 'px';
+  }
+
+  function renderAbout() {
+    const grid = byId('about-grid');
+    grid.replaceChildren();
+    aboutEls = dict();
+    const fields = prof.aboutFields;
+    fields.forEach((f, k) => {
+      const long = LONG_ABOUT.has(f.key);
+      // ungerade Zahl kurzer Felder: das letzte bekommt die ganze Breite
+      let wide = long;
+      if (!long && (k === fields.length - 1 || LONG_ABOUT.has(fields[k + 1].key))) {
+        let run = 0;
+        for (let j = k; j >= 0 && !LONG_ABOUT.has(fields[j].key); j--) run++;
+        wide = run % 2 === 1;
+      }
+      const lab = h('label', 'field' + (wide ? ' field-wide' : ''));
+      const el = long ? h('textarea', 'input area') : h('input', 'input');
+      if (long) el.rows = 2;
+      else el.type = 'text';
+      el.id = 'about-' + k;
+      el.maxLength = 2000;
+      el.placeholder = f.placeholder;
+      el.autocomplete = 'off';
+      el.value = pick(prof.about, f.key) || '';
+      el.addEventListener('input', () => { grow(el); updateAboutCount(); updateDirty(); });
+      lab.append(h('span', 'field-label', f.label), el);
+      grid.append(lab);
+      aboutEls[f.key] = el;
+    });
+    if (!fields.length) grid.append(h('p', 'pn-desc', 'Keine Felder verfügbar.'));
+    updateAboutCount();
+  }
+
+  function updateAboutCount() {
+    const all = Object.values(aboutEls);
+    const filled = all.filter((el) => el.value.trim()).length;
+    byId('about-count').textContent = all.length ? filled + ' von ' + all.length + ' ausgefüllt.' : '';
+  }
+
+  function readAbout() {
+    let changed = false;
+    const out = dict();
+    for (const k of Object.keys(prof.about)) out[k] = prof.about[k]; // unbekannte Felder behalten
+    for (const f of prof.aboutFields) {
+      const el = pick(aboutEls, f.key);
+      if (!el) continue;
+      const v = el.value.trim();
+      if (v !== (pick(prof.about, f.key) || '').trim()) changed = true;
+      out[f.key] = v;
+    }
+    return changed ? out : null;
+  }
+
+  // ---------- Aenderungen & Speichern ----------
+  function profChanges() {
+    const ch = {};
+    if (!prof) return ch;
+    const name = pfName.value.trim();
+    const meaning = pfMeaning.value.trim();
+    // Name und Bedeutung immer zusammen schicken (der Server speichert die Bedeutung nur mit Namen)
+    if (name !== prof.name || meaning !== prof.meaning) { ch.name = name; ch.meaning = meaning; }
+    if (pSel.character !== prof.character && pSel.character !== 'eigen') ch.character = pSel.character;
+    else if (pfPersona.value !== prof.persona) { ch.character = 'eigen'; ch.persona_text = pfPersona.value; }
+    const st = dict();
+    for (const k of Object.keys(pSel.style)) if (pSel.style[k] !== pick(prof.style, k)) st[k] = pSel.style[k];
+    if (Object.keys(st).length) ch.style = st;
+    const about = readAbout();
+    if (about) ch.about = about;
+    if (pfValues.value !== prof.values) ch.values_text = pfValues.value;
+    return ch;
+  }
+
+  function nameProblem(ch) {
+    if (!('name' in ch)) return '';
+    if (!ch.name) return 'Bitte gib ihr einen Namen.';
+    if (/["\\\n]/.test(ch.name)) return 'Bitte einen Namen ohne Anführungszeichen oder Backslash.';
+    if (ch.name.length > 40) return 'Der Name ist zu lang (höchstens 40 Zeichen).';
+    return '';
+  }
+
+  function updateDirty() {
+    const ch = profChanges();
+    const n = Object.keys(ch).length;
+    const td = {
+      charakter: 'name' in ch || 'character' in ch,
+      stil: 'style' in ch,
+      ueber: 'about' in ch,
+      werte: 'values_text' in ch,
+    };
+    for (const t of TABS) byId('tab-' + t).classList.toggle('dirty', !!pick(td, t));
+    if (n) savedNote = false;
+    const save = byId('pn-save');
+    const saveNew = byId('pn-save-new');
+    save.disabled = !prof || !n || profSaving;
+    saveNew.disabled = !prof || profSaving || busy || ended;
+    saveNew.title = busy ? 'Geht, sobald ' + kiName() + ' mit der Antwort fertig ist.' : 'Speichern und gleich ein neues Gespräch beginnen';
+    renderProfStatus(n);
+  }
+
+  function renderProfStatus(n) {
+    const box = byId('pn-status');
+    box.replaceChildren();
+    box.className = 'pn-status';
+    if (!prof) return;
+    if (profSaving) {
+      box.append(h('span', 'spinner'), h('span', null, 'Speichere …'));
+    } else if (profError) {
+      box.classList.add('error');
+      box.append(icon('alertCircle'), h('span', null, profError));
+    } else if (n) {
+      box.classList.add('dirty');
+      box.append(h('span', 'pn-dot'), h('span', null, n === 1 ? 'Ungespeicherte Änderung' : 'Ungespeicherte Änderungen'));
+    } else if (savedNote) {
+      box.classList.add('ok');
+      box.append(icon('checkCircle'), h('span', null, 'Gespeichert – gilt ab dem nächsten Gespräch.'));
+      if (!busy && !ended) {
+        const b = h('button', 'link-btn', 'Jetzt neues Gespräch beginnen');
+        b.type = 'button';
+        b.addEventListener('click', startNewConversation);
+        box.append(b);
+      }
+    } else {
+      box.classList.add('muted');
+      box.append(icon('info'), h('span', null, 'Änderungen gelten ab dem nächsten Gespräch.'));
+    }
+  }
+
+  async function saveProfile(andNew) {
+    if (!prof || profSaving) return false;
+    const ch = profChanges();
+    const problem = nameProblem(ch);
+    if (problem) {
+      profError = problem;
+      showTab('charakter', false);
+      pfName.focus();
+      updateDirty();
+      return false;
+    }
+    if (andNew && busy) { toast('Ich arbeite noch – ein neues Gespräch geht, sobald ich fertig bin.'); return false; }
+    if (!Object.keys(ch).length) {
+      if (andNew) startNewConversation();
+      return true;
+    }
+    profSaving = true;
+    profError = '';
+    updateDirty();
+    const r = await post('/api/profile', ch);
+    profSaving = false;
+    if (!r.ok) {
+      profError = r.error || 'Speichern hat nicht geklappt.';
+      updateDirty();
+      toast(profError, 'error');
+      return false;
+    }
+    if (r.profile && typeof r.profile === 'object') fillProfile(r.profile);
+    else await loadProfile();
+    if (andNew) {
+      startNewConversation();
+    } else {
+      savedNote = true;
+      updateDirty();
+      toast('Gespeichert', 'ok', 2400);
+    }
+    return true;
+  }
+
+  function startNewConversation() {
+    if (busy) { toast('Ich arbeite noch – ein neues Gespräch geht, sobald ich fertig bin.'); return; }
+    closeProfile();
+    send('/neu');
+  }
+
+  byId('pn-save').addEventListener('click', () => saveProfile(false));
+  byId('pn-save-new').addEventListener('click', () => saveProfile(true));
+  byId('pn-close').addEventListener('click', requestClose);
+  byId('pn-retry').addEventListener('click', loadProfile);
+  pmodal.addEventListener('mousedown', (e) => { if (e.target === pmodal) requestClose(); });
+  byId('pc-discard').addEventListener('click', closeProfile);
+  byId('pc-back').addEventListener('click', () => { hideConfirm(); byId('pn-save').focus(); });
+  byId('pc-save').addEventListener('click', async () => {
+    hideConfirm();
+    if (await saveProfile(false)) closeProfile();
+  });
+
+  /** Namen im Fenster aktuell halten (nach Umbenennen, Zustand). */
+  function profileNames() {
+    const n = (prof && prof.name) || kiName();
+    byId('pn-sub').textContent = 'Wie ' + n + ' sein soll – und was sie über dich weiß';
+    byId('about-title').textContent = 'Was ' + n + ' über dich wissen soll';
+    byId('values-title').textContent = 'Deine Regeln für ' + n;
+    byId('mem-title').textContent = 'Was ' + n + ' sich gemerkt hat';
+    if (!pmodal.hidden && prof) updateDirty();
+  }
+
+  /** Tab-Taste im Fenster halten */
+  function trapTab(e, root) {
+    const f = [...root.querySelectorAll('button, input, textarea, select, summary, [tabindex]')]
+      .filter((el) => !el.disabled && el.tabIndex >= 0 && el.offsetParent !== null && !el.closest('[inert]'));
+    if (!f.length) { e.preventDefault(); return; }
+    const i = f.indexOf(document.activeElement);
+    if (e.shiftKey ? i <= 0 : i === f.length - 1 || i < 0) {
+      e.preventDefault();
+      f[e.shiftKey ? f.length - 1 : 0].focus();
+    }
+  }
+
+  function profileKey(e) {
+    if (!pconfirm.hidden) {
+      if (e.key === 'Escape') { e.preventDefault(); hideConfirm(); byId('pn-save').focus(); }
+      else if (e.key === 'Tab') trapTab(e, pconfirm);
+      return;
+    }
+    if (e.key === 'F2') { e.preventDefault(); return; }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      if (memConfirm) { memConfirmReset(); return; }
+      if (e.target === memSearch && memSearch.value) { memSearch.value = ''; renderMemory(); return; }
+      requestClose();
+      return;
+    }
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 's') {
+      e.preventDefault();
+      saveProfile(false);
+      return;
+    }
+    if (e.key === 'Tab') trapTab(e, panel);
+  }
+
+  // ---------- Gedaechtnis ----------
+  async function loadMemory() {
+    const gen = ++mem.gen;
+    mem.loading = true;
+    mem.error = false;
+    renderMemory();
+    const d = await getJson('/api/memory');
+    if (gen !== mem.gen) return;
+    mem.loading = false;
+    if (!d || !Array.isArray(d.facts)) { mem.error = true; renderMemory(); return; }
+    setFacts(d);
+  }
+
+  function setFacts(d) {
+    mem.facts = d.facts.filter((f) => f && typeof f === 'object' && f.id != null).map((f) => ({
+      id: f.id,
+      category: str(f.category).trim() || 'allgemein',
+      content: str(f.content),
+      importance: Math.max(0, Math.min(5, Math.round(Number(f.importance) || 0))),
+    }));
+    const c = Number(d.count);
+    mem.count = Number.isFinite(c) && c >= mem.facts.length ? c : mem.facts.length;
+    mem.loaded = true;
+    mem.error = false;
+    fillCats();
+    renderMemory();
+  }
+
+  function fillCats() {
+    const cur = memCat.value || 'notiz';
+    const cats = [...MEM_CATS];
+    for (const f of mem.facts) if (!cats.includes(f.category)) cats.push(f.category);
+    memCat.replaceChildren();
+    for (const c of cats) {
+      const o = h('option', null, c.charAt(0).toUpperCase() + c.slice(1));
+      o.value = c;
+      memCat.append(o);
+    }
+    memCat.value = cats.includes(cur) ? cur : 'notiz';
+  }
+  fillCats();
+
+  function catHue(cat) {
+    let x = 0;
+    for (const ch of cat) x = (x * 31 + ch.codePointAt(0)) >>> 0;
+    return x % 6;
+  }
+
+  /** Text mit markiertem Suchbegriff (nur Textknoten + <mark>). */
+  function appendHighlighted(el, text, q) {
+    const low = text.toLowerCase();
+    if (!q || low.length !== text.length) { el.textContent = text; return; }
+    let pos = 0;
+    let k;
+    while ((k = low.indexOf(q, pos)) >= 0) {
+      if (k > pos) el.append(text.slice(pos, k));
+      el.append(h('mark', null, text.slice(k, k + q.length)));
+      pos = k + q.length;
+    }
+    if (pos < text.length) el.append(text.slice(pos));
+  }
+
+  function memStateBox(kind, title, sub, btn) {
+    const d = h('div', 'mem-empty' + (kind === 'error' ? ' error' : ''));
+    if (kind === 'loading') d.append(h('span', 'spinner'));
+    else d.append(icon(kind === 'error' ? 'alertCircle' : kind === 'search' ? 'search' : 'brain', 'me-ic'));
+    d.append(h('div', 'me-title', title));
+    if (sub) d.append(h('div', 'me-sub', sub));
+    if (btn) d.append(btn);
+    return d;
+  }
+
+  function renderMemory() {
+    const list = byId('mem-list');
+    list.replaceChildren();
+    const q = memSearch.value.trim().toLowerCase();
+    byId('tab-mem-count').textContent = mem.loaded && mem.count ? String(mem.count) : '';
+    const countEl = byId('mem-count');
+    countEl.textContent = '';
+    if (!mem.loaded) {
+      if (mem.error) {
+        const b = h('button', 'btn small secondary', 'Nochmal versuchen');
+        b.type = 'button';
+        b.addEventListener('click', loadMemory);
+        list.append(memStateBox('error', 'Das Gedächtnis konnte nicht geladen werden.', '', b));
+      } else {
+        list.append(memStateBox('loading', 'Lade das Gedächtnis …'));
+      }
+      return;
+    }
+    const n = kiName();
+    const shown = q ? mem.facts.filter((f) => f.content.toLowerCase().includes(q) || f.category.toLowerCase().includes(q)) : mem.facts;
+    if (q) countEl.textContent = shown.length + ' von ' + mem.count + (mem.count === 1 ? ' Eintrag' : ' Einträgen');
+    else if (mem.facts.length < mem.count) countEl.textContent = 'die wichtigsten ' + mem.facts.length + ' von ' + mem.count;
+    else countEl.textContent = mem.count === 1 ? '1 Eintrag' : mem.count + ' Einträge';
+    if (!mem.facts.length) {
+      list.append(memStateBox('empty', 'Noch nichts gemerkt',
+        'Erzähl ' + n + ' etwas über dich – oder füge oben selbst etwas hinzu.'));
+      return;
+    }
+    if (!shown.length) {
+      list.append(memStateBox('search', 'Nichts gefunden', 'Kein Eintrag passt zu „' + memSearch.value.trim() + '“.'));
+      return;
+    }
+    let fresh = null;
+    for (const f of shown) {
+      const row = factRow(f, q);
+      if (memFlash && f.content === memFlash) { row.classList.add('fresh'); fresh = row; }
+      list.append(row);
+    }
+    memFlash = '';
+    if (fresh) requestAnimationFrame(() => fresh.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
+  }
+
+  function factRow(f, q) {
+    const row = h('div', 'fact');
+    row.dataset.id = String(f.id);
+    const cat = h('span', 'fact-cat c' + catHue(f.category));
+    cat.append(icon('tag'), h('span', null, f.category));
+    const text = h('div', 'fact-text');
+    appendHighlighted(text, f.content, q);
+    const imp = h('span', 'fact-imp');
+    imp.title = 'Wichtigkeit ' + f.importance + ' von 5';
+    imp.setAttribute('role', 'img');
+    imp.setAttribute('aria-label', imp.title);
+    for (let i = 1; i <= 5; i++) imp.append(h('i', i <= f.importance ? 'on' : null));
+    const del = h('button', 'fact-del');
+    del.type = 'button';
+    del.title = 'Vergessen';
+    del.setAttribute('aria-label', 'Vergessen: ' + f.content.slice(0, 80));
+    del.append(icon('trash'), h('span', 'fact-del-text', 'Wirklich?'));
+    del.addEventListener('click', () => onForget(f, row, del));
+    row.append(cat, text, imp, del);
+    return row;
+  }
+
+  function memConfirmReset() {
+    if (!memConfirm) return;
+    clearTimeout(memConfirm.timer);
+    const d = memConfirm.del;
+    d.classList.remove('confirm');
+    d.title = 'Vergessen';
+    d.setAttribute('aria-label', memConfirm.label);
+    memConfirm = null;
+  }
+
+  function onForget(f, row, del) {
+    if (memConfirm && memConfirm.del === del) { forget(f, row); return; }
+    memConfirmReset();
+    memConfirm = { del, label: del.getAttribute('aria-label'), timer: setTimeout(memConfirmReset, 4000) };
+    del.classList.add('confirm');
+    del.title = 'Nochmal klicken zum Vergessen';
+    del.setAttribute('aria-label', 'Wirklich vergessen? Nochmal drücken');
+  }
+
+  async function forget(f, row) {
+    memConfirmReset();
+    const rows = [...byId('mem-list').querySelectorAll('.fact')];
+    const idx = rows.indexOf(row);
+    row.classList.add('removing');
+    const r = await post('/api/memory', { action: 'delete', id: f.id });
+    if (Array.isArray(r.facts)) setFacts(r);
+    else row.classList.remove('removing');
+    if (!r.ok) { toast(r.error || 'Das hat nicht geklappt.', 'error'); return; }
+    toast('Vergessen', 'ok', 2000);
+    // Fokus auf den naechsten Eintrag (oder das Eingabefeld)
+    const left = [...byId('mem-list').querySelectorAll('.fact-del')];
+    const next = left[Math.min(idx, left.length - 1)];
+    if (next) next.focus(); else memNew.focus();
+  }
+
+  function updateAddBtn() { memAddBtn.disabled = memAdding || !memNew.value.trim(); }
+  memNew.addEventListener('input', updateAddBtn);
+  memSearch.addEventListener('input', () => { memConfirmReset(); renderMemory(); });
+  byId('mem-add').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const content = memNew.value.trim();
+    if (!content || memAdding) return;
+    memAdding = true;
+    updateAddBtn();
+    const r = await post('/api/memory', { action: 'add', content, category: memCat.value || 'notiz' });
+    memAdding = false;
+    if (r.ok) {
+      memNew.value = '';
+      memSearch.value = '';
+      memFlash = content;
+      toast('Gemerkt', 'ok', 2000);
+    } else {
+      toast(r.error || 'Hinzufügen hat nicht geklappt.', 'error');
+    }
+    if (Array.isArray(r.facts)) setFacts(r);
+    updateAddBtn();
+    memNew.focus();
+  });
+
+  // =====================================================================
   // Globale Tasten
   // =====================================================================
   document.addEventListener('keydown', (e) => {
     if (askCur && !modal.hidden) { modalKey(e); return; }
+    if (!pmodal.hidden) { profileKey(e); return; }
+    if (ended) return;
     if (e.key === 'F2') {
       e.preventDefault();
       if (!e.repeat) voicePress();
@@ -1585,12 +2613,18 @@
   let retryTimer = 0;
   let loadingHistory = false;
   let buffered = [];
-  const FLOW = new Set(['user', 'start', 'thinking', 'chunk', 'tool', 'agent', 'info', 'done', 'stopped', 'error', 'notice']);
+  let histGen = 0;           // nur die neueste Verlaufs-Ladung zaehlt
+  let flushing = false;      // gepufferte Ereignisse werden gerade nachgespielt
+  let resyncOnEnd = false;   // nach dem Ende der laufenden Antwort den Verlauf neu laden
+  let resyncCount = 0;
+  const FLOW = new Set(['user', 'start', 'thinking', 'chunk', 'tool', 'agent', 'info', 'done', 'stopped', 'error',
+    'notice', 'reset']);
 
   function setConnected(ok) {
     connected = ok;
     if (ok) everConnected = true;
     const banner = byId('conn-banner');
+    banner.classList.remove('ended');
     if (!TOKEN) {
       banner.hidden = false;
       banner.classList.add('fatal');
@@ -1604,8 +2638,37 @@
     updateStatus();
   }
 
+  /** Ereignis "bye": nicht neu verbinden, Fenster kann zu. */
+  function onBye() {
+    ended = true;
+    connected = false;
+    clearTimeout(retryTimer);
+    if (es) { es.close(); es = null; }
+    loadingHistory = false;
+    buffered = [];
+    if (reply) endReply('done');
+    // offene Fragen sind hinfaellig
+    askQueue = [];
+    if (askCur) { askCur = null; askFocusBack = null; modal.hidden = true; }
+    if (!pmodal.hidden) closeProfile(true);
+    updateInert();
+    if (voice.phase !== 'idle') voiceReset();
+    const banner = byId('conn-banner');
+    banner.hidden = false;
+    banner.classList.remove('fatal');
+    banner.classList.add('ended');
+    byId('conn-text').textContent = kiName() + ' wurde beendet – du kannst das Fenster schließen.';
+    banner.querySelector('.spinner').hidden = true;
+    input.disabled = true;
+    micBtn.disabled = true;
+    closeCmdPop();
+    setBusy(false);
+    updateEmpty();
+  }
+
   function connect() {
     clearTimeout(retryTimer);
+    if (ended) return;
     if (es) es.close();
     es = new EventSource('/api/events?t=' + encodeURIComponent(TOKEN));
     es.onmessage = (m) => {
@@ -1614,6 +2677,7 @@
       if (ev && typeof ev.type === 'string') handleEvent(ev);
     };
     es.onerror = () => {
+      if (ended) return;
       retry++;
       setConnected(false);
       if (es && es.readyState === EventSource.CLOSED) {
@@ -1624,34 +2688,100 @@
     };
   }
 
-  async function loadHistory() {
+  /** Chat leeren (neues Gespraech oder Neuaufbau aus dem Verlauf). */
+  function clearChat() {
+    if (reply) { reply.dispose(); reply = null; }
+    msgs.replaceChildren();
+    voiceSetupCard = null;
+    pendingSent.length = 0;
+    jumpBtn.hidden = true;
+  }
+
+  function addFromHistory(m) {
+    if (!m || typeof m !== 'object') return;
+    const text = String(m.text == null ? '' : m.text);
+    if (m.role === 'user') { addUser(text); rememberOwn(text.trim()); }
+    else if (m.role === 'assistant') {
+      const r = new Reply();
+      r.text(text);
+      r.finish('done');
+    } else if (m.role === 'notice') addCard(m.level, text);
+    else if (m.role === 'error') addError(text);
+  }
+
+  async function loadHistory(isResync) {
+    const gen = ++histGen;
+    if (!isResync) resyncCount = 0;
     loadingHistory = true;
     buffered = [];
     const data = await getJson('/api/history');
-    // Neu aufbauen (auch nach einer Unterbrechung)
-    if (reply) { reply.thinking(false); reply = null; }
-    msgs.replaceChildren();
-    pendingSent.length = 0;
-    const list = data && Array.isArray(data.messages) ? data.messages : [];
-    for (const m of list) {
-      if (!m || typeof m !== 'object') continue;
-      const text = String(m.text == null ? '' : m.text);
-      if (m.role === 'user') { addUser(text); rememberOwn(text.trim()); }
-      else if (m.role === 'assistant') {
-        const r = new Reply();
-        r.text(text);
-        r.finish('done');
-      } else if (m.role === 'notice') addCard(m.level, text);
-      else if (m.role === 'error') addError(text);
-    }
-    if (!data) toast('Der Verlauf konnte nicht geladen werden.', 'error');
-    historyReady = true;
-    loadingHistory = false;
+    if (gen !== histGen || ended) return; // eine neuere Ladung laeuft schon
     const later = buffered;
     buffered = [];
-    for (const ev of later) handleEvent(ev);
+    loadingHistory = false;
+    const list = data && Array.isArray(data.messages) ? data.messages : null;
+    if (!list) {
+      // Verlauf nicht bekommen: sichtbaren Chat behalten, neue Ereignisse trotzdem zeigen
+      toast('Der Verlauf konnte nicht geladen werden.', 'error');
+      historyReady = true;
+      replay(later, []);
+      updateEmpty();
+      return;
+    }
+    // Neu aufbauen (auch nach einer Unterbrechung). Eine laufende Antwort bleibt stehen –
+    // sie ist im Verlauf noch nicht enthalten.
+    const wasBusy = busy;
+    const keep = wasBusy ? reply : null;
+    if (keep) reply = null;
+    clearChat();
+    ownMsgs.length = 0;
+    recallIdx = -1;
+    for (const m of list) addFromHistory(m);
+    if (keep) { msgs.append(keep.row); reply = keep; }
+    else if (wasBusy) ensureReply();
+    historyReady = true;
+    // Der Anfang der laufenden Antwort fehlt evtl. -> nach ihrem Ende den Verlauf neu laden
+    resyncOnEnd = wasBusy;
+    // Was schon im Verlauf steht, nicht noch einmal anzeigen
+    const tail = list.slice(-12)
+      .filter((m) => m && (m.role === 'user' || m.role === 'notice' || m.role === 'error'))
+      .map((m) => ({ role: m.role, text: String(m.text == null ? '' : m.text).trim() }));
+    replay(later, tail);
     updateEmpty();
     toBottom(true);
+  }
+
+  /** Gepufferte Ereignisse nachspielen; Doppeltes (schon im Verlauf) auslassen. */
+  function replay(events, tail) {
+    flushing = true;
+    try {
+      for (const ev of events) {
+        if (ended) break;
+        if (ev.type === 'reset') tail.length = 0;
+        if (ev.type === 'user' || ev.type === 'notice' || ev.type === 'error') {
+          const t = String(ev.text == null ? '' : ev.text).trim();
+          const k = tail.findIndex((x) => x.role === ev.type &&
+            (x.text === t || (ev.type === 'error' && x.text && t.endsWith(x.text))));
+          if (k >= 0) {
+            tail.splice(0, k + 1);
+            if (ev.type === 'error') { endReply('error'); setBusy(false); maybeResync(); }
+            continue;
+          }
+        }
+        handleEvent(ev);
+      }
+    } finally {
+      flushing = false;
+    }
+  }
+
+  /** Nach dem Ende einer Antwort, deren Anfang evtl. fehlte, den Verlauf neu laden. */
+  function maybeResync() {
+    if (!(resyncOnEnd || flushing)) return;
+    resyncOnEnd = false;
+    if (resyncCount >= 2) return;
+    resyncCount++;
+    setTimeout(() => loadHistory(true), 0);
   }
 
   function handleEvent(ev) {
@@ -1693,18 +2823,27 @@
       case 'done':
         endReply('done');
         setBusy(false);
+        maybeResync();
         break;
       case 'stopped':
         endReply('stopped');
         setBusy(false);
+        maybeResync();
         break;
       case 'error':
         endReply('error');
         addError(String(ev.text || ''));
         setBusy(false);
+        maybeResync();
         break;
       case 'notice':
         addCard(ev.level, String(ev.text || ''));
+        break;
+      case 'reset':
+        clearChat();
+        resyncOnEnd = false;
+        updateEmpty();
+        toBottom(true);
         break;
       case 'ask':
         showAsk(ev);
@@ -1714,6 +2853,9 @@
         break;
       case 'voice':
         onVoiceEvent(ev);
+        break;
+      case 'bye':
+        onBye();
         break;
       default:
         break;

@@ -18,9 +18,19 @@
       <div class="avatar lg ai-avatar" aria-hidden="true">K</div>
       <div class="sb-id">
         <div class="sb-name" id="sb-name">KI</div>
+        <div class="sb-meaning" id="sb-meaning" hidden></div>
         <div class="sb-version" id="sb-version">Verbinde …</div>
       </div>
       <button class="icon-btn sb-close" id="sb-close" type="button" aria-label="Seitenleiste schließen" data-icon="x"></button>
+    </div>
+
+    <div class="sb-actions">
+      <button class="sb-new" id="sb-new" type="button" title="Neues Gespräch beginnen (/neu)"><span data-icon="plus"></span>Neues Gespräch</button>
+      <button class="sb-profile" id="sb-profile" type="button" aria-haspopup="dialog">
+        <span class="sbp-ic" data-icon="userCog"></span>
+        <span class="sbp-text"><span class="sbp-title">Charakter &amp; Profil</span><span class="sbp-sub">Persönlichkeit, Stil, Über mich</span></span>
+        <span class="sbp-chev" data-icon="chevronRight"></span>
+      </button>
     </div>
 
     <div class="sb-alerts" id="sb-alerts" aria-live="polite"></div>
@@ -87,6 +97,7 @@
       <div class="tb-actions">
         <button class="pill-btn" id="tb-update" type="button" hidden><span data-icon="download"></span><span id="tb-update-text">Update verfügbar</span></button>
         <span class="model-chip" id="tb-model" hidden><span data-icon="sparkles"></span><span id="tb-model-text"></span></span>
+        <button class="icon-btn" id="tb-new" type="button" aria-label="Neues Gespräch" title="Neues Gespräch (/neu)" data-icon="plusSquare" hidden></button>
         <button class="icon-btn" id="theme-btn" type="button" aria-label="Design wechseln" data-icon="contrast"></button>
       </div>
     </header>
@@ -171,6 +182,177 @@
     <div class="dlg-body"><p class="dlg-text" id="dlg-text"></p></div>
     <div class="dlg-foot" id="dlg-foot"></div>
     <div class="dlg-keys" id="dlg-keys"></div>
+  </div>
+</div>
+
+<!-- Charakter & Profil -->
+<div class="pmodal" id="pmodal" hidden>
+  <div class="panel" id="panel" role="dialog" aria-modal="true" aria-labelledby="pn-title" aria-describedby="pn-sub" tabindex="-1">
+    <header class="pn-head">
+      <div class="avatar lg ai-avatar" aria-hidden="true">K</div>
+      <div class="pn-titles">
+        <h2 class="pn-title" id="pn-title">Charakter &amp; Profil</h2>
+        <p class="pn-sub" id="pn-sub">Wie deine KI sein soll – und was sie über dich weiß</p>
+      </div>
+      <button class="icon-btn" id="pn-close" type="button" aria-label="Schließen" title="Schließen (Esc)" data-icon="x"></button>
+    </header>
+
+    <div class="pn-tabs" id="pn-tabs" role="tablist" aria-label="Bereiche">
+      <button class="pn-tab" type="button" role="tab" id="tab-charakter" data-tab="charakter" aria-controls="pane-charakter" aria-selected="true"><span data-icon="user"></span><span>Charakter</span><i class="tab-dot" aria-hidden="true"></i></button>
+      <button class="pn-tab" type="button" role="tab" id="tab-stil" data-tab="stil" aria-controls="pane-stil" aria-selected="false" tabindex="-1"><span data-icon="sliders"></span><span>Stil</span><i class="tab-dot" aria-hidden="true"></i></button>
+      <button class="pn-tab" type="button" role="tab" id="tab-ueber" data-tab="ueber" aria-controls="pane-ueber" aria-selected="false" tabindex="-1"><span data-icon="idCard"></span><span>Über mich</span><i class="tab-dot" aria-hidden="true"></i></button>
+      <button class="pn-tab" type="button" role="tab" id="tab-werte" data-tab="werte" aria-controls="pane-werte" aria-selected="false" tabindex="-1"><span data-icon="scale"></span><span>Werte</span><i class="tab-dot" aria-hidden="true"></i></button>
+      <button class="pn-tab" type="button" role="tab" id="tab-gedaechtnis" data-tab="gedaechtnis" aria-controls="pane-gedaechtnis" aria-selected="false" tabindex="-1"><span data-icon="brain"></span><span>Gedächtnis</span><span class="tab-count" id="tab-mem-count"></span></button>
+    </div>
+
+    <div class="pn-body" id="pn-body">
+      <div class="pn-state" id="pn-loading"><span class="spinner" aria-hidden="true"></span><span>Lade dein Profil …</span></div>
+      <div class="pn-state error" id="pn-error" hidden>
+        <span data-icon="alertCircle"></span><span id="pn-error-text">Das Profil konnte nicht geladen werden.</span>
+        <button class="btn small secondary" id="pn-retry" type="button">Nochmal versuchen</button>
+      </div>
+
+      <!-- 1. Charakter -->
+      <section class="pane" id="pane-charakter" role="tabpanel" aria-labelledby="tab-charakter" hidden>
+        <div class="pn-section">
+          <div class="pn-sec-head"><h3 class="pn-h">Name</h3></div>
+          <div class="identity">
+            <div class="id-card" aria-hidden="true">
+              <div class="avatar xl" id="pf-avatar">K</div>
+              <div class="id-name" id="pf-name-preview">KI</div>
+              <div class="id-meaning" id="pf-meaning-preview" hidden></div>
+            </div>
+            <div class="id-fields">
+              <label class="field">
+                <span class="field-label">Name</span>
+                <input class="input" id="pf-name" type="text" maxlength="40" autocomplete="off" spellcheck="false">
+              </label>
+              <label class="field">
+                <span class="field-label">Wofür der Name steht <span class="opt">optional</span></span>
+                <input class="input" id="pf-meaning" type="text" maxlength="120" autocomplete="off" placeholder="z.B. Neugierige, Offene, Vernetzte Assistenz">
+              </label>
+              <p class="field-hint">Ergeben die Anfangsbuchstaben den Namen, werden sie hervorgehoben – so wie bei <b>N</b>-<b>O</b>-<b>V</b>-<b>A</b>.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="pn-section">
+          <div class="pn-sec-head">
+            <h3 class="pn-h">Charakter</h3>
+            <p class="pn-desc">Wähle eine Persönlichkeit – du kannst sie danach unten noch frei anpassen.</p>
+          </div>
+          <div class="char-grid" id="char-grid" role="radiogroup" aria-label="Charakter"></div>
+        </div>
+
+        <details class="pn-details" id="persona-details">
+          <summary>
+            <span data-icon="pen"></span>
+            <span class="pd-title">Persönlichkeit selbst bearbeiten</span>
+            <span class="pd-badge" id="persona-badge" hidden>eigener Text</span>
+            <span class="pd-chev" data-icon="chevron"></span>
+          </summary>
+          <div class="pd-body">
+            <div class="persona-note" id="persona-note" hidden>
+              <span data-icon="info"></span>
+              <span id="persona-note-text"></span>
+              <button class="btn small ghost" id="persona-keep" type="button">Doch meinen Text behalten</button>
+            </div>
+            <label class="sr-only" for="pf-persona">Persönlichkeit (Text)</label>
+            <textarea class="input area tall" id="pf-persona" rows="14" spellcheck="true"></textarea>
+            <p class="field-hint">Schreib in ganzen Sätzen, wie sie sein soll. Überschriften mit <code>#</code>, Aufzählungen mit <code>-</code>. Sobald du hier etwas änderst, wird daraus dein eigener Charakter.</p>
+          </div>
+        </details>
+      </section>
+
+      <!-- 2. Stil -->
+      <section class="pane" id="pane-stil" role="tabpanel" aria-labelledby="tab-stil" hidden>
+        <div class="pn-section">
+          <div class="pn-sec-head">
+            <h3 class="pn-h">Wie sie mit dir redet</h3>
+            <p class="pn-desc">Ein Klick genügt – die Vorschau zeigt ungefähr, wie das klingt.</p>
+          </div>
+          <div class="style-list" id="style-list"></div>
+        </div>
+        <div class="style-preview" id="style-preview" aria-live="polite">
+          <div class="avatar ai-avatar" aria-hidden="true">K</div>
+          <div class="sp-col">
+            <span class="sp-label">Vorschau</span>
+            <div class="sp-bubble" id="style-preview-text"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3. Ueber mich -->
+      <section class="pane" id="pane-ueber" role="tabpanel" aria-labelledby="tab-ueber" hidden>
+        <div class="pn-section">
+          <div class="pn-sec-head">
+            <h3 class="pn-h" id="about-title">Was sie über dich wissen soll</h3>
+            <p class="pn-desc">Alles freiwillig. Leere Felder werden gelöscht. <span class="about-count" id="about-count"></span></p>
+          </div>
+          <div class="field-grid two" id="about-grid"></div>
+        </div>
+      </section>
+
+      <!-- 4. Werte -->
+      <section class="pane" id="pane-werte" role="tabpanel" aria-labelledby="tab-werte" hidden>
+        <div class="pn-section">
+          <div class="pn-sec-head">
+            <h3 class="pn-h" id="values-title">Deine Regeln</h3>
+            <p class="pn-desc">Was ihr wichtig sein soll und welche Grenzen sie nie überschreitet.</p>
+          </div>
+          <label class="sr-only" for="pf-values">Werte &amp; Grenzen (Text)</label>
+          <textarea class="input area tall" id="pf-values" rows="16" spellcheck="true"></textarea>
+          <p class="field-hint">Am besten als Liste, eine Regel pro Zeile, z.B. <code>- Lösche nie Dateien, ohne zu fragen.</code></p>
+        </div>
+      </section>
+
+      <!-- 5. Gedaechtnis -->
+      <section class="pane" id="pane-gedaechtnis" role="tabpanel" aria-labelledby="tab-gedaechtnis" hidden>
+        <div class="pn-section">
+          <div class="pn-sec-head">
+            <h3 class="pn-h" id="mem-title">Was sie sich gemerkt hat</h3>
+            <p class="pn-desc">Änderungen hier gelten sofort – ohne Speichern.</p>
+          </div>
+          <form class="mem-add" id="mem-add" autocomplete="off">
+            <label class="sr-only" for="mem-new">Neuer Eintrag</label>
+            <input class="input" id="mem-new" type="text" maxlength="1000" placeholder="Etwas hinzufügen, z.B. „Ich trinke meinen Kaffee schwarz“">
+            <label class="sr-only" for="mem-cat">Kategorie</label>
+            <select class="input select" id="mem-cat"></select>
+            <button class="btn primary" id="mem-add-btn" type="submit" disabled><span data-icon="plus"></span>Hinzufügen</button>
+          </form>
+          <div class="mem-tools">
+            <div class="search">
+              <span data-icon="search"></span>
+              <label class="sr-only" for="mem-search">Gedächtnis durchsuchen</label>
+              <input class="input" id="mem-search" type="search" placeholder="Durchsuchen …" autocomplete="off">
+            </div>
+            <span class="mem-count" id="mem-count"></span>
+          </div>
+          <div class="mem-list" id="mem-list" aria-live="polite"></div>
+        </div>
+      </section>
+    </div>
+
+    <footer class="pn-foot">
+      <div class="pn-status" id="pn-status" aria-live="polite"></div>
+      <div class="pn-actions">
+        <button class="btn secondary" id="pn-save" type="button" disabled>Speichern</button>
+        <button class="btn primary" id="pn-save-new" type="button"><span data-icon="refresh"></span>Speichern &amp; neues Gespräch</button>
+      </div>
+    </footer>
+
+    <div class="pn-confirm" id="pn-confirm" hidden>
+      <div class="pc-card" role="alertdialog" aria-modal="true" aria-labelledby="pc-title" aria-describedby="pc-text">
+        <div class="pc-icon" data-icon="alert"></div>
+        <h3 class="pc-title" id="pc-title">Änderungen speichern?</h3>
+        <p class="pc-text" id="pc-text">Du hast Änderungen, die noch nicht gespeichert sind.</p>
+        <div class="pc-btns">
+          <button class="btn ghost" id="pc-discard" type="button">Verwerfen</button>
+          <button class="btn secondary" id="pc-back" type="button">Weiter bearbeiten</button>
+          <button class="btn primary" id="pc-save" type="button">Speichern</button>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 

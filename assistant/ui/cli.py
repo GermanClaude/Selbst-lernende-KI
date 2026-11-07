@@ -21,6 +21,10 @@ Sonderbefehle (mit '/' beginnen):
   /ueber-mich [feld = wert] - was die KI ueber dich wissen soll
   /werte bearbeiten   - deine Regeln fuer die KI im Editor oeffnen
   /neu                - neues Gespraech (Charakter & Profil frisch geladen)
+  /jarvis             - reiner Sprachmodus: einfach reden (Strg+C = zurueck)
+  /tutorial           - Nova stellt sich vor und zeigt, was sie kann
+  /stuetzraeder an|aus - an: fragt vor allem, nur Arbeitsordner; aus: darf alles
+  /aussehen [zuruecksetzen] - Aussehen der App anzeigen bzw. zuruecksetzen
   /name <Name> [= Bedeutung] - der KI einen anderen Namen geben
   /app                - zur App wechseln (eigenes Fenster statt Terminal)
   /verknuepfung       - Symbol fuer die App auf den Desktop legen
@@ -144,6 +148,7 @@ class CLI:
         )
         self.registry = build_registry(include_computer=True)
         self.tool_ctx = ToolContext(permissions=self.permissions, memory=self.memory)
+        self.tool_ctx.extra["app_root"] = config.project_root
         self.brain = Brain(config, self.memory, self.registry, self.tool_ctx)
         self.brain.provider.wait_fn = self.thinking.start
         self.voice_out = VoiceOutput(config.voice.speak_responses)
@@ -247,6 +252,126 @@ class CLI:
         save_about(self.config, about)
         print(_c(f"Gespeichert: {fields[key]} = {value.strip() or '(leer)'}. Gilt ab dem naechsten Gespraech (/neu).",
                  GREEN))
+
+    # -- Stuetzraeder ----------------------------------------------------------
+    def training_wheels_state(self) -> str:
+        p = self.permissions.settings
+        if p.safe_mode and not p.auto_confirm and not p.allow_full_filesystem:
+            return "an"
+        if not p.safe_mode and p.auto_confirm and p.allow_full_filesystem:
+            return "aus"
+        return "teilweise"
+
+    def set_training_wheels(self, on: bool) -> None:
+        """An: Safe Mode, nur Arbeitsordner, fragt nach. Aus: ganzer PC, ohne Rueckfrage."""
+        p = self.permissions.settings
+        p.safe_mode, p.auto_confirm, p.allow_full_filesystem = on, not on, not on
+        for key, value in (("safe_mode", on), ("auto_confirm", not on), ("allow_full_filesystem", not on)):
+            save_setting(self.config.project_root, "permissions", key, "true" if value else "false")
+
+    def _training_wheels_command(self, args: list[str]) -> None:
+        sub = args[0].lower() if args else ""
+        if sub not in ("an", "aus"):
+            state = self.training_wheels_state()
+            print(_c(f"Stuetzraeder: {state.upper()}. Umschalten: /stuetzraeder an  bzw.  /stuetzraeder aus", CYAN))
+            print(_c("  an  = fragt vor jeder Aenderung, nur im Arbeitsordner, keine Shell/PC-Steuerung", GREY))
+            print(_c("  aus = ganzer PC, Shell und PC-Steuerung, keine Rueckfragen", GREY))
+            return
+        if sub == "aus" and not self._ask_yes(
+            "Stuetzraeder AB? Dann darf ich am GANZEN PC alles - Dateien aendern und loeschen, Programme "
+            "starten, Maus und Tastatur steuern - ohne vorher zu fragen. [j/N] "
+        ):
+            return
+        self.set_training_wheels(sub == "an")
+        if sub == "an":
+            print(_c("Stuetzraeder sind dran: ich frage vor Aenderungen und bleibe im Arbeitsordner.", GREEN))
+        else:
+            print(_c("Stuetzraeder sind ab: ich darf am ganzen PC alles ohne Rueckfrage. "
+                     "Automatische Starts frage ich trotzdem.", GREEN))
+
+    # -- Aussehen der App ------------------------------------------------------
+    def _appearance_command(self, args: list[str]) -> None:
+        from .. import aussehen
+
+        if args[:1] == ["zuruecksetzen"]:
+            aussehen.reset(self.config.project_root)
+            print(_c("Die App sieht wieder aus wie im Original.", GREEN))
+            notify = self.tool_ctx.extra.get("on_appearance")
+            if notify:
+                notify()
+            return
+        print(aussehen.describe(self.config.project_root))
+        print(_c("Aendern: sag mir einfach, wie die App aussehen soll (z.B. 'mach sie gruen').", GREY))
+
+    # -- Tutorial ----------------------------------------------------------------
+    def _tutorial_terminal(self) -> None:
+        from ..tutorial import mark_done, steps
+
+        all_steps = steps(self.config)
+        for i, step in enumerate(all_steps, start=1):
+            print(_c(f"\n[{i}/{len(all_steps)}] {step['titel']}", BOLD))
+            print(step["text"])
+            hint = "Enter = weiter, z = zeig es mir, q = beenden" if step.get("zeigen") else "Enter = weiter, q = beenden"
+            try:
+                answer = input(_c(f"   ({hint}) ", GREY)).strip().lower()
+            except (EOFError, KeyboardInterrupt):
+                return
+            if answer == "q":
+                return
+            if answer == "z" and step.get("zeigen"):
+                print(_c(f"\n{self.config.ki.name}: ", CYAN), end="", flush=True)
+                snapshot = self.brain.provider.history_snapshot()
+                try:
+                    self.brain.respond(step["zeigen"], on_text=self._emit)
+                except KeyboardInterrupt:
+                    self.brain.provider.abort_turn(snapshot, step["zeigen"])
+                print()
+        mark_done(self.config.project_root)
+
+    # -- Jarvis-Modus im Terminal -------------------------------------------------
+    def _jarvis_terminal(self) -> None:
+        from ..voice import Speaker, listen_utterance
+
+        problem = self.voice_capture.problem()
+        if problem:
+            print(_c(problem, YELLOW))
+            return
+        speaker = Speaker(self.config.voice.sprache or "de")
+        if not speaker.available:
+            print(_c("Zum Vorlesen fehlt pyttsx3 - tippe /sprache einrichten vorlesen. Ich antworte dann nur als Text.",
+                     YELLOW))
+        print(_c("\n[Jarvis-Modus] Sprich einfach mit mir. 'Chat-Modus' sagen oder Strg+C = zurueck.", BOLD))
+        try:
+            while True:
+                print(_c("\r[hoere zu …]          ", GREY), end="", flush=True)
+                pcm = listen_utterance(silence=1.0)
+                if not pcm:
+                    continue
+                print(_c("\r[verstehe …]          ", GREY), end="", flush=True)
+                try:
+                    text = self.voice_capture.transcribe(pcm).strip()
+                except Exception as exc:  # noqa: BLE001
+                    print(_c(f"\r{exc}", YELLOW))
+                    continue
+                if not text:
+                    continue
+                if _is_exit_phrase(text):
+                    break
+                print(_c(f"\rDu: {text}", GREEN))
+                print(_c(f"{self.config.ki.name}: ", CYAN), end="", flush=True)
+                snapshot = self.brain.provider.history_snapshot()
+                try:
+                    answer = self.brain.respond(text + JARVIS_HINT, on_text=self._emit)
+                except KeyboardInterrupt:
+                    self.brain.provider.abort_turn(snapshot, text)
+                    speaker.stop()
+                    raise
+                print()
+                speaker.say(answer)
+                speaker.wait()
+        except KeyboardInterrupt:
+            speaker.stop()
+        print(_c("\n[Zurueck im Chat-Modus]", GREY))
 
     def _open_in_editor(self, name: str) -> None:
         path = self.config.project_root / "config" / name
@@ -460,6 +585,14 @@ class CLI:
             self._open_in_editor("werte.md" if base == "/werte" else "persona.md")
         elif base == "/neu":
             self._new_conversation()
+        elif base in ("/stuetzraeder", "/stützräder", "/stuetzrad", "/stützrad"):
+            self._training_wheels_command(cmd.split()[1:])
+        elif base == "/jarvis":
+            self._jarvis_terminal()
+        elif base in ("/tutorial", "/tour"):
+            self._tutorial_terminal()
+        elif base == "/aussehen":
+            self._appearance_command(cmd.split()[1:])
         elif base == "/name":
             self._name_command(cmd.split(None, 1)[1] if len(cmd.split(None, 1)) > 1 else "")
         elif base in ("/verknuepfung", "/verknüpfung"):
@@ -770,6 +903,18 @@ class CLI:
             pass
         self.memory.close()
         print(_c("Bis bald!", CYAN))
+
+
+JARVIS_HINT = (
+    "\n\n[Sprachmodus: Antworte kurz und natuerlich gesprochen - ohne Tabellen, Code und Listen-Zeichen.]"
+)
+_EXIT_PHRASES = ("chat modus", "chatmodus", "chat-modus", "jarvis aus", "sprachmodus aus", "sprachmodus beenden",
+                 "jarvis beenden", "zurueck zum chat", "zurück zum chat")
+
+
+def _is_exit_phrase(text: str) -> bool:
+    low = text.lower().strip(" .!?,")
+    return any(p in low for p in _EXIT_PHRASES) or low in ("beenden", "ende", "tschuess", "tschüss")
 
 
 def _yes(question: str, default: bool = False) -> bool:
