@@ -310,3 +310,92 @@ def test_release_notes_script():
     notes = subprocess.run([sys.executable, str(root / "packaging/release_notes.py")],
                            capture_output=True, text=True, check=True, encoding="utf-8").stdout
     assert notes.startswith(f"## {ver}")
+
+
+def test_failed_replace_rolls_back(tmp_path, monkeypatch):
+    import shutil as shutil_mod
+
+    root = _install_dir(tmp_path)
+    up = _updater(root, _routes())
+    real_copy = shutil_mod.copy2
+    state = {"n": 0}
+
+    def flaky_copy(src, dst, *a, **kw):
+        # Beim Einspielen der NEUEN Dateien bricht es nach zwei Dateien ab (z.B. Virenscanner).
+        if "versionen" not in str(dst) and "neu" in str(src):
+            state["n"] += 1
+            if state["n"] == 3:
+                raise PermissionError("Datei gesperrt")
+        return real_copy(src, dst, *a, **kw)
+
+    monkeypatch.setattr("assistant.updater.shutil.copy2", flaky_copy)
+    with pytest.raises(UpdateError, match="unveraendert"):
+        up.install(up.check(), say=lambda m: None)
+    assert "0.1.0" in (root / "assistant/__init__.py").read_text(encoding="utf-8")
+    assert (root / "run_ki.py").read_text(encoding="utf-8") == "print('v1')\n"
+    assert (root / "assistant/alt.py").exists() and not (root / "assistant/neu.py").exists()
+    assert up.backups() == []
+
+
+def test_exe_swap_rolls_back_when_new_exe_is_locked(tmp_path, monkeypatch):
+    import os as os_mod
+
+    root = tmp_path / "KI"
+    root.mkdir()
+    exe = root / "KI.exe"
+    exe.write_bytes(b"MZ-alt")
+    release = {"tag_name": "v0.3.0", "assets": [{"name": "KI.exe", "browser_download_url": "u"}]}
+    routes = {f"https://api.github.com/repos/{REPO}/releases/latest": json.dumps(release),
+              "u": b"MZ" + b"\0" * 1_200_000}
+    up = Updater(UpdateSettings(), root, fetch=FakeFetch(routes), current_version="0.2.0",
+                 frozen=True, exe_path=exe)
+    real_replace = os_mod.replace
+
+    def locked(src, dst):
+        if str(src).endswith(".neu"):
+            raise PermissionError("Virenscanner prueft noch")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr("assistant.updater.os.replace", locked)
+    monkeypatch.setattr("time.sleep", lambda s: None)
+    with pytest.raises(UpdateError, match="alte Version bleibt"):
+        up.install(up.check(), say=lambda m: None)
+    assert exe.read_bytes() == b"MZ-alt"  # die laufende KI.exe ist noch da
+
+
+def test_exe_notes_cover_skipped_versions(tmp_path):
+    root = tmp_path / "KI"
+    root.mkdir()
+    exe = root / "KI.exe"
+    exe.write_bytes(b"MZ")
+    release = {"tag_name": "v0.3.0", "body": "nur 0.3.0",
+               "assets": [{"name": "KI.exe", "browser_download_url": "u"}]}
+    routes = {f"https://api.github.com/repos/{REPO}/releases/latest": json.dumps(release),
+              f"https://raw.githubusercontent.com/{REPO}/v0.3.0/CHANGELOG.md": CHANGELOG}
+    up = Updater(UpdateSettings(), root, fetch=FakeFetch(routes), current_version="0.1.0",
+                 frozen=True, exe_path=exe)
+    notes = up.check().notes
+    assert "Noch neuer" in notes and "F2 zum Sprechen" in notes
+
+
+def test_restart_exe_resets_pyinstaller_environment(tmp_path, monkeypatch):
+    seen = {}
+    monkeypatch.setenv("_PYI_APPLICATION_HOME_DIR", "C:/Temp/_MEI123")
+    monkeypatch.setattr("assistant.updater.subprocess.Popen", lambda cmd, **kw: seen.update(kw))
+    Updater(UpdateSettings(), tmp_path, frozen=True, exe_path=tmp_path / "KI.exe").restart_exe()
+    assert seen["env"]["PYINSTALLER_RESET_ENVIRONMENT"] == "1"
+    assert "_PYI_APPLICATION_HOME_DIR" not in seen["env"]
+
+
+def test_git_checkout_offer_is_only_a_hint(tmp_path, capsys):
+    from assistant.ui.cli import CLI
+    from assistant.updater import UpdateInfo
+
+    root = _install_dir(tmp_path)
+    (root / ".git").mkdir()
+    cli = CLI.__new__(CLI)
+    cli.updater = _updater(root, _routes())
+    cli.brain = None  # wuerde bei einem KI-Aufruf sofort scheitern
+    info = UpdateInfo("0.1.0", "0.2.0", "neu", ZIP, "quelle")
+    assert cli._offer_update(info, ask=False) is False
+    assert "git pull" in capsys.readouterr().out

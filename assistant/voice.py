@@ -138,6 +138,19 @@ class VoiceCapture:
             "Tippe /sprache einrichten - das installiert alles Noetige."
         )
 
+    def packages(self) -> list[str]:
+        """Was /sprache einrichten installiert - passend zur eingestellten Erkennung."""
+        wanted = (self.settings.erkennung or "auto").strip().lower()
+        return ["sounddevice", "faster-whisper" if wanted == "whisper" else "SpeechRecognition"]
+
+    def warm_up(self) -> None:
+        """Laedt die Mikrofon-Bibliothek vorab (sonst dauert der erste F2-Druck)."""
+        try:
+            if _importable("sounddevice"):
+                import sounddevice  # noqa: F401
+        except Exception as exc:  # noqa: BLE001
+            logger.info("Mikrofon-Vorbereitung: %s", exc)
+
     # -- Aufnahme -----------------------------------------------------------
     def start(self) -> None:
         try:
@@ -214,17 +227,36 @@ class VoiceCapture:
         import speech_recognition as sr
 
         recognizer = sr.Recognizer()
+        recognizer.operation_timeout = 20  # sonst haengt es ohne Internet endlos
         lang = self.settings.sprache or "de"
         language = f"{lang}-{lang.upper()}" if len(lang) == 2 else lang
-        texts = []
+        texts: list[str] = []
+        failed = 0
+        last_error: Exception | None = None
         for chunk in split_audio(pcm):
-            try:
-                texts.append(recognizer.recognize_google(sr.AudioData(chunk, _SAMPLE_RATE, 2), language=language))
-            except sr.UnknownValueError:
-                continue  # in diesem Stueck nichts verstanden
-            except sr.RequestError as exc:
-                raise VoiceError(f"Google-Spracherkennung nicht erreichbar (Internet?): {exc}") from exc
-        return " ".join(t.strip() for t in texts if t).strip()
+            audio = sr.AudioData(chunk, _SAMPLE_RATE, 2)
+            for attempt in (1, 2):  # ein kurzer Aussetzer soll nicht alles kosten
+                try:
+                    texts.append(recognizer.recognize_google(audio, language=language))
+                    break
+                except sr.UnknownValueError:
+                    break  # in diesem Stueck nichts verstanden
+                except (sr.RequestError, OSError) as exc:
+                    if "FLAC" in str(exc):
+                        raise VoiceError(
+                            "Fuer die Google-Erkennung fehlt auf diesem Computer das Programm 'flac' "
+                            "(z.B. Windows auf ARM). Alternative: [voice] erkennung = \"whisper\"."
+                        ) from exc
+                    last_error = exc
+                    if attempt == 2:
+                        failed += 1
+                        texts.append("[…]")
+        text = " ".join(t.strip() for t in texts if t).strip()
+        if failed and not text.replace("[…]", "").strip():
+            raise VoiceError(f"Google-Spracherkennung nicht erreichbar (Internet?): {last_error}")
+        if failed:
+            logger.warning("%d Teil(e) der Aufnahme nicht erkannt: %s", failed, last_error)
+        return text
 
 
 def split_audio(pcm: bytes, max_seconds: int = _CHUNK_SECONDS) -> list[bytes]:
@@ -253,8 +285,8 @@ def split_audio(pcm: bytes, max_seconds: int = _CHUNK_SECONDS) -> list[bytes]:
     return chunks
 
 
-def install_voice_packages(run=None) -> tuple[bool, str]:
-    """Installiert die Pakete fuer die Spracheingabe (pip, in die laufende Umgebung)."""
+def install_voice_packages(run=None, packages: list[str] | None = None) -> tuple[bool, str]:
+    """Installiert Pakete fuer Sprache (pip, in die laufende Umgebung)."""
     import subprocess
     import sys
 
@@ -262,7 +294,7 @@ def install_voice_packages(run=None) -> tuple[bool, str]:
         return False, "In der KI.exe koennen keine Pakete nachinstalliert werden."
     run = run or subprocess.run
     result = run(
-        [sys.executable, "-m", "pip", "install", *VOICE_PACKAGES],
+        [sys.executable, "-m", "pip", "install", *(packages or VOICE_PACKAGES)],
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -274,4 +306,4 @@ def install_voice_packages(run=None) -> tuple[bool, str]:
     import importlib
 
     importlib.invalidate_caches()
-    return True, "Spracheingabe ist eingerichtet. Halte F2 gedrueckt und sprich."
+    return True, "Installiert."

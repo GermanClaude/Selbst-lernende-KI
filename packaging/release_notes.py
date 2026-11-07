@@ -33,5 +33,5 @@ def notes(ver: str) -> str:
 
 if __name__ == "__main__":
     ver = version()
-    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stdout.reconfigure(encoding="utf-8", newline="\n")  # Windows: kein \r am Ende
     print(ver if "--version" in sys.argv else notes(ver))

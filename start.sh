@@ -3,7 +3,9 @@
 #  Startet die KI direkt (ohne Build). Fuer Linux/macOS.
 # ============================================================
 set -e
-cd "$(dirname "$0")"
+# Absoluter Pfad dieses Skripts - fuer den Neustart nach einem Update.
+SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
+cd "$(dirname "$SELF")"
 
 # --- 1) Python vorhanden? ---
 if ! command -v python3 >/dev/null 2>&1; then
@@ -54,5 +56,5 @@ while true; do
     exit "$code"
   fi
   echo
-  exec bash "$0"
+  exec bash "$SELF"
 done

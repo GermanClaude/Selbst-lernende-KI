@@ -51,3 +51,71 @@ def test_install_voice_packages_uses_pip():
         run=lambda cmd, **kw: calls.append(cmd) or SimpleNamespace(returncode=0, stdout="", stderr="")
     )
     assert ok and calls[0][1:4] == ["-m", "pip", "install"] and "sounddevice" in calls[0]
+
+
+class _FakeSR:
+    """Nachbau von speech_recognition fuer die Fehlerfaelle."""
+
+    class UnknownValueError(Exception):
+        pass
+
+    class RequestError(Exception):
+        pass
+
+    class AudioData:
+        def __init__(self, data, rate, width):
+            self.data = data
+
+    def __init__(self, results):
+        self.results = list(results)
+        outer = self
+
+        class Recognizer:
+            operation_timeout = None
+
+            def recognize_google(self, audio, language):
+                outer.timeout = self.operation_timeout
+                result = outer.results.pop(0)
+                if isinstance(result, Exception):
+                    raise result
+                return result
+
+        self.Recognizer = Recognizer
+
+
+def test_google_keeps_partial_text_when_one_chunk_fails(monkeypatch):
+    import sys
+
+    fake = _FakeSR(["Erster Teil", _FakeSR.RequestError("weg"), _FakeSR.RequestError("weg"), "dritter Teil"])
+    monkeypatch.setitem(sys.modules, "speech_recognition", fake)
+    text = voice.VoiceCapture(VoiceSettings())._transcribe_google(_pcm(29) + _pcm(29) + _pcm(10))
+    assert text == "Erster Teil […] dritter Teil"
+    assert fake.timeout == 20  # nie endlos warten
+
+
+def test_google_retries_once(monkeypatch):
+    import sys
+
+    fake = _FakeSR([OSError("kurz weg"), "geklappt"])
+    monkeypatch.setitem(sys.modules, "speech_recognition", fake)
+    assert voice.VoiceCapture(VoiceSettings())._transcribe_google(_pcm(5)) == "geklappt"
+
+
+def test_google_offline_gives_clear_error(monkeypatch):
+    import sys
+
+    import pytest
+
+    fake = _FakeSR([_FakeSR.RequestError("x"), _FakeSR.RequestError("x")])
+    monkeypatch.setitem(sys.modules, "speech_recognition", fake)
+    with pytest.raises(voice.VoiceError, match="Internet"):
+        voice.VoiceCapture(VoiceSettings())._transcribe_google(_pcm(5))
+    fake = _FakeSR([OSError("FLAC conversion utility not available")])
+    monkeypatch.setitem(sys.modules, "speech_recognition", fake)
+    with pytest.raises(voice.VoiceError, match="flac"):
+        voice.VoiceCapture(VoiceSettings())._transcribe_google(_pcm(5))
+
+
+def test_setup_installs_what_is_configured():
+    assert voice.VoiceCapture(VoiceSettings()).packages() == ["sounddevice", "SpeechRecognition"]
+    assert voice.VoiceCapture(VoiceSettings(erkennung="whisper")).packages() == ["sounddevice", "faster-whisper"]

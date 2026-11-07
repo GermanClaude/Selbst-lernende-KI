@@ -10,6 +10,11 @@ on:
 permissions:
   contents: write
 
+# Laeufe nacheinander: der zweite sieht dann das fertige Release und ueberspringt.
+concurrency:
+  group: release-exe
+  cancel-in-progress: false
+
 jobs:
   release:
     # Nur der Standard-Branch erzeugt Versionen - andere Branches sind Entwuerfe.
@@ -28,7 +33,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          VERSION=$(python packaging/release_notes.py --version)
+          VERSION=$(python packaging/release_notes.py --version | tr -d '\r')
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           if gh release view "v$VERSION" > /dev/null 2>&1; then
             echo "Version v$VERSION gibt es schon - nichts zu tun."

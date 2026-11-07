@@ -3,13 +3,15 @@
   F2 gedrueckt HALTEN  -> sprechen, loslassen = fertig
   F2 kurz DRUECKEN     -> Mikrofon an ... F2 nochmal = fertig (Esc = abbrechen)
 
-Der erkannte Text landet in der Eingabezeile - du kannst ihn noch bearbeiten und
-schickst ihn mit Enter ab.
+F2 wirkt bei leerer Eingabezeile. Der erkannte Text landet in der Eingabezeile - du
+kannst ihn noch bearbeiten und schickst ihn mit Enter ab.
 
-Technik: Die erste Taste einer Zeile wird direkt gelesen. Ist es nicht F2, geht sie
-(samt allem, was schon im Tastaturpuffer wartet) zurueck an die normale Eingabe -
-mit allen gewohnten Bearbeitungsfunktionen (Pfeiltasten, Verlauf, Einfuegen).
-  Windows: msvcrt + WriteConsoleInputW (Tasten zurueck in die Konsole legen),
+Technik:
+  Windows: Die Eingabe wird nur ANGESCHAUT (PeekConsoleInputW). Ist die erste Taste
+           F2, wird genau dieser Tastendruck entnommen und aufgenommen; alles andere
+           bleibt unveraendert im Konsolenpuffer und das normale input() liest es -
+           mit allen gewohnten Funktionen (Pfeiltasten, Verlauf, Einfuegen, Umlaute,
+           Emojis). Der erkannte Text wird per WriteConsoleInputW "eingetippt".
            GetAsyncKeyState erkennt, ob F2 noch gehalten wird.
   Linux/macOS: Terminal im cbreak-Modus + readline zum Vorbelegen der Zeile.
 Klappt etwas davon nicht, faellt die Eingabe still auf das normale input() zurueck.
@@ -19,6 +21,7 @@ from __future__ import annotations
 import os
 import re
 import sys
+import threading
 import time
 from dataclasses import dataclass
 from typing import Callable
@@ -33,16 +36,6 @@ _IGNORE_AFTER_START = 0.5  # an/aus-Modus: Tastenwiederholungen des ersten Druck
 
 VK_BACK, VK_TAB, VK_RETURN, VK_ESCAPE = 0x08, 0x09, 0x0D, 0x1B
 VK_UP, VK_F2 = 0x26, 0x71
-
-# msvcrt liefert Sondertasten als '\x00' oder '\xe0' + Code.
-_WIN_SPECIAL = {
-    "H": 0x26, "P": 0x28, "K": 0x25, "M": 0x27,  # Pfeile hoch/runter/links/rechts
-    "G": 0x24, "O": 0x23, "R": 0x2D, "S": 0x2E,  # Pos1, Ende, Einfg, Entf
-    "I": 0x21, "Q": 0x22,                        # Bild hoch/runter
-    ";": 0x70, "<": 0x71, "=": 0x72, ">": 0x73, "?": 0x74,  # F1-F5
-    "@": 0x75, "A": 0x76, "B": 0x77, "C": 0x78, "D": 0x79,  # F6-F10
-    "\x85": 0x7A, "\x86": 0x7B,                             # F11, F12
-}
 _CHAR_VK = {"\r": VK_RETURN, "\n": VK_RETURN, "\b": VK_BACK, "\t": VK_TAB, "\x1b": VK_ESCAPE}
 # Terminal-Sequenzen fuer F2 (xterm, rxvt/Linux-Konsole, ...) und Pfeil hoch.
 _POSIX_F2 = {"\x1bOQ", "\x1b[12~", "\x1b[[B", "\x1b[1Q", "\x1b[Q"}
@@ -63,10 +56,20 @@ class Key:
         return self.vk == VK_ESCAPE and self.char in ("", "\x1b")
 
 
+_SGR = re.compile(r"\x1b\[[0-9;]*m")
+
+
 def _split_prompt(prompt: str) -> tuple[str, str]:
-    """'\\nDu: ' -> ('\\n', 'Du: ')"""
-    core = prompt.lstrip("\n")
-    return prompt[: len(prompt) - len(core)], core
+    """'\\nDu: ' -> ('\\n', 'Du: ') - auch wenn Farbcodes davor stehen."""
+    plain_start = 0
+    while True:
+        match = _SGR.match(prompt, plain_start)
+        if not match:
+            break
+        plain_start = match.end()
+    newlines = len(prompt[plain_start:]) - len(prompt[plain_start:].lstrip("\n"))
+    lead = prompt[plain_start : plain_start + newlines]
+    return lead, prompt[:plain_start] + prompt[plain_start + newlines :]
 
 
 # ---------------------------------------------------------------------------
@@ -94,58 +97,117 @@ def _win_structs():
     return KEY_EVENT_RECORD, INPUT_RECORD
 
 
+def _utf16_units(text: str) -> list[int]:
+    # surrogatepass: auch einzelne Haelften eines Emojis verarbeiten, nie abstuerzen
+    data = text.encode("utf-16-le", "surrogatepass")
+    return [int.from_bytes(data[i : i + 2], "little") for i in range(0, len(data), 2)]
+
+
+_MODIFIERS = 0x001F  # Alt (rechts/links), Strg (rechts/links), Umschalt
+
+
 class WindowsConsole:
     KEY_EVENT = 0x0001
     STD_INPUT_HANDLE = -10
 
     def __init__(self):
         import ctypes
-        import msvcrt
 
         self._ctypes = ctypes
-        self._msvcrt = msvcrt
         self._k32 = ctypes.WinDLL("kernel32", use_last_error=True)
         self._u32 = ctypes.WinDLL("user32", use_last_error=True)
-        self._k32.GetStdHandle.restype = ctypes.c_void_p
-        self._k32.GetStdHandle.argtypes = [ctypes.c_int32]
-        self._handle = self._k32.GetStdHandle(self.STD_INPUT_HANDLE)
         self._KEY, self._RECORD = _win_structs()
-        self._k32.WriteConsoleInputW.argtypes = [
-            ctypes.c_void_p, ctypes.POINTER(self._RECORD), ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint32)
-        ]
-        self._k32.WriteConsoleInputW.restype = ctypes.c_int32
-        self._k32.FlushConsoleInputBuffer.argtypes = [ctypes.c_void_p]
-        self._u32.GetAsyncKeyState.argtypes = [ctypes.c_int32]
-        self._u32.GetAsyncKeyState.restype = ctypes.c_int16
-        self._u32.VkKeyScanW.argtypes = [ctypes.c_uint16]
-        self._u32.VkKeyScanW.restype = ctypes.c_int16
-        self._u32.MapVirtualKeyW.argtypes = [ctypes.c_uint32, ctypes.c_uint32]
-        self._u32.MapVirtualKeyW.restype = ctypes.c_uint32
+        k32, u32, rec_ptr, dword_ptr = self._k32, self._u32, ctypes.POINTER(self._RECORD), ctypes.POINTER(ctypes.c_uint32)
+        k32.GetStdHandle.restype = ctypes.c_void_p
+        k32.GetStdHandle.argtypes = [ctypes.c_int32]
+        for name in ("PeekConsoleInputW", "ReadConsoleInputW", "WriteConsoleInputW"):
+            fn = getattr(k32, name)
+            fn.argtypes = [ctypes.c_void_p, rec_ptr, ctypes.c_uint32, dword_ptr]
+            fn.restype = ctypes.c_int32
+        k32.GetNumberOfConsoleInputEvents.argtypes = [ctypes.c_void_p, dword_ptr]
+        k32.GetNumberOfConsoleInputEvents.restype = ctypes.c_int32
+        k32.FlushConsoleInputBuffer.argtypes = [ctypes.c_void_p]
+        u32.GetAsyncKeyState.argtypes = [ctypes.c_int32]
+        u32.GetAsyncKeyState.restype = ctypes.c_int16
+        u32.VkKeyScanW.argtypes = [ctypes.c_uint16]
+        u32.VkKeyScanW.restype = ctypes.c_int16
+        u32.MapVirtualKeyW.argtypes = [ctypes.c_uint32, ctypes.c_uint32]
+        u32.MapVirtualKeyW.restype = ctypes.c_uint32
+        self._handle = k32.GetStdHandle(self.STD_INPUT_HANDLE)
 
-    # -- Lesen --------------------------------------------------------------
+    # -- Rohzugriff auf den Konsolenpuffer ------------------------------------
+    def _pending(self) -> int:
+        count = self._ctypes.c_uint32(0)
+        if not self._k32.GetNumberOfConsoleInputEvents(self._handle, self._ctypes.byref(count)):
+            raise OSError(self._ctypes.get_last_error(), "GetNumberOfConsoleInputEvents")
+        return count.value
+
+    def _records(self, count: int, remove: bool) -> list:
+        if count <= 0:
+            return []
+        buf = (self._RECORD * count)()
+        got = self._ctypes.c_uint32(0)
+        fn = self._k32.ReadConsoleInputW if remove else self._k32.PeekConsoleInputW
+        if not fn(self._handle, buf, count, self._ctypes.byref(got)):
+            raise OSError(self._ctypes.get_last_error(), "Peek/ReadConsoleInputW")
+        return list(buf[: got.value])
+
+    def _write_records(self, records: list) -> None:
+        if not records:
+            return
+        buf = (self._RECORD * len(records))(*records)
+        written = self._ctypes.c_uint32(0)
+        if not self._k32.WriteConsoleInputW(self._handle, buf, len(records), self._ctypes.byref(written)):
+            raise OSError(self._ctypes.get_last_error(), "WriteConsoleInputW")
+
+    def _key_of(self, rec) -> Key | None:
+        """Key fuer einen Tastendruck (key down), sonst None."""
+        if rec.EventType != self.KEY_EVENT or not rec.Event.KeyEvent.bKeyDown:
+            return None
+        ev = rec.Event.KeyEvent
+        vk = ev.wVirtualKeyCode
+        if vk == VK_F2 and ev.dwControlKeyState & _MODIFIERS:
+            vk = 0  # Umschalt/Strg/Alt+F2 nicht als Sprechtaste
+        return Key(chr(ev.UnicodeChar) if ev.UnicodeChar else "", vk)
+
+    # -- Schnittstelle fuer VoiceLineReader -----------------------------------
     def raw(self):
         return _NullContext()
 
+    def wait_first_key(self) -> Key:
+        """Wartet auf die erste Taste. F2 wird entnommen, alles andere bleibt liegen."""
+        while True:
+            pending = self._pending()
+            if pending:
+                records = self._records(min(pending, 64), remove=False)
+                skip = 0
+                for rec in records:
+                    key = self._key_of(rec)
+                    if key is None:
+                        skip += 1  # Loslassen, Maus, Fokus: fuer die Eingabe bedeutungslos
+                        continue
+                    if key.is_f2:
+                        self._records(skip + 1, remove=True)
+                    elif skip:
+                        self._records(skip, remove=True)
+                    return key
+                if skip:
+                    self._records(skip, remove=True)
+                    continue
+            time.sleep(0.02)  # pollen statt blockieren: Strg+C bleibt sofort wirksam
+
     def read_key(self, timeout: float | None = None) -> Key | None:
-        # Immer pollen statt blockierend getwch(): so bleibt Strg+C sofort wirksam
-        # (getwch liefert Strg+C nicht und wuerde bis zur naechsten Taste warten).
+        """Naechsten Tastendruck entnehmen (waehrend der Aufnahme)."""
         end = None if timeout is None else time.monotonic() + timeout
-        while not self._msvcrt.kbhit():
+        while True:
+            while self._pending():
+                for rec in self._records(1, remove=True):
+                    key = self._key_of(rec)
+                    if key is not None:
+                        return key
             if end is not None and time.monotonic() >= end:
                 return None
             time.sleep(0.02)
-        ch = self._msvcrt.getwch()
-        if ch in ("\x00", "\xe0"):
-            return Key("", _WIN_SPECIAL.get(self._msvcrt.getwch(), 0))
-        return Key(ch, self._vk_for_char(ch))
-
-    def drain(self) -> list[Key]:
-        keys = []
-        while self._msvcrt.kbhit():
-            key = self.read_key()
-            if key is not None:
-                keys.append(key)
-        return keys
 
     def f2_down(self) -> bool | None:
         return bool(self._u32.GetAsyncKeyState(VK_F2) & 0x8000)
@@ -153,49 +215,39 @@ class WindowsConsole:
     def flush(self) -> None:
         self._k32.FlushConsoleInputBuffer(self._handle)
 
-    def _vk_for_char(self, ch: str) -> int:
-        if ch in _CHAR_VK:
-            return _CHAR_VK[ch]
-        if len(ch) == 1 and ord(ch) <= 0xFFFF:
-            res = self._u32.VkKeyScanW(ord(ch))
-            if res != -1:
-                return res & 0xFF
-        return 0
-
-    # -- Zurueck in die Konsole legen -> normales input() -------------------
-    def push(self, keys: list[Key]) -> None:
+    def _text_records(self, text: str) -> list:
         records = []
-        for key in keys:
-            units = [0] if not key.char else _utf16_units(key.char)
-            for unit in units:
-                for down in (1, 0):
-                    rec = self._RECORD()
-                    rec.EventType = self.KEY_EVENT
-                    ev = rec.Event.KeyEvent
-                    ev.bKeyDown = down
-                    ev.wRepeatCount = 1
-                    ev.wVirtualKeyCode = key.vk
-                    ev.wVirtualScanCode = self._u32.MapVirtualKeyW(key.vk, 0) if key.vk else 0
-                    ev.UnicodeChar = unit
-                    ev.dwControlKeyState = 0
-                    records.append(rec)
-        if not records:
-            return
-        array = (self._RECORD * len(records))(*records)
-        written = self._ctypes.c_uint32(0)
-        if not self._k32.WriteConsoleInputW(self._handle, array, len(records), self._ctypes.byref(written)):
-            raise OSError(self._ctypes.get_last_error(), "WriteConsoleInputW fehlgeschlagen")
+        for unit in _utf16_units(text):
+            ch = chr(unit)
+            vk = _CHAR_VK.get(ch, 0)
+            if not vk and not 0xD800 <= unit <= 0xDFFF:
+                res = self._u32.VkKeyScanW(unit)
+                vk = res & 0xFF if res != -1 else 0
+            for down in (1, 0):
+                rec = self._RECORD()
+                rec.EventType = self.KEY_EVENT
+                ev = rec.Event.KeyEvent
+                ev.bKeyDown = down
+                ev.wRepeatCount = 1
+                ev.wVirtualKeyCode = vk
+                ev.wVirtualScanCode = self._u32.MapVirtualKeyW(vk, 0) if vk else 0
+                ev.UnicodeChar = unit
+                records.append(rec)
+        return records
 
-    def finish(self, prompt_core: str, reprint: bool, text: str, keys: list[Key], write) -> str:
+    def finish(self, prompt_core: str, reprint: bool, text: str, write) -> str:
         if reprint:
             write(prompt_core)
-        self.push([Key(c, self._vk_for_char(c)) for c in text] + keys)
+        if text:
+            # Was waehrend der Erkennung getippt wurde, kommt HINTER den Text (Enter =
+            # gleich abschicken). F2-Druecke werden verworfen - in der normalen Eingabe
+            # oeffnet F2 sonst das Konsolen-Fenster "Zeichen zum Kopieren eingeben".
+            later = [r for r in self._records(self._pending(), remove=True) if not self._is_f2_record(r)]
+            self._write_records(self._text_records(text) + later)
         return input("")
 
-
-def _utf16_units(text: str) -> list[int]:
-    data = text.encode("utf-16-le")
-    return [int.from_bytes(data[i : i + 2], "little") for i in range(0, len(data), 2)]
+    def _is_f2_record(self, rec) -> bool:
+        return rec.EventType == self.KEY_EVENT and rec.Event.KeyEvent.wVirtualKeyCode == VK_F2
 
 
 class _NullContext:
@@ -216,6 +268,7 @@ class PosixConsole:
 
         self._fd = sys.stdin.fileno()
         self._saved = None
+        self._typed: list[Key] = []
 
     def raw(self):
         console = self
@@ -274,13 +327,19 @@ class PosixConsole:
             return Key("\x1b", VK_ESCAPE)
         return Key("", 0)  # andere Sondertaste - ignorieren
 
-    def drain(self) -> list[Key]:
-        keys = []
-        while self._readable(0):
-            key = self.read_key(0)
-            if key is not None:
-                keys.append(key)
-        return keys
+    def wait_first_key(self) -> Key:
+        key = self.read_key()
+        while key is None:
+            key = self.read_key()
+        if not key.is_f2:
+            # Terminals erlauben kein "Zuruecklegen" - Getipptes merken und in
+            # finish() per readline vorbelegen (inkl. allem, was schon wartet).
+            self._typed = [key]
+            while self._readable(0):
+                more = self.read_key(0)
+                if more is not None:
+                    self._typed.append(more)
+        return key
 
     def f2_down(self) -> bool | None:
         return None  # Terminals melden kein Loslassen -> Tastenwiederholung auswerten
@@ -290,16 +349,19 @@ class PosixConsole:
 
         termios.tcflush(self._fd, termios.TCIFLUSH)
 
-    def finish(self, prompt_core: str, reprint: bool, text: str, keys: list[Key], write) -> str:
+    def finish(self, prompt_core: str, reprint: bool, text: str, write) -> str:
         import readline
 
+        keys, self._typed = ([] if text else self._typed), []
         if not reprint:
             write("\r\x1b[2K")  # selbst gedruckte Eingabeaufforderung entfernen, input() malt neu
         prefill = text
         for key in keys:
+            if key.is_f2:
+                continue
             if key.vk == VK_UP and not prefill:
                 last = readline.get_current_history_length()
-                prefill = readline.get_history_item(last) or "" if last else ""
+                prefill = (readline.get_history_item(last) or "") if last else ""
             elif key.char in ("\r", "\n"):
                 if not prefill:
                     write(prompt_core + "\n")
@@ -341,6 +403,7 @@ class VoiceLineReader:
         self._sleep = sleep
         self._interactive = interactive
         self._broken = False
+        self._status_len = 0
 
     def _get_console(self):
         if self._console is None:
@@ -355,6 +418,16 @@ class VoiceLineReader:
             interactive = sys.stdin.isatty() and sys.stdout.isatty()
         return interactive
 
+    def warm_up(self) -> None:
+        """Mikrofon-Bibliothek schon im Hintergrund laden - der erste F2-Druck reagiert sofort."""
+        if self._usable() and hasattr(self.capture, "warm_up"):
+            threading.Thread(target=self.capture.warm_up, name="voice-warmup", daemon=True).start()
+
+    def _fallback(self, exc: Exception) -> str:
+        logger.warning("Sprechtaste abgeschaltet: %s", exc)
+        self._broken = True
+        return input("")
+
     def read(self, prompt: str) -> str:
         if not self._usable():
             return input(prompt)
@@ -367,76 +440,107 @@ class VoiceLineReader:
 
         lead, core = _split_prompt(prompt)
         self._write(lead + core)
-        spoken: str | None = None
-        pending: list[Key] = []
+        spoken = ""
         try:
-            with console.raw():
-                first = console.read_key()
-                if first is not None and first.char == "\x03":
-                    raise KeyboardInterrupt
-                if first is not None and first.is_f2:
+            while True:
+                with console.raw():
+                    first = console.wait_first_key()
+                    if first.char == "\x03":
+                        raise KeyboardInterrupt
+                    if not first.is_f2:
+                        break
                     spoken = self._record(console)
-                else:
-                    pending = ([first] if first is not None else []) + console.drain()
+                if spoken:
+                    break
+                self._write(core)  # nichts erkannt: leere Zeile - F2 geht gleich wieder
         except KeyboardInterrupt:
             raise
         except Exception as exc:  # noqa: BLE001 - lieber ohne F2 als gar keine Eingabe
-            logger.warning("Sprechtaste abgeschaltet: %s", exc)
-            self._broken = True
-            return input("")
-        if spoken is not None:
-            return console.finish(core, True, spoken, [], self._write)
-        pending = [k for k in pending if not k.is_f2]
-        if any(k.char == "\x03" for k in pending):
-            raise KeyboardInterrupt
-        return console.finish(core, False, "", pending, self._write)
+            return self._fallback(exc)
+        try:
+            return console.finish(core, bool(spoken), spoken, self._write)
+        except (KeyboardInterrupt, EOFError):
+            raise
+        except Exception as exc:  # noqa: BLE001
+            return self._fallback(exc)
 
     # -- Aufnahme -----------------------------------------------------------
     def _status(self, text: str) -> None:
-        self._write("\r" + text + "   ")
+        pad = max(0, self._status_len - len(text))
+        self._write("\r" + text + " " * pad)
+        self._status_len = len(text)
+
+    def _end_status(self, text: str = "") -> None:
+        self._status(text)
+        self._write("\n")
+        self._status_len = 0
+
+    def _wait_release(self, console) -> None:
+        """Erst weiter, wenn F2 losgelassen ist - sonst landet die Tastenwiederholung
+        in der normalen Eingabe (dort oeffnet F2 ein Konsolen-Fenster)."""
+        if console.f2_down() is not None:
+            end = self._clock() + 10
+            while console.f2_down() and self._clock() < end:
+                self._sleep(0.05)
+        else:
+            while console.read_key(_REPEAT_GAP) is not None:
+                pass
+        console.flush()
 
     def _record(self, console) -> str:
         """Nimmt auf (halten oder an/aus) und gibt den erkannten Text zurueck."""
+        pressed = self._clock()
         self._write("\n")
         problem = self.capture.problem()
         if problem:
             self._write(problem + "\n")
+            self._wait_release(console)
             return ""
         try:
             self.capture.start()
         except Exception as exc:  # noqa: BLE001
             self._write(f"{exc}\n")
+            self._wait_release(console)
             return ""
         try:
-            cancelled = self._wait_until_done(console)
+            cancelled = self._wait_until_done(console, pressed)
         except BaseException:
             self.capture.cancel()
             raise
         try:
-            console.flush()
+            console.flush()  # Tastenwiederholungen von F2 verwerfen
         except Exception:  # noqa: BLE001
             pass
         if cancelled:
             self.capture.cancel()
-            self._status("(Aufnahme abgebrochen)")
-            self._write("\n")
+            self._end_status("(Aufnahme abgebrochen - F2 fuer einen neuen Versuch)")
             return ""
         self._status("[Erkenne Sprache …]")
         try:
             text = self.capture.stop()
         except Exception as exc:  # noqa: BLE001
-            self._status(f"{exc}")
-            self._write("\n")
+            self._end_status(f"{exc}")
             return ""
-        self._status("(Nichts verstanden - nochmal F2 oder tippen)" if not text else " " * 30)
-        self._write("\n")
+        if not text:
+            self._end_status("(Nichts verstanden - nochmal F2 oder tippen)")
+            return ""
+        self._end_status("[Fertig - pruefen und mit Enter abschicken]")
         return text
 
     def _elapsed(self, start: float) -> str:
         sec = int(self._clock() - start)
         return f"{sec // 60}:{sec % 60:02d}"
 
-    def _wait_until_done(self, console) -> bool:
+    def _hold_by_repeat(self, console, start: float, msg: str) -> None:
+        """Linux: solange Tastenwiederholungen kommen, ist F2 gehalten."""
+        last = self._clock()
+        while self._clock() - last < _REPEAT_GAP:
+            self._status(f"{msg}  {self._elapsed(start)}")
+            key = console.read_key(0.05)
+            if key is not None and key.is_f2:
+                last = self._clock()
+
+    def _wait_until_done(self, console, pressed: float) -> bool:
         """Wartet auf das Ende der Aufnahme. True = abgebrochen (Esc)."""
         start = self._clock()
         hold_msg = "[Mikrofon AN] Sprich jetzt - F2 loslassen = fertig"
@@ -444,13 +548,11 @@ class VoiceLineReader:
 
         down = console.f2_down()
         if down is not None:  # Windows: Tastenzustand direkt abfragen
-            held = True
-            while self._clock() - start < HOLD_SECONDS:
-                if not console.f2_down():
-                    held = False
-                    break
+            # Ab dem Tastendruck gemessen (das Mikrofon zu starten dauert etwas).
+            while down and self._clock() - pressed < HOLD_SECONDS:
                 self._sleep(0.02)
-            if held:
+                down = console.f2_down()
+            if down:
                 while console.f2_down():
                     self._status(f"{hold_msg}  {self._elapsed(start)}")
                     self._sleep(0.05)
@@ -459,12 +561,7 @@ class VoiceLineReader:
         else:  # Linux/macOS: gehaltene Taste = Tastenwiederholung
             first_repeat = console.read_key(0.8)
             if first_repeat is not None and first_repeat.is_f2:
-                last = self._clock()
-                while self._clock() - last < _REPEAT_GAP:
-                    self._status(f"{hold_msg}  {self._elapsed(start)}")
-                    key = console.read_key(0.05)
-                    if key is not None and key.is_f2:
-                        last = self._clock()
+                self._hold_by_repeat(console, start, hold_msg)
                 return False
             if first_repeat is not None and first_repeat.is_escape:
                 return True
@@ -481,15 +578,9 @@ class VoiceLineReader:
                 if down is None:
                     # Linux: folgen sofort weitere F2, wird die Taste gehalten
                     # (lange Wiederholverzoegerung) -> bis zum Loslassen weiter aufnehmen.
-                    last = self._clock()
                     repeat = console.read_key(0.12)
                     if repeat is not None and repeat.is_f2:
-                        while self._clock() - last < _REPEAT_GAP:
-                            self._status(f"{hold_msg}  {self._elapsed(start)}")
-                            key = console.read_key(0.05)
-                            if key is not None and key.is_f2:
-                                last = self._clock()
-                        return False
+                        self._hold_by_repeat(console, start, hold_msg)
                 return False
             if key.char == "\x03":
                 raise KeyboardInterrupt

@@ -1,6 +1,6 @@
 """Die Chat-Oberflaeche: so redest du mit deiner KI (per Tastatur, optional Sprache).
 
-Sprechen: F2 gedrueckt HALTEN und sprechen, loslassen = fertig.
+Sprechen (bei leerer Eingabezeile): F2 gedrueckt HALTEN und sprechen, loslassen = fertig.
           Oder F2 kurz druecken = Mikrofon an, nochmal F2 = fertig (Esc = abbrechen).
           Der Text landet in der Eingabezeile - pruefen und mit Enter abschicken.
 
@@ -76,6 +76,7 @@ class CLI:
         self.voice_mode = config.voice.enabled and self.voice_in.available()
         self.voice_capture = VoiceCapture(config.voice)
         self.reader = VoiceLineReader(self.voice_capture, enabled=config.voice.f2_aufnahme)
+        self.reader.warm_up()
         self.updater = Updater(config.update, config.project_root)
         self.exit_code = 0
         self._pending_update: UpdateInfo | None = None
@@ -152,7 +153,7 @@ class CLI:
                 return spoken
             print(_c("(nichts verstanden)", GREY))
             return None
-        return self.reader.read(_c("\nDu: ", GREEN))
+        return self.reader.read("\n" + _c("Du: ", GREEN))
 
     # -- Befehle ------------------------------------------------------------
     def _handle_command(self, cmd: str) -> bool:
@@ -184,14 +185,24 @@ class CLI:
     def _voice_command(self, args: list[str]) -> None:
         sub = (args[0].lower() if args else "")
         if sub == "einrichten":
-            print(_c("Installiere die Spracheingabe (sounddevice, SpeechRecognition) …", GREY))
-            ok, message = install_voice_packages()
-            print(_c(message, CYAN if ok else YELLOW))
+            packages = ["pyttsx3"] if args[1:2] == ["vorlesen"] else self.voice_capture.packages()
+            print(_c(f"Installiere {', '.join(packages)} …", GREY))
+            ok, message = install_voice_packages(packages=packages)
+            if not ok:
+                print(_c(message, YELLOW))
+            elif packages == ["pyttsx3"]:
+                print(_c("Vorlesen ist eingerichtet - schalte es mit /sprache vorlesen ein.", CYAN))
+            else:
+                problem = self.voice_capture.problem()
+                print(_c(problem or "Spracheingabe ist eingerichtet. Halte F2 gedrueckt und sprich.",
+                         YELLOW if problem else CYAN))
+                if not problem:
+                    self.reader.warm_up()
         elif sub == "vorlesen":
             if not self.voice_out.enabled:
                 self.voice_out = VoiceOutput(True)
                 print(_c("Vorlesen ist AN." if self.voice_out.enabled else
-                         "Vorlesen nicht verfuegbar. Installiere: pip install pyttsx3", CYAN))
+                         "Vorlesen ist noch nicht eingerichtet - tippe /sprache einrichten vorlesen.", CYAN))
             else:
                 self.voice_out.enabled = False
                 print(_c("Vorlesen ist AUS.", CYAN))
@@ -276,6 +287,11 @@ class CLI:
 
     def _offer_update(self, info: UpdateInfo, ask: bool) -> bool:
         """Zeigt die Neuerungen, installiert (ggf. nach Rueckfrage). True = neu starten."""
+        if info.kind == "quelle" and self.updater.is_git_checkout:
+            # Entwickler-Ordner: kein automatisches Ueberschreiben, keine KI-Kosten.
+            print(_c(f"\n[Version {info.new} liegt im Repo - dieser Ordner ist ein Git-Checkout: "
+                     "bitte 'git pull'.]", YELLOW))
+            return False
         print(_c(f"\nNeue Version {info.new} verfuegbar (du hast {info.current}).", BOLD))
         print(_c(f"{self.config.ki.name}: ", CYAN) + self._explain_update(info))
         if ask and not _yes("\nJetzt aktualisieren? Deine alte Version wird gesichert. [J/n] ", default=True):
@@ -410,7 +426,7 @@ class CLI:
         )
         print(_c("Rede einfach los. '/hilfe' fuer Befehle, '/beenden' zum Schluss.", GREY))
         if self.config.voice.f2_aufnahme and sys.stdin.isatty():
-            print(_c("Sprechen: F2 halten (oder kurz druecken = Mikrofon an/aus).", GREY))
+            print(_c("Sprechen: bei leerer Zeile F2 halten (oder kurz druecken = Mikrofon an/aus).", GREY))
         if self.config.permissions.safe_mode:
             print(
                 _c(

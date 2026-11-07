@@ -178,6 +178,10 @@ class Updater:
         self.state_path.write_text(json.dumps(state, indent=2, ensure_ascii=False), encoding="utf-8")
 
     @property
+    def is_git_checkout(self) -> bool:
+        return not self.frozen and (self.root / ".git").exists()
+
+    @property
     def paused(self) -> bool:
         """Nach /zurueck: keine automatischen Updates, bis du /update eingibst."""
         return bool(self._state().get("automatik_pausiert"))
@@ -246,10 +250,17 @@ class Updater:
         ) or next((a for a in release.get("assets", []) if str(a.get("name", "")).lower().endswith(".exe")), None)
         if asset is None:
             return None
+        notes = release.get("body") or ""
+        try:  # alle uebersprungenen Versionen erklaeren, nicht nur die neueste
+            tag = quote(str(release.get("tag_name")), safe="")
+            changelog = self.fetch(f"https://raw.githubusercontent.com/{repo}/{tag}/CHANGELOG.md", timeout=8)
+            notes = changelog_between(changelog.decode("utf-8", "replace"), self.current, remote) or notes
+        except Exception:  # noqa: BLE001
+            pass
         return UpdateInfo(
             current=self.current,
             new=remote,
-            notes=release.get("body") or "",
+            notes=notes,
             download_url=asset["browser_download_url"],
             kind="exe",
         )
@@ -261,6 +272,7 @@ class Updater:
         else:
             message = self._install_source(info, say)
         self._save_state(automatik_pausiert=False, installiert=info.new)
+        self.current = info.new  # falls ohne Neustart weitergemacht wird (z.B. /zurueck)
         self._prune()
         return message
 
@@ -281,7 +293,7 @@ class Updater:
             backup = self._backup_source(program_files(new_root))
             say(f"Alte Version {self.current} gesichert in {backup.relative_to(self.root).as_posix()}/")
             old_requirements = _read_bytes(self.root / "requirements.txt")
-            self._replace_files(new_root)
+            self._replace_or_rollback(new_root, backup)
             if _read_bytes(self.root / "requirements.txt") != old_requirements:
                 self._pip_install(say)
         return f"Version {new_version} ist installiert."
@@ -294,12 +306,27 @@ class Updater:
             raise UpdateError("Die heruntergeladene Datei ist keine gueltige KI.exe - nichts geaendert.")
         new_exe = exe.with_name(exe.name + ".neu")
         new_exe.write_bytes(data)
-        backup = self._new_backup_dir(self.current)
-        # Eine laufende .exe darf unter Windows umbenannt (nicht ueberschrieben) werden.
-        os.replace(exe, backup / exe.name)
-        os.replace(new_exe, exe)
+        backup = self._swap_exe(new_exe)
         say(f"Alte Version {self.current} gesichert in {backup.relative_to(self.root).as_posix()}/")
         return f"KI.exe {info.new} ist installiert."
+
+    def _swap_exe(self, new_exe: Path) -> Path:
+        """Laufende KI.exe in die Sicherung verschieben und die neue einsetzen.
+
+        Eine laufende .exe darf unter Windows umbenannt, aber nicht ueberschrieben
+        werden. Klappt das Einsetzen nicht (Virenscanner prueft die neue Datei noch),
+        kommt die alte KI.exe sofort zurueck.
+        """
+        exe = self.exe_path
+        backup = self._new_backup_dir(self.current)
+        _retry(lambda: os.replace(exe, backup / exe.name))
+        try:
+            _retry(lambda: os.replace(new_exe, exe))
+        except OSError as exc:
+            os.replace(backup / exe.name, exe)
+            shutil.rmtree(backup, ignore_errors=True)
+            raise UpdateError(f"Die neue KI.exe konnte nicht eingesetzt werden ({exc}) - alte Version bleibt.") from exc
+        return backup
 
     def _new_backup_dir(self, version: str) -> Path:
         stamp = self.now().strftime("%Y-%m-%d_%H%M%S")
@@ -321,6 +348,22 @@ class Updater:
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(self.root / rel, target)
         return dest
+
+    def _replace_or_rollback(self, new_root: Path, backup: Path) -> None:
+        """Dateien ersetzen; bricht das mittendrin ab, wird die Sicherung zurueckgespielt."""
+        try:
+            self._replace_files(new_root)
+        except Exception as exc:
+            try:
+                self._replace_files(backup)
+            except Exception:  # noqa: BLE001
+                logger.exception("Zuruecksetzen nach fehlgeschlagenem Update")
+                raise UpdateError(
+                    f"Update abgebrochen ({exc}). Die alte Version liegt in "
+                    f"{backup.relative_to(self.root).as_posix()}/ - /zurueck 1 stellt sie wieder her."
+                ) from exc
+            shutil.rmtree(backup, ignore_errors=True)
+            raise UpdateError(f"Update abgebrochen ({exc}) - die bisherige Version ist unveraendert.") from exc
 
     def _replace_files(self, new_root: Path) -> None:
         old_files = program_files(self.root)
@@ -385,16 +428,14 @@ class Updater:
                 raise UpdateError("In dieser Sicherung liegt keine KI.exe.")
             new_exe = self.exe_path.with_name(self.exe_path.name + ".neu")
             shutil.copy2(old_exe, new_exe)
-            backup = self._new_backup_dir(self.current)
-            os.replace(self.exe_path, backup / self.exe_path.name)
-            os.replace(new_exe, self.exe_path)
+            backup = self._swap_exe(new_exe)
         else:
             if (self.root / ".git").exists():
                 raise UpdateError("Dieser Ordner ist ein Git-Checkout - bitte mit git zurueckwechseln.")
             if not (chosen.path / "assistant" / "__init__.py").is_file():
                 raise UpdateError("Diese Sicherung ist unvollstaendig.")
             backup = self._backup_source(program_files(chosen.path))
-            self._replace_files(chosen.path)
+            self._replace_or_rollback(chosen.path, backup)
         say(f"Version {self.current} gesichert in {backup.relative_to(self.root).as_posix()}/")
         # Sonst wuerde die automatische Pruefung gleich wieder auf die neueste wechseln.
         self._save_state(automatik_pausiert=True, installiert=chosen.version)
@@ -408,7 +449,25 @@ class Updater:
     def restart_exe(self) -> None:
         """Startet die (neue) KI.exe in einem neuen Fenster."""
         flags = getattr(subprocess, "CREATE_NEW_CONSOLE", 0)
-        subprocess.Popen([str(self.exe_path)], cwd=str(self.exe_path.parent), creationflags=flags)
+        # Ohne das haelt PyInstaller (>= 6.9) den neuen Prozess fuer einen Helfer der
+        # alten KI.exe und nutzt deren entpackte Dateien - die gleich geloescht werden.
+        env = {k: v for k, v in os.environ.items() if not k.startswith("_PYI_")}
+        env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+        subprocess.Popen([str(self.exe_path)], cwd=str(self.exe_path.parent), creationflags=flags, env=env)
+
+
+def _retry(action: Callable[[], None], attempts: int = 5, delay: float = 0.5) -> None:
+    """Windows: Virenscanner sperren frische Dateien oft kurz - ein paar Mal versuchen."""
+    import time
+
+    for attempt in range(attempts):
+        try:
+            action()
+            return
+        except PermissionError:
+            if attempt == attempts - 1:
+                raise
+            time.sleep(delay)
 
 
 def _safe(text: str) -> str:
