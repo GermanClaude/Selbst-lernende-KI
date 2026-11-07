@@ -467,3 +467,17 @@ def test_terminal_jarvis_answers_questions_by_voice(tmp_path, monkeypatch):
     assert out["v"] == "immer"
     host.uninstall()
     assert "_permission_answer" not in cli.__dict__
+
+
+def test_tutorial_keeps_ids_and_state_tells_the_jarvis_state(app, monkeypatch):
+    server = app([])
+    steps = _req(server, "/api/tutorial")[1]["steps"]
+    assert any(s["ziel"] == "stuetzraeder" for s in steps)            # Kennung unveraendert
+    assert any("ä" in s["text"] or "ü" in s["text"] for s in steps)  # Text mit Umlauten
+    ctl = server.controller
+    _fake_ear(monkeypatch, ctl)
+    assert _req(server, "/api/state")[1]["jarvis_state"] == "off"
+    ctl.jarvis("start")
+    time.sleep(0.3)
+    assert _req(server, "/api/state")[1]["jarvis_state"] == "listening"
+    ctl.jarvis("stop")

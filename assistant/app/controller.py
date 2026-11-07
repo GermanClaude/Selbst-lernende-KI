@@ -23,7 +23,7 @@ from contextlib import redirect_stdout
 from typing import Any, Callable
 
 from .. import __version__
-from ..anzeige import schoen, schoen_alles
+from ..anzeige import schoen
 from ..cancel import Abgebrochen
 from ..config import Config, save_setting, toml_string
 from ..logging_setup import get_logger
@@ -145,6 +145,8 @@ class AppController(CLI):
             "api_key_missing": not self.config.api_key,
             "update": {"new": self._pending_update.new} if self._pending_update else None,
             "jarvis": self._jarvis_active(),
+            "jarvis_state": self._live.state if self._jarvis_active() else "off",  # fuer ein neu geoeffnetes Fenster
+            "jarvis_live": bool(self._jarvis_active() and self._live.ear.live),
             "stuetzraeder": self.training_wheels_state(),
             "full_access": bool(self.permissions.settings.allow_full_filesystem),
             "tutorial_done": self._tutorial_done(),
@@ -545,7 +547,9 @@ class AppController(CLI):
     def tutorial(self) -> dict:
         from ..tutorial import steps
 
-        return {"steps": schoen_alles(steps(self.config)), "done": self._tutorial_done()}
+        shown = [{k: (schoen(v) if k in ("titel", "text", "zeigen") and isinstance(v, str) else v)
+                  for k, v in step.items()} for step in steps(self.config)]  # ids/ziele bleiben unveraendert
+        return {"steps": shown, "done": self._tutorial_done()}
 
     def tutorial_action(self, action: str) -> dict:
         from ..tutorial import mark_done
