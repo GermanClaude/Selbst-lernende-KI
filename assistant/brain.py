@@ -173,6 +173,26 @@ class Brain:
             self.memory.add_episode(summary)
             self.provider.reset_to_summary(summary)
 
+    def new_conversation(self) -> None:
+        """Neues Gespraech: das bisherige landet als Zusammenfassung im Gedaechtnis,
+        Charakter, Stil, 'Ueber mich' und Werte werden frisch geladen."""
+        from .config import _load_about, _read_text, bundle_dir
+
+        try:
+            self.end_session_summary()
+        except Exception as exc:  # noqa: BLE001
+            logger.info("Zusammenfassung beim Neustart: %s", exc)
+        cfg_dir = self.config.project_root / "config"
+        bundled = bundle_dir() / "config"
+        self.config.persona_text = _read_text(cfg_dir / "persona.md") or _read_text(bundled / "persona.md")
+        self.config.values_text = _read_text(cfg_dir / "werte.md") or _read_text(bundled / "werte.md")
+        self.config.about = _load_about(cfg_dir / "ueber_mich.json")
+        old = self.provider
+        self.system_prompt = build_system_prompt(self.config, self.memory)
+        new = build_provider(self.config, self.system_prompt, self.registry, self.tool_ctx, client=old.client)
+        new.usage, new.wait_fn, new.cancel_event = old.usage, old.wait_fn, old.cancel_event
+        self.provider = new
+
     def end_session_summary(self) -> None:
         if self.provider.user_turns() < 1 or self.provider.history_length() < 2:
             return

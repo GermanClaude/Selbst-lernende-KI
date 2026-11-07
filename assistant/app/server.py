@@ -6,8 +6,8 @@ fremde Webseiten im Browser nicht ueber Umwege (DNS-Rebinding) Befehle schicken
 koennen. Der Server spricht nur mit der eigenen Oberflaeche:
   GET  /, /static/*      Oberflaeche
   GET  /api/events       Ereignisstrom (Server-Sent Events)
-  GET  /api/state, /api/history
-  POST /api/send, /api/stop, /api/answer, /api/voice, /api/toggle
+  GET  /api/state, /api/history, /api/profile, /api/memory
+  POST /api/send, /api/stop, /api/answer, /api/voice, /api/toggle, /api/profile, /api/memory
 """
 from __future__ import annotations
 
@@ -154,6 +154,10 @@ class AppServer:
                     return self._json(ctl.state())
                 if url.path == "/api/history":
                     return self._json({"messages": ctl.history[-400:]})
+                if url.path == "/api/profile":
+                    return self._json(ctl.profile())
+                if url.path == "/api/memory":
+                    return self._json(ctl.memory_facts())
                 return self._deny(404)
 
             def do_POST(self):  # noqa: N802
@@ -181,6 +185,13 @@ class AppServer:
                 if url.path == "/api/toggle":
                     ctl.toggle(str(body.get("name", "")), bool(body.get("value")))
                     return self._json({"ok": True, "state": ctl.state()})
+                if url.path == "/api/profile":
+                    try:
+                        return self._json({"ok": True, "profile": ctl.save_profile(body)})
+                    except (ValueError, OSError) as exc:
+                        return self._json({"ok": False, "error": str(exc)})
+                if url.path == "/api/memory":
+                    return self._json(ctl.memory_action(body))
                 return self._deny(404)
 
             def _static(self, name: str) -> None:

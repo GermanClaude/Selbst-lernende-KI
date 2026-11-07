@@ -49,6 +49,10 @@ COMMANDS = [
     ("/autostart entfernen alle", "automatische Starts abstellen"),
     ("/erlauben alles", "nie mehr nachfragen"),
     ("/erlauben fragen", "wieder nachfragen"),
+    ("/neu", "neues Gespraech (Charakter & Profil frisch)"),
+    ("/charakter", "Charakter anzeigen oder waehlen"),
+    ("/stil", "Anrede, Laenge, Humor, Emojis"),
+    ("/ueber-mich", "was die KI ueber dich weiss"),
     ("/verknuepfung", "Symbol fuer die App auf den Desktop"),
     ("/name", "der KI einen anderen Namen geben"),
     ("/sprache", "Stand der Spracheingabe"),
@@ -290,6 +294,76 @@ class AppController(CLI):
         for waiter in list(self._asks.values()):
             waiter["event"].set()
         self.voice_out.stop()
+
+    # -- Charakter & Profil (Einstellungen-Fenster der App) --------------------------
+    def profile(self) -> dict:
+        from ..profil import ABOUT_FIELDS, CHARACTERS, STYLE_OPTIONS, active_character
+
+        current = active_character(self.config)
+        s = self.config.style
+        return {
+            "name": self.config.ki.name,
+            "meaning": self.config.ki.bedeutung,
+            "character": current,
+            "characters": [{"id": c.key, "name": c.name, "description": c.description,
+                            "active": c.key == current} for c in CHARACTERS],
+            "persona_text": self.config.persona_text,
+            "style": {"anrede": s.anrede, "laenge": s.laenge, "humor": s.humor, "emojis": s.emojis},
+            "style_options": {k: [{"value": v, "label": label} for v, label in opts]
+                              for k, opts in STYLE_OPTIONS.items()},
+            "about": dict(self.config.about),
+            "about_fields": [{"key": k, "label": label, "placeholder": ph} for k, label, ph in ABOUT_FIELDS],
+            "values_text": self.config.values_text,
+        }
+
+    def save_profile(self, data: dict) -> dict:
+        """Speichert, was im Einstellungen-Fenster geaendert wurde. Gilt ab /neu."""
+        from ..profil import apply_character, save_about, save_persona, save_values, set_style
+
+        name = str(data.get("name", "")).strip()
+        if name and (name != self.config.ki.name or "meaning" in data):
+            meaning = str(data.get("meaning", self.config.ki.bedeutung)).replace('"', "'").strip()
+            if len(name) > 40 or any(c in name for c in '\n"\\'):
+                raise ValueError("Bitte einen kurzen Namen ohne Anfuehrungszeichen.")
+            save_setting(self.config.project_root, "ki", "name", f'"{name}"')
+            save_setting(self.config.project_root, "ki", "bedeutung", f'"{meaning}"')
+            self.config.ki.name, self.config.ki.bedeutung = name, meaning
+        if data.get("character") and data["character"] != "eigen":
+            apply_character(self.config, str(data["character"]))
+        elif isinstance(data.get("persona_text"), str) and data["persona_text"] != self.config.persona_text:
+            save_persona(self.config, data["persona_text"])
+        for key, value in (data.get("style") or {}).items():
+            if getattr(self.config.style, key, None) != value:
+                set_style(self.config, str(key), str(value))
+        if isinstance(data.get("about"), dict):
+            save_about(self.config, {str(k): str(v) for k, v in data["about"].items()})
+        if isinstance(data.get("values_text"), str) and data["values_text"] != self.config.values_text:
+            save_values(self.config, data["values_text"])
+        self._state_changed()
+        return self.profile()
+
+    def memory_facts(self) -> dict:
+        facts = self.memory.top_facts(500)
+        return {"facts": [{"id": f.id, "category": f.category, "content": f.content,
+                           "importance": f.importance} for f in facts],
+                "count": self.memory.count_facts()}
+
+    def memory_action(self, data: dict) -> dict:
+        action = data.get("action")
+        if action == "delete":
+            ok = self.memory.forget(int(data.get("id", 0)))
+        elif action == "add":
+            content = str(data.get("content", "")).strip()
+            ok = bool(content) and bool(self.memory.remember(content[:1000], category=str(data.get("category") or "notiz")))
+        else:
+            return {"ok": False, "error": f"Unbekannt: {action}"}
+        return {"ok": bool(ok), **self.memory_facts()}
+
+    def _new_conversation(self) -> None:
+        super()._new_conversation()
+        self.history.clear()
+        self._event({"type": "reset"})  # Fenster leert den Chat
+        self._state_changed()
 
     # -- Schalter -----------------------------------------------------------------
     def toggle(self, name: str, value: bool) -> None:

@@ -16,6 +16,11 @@ Sonderbefehle (mit '/' beginnen):
   /versionen          - gesicherte alte Versionen anzeigen
   /zurueck <Nr>       - zu einer gesicherten alten Version zurueckkehren
   /autostart          - zeigen, was die KI automatisch startet (und es abstellen)
+  /charakter [Name]   - Charakter anzeigen bzw. waehlen (freundlich, butler, kumpel ...)
+  /stil [was wert]    - z.B. /stil anrede Sie, /stil laenge kurz, /stil humor viel
+  /ueber-mich [feld = wert] - was die KI ueber dich wissen soll
+  /werte bearbeiten   - deine Regeln fuer die KI im Editor oeffnen
+  /neu                - neues Gespraech (Charakter & Profil frisch geladen)
   /name <Name> [= Bedeutung] - der KI einen anderen Namen geben
   /app                - zur App wechseln (eigenes Fenster statt Terminal)
   /verknuepfung       - Symbol fuer die App auf den Desktop legen
@@ -183,6 +188,83 @@ class CLI:
                      "Zurueck mit /erlauben fragen.]", GREEN))
         else:
             print(_c(f"[Ab jetzt frage ich vor jeder Aktion wieder nach ({where}).]", GREEN))
+
+    # -- Charakter & Profil ----------------------------------------------------
+    def _character_command(self, args: list[str]) -> None:
+        from ..profil import CHARACTERS, active_character, apply_character
+
+        if not args:
+            current = active_character(self.config)
+            print(_c("\nCharaktere (waehlen mit /charakter <Name>):", BOLD))
+            for ch in CHARACTERS:
+                mark = "  <- aktiv" if ch.key == current else ""
+                print(f"  {ch.key:<11} {ch.name} - {ch.description}{mark}")
+            if current == "eigen":
+                print(_c("  (Gerade aktiv: deine eigene Persoenlichkeit aus config/persona.md)", GREY))
+            return
+        try:
+            chosen = apply_character(self.config, args[0].lower())
+        except ValueError as exc:
+            print(_c(str(exc), YELLOW))
+            return
+        print(_c(f"Charakter '{chosen.name}' gewaehlt (gespeichert in config/persona.md - die alte ist "
+                 "in data/persona-sicherungen/).", GREEN))
+        if self._ask_yes("Jetzt ein neues Gespraech beginnen, damit er gleich gilt? [J/n] ", default=True):
+            self._new_conversation()
+
+    def _style_command(self, args: list[str]) -> None:
+        from ..profil import STYLE_OPTIONS, set_style
+
+        if len(args) < 2:
+            s = self.config.style
+            print(_c(f"Stil: Anrede {s.anrede}, Laenge {s.laenge}, Humor {s.humor}, Emojis {s.emojis}", CYAN))
+            options = "; ".join(f"{k}: {'/'.join(v for v, _ in opts)}" for k, opts in STYLE_OPTIONS.items())
+            print(_c(f"Aendern z.B. mit /stil anrede Sie  -  {options}", GREY))
+            return
+        try:
+            set_style(self.config, args[0].lower(), args[1])
+        except ValueError as exc:
+            print(_c(str(exc), YELLOW))
+            return
+        print(_c(f"Gespeichert: {args[0]} = {args[1]}. Gilt ab dem naechsten Gespraech (/neu).", GREEN))
+
+    def _about_command(self, text: str) -> None:
+        from ..profil import ABOUT_FIELDS, save_about
+
+        key, sep, value = text.partition("=")
+        key = key.strip().lower()
+        fields = {k: label for k, label, _ in ABOUT_FIELDS}
+        if not sep:
+            print(_c("\nDas weiss die KI ueber dich (aendern: /ueber-mich feld = wert):", BOLD))
+            for k, label, example in ABOUT_FIELDS:
+                print(f"  {k:<11} {label}: {self.config.about.get(k) or _c(example, GREY)}")
+            return
+        if key not in fields:
+            print(_c(f"Unbekanntes Feld '{key}'. Moeglich: {', '.join(fields)}", YELLOW))
+            return
+        about = dict(self.config.about)
+        about[key] = value.strip()
+        save_about(self.config, about)
+        print(_c(f"Gespeichert: {fields[key]} = {value.strip() or '(leer)'}. Gilt ab dem naechsten Gespraech (/neu).",
+                 GREEN))
+
+    def _open_in_editor(self, name: str) -> None:
+        path = self.config.project_root / "config" / name
+        try:
+            if sys.platform == "win32":
+                os.startfile(str(path))  # noqa: S606 - oeffnet die Datei im Standard-Editor
+            else:
+                import subprocess
+
+                subprocess.Popen(["xdg-open" if sys.platform != "darwin" else "open", str(path)])
+            print(_c(f"{name} ist im Editor geoeffnet. Nach dem Speichern: /neu", CYAN))
+        except Exception as exc:  # noqa: BLE001
+            print(_c(f"Bitte selbst oeffnen: {path} ({exc})", YELLOW))
+
+    def _new_conversation(self) -> None:
+        self.brain.new_conversation()
+        print(_c(f"Neues Gespraech - {self.config.ki.name} hat Charakter, Stil und dein Profil frisch "
+                 "geladen. Das bisherige Gespraech ist als Zusammenfassung im Gedaechtnis.", GREEN))
 
     def _name_command(self, text: str) -> None:
         """'/name Max' oder '/name MAX = Mein Assistent X' - dauerhaft speichern."""
@@ -368,6 +450,16 @@ class CLI:
             self._allow_command(cmd.split()[1:])
         elif base == "/app":
             return self._switch_to_app()
+        elif base == "/charakter":
+            self._character_command(cmd.split()[1:])
+        elif base == "/stil":
+            self._style_command(cmd.split()[1:])
+        elif base in ("/ueber-mich", "/übermich", "/über-mich", "/uebermich"):
+            self._about_command(cmd.split(None, 1)[1] if len(cmd.split(None, 1)) > 1 else "")
+        elif base in ("/werte", "/persona"):
+            self._open_in_editor("werte.md" if base == "/werte" else "persona.md")
+        elif base == "/neu":
+            self._new_conversation()
         elif base == "/name":
             self._name_command(cmd.split(None, 1)[1] if len(cmd.split(None, 1)) > 1 else "")
         elif base in ("/verknuepfung", "/verknüpfung"):

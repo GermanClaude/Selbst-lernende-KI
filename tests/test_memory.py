@@ -58,3 +58,29 @@ def test_empty_content_rejected(tmp_path):
     except ValueError:
         pass
     m.close()
+
+
+def test_memory_works_from_several_threads(tmp_path):
+    """Die App nutzt das Gedaechtnis aus dem Antwort-Thread und den Fenster-Threads."""
+    import threading
+
+    from assistant.memory import Memory
+
+    mem = Memory(tmp_path / "m.sqlite3")
+    errors = []
+
+    def worker(i):
+        try:
+            for j in range(20):
+                mem.remember(f"Fakt {i}-{j}", category="test")
+                mem.top_facts(5)
+        except Exception as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    threads = [threading.Thread(target=worker, args=(i,)) for i in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert not errors and mem.count_facts() == 80
+    mem.close()

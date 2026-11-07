@@ -236,3 +236,30 @@ def test_app_exe_starts_in_app_mode(monkeypatch):
     assert run_ki._is_app_exe()
     monkeypatch.setattr(sys, "executable", "C:/KI/KI.exe")
     assert not run_ki._is_app_exe()
+
+
+def test_profile_api_and_memory_management(app, tmp_path):
+    server = app([])
+    status, prof = _req(server, "/api/profile")
+    assert prof["name"] == "Nova" and len(prof["characters"]) >= 5 and prof["about_fields"]
+    status, body = _req(server, "/api/profile", {"character": "mentor", "style": {"anrede": "Sie"},
+                                                  "about": {"name": "Nate", "projekte": "SCP-Spiel"}})
+    assert body["ok"] and body["profile"]["character"] == "mentor"
+    cfg = load_config(tmp_path)
+    assert cfg.style.anrede == "Sie" and cfg.about["projekte"] == "SCP-Spiel"
+    assert "Mentor" in (tmp_path / "config" / "persona.md").read_text(encoding="utf-8")
+    status, mem = _req(server, "/api/memory", {"action": "add", "content": "Mag dunkles Design"})
+    assert mem["ok"] and mem["facts"][0]["content"] == "Mag dunkles Design"
+    fact_id = mem["facts"][0]["id"]
+    status, mem = _req(server, "/api/memory", {"action": "delete", "id": fact_id})
+    assert mem["ok"] and mem["count"] == 0
+
+
+def test_new_conversation_clears_the_window(app):
+    server = app([_streamed("Hallo du")])
+    _req(server, "/api/send", {"text": "Hi"})
+    _events_until(server, "done")
+    _req(server, "/api/send", {"text": "/neu"})
+    _events_until(server, "reset")
+    status, hist = _req(server, "/api/history")
+    assert all(m["role"] != "assistant" for m in hist["messages"])

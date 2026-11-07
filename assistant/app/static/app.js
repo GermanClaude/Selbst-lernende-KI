@@ -398,6 +398,11 @@
     byId('sb-name').textContent = name;
     byId('tb-name').textContent = name;
     byId('empty-title').textContent = 'Hallo! Ich bin ' + name + '.';
+    // optional: Bedeutung des Namens (z.B. "Neugierige, Offene, Vernetzte Assistenz")
+    const meaning = s.meaning ? String(s.meaning) : '';
+    byId('empty-meaning').textContent = meaning;
+    byId('empty-meaning').hidden = !meaning;
+    byId('sb-name').title = meaning ? name + ' – ' + meaning : name;
     for (const a of document.querySelectorAll('.ai-avatar')) a.textContent = letter;
     setFavicon(letter);
     input.placeholder = 'Schreib ' + name + ' eine Nachricht …';

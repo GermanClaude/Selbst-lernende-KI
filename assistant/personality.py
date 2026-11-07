@@ -126,14 +126,21 @@ def build_system_prompt(config: Config, memory: Memory) -> str:
     frame = _FRAME.format(name=config.ki.name, meaning=f" ({meaning})" if meaning else "")
     memory_block = memory.context_block(max_facts=config.memory.max_facts_in_context)
 
+    from .profil import about_block, style_block
+
     persona = config.persona_text.strip() or "(Keine Persona-Datei gefunden.)"
     values = config.values_text.strip() or "(Keine Werte-Datei gefunden.)"
+    about = about_block(config.about)
 
-    economy = _ECONOMY_NOTE if (config.economy.aktiv and config.economy.knapp_antworten) else ""
+    # Wer ausdruecklich ausfuehrliche Antworten will, bekommt keinen "knapp"-Hinweis.
+    knapp = config.economy.aktiv and config.economy.knapp_antworten and config.style.laenge != "ausfuehrlich"
+    economy = _ECONOMY_NOTE if knapp else ""
 
     return (
         f"{frame}{economy}\n"
         f"=== DEINE PERSOENLICHKEIT ===\n{persona}\n\n"
-        f"=== DEINE WERTE & GRENZEN ===\n{values}\n\n"
+        f"=== DEIN STIL ===\n{style_block(config)}\n\n"
+        + (f"=== UEBER DEINEN MENSCHEN (hat er selbst eingetragen) ===\n{about}\n\n" if about else "")
+        + f"=== DEINE WERTE & GRENZEN ===\n{values}\n\n"
         f"=== WAS DU BEREITS GELERNT HAST ===\n{memory_block}\n"
     )

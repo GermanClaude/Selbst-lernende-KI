@@ -45,9 +45,21 @@ bedeutung = "Neugierige, Offene, Vernetzte Assistenz"
 language = "de"
 # Laeuft die KI schon, oeffnet sich kein zweites Fenster.
 nur_ein_fenster = true
+# Zuletzt gewaehlter Charakter (/charakter) - die Persoenlichkeit steht in persona.md.
+charakter = ""
 # Womit start.bat die KI oeffnet: "terminal" (schwarzes Fenster) oder "app"
 # (eigenes, schoeneres Fenster). start-app.bat oeffnet immer die App.
 oberflaeche = "terminal"
+
+
+# ----------------------------------------------------------------------------
+#  STIL - wie die KI mit dir spricht (im Chat: /stil, in der App: "Charakter").
+# ----------------------------------------------------------------------------
+[stil]
+anrede = "du"          # du | Sie
+laenge = "normal"      # kurz | normal | ausfuehrlich
+humor = "etwas"        # kein | etwas | viel
+emojis = "aus"         # aus | an
 
 
 # ----------------------------------------------------------------------------

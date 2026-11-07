@@ -114,11 +114,22 @@ class KISettings:
     name: str = DEFAULT_NAME
     # Wofuer die Buchstaben des Namens stehen (wird angezeigt; leer = nichts).
     bedeutung: str = DEFAULT_MEANING
+    # Zuletzt gewaehlter Charakter (/charakter); die Persoenlichkeit steht in persona.md.
+    charakter: str = ""
     language: str = "de"
     # Laeuft die KI schon, oeffnet sich kein zweites Fenster.
     nur_ein_fenster: bool = True
     # "terminal" oder "app": womit start.bat die KI oeffnet (start-app.bat = immer App).
     oberflaeche: str = "terminal"
+
+
+@dataclass
+class StyleSettings:
+    # Wie die KI spricht - im Chat mit /stil oder in der App unter "Charakter".
+    anrede: str = "du"          # du | Sie
+    laenge: str = "normal"      # kurz | normal | ausfuehrlich
+    humor: str = "etwas"        # kein | etwas | viel
+    emojis: str = "aus"         # aus | an
 
 
 @dataclass
@@ -231,6 +242,8 @@ class Config:
     deepseek_api_key: str | None
     settings_file: Path | None = None  # tatsaechlich gelesene Einstellungsdatei
     update: UpdateSettings = field(default_factory=UpdateSettings)
+    style: StyleSettings = field(default_factory=StyleSettings)
+    about: dict = field(default_factory=dict)  # "Ueber mich" (config/ueber_mich.json)
 
     # -- Komfort-Eigenschaften ---------------------------------------------
     @property
@@ -270,6 +283,17 @@ def _read_text(path: Path, fallback: str = "") -> str:
     if not path.is_file():
         return fallback
     return path.read_bytes().decode("utf-8-sig", errors="replace")
+
+
+def _load_about(path: Path) -> dict:
+    import json
+
+    try:
+        data = json.loads(path.read_bytes().decode("utf-8-sig"))
+    except (OSError, ValueError):
+        return {}
+    return {k: str(v) for k, v in data.items() if isinstance(v, (str, int, float)) and str(v).strip()} \
+        if isinstance(data, dict) else {}
 
 
 def _first_existing(*paths: Path) -> Path | None:
@@ -391,6 +415,8 @@ def load_config(project_root: Path | None = None) -> Config:
         deepseek_api_key=os.environ.get("DEEPSEEK_API_KEY"),
         settings_file=settings_path,
         update=_merge(UpdateSettings(), raw.get("update", {})),
+        style=_merge(StyleSettings(), raw.get("stil", {})),
+        about=_load_about(config_dir / "ueber_mich.json"),
     )
     # Relative Pfade gelten ab dem Programmordner, nicht ab dem aktuellen Verzeichnis.
     db_path = Path(cfg.memory.db_path).expanduser()

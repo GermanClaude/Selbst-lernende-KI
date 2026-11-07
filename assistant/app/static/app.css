@@ -388,6 +388,11 @@ button:disabled { cursor: default; }
   animation: fade-up .35s ease both;
 }
 .empty h1 { margin: 18px 0 6px; font-size: 27px; font-weight: 700; letter-spacing: -.02em; }
+.empty-meaning {
+  margin: -2px 0 10px;
+  font-size: 12.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--accent-text);
+}
 .empty p { margin: 0; color: var(--text-2); font-size: 15.5px; max-width: 460px; }
 .suggestions {
   display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px;
@@ -879,7 +884,7 @@ kbd {
 
 /* ---------- Meldungen (Toasts) ---------- */
 .toasts {
-  position: fixed; left: 50%; bottom: 112px; z-index: 120;
+  position: fixed; left: 50%; top: 68px; z-index: 120;
   transform: translateX(-50%);
   display: flex; flex-direction: column; align-items: center; gap: 8px;
   pointer-events: none;
@@ -892,7 +897,7 @@ kbd {
   background: #1d2027; color: #f1f3f7;
   font-size: 13.5px; font-weight: 500;
   box-shadow: var(--shadow-lg);
-  animation: fade-up .18s ease both;
+  animation: fade-down .18s ease both;
   pointer-events: auto;
 }
 :root[data-theme="dark"] .toast { background: #2c313c; }
@@ -900,7 +905,7 @@ kbd {
 .toast .ic { width: 16px; height: 16px; }
 .toast.error .ic { color: #fca5a5; }
 .toast.ok .ic { color: #86efac; }
-.toast.leaving { opacity: 0; transform: translateY(4px); transition: opacity .2s, transform .2s; }
+.toast.leaving { opacity: 0; transform: translateY(-4px); transition: opacity .2s, transform .2s; }
 
 .scrim { display: none; }
 
@@ -908,6 +913,7 @@ kbd {
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes fade { from { opacity: 0; } }
 @keyframes fade-up { from { opacity: 0; transform: translateY(6px); } }
+@keyframes fade-down { from { opacity: 0; transform: translateY(-6px); } }
 @keyframes pop { from { opacity: 0; transform: scale(.92); } }
 @keyframes pop-in { from { opacity: 0; transform: translateY(8px) scale(.97); } }
 @keyframes shimmer { from { background-position: 100% 0; } to { background-position: -120% 0; } }
@@ -958,7 +964,7 @@ kbd {
   .msg.ai .bubble { padding: 10px 13px; }
   .suggestions { grid-template-columns: minmax(0, 1fr); }
   .cmd-name { min-width: 0; }
-  .toasts { bottom: 100px; }
+  .toasts { top: 64px; }
 }
 @media (max-width: 520px) {
   .composer-hint .h-extra { display: none; }

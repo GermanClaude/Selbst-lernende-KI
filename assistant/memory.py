@@ -15,6 +15,7 @@ Lernen, das du sogar in der Datenbank nachlesen und korrigieren kannst.
 from __future__ import annotations
 
 import sqlite3
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -63,13 +64,28 @@ END;
 """
 
 
+def _locked(method):
+    """Fuehrt die Methode unter dem Datenbank-Schloss aus (mehrere Threads)."""
+    import functools
+
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        with self._lock:
+            return method(self, *args, **kwargs)
+
+    return wrapper
+
+
 class Memory:
     """Verwaltet das dauerhafte Wissen der KI in einer lokalen SQLite-Datei."""
 
     def __init__(self, db_path: str | Path):
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(str(self.db_path))
+        # Die App greift aus mehreren Threads zu (Antwort, Fenster) - eine Verbindung,
+        # durch ein Schloss geschuetzt.
+        self._conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
+        self._lock = threading.RLock()
         self._conn.row_factory = sqlite3.Row
         self._has_fts = True
         try:
@@ -98,6 +114,7 @@ class Memory:
         self._conn.commit()
 
     # -- Schreiben ----------------------------------------------------------
+    @_locked
     def remember(
         self,
         content: str,
@@ -129,12 +146,14 @@ class Memory:
         self._conn.commit()
         return int(cur.lastrowid)
 
+    @_locked
     def forget(self, fact_id: int) -> bool:
         """Loescht einen Fakt anhand seiner ID."""
         cur = self._conn.execute("DELETE FROM facts WHERE id = ?", (fact_id,))
         self._conn.commit()
         return cur.rowcount > 0
 
+    @_locked
     def add_episode(self, summary: str) -> int:
         summary = summary.strip()
         if not summary:
@@ -158,6 +177,7 @@ class Memory:
             source=row["source"],
         )
 
+    @_locked
     def top_facts(self, limit: int = 60) -> list[Fact]:
         """Die wichtigsten/aktuellsten Fakten - fuer den System-Prompt."""
         rows = self._conn.execute(
@@ -166,6 +186,7 @@ class Memory:
         ).fetchall()
         return [self._row_to_fact(r) for r in rows]
 
+    @_locked
     def search(self, query: str, limit: int = 10) -> list[Fact]:
         """Durchsucht das Gedaechtnis nach einem Stichwort."""
         query = query.strip()
@@ -187,16 +208,19 @@ class Memory:
         ).fetchall()
         return [self._row_to_fact(r) for r in rows]
 
+    @_locked
     def recent_episodes(self, limit: int = 5) -> list[str]:
         rows = self._conn.execute(
             "SELECT summary FROM episodes ORDER BY created_at DESC LIMIT ?", (limit,)
         ).fetchall()
         return [r["summary"] for r in rows]
 
+    @_locked
     def count_facts(self) -> int:
         return int(self._conn.execute("SELECT COUNT(*) AS n FROM facts").fetchone()["n"])
 
     # -- Fuer den Prompt ----------------------------------------------------
+    @_locked
     def context_block(self, max_facts: int = 60, max_episodes: int = 5) -> str:
         """Formatiert das gespeicherte Wissen als Textblock fuer den System-Prompt."""
         facts = self.top_facts(max_facts)
@@ -214,6 +238,7 @@ class Memory:
                 parts.append(f"  - {e}")
         return "\n".join(parts)
 
+    @_locked
     def close(self) -> None:
         self._conn.close()
 
