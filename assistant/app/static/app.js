@@ -536,7 +536,7 @@
     profileNames();
     updateEmpty();
     // Jarvis-Modus laeuft beim Server (z.B. nach dem Neuverbinden), Fenster zeigt ihn nicht – oder umgekehrt
-    if (s.jarvis === true && !jv.open && !jv.closing && !ended) openJarvisView(false);
+    if (s.jarvis === true && !jv.open && !jv.closing && !ended) openJarvisView(false, 'listening');
     else if (s.jarvis === false && jv.open && !jv.starting && performance.now() - jv.openedAt > 2500) closeJarvisView();
   }
 
@@ -563,6 +563,7 @@
     row.hidden = !w;
     row.dataset.state = w;
     byId('sec-wheels').dataset.state = w || 'teilweise';
+    byId('sec-wheels').hidden = !w; // aeltere KI ohne Stuetzraeder
     for (const id of ['sw-stuetzraeder', 'sec-sw-stuetzraeder']) {
       const b = byId(id);
       setSwitch(b, w === 'an');
@@ -3726,7 +3727,8 @@
   }
 
   // ---------- Oeffnen / Schliessen ----------
-  function openJarvisView(starting) {
+  /** guess: Zustand, wenn Jarvis schon laeuft und das naechste Ereignis noch aussteht (z.B. "listening"). */
+  function openJarvisView(starting, guess) {
     if (ended) return;
     clearTimeout(jv.leaveTimer);
     jvEl.classList.remove('leaving');
@@ -3734,7 +3736,7 @@
     jv.open = true;
     jv.starting = !!starting;
     jv.openedAt = performance.now();
-    jv.state = 'starting';
+    jv.state = guess && JV_STATES.has(guess) ? guess : 'starting';
     jv.label = '';
     jv.working = false;
     jv.live = null;
@@ -3753,7 +3755,7 @@
     updateInert();
     updateDlgVoice();
     if (tour.open) tourPause(true);
-    orb.setState('starting', false);
+    orb.setState(jv.state, false);
     orb.start();
     requestAnimationFrame(() => { if (jv.open && modal.hidden && cmodal.hidden) jvEl.focus(); });
   }
@@ -3806,10 +3808,10 @@
   async function startJarvis() {
     if (ended) return;
     if (jv.open) { jvEl.focus(); return; }
-    ttsWarmup(); // braucht die Nutzer-Geste (Klick / Taste)
     if (jv.closing) await waitClosed(); // alte Sitzung erst ganz beenden
     if (ended || jv.open) return;
     openJarvisView(true);
+    ttsWarmup(); // nach dem Zuruecksetzen der Warteschlange (das wuerde sie sonst gleich abbrechen)
     jv.cancelStart = false;
     const r = await post('/api/jarvis', { action: 'start', tts: 'client' });
     const cancelled = jv.cancelStart;
@@ -3922,7 +3924,7 @@
     const steps = d && Array.isArray(d.steps) ? d.steps.filter((s) => s && typeof s === 'object').map((s) => ({
       titel: str(s.titel).trim(),
       text: str(s.text).trim(),
-      ziel: TOUR_TARGETS.has(str(s.ziel)) ? str(s.ziel) : '',
+      ziel: tourZiel(s.ziel),
       zeigen: str(s.zeigen).trim(),
     })).filter((s) => s.titel || s.text) : [];
     if (!steps.length) { toast('Die Tour konnte nicht geladen werden.', 'error'); return; }
@@ -3940,6 +3942,12 @@
     window.addEventListener('resize', tourReflow);
     document.addEventListener('scroll', tourReflow, true);
     tourStep(0);
+  }
+
+  /** Ziel-Name pruefen; der Server schreibt manchmal Umlaute hinein ("stützräder"). */
+  function tourZiel(z) {
+    const v = str(z).trim().toLowerCase().replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss');
+    return TOUR_TARGETS.has(v) ? v : '';
   }
 
   function tourTarget(ziel) {
@@ -3997,6 +4005,7 @@
     next.disabled = tour.waiting;
     next.title = tour.waiting ? 'Geht weiter, sobald ' + kiName() + ' fertig ist' : '';
     byId('tour-end').hidden = last;
+    byId('tour-back').classList.toggle('ghost', tour.demo);
     const wait = byId('tour-wait');
     wait.hidden = !tour.demo;
     if (tour.demo) {
@@ -4035,7 +4044,7 @@
     const t = tour.demo ? null : tour.target;
     if (t && t.isConnected && !t.closest('[hidden]')) {
       const r = t.getBoundingClientRect();
-      if (r.width && r.height && r.bottom > 0 && r.top < vh) rect = r;
+      if (r.width && r.height && r.bottom > 0 && r.top < vh && r.right > 0 && r.left < vw) rect = r;
     }
     const cw = tourCard.offsetWidth;
     const ch = tourCard.offsetHeight;
@@ -4150,7 +4159,6 @@
   byId('tour-back').addEventListener('click', tourBack);
   byId('tour-show').addEventListener('click', tourShow);
   byId('tour-end').addEventListener('click', () => endTour(false));
-  byId('tour-x').addEventListener('click', () => endTour(false));
   byId('tour-start').addEventListener('click', () => startTour());
   byId('sb-tour').addEventListener('click', () => { closeSidebar(); startTour(); });
   byId('tour-later').addEventListener('click', () => {
@@ -4492,7 +4500,7 @@
         break;
       case 'open':
         if (ended) break;
-        if (ev.what === 'jarvis') { if (!jv.open && !jv.closing) { ttsWarmup(); openJarvisView(false); } }
+        if (ev.what === 'jarvis') { if (!jv.open && !jv.closing) { openJarvisView(false); ttsWarmup(); } }
         else if (ev.what === 'tutorial') startTour();
         break;
       case 'appearance':

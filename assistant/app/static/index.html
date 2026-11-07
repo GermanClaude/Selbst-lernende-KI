@@ -453,16 +453,15 @@
   <div class="tour-card" id="tour-card" role="dialog" aria-modal="false" aria-labelledby="tour-title" aria-describedby="tour-text" tabindex="-1">
     <div class="tc-head">
       <span class="tour-step" id="tour-step">Schritt 1 von 1</span>
-      <button class="icon-btn tour-x" id="tour-x" type="button" aria-label="Tour beenden" title="Tour beenden (Esc)" data-icon="x"></button>
+      <button class="tour-end" id="tour-end" type="button" title="Tour beenden (Esc)">Tour beenden</button>
     </div>
     <div class="tour-bar" aria-hidden="true"><i id="tour-bar"></i></div>
     <h2 class="tour-title" id="tour-title"></h2>
     <p class="tour-text" id="tour-text"></p>
     <div class="tour-wait" id="tour-wait" role="status" hidden><span class="spinner" aria-hidden="true"></span><span id="tour-wait-text">Ich führe es dir vor …</span></div>
     <div class="tour-btns">
-      <button class="btn small ghost tour-end" id="tour-end" type="button">Tour beenden</button>
-      <span class="tour-gap"></span>
       <button class="btn secondary" id="tour-back" type="button">Zurück</button>
+      <span class="tour-gap"></span>
       <button class="btn secondary" id="tour-show" type="button"><span data-icon="play"></span>Zeig es mir</button>
       <button class="btn primary" id="tour-next" type="button">Weiter</button>
     </div>

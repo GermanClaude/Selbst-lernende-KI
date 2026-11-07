@@ -1391,7 +1391,7 @@ kbd {
 .switch-row.wheels[data-state="teilweise"] .switch-title .ic { color: var(--warn); }
 .switch-row.wheels[data-state="aus"] .switch-title .ic,
 .switch-row.wheels[data-state="aus"] .switch-sub { color: var(--danger); }
-.switch.mixed { background: color-mix(in srgb, var(--warn) 50%, var(--border-strong)); }
+.switch.mixed { background: color-mix(in srgb, #f59e0b 72%, var(--border-strong)); }
 .switch.mixed .knob { transform: translateX(8px); }
 .switch:disabled { opacity: .6; }
 
@@ -1711,10 +1711,16 @@ kbd {
 .tour-card:focus { outline: none; }
 .tour-card.no-anim { transition: none !important; }
 .tour-card.fresh { animation: pop-in .26s cubic-bezier(.2, .9, .3, 1.1) both; }
-.tc-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.tc-head { display: flex; align-items: center; gap: 8px; }
+.tc-head .tour-step { flex: 1; min-width: 0; }
+.tour-end {
+  padding: 3px 8px; margin-right: -4px;
+  border: 0; border-radius: calc(var(--radius) * 0.583);
+  background: transparent; color: var(--text-3);
+  font-size: calc(12.5px * var(--font-scale)); font-weight: 600;
+}
+.tour-end:hover { background: var(--surface-3); color: var(--text); }
 .tour-step { font-size: calc(12px * var(--font-scale)); font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--accent-text); }
-.tour-x { width: 30px; height: 30px; margin: -5px -7px -5px 0; }
-.tour-x .ic { width: 17px; height: 17px; }
 .tour-bar { height: 4px; margin: 9px 0 13px; border-radius: 999px; background: var(--surface-3); overflow: hidden; }
 .tour-bar i {
   display: block; height: 100%; border-radius: inherit;
@@ -1736,15 +1742,18 @@ kbd {
 .tour-btns { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
 .tour-gap { flex: 1; }
 .tour-btns .btn .ic { width: 14px; height: 14px; }
-.tour-end { margin-left: -8px; }
-.tour-card.demo { width: min(350px, calc(100vw - 24px)); }
-.tour-card.demo .tour-text { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+/* waehrend "Zeig es mir": klein und an der Seite, damit man Nova bei der Arbeit sieht */
+.tour-card.demo { width: min(330px, calc(100vw - 24px)); padding: 13px 15px 12px; }
+.tour-card.demo .tour-text, .tour-card.demo .tour-bar { display: none; }
+.tour-card.demo .tour-title { margin: 6px 0 0; font-size: calc(15.5px * var(--font-scale)); }
+.tour-card.demo .tour-wait { margin-top: 10px; }
+.tour-card.demo .tour-btns { margin-top: 12px; }
+.tour-card.demo .tour-btns .btn { padding: 6px 12px; font-size: calc(13px * var(--font-scale)); }
 @media (max-width: 600px) {
   .tour-card { width: calc(100vw - 20px); padding: 14px 14px 12px; }
   .tour-card.demo { width: calc(100vw - 20px); }
-  .tour-btns .btn:not(.tour-end) { flex: 1 1 auto; }
+  .tour-btns .btn { flex: 1 1 auto; }
   .tour-gap { display: none; }
-  .tour-end { order: 9; margin: 0 auto; }
 }
 
 /* ---------- Bestaetigung (z.B. Stuetzraeder abnehmen) ---------- */
