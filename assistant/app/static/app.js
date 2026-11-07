@@ -3090,7 +3090,7 @@
     ? window.speechSynthesis : null;
   const tts = {
     voice: null, voices: 0, waiting: false, waitTimer: 0, noVoice: !synth, blocked: false, fails: 0,
-    queue: [], cur: null, ends: new Map(), answered: new Set(), maxTurn: 0, cooldown: 0, pumpTimer: 0,
+    queue: [], cur: null, ends: new Map(), answered: new Set(), maxTurn: 0, cooldown: 0, pumpTimer: 0, followAt: 0,
   };
 
   function voiceRank(v) {
@@ -3239,6 +3239,7 @@
   /** Neue Jarvis-Sitzung: Runden fangen beim Server wieder bei 1 an. */
   function ttsSession() {
     ttsStop();
+    tts.followAt = 0;
     tts.answered.clear();
     tts.maxTurn = 0;
     tts.blocked = false;
@@ -3286,17 +3287,22 @@
   /** hush: sofort still, Warteschlange leeren – dafuer kein "spoken". */
   function ttsHush() {
     tts.queue.length = 0;
-    dropCur();
+    const had = dropCur();
     tts.ends.clear();
+    lead.silent.clear();
+    tts.followAt = 0;
     clearTimeout(tts.pumpTimer);
-    ttsCancelSynth();
+    if (had || iSpeak()) ttsCancelSynth(); // ein Fenster, das nur mitliest, hat nichts abzubrechen
     markSubCut();
   }
 
+  /** speak = vorlesen, show = sofort als Untertitel (und melden), follow = ein anderes Fenster
+   *  liest vor: Untertitel ungefaehr im Sprechtempo, ohne Meldung, wait = noch warten. */
   function speakMode(it) {
     if (it.local) return 'show';
     if (!lead.owner) return 'wait'; // noch offen, welches Fenster vorliest (hoechstens ~0,5 s)
-    if (!iSpeak() || !synth || tts.noVoice || tts.blocked) return 'show';
+    if (!iSpeak()) return 'follow';
+    if (!synth || tts.noVoice || tts.blocked) return 'show';
     return tts.waiting ? 'wait' : 'speak';
   }
 
@@ -3307,10 +3313,12 @@
       const it = tts.queue[0];
       const mode = speakMode(it);
       if (mode === 'wait') return;
-      const wait = tts.cooldown - performance.now();
-      if (mode === 'speak' && wait > 0) { tts.pumpTimer = setTimeout(ttsPump, wait + 5); return; }
+      const now = performance.now();
+      const wait = mode === 'speak' ? tts.cooldown - now : mode === 'follow' ? tts.followAt - now : 0;
+      if (wait > 0) { tts.pumpTimer = setTimeout(ttsPump, wait + 5); return; }
       tts.queue.shift();
-      if (mode === 'show') {
+      if (mode === 'show' || mode === 'follow') {
+        if (mode === 'follow') tts.followAt = now + clamp(it.text.length * 65, 900, 8000);
         showSub(it.text);
         orb.kick(0.8);
         if (!it.local) reportSeq(it);
@@ -3405,6 +3413,7 @@
       if (old.length) tts.queue = tts.queue.filter((it) => it.turn >= turn);
       if (tts.cur && tts.cur.it.turn < turn) { dropCur(); ttsCancelSynth(); }
       tts.maxTurn = turn;
+      tts.followAt = 0;
     }
     if (!text) return;
     tts.queue.push({ turn, seq: Number(ev.seq) || 0, text, local: !!ev.local });
