@@ -1,7 +1,8 @@
 # Hinweise fuer Aenderungen an diesem Projekt
 
-- Sprache im Code, in Kommentaren und Meldungen: Deutsch (ohne Umlaute im Code,
-  mit Umlauten in Markdown-Dokumenten).
+- Sprache im Code, in Kommentaren und Meldungen: Deutsch (ohne Umlaute im
+  Python-Code, mit Umlauten in Markdown-Dokumenten und in sichtbaren Texten der
+  App-Oberflaeche `assistant/app/static/`).
 - **Versionen / Updates:** Nutzer bekommen Aenderungen ueber den eingebauten Updater
   (`assistant/updater.py`). Er vergleicht `__version__` in `assistant/__init__.py`
   auf dem Standard-Branch mit der installierten Version. Bei jeder Aenderung, die

@@ -19,6 +19,18 @@ deine KI erklärt sie dir in eigenen Worten.
 - `/app` wechselt aus dem Terminal in die App, `/verknuepfung` legt ein Symbol auf
   den Desktop. Wer immer die App will: `oberflaeche = "app"` unter `[ki]`.
 
+**Charakter & Profil**
+- Wähle, wie Nova sein soll: **freundlich, sachlich, Butler (Jarvis-Stil),
+  Mentor, bester Kumpel, kreativ oder Motivations-Coach** – und bearbeite die
+  Persönlichkeit danach frei. Stil einstellbar: du/Sie, kurz oder ausführlich,
+  wie viel Humor, mit oder ohne Emojis.
+- **Über mich:** Trag ein, was Nova über dich wissen soll (Name, wie sie dich
+  nennen soll, Hobbys, Projekte, was dir wichtig ist, was sie nie tun soll).
+- In der App unter „Charakter & Profil“ (auch Werte und Gedächtnis ansehen,
+  ergänzen und löschen), im Terminal mit `/charakter`, `/stil`, `/ueber-mich`,
+  `/werte bearbeiten`. Mit **`/neu`** beginnt ein neues Gespräch, in dem alles
+  gleich gilt.
+
 **Neuer Name: NOVA**
 - Die KI heißt jetzt **Nova** – **N**eugierige, **O**ffene, **V**ernetzte
   **A**ssistenz. Wer noch „Aria“ eingestellt hatte, bekommt den neuen Namen

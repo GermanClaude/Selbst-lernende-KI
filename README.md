@@ -217,6 +217,23 @@ online, kostenlos). Offline-Erkennung: zusätzlich `pip install faster-whisper`
 (beim ersten Sprechen wird das Modell geladen). Einstellungen unter `[voice]`.
 Antworten vorlesen lassen: `/sprache vorlesen` (braucht `pip install pyttsx3`).
 
+## Charakter & Profil
+
+Wie Nova sein soll, stellst du selbst ein – in der App unter **„Charakter &
+Profil“**, im Terminal mit Befehlen:
+
+| Befehl | Wirkung |
+|--------|---------|
+| `/charakter` | Charaktere zeigen; `/charakter butler` wählt einen (freundlich, sachlich, butler, mentor, kumpel, kreativ, coach) |
+| `/stil` | z.B. `/stil anrede Sie`, `/stil laenge kurz`, `/stil humor viel`, `/stil emojis an` |
+| `/ueber-mich` | was Nova über dich weiß; ändern z.B. `/ueber-mich projekte = SCP-Spiel` |
+| `/werte bearbeiten` | deine Regeln für Nova im Editor öffnen |
+| `/neu` | neues Gespräch – Änderungen gelten sofort |
+
+Die Persönlichkeit steht in `config/persona.md` (beim Wählen eines Charakters wird
+die alte in `data/persona-sicherungen/` gesichert), „Über mich“ in
+`config/ueber_mich.json`. Updates fassen beides nie an.
+
 ## Als App oder im Terminal
 
 - **`start-app.bat`** bzw. **`KI-App.exe`** – die KI als eigenes Programm mit

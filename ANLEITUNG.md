@@ -199,6 +199,14 @@ pip install pyautogui pillow
 
 ---
 
+## Nova einstellen: Charakter, Stil, Über mich
+
+In der App: links auf **„Charakter & Profil“**. Dort wählst du einen Charakter
+(z.B. Butler, Kumpel, Mentor), stellst du/Sie, Antwortlänge, Humor und Emojis ein
+und trägst unter **„Über mich“** ein, was Nova über dich wissen soll. Im Terminal
+geht das mit `/charakter`, `/stil` und `/ueber-mich`. Danach **`/neu`** – dann
+gilt es sofort.
+
 ## Als App statt im Terminal
 
 Doppelklick auf **`start-app.bat`** (oder **`KI-App.exe`**) – die KI öffnet sich
