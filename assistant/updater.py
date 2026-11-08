@@ -168,6 +168,7 @@ class Updater:
         exe_path: Path | None = None,
         run: Callable[..., subprocess.CompletedProcess] = subprocess.run,
         now: Callable[[], datetime] = datetime.now,
+        inplace: bool | None = None,
     ):
         self.settings = settings
         self.root = Path(root)
@@ -175,6 +176,18 @@ class Updater:
         self.current = current_version
         self.frozen = getattr(sys, "frozen", False) if frozen is None else frozen
         self.exe_path = Path(exe_path or sys.executable)
+        if self.exe_path.suffix.lower() == ".alt":
+            proper = self.exe_path.with_suffix("")  # laeuft als .alt: Updates gehen an die .exe
+            if proper.is_file() or not self.exe_path.exists():
+                self.exe_path = proper
+        # Windows: neue .exe beim Neustart IN die bestehende Datei schreiben (Verknuepfungen
+        # bleiben gueltig, siehe austausch.py). Sonst (Tests, andere Systeme): gleich ersetzen.
+        self.inplace = sys.platform == "win32" if inplace is None else bool(inplace)
+        self.pending_exe: Path | None = None
+        self.current_before_install = current_version
+        self._paused_before = False  # Stand von automatik_pausiert vor install()/restore()
+        self._target_version: str | None = None  # welche neue Version gerade eingesetzt wird
+        self._retry_hint = "/update"  # womit man es nach einem Fehlschlag nochmal versucht
         self.run = run
         self.now = now
         self.state_path = self.root / "data" / "update.json"
@@ -312,11 +325,19 @@ class Updater:
 
     # -- Installieren -------------------------------------------------------
     def install(self, info: UpdateInfo, say: Callable[[str], None] = print) -> str:
+        self.current_before_install = self.current
+        self._paused_before = self.paused
+        self._retry_hint = "/update"
+        self._target_version = info.new
         if info.kind == "exe":
             message = self._install_exe(info, say)
         else:
             message = self._install_source(info, say)
-        self._save_state(automatik_pausiert=False, installiert=info.new)
+        state = self._state()
+        state.pop("fehlgeschlagen_version", None)  # neuer Versuch - scheitert er, merkt sie es neu
+        state.update(automatik_pausiert=False, installiert=info.new)
+        self.state_path.parent.mkdir(parents=True, exist_ok=True)
+        self.state_path.write_text(json.dumps(state, indent=2, ensure_ascii=False), encoding="utf-8")
         self.current = info.new  # falls ohne Neustart weitergemacht wird (z.B. /zurueck)
         self._prune()
         return message
@@ -353,25 +374,81 @@ class Updater:
         new_exe.write_bytes(data)
         backup = self._swap_exe(new_exe)
         say(f"Alte Version {self.current} gesichert in {backup.relative_to(self.root).as_posix()}/")
+        if self.pending_exe is not None:
+            return f"{exe.name} {info.new} ist bereit - sie wird beim Neustart eingesetzt."
         return f"KI.exe {info.new} ist installiert."
 
     def _swap_exe(self, new_exe: Path) -> Path:
-        """Laufende KI.exe in die Sicherung verschieben und die neue einsetzen.
+        """Die laufende .exe als KOPIE sichern und die neue einsetzen.
 
-        Eine laufende .exe darf unter Windows umbenannt, aber nicht ueberschrieben
-        werden. Klappt das Einsetzen nicht (Virenscanner prueft die neue Datei noch),
-        kommt die alte KI.exe sofort zurueck.
+        Windows: Eine laufende .exe darf man nicht ueberschreiben. Die neue Version wird
+        deshalb erst beim Neustart von einem Helfer IN dieselbe Datei geschrieben
+        (austausch.py) - so bleibt sie fuer Windows dieselbe Datei und Verknuepfungen auf dem
+        Desktop oder in der Taskleiste zeigen weiter auf die richtige Version (frueher wanderten
+        sie mit der alten Datei in den Sicherungsordner). Anderswo: gleich ersetzen.
         """
         exe = self.exe_path
-        backup = self._new_backup_dir(self.current)
-        _retry(lambda: os.replace(exe, backup / exe.name))
+        try:  # z.B. vom Virenscanner gleich in Quarantaene genommen?
+            ok = new_exe.is_file() and new_exe.read_bytes()[:2] == b"MZ"
+        except OSError:
+            ok = False
+        if not ok:
+            raise UpdateError("Die neue Version ist nicht mehr da (Virenscanner?) - die bisherige bleibt.")
+        latest = self.backups()[:1]
+        if latest and latest[0].version == self.current and (latest[0].path / exe.name).is_file():
+            backup = latest[0].path  # dieselbe Version ist schon gesichert (z.B. zweiter Versuch)
+        else:
+            backup = self._new_backup_dir(self.current)
+            try:
+                shutil.copy2(exe, backup / exe.name)
+            except OSError as exc:
+                shutil.rmtree(backup, ignore_errors=True)
+                raise UpdateError(f"Die alte Version liess sich nicht sichern ({exc}) - nichts geaendert.") from exc
+        if self.inplace:
+            self.pending_exe = new_exe
+            return backup
         try:
             _retry(lambda: os.replace(new_exe, exe))
         except OSError as exc:
-            os.replace(backup / exe.name, exe)
             shutil.rmtree(backup, ignore_errors=True)
             raise UpdateError(f"Die neue KI.exe konnte nicht eingesetzt werden ({exc}) - alte Version bleibt.") from exc
         return backup
+
+    def take_install_failure(self) -> str | None:
+        """Hat der Update-Helfer die neue Version nicht einsetzen koennen? Meldung (einmalig).
+        Die Version merkt sie sich: die wird dann nicht wieder von selbst installiert (sonst
+        Endlosschleife aus Download, Neustart, Fehlschlag) - /update versucht es erneut."""
+        state = self._state()
+        message = state.pop("einspielen_fehlgeschlagen", None)
+        failed_exe = state.pop("fehlgeschlagen_exe", None)
+        if message:
+            tried = state.get("installiert")
+            ours = not failed_exe or str(failed_exe).lower() == self.exe_path.name.lower()
+            if ours and tried and is_newer(str(tried), self.current):
+                state["fehlgeschlagen_version"] = str(tried)
+            elif ours and tried and is_newer(self.current, str(tried)):
+                # /zurueck auf eine aeltere Version ging schief: du hast weiter die neuere - die
+                # Automatik nicht still pausiert lassen.
+                state["automatik_pausiert"] = False
+                message = str(message).replace("/update", "/zurueck")
+            if ours:
+                state["installiert"] = self.current
+            self.state_path.write_text(json.dumps(state, indent=2, ensure_ascii=False), encoding="utf-8")
+        return message or None
+
+    def failed_before(self, version: str) -> bool:
+        """Ist genau diese Version zuletzt beim Einspielen gescheitert?"""
+        failed = self._state().get("fehlgeschlagen_version")
+        return bool(failed) and str(failed) == str(version)
+
+    def _undo_install(self) -> None:
+        """Die neue Version kam doch nicht zum Einsatz: wieder die bisherige Nummer/Einstellung.
+        Die gescheiterte Version wird gemerkt - nicht taeglich neu laden (nur /update)."""
+        self.current = self.current_before_install
+        changes = {"installiert": self.current, "automatik_pausiert": bool(self._paused_before)}
+        if self._target_version and is_newer(self._target_version, self.current):
+            changes["fehlgeschlagen_version"] = self._target_version
+        self._save_state(**changes)
 
     def _new_backup_dir(self, version: str) -> Path:
         stamp = self.now().strftime("%Y-%m-%d_%H%M%S")
@@ -467,6 +544,10 @@ class Updater:
         if chosen is None:
             raise UpdateError(f"Keine gesicherte Version '{choice}' gefunden. /versionen zeigt alle.")
 
+        self.current_before_install = self.current
+        self._paused_before = self.paused
+        self._retry_hint = "/zurueck"
+        self._target_version = None
         if self.frozen:
             old_exe = chosen.path / self.exe_path.name
             if not old_exe.is_file():
@@ -492,7 +573,26 @@ class Updater:
 
     # -- Neustart -----------------------------------------------------------
     def restart_exe(self, extra_args: list[str] | None = None) -> None:
-        """Startet die (neue) KI.exe in einem neuen Fenster (z.B. mit --app)."""
+        """Startet die (neue) KI.exe in einem neuen Fenster (z.B. mit --app). Wartet eine neue
+        Version aufs Einsetzen, macht das ein Helfer, sobald diese KI beendet ist."""
+        if self.pending_exe is not None:
+            from .austausch import replace_by_moving, start_helper
+
+            pending, self.pending_exe = self.pending_exe, None
+            if not pending.is_file():  # z.B. Virenscanner: nicht so tun, als kaeme die neue Version
+                self._undo_install()
+                raise UpdateError("Die neue Version ist verschwunden (Virenscanner?) - die bisherige "
+                                  f"laeuft weiter. Versuch es spaeter mit {self._retry_hint} noch einmal.")
+            try:
+                start_helper(self.exe_path, pending, extra_args, root=self.root)
+                return
+            except OSError as exc:
+                logger.warning("Update-Helfer startet nicht (%s) - setze die neue Version direkt ein.", exc)
+                if not replace_by_moving(pending, self.exe_path):
+                    self._undo_install()
+                    raise UpdateError("Die neue Version liess sich nicht einsetzen - die bisherige "
+                                      f"laeuft weiter. Versuch es spaeter mit {self._retry_hint} "
+                                      "noch einmal.") from exc
         flags = getattr(subprocess, "CREATE_NEW_CONSOLE", 0)
         # Ohne das haelt PyInstaller (>= 6.9) den neuen Prozess fuer einen Helfer der
         # alten KI.exe und nutzt deren entpackte Dateien - die gleich geloescht werden.

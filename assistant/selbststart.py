@@ -218,13 +218,35 @@ def _pid_alive(pid: int, table: dict[int, tuple[int, str]] | None = None, since:
     if pid not in table:
         return False
     name = table[pid][1].lower()
-    if not ("python" in name or name == "ki.exe" or name == "assistant"):
+    own = Path(sys.executable).name.lower() if getattr(sys, "frozen", False) else ""
+    if not ("python" in name or name == "assistant" or name == own
+            or re.match(r"^ki(-app)?( \(\d+\))?\.exe$", name)):
         return False
     if since is not None:
         started = _process_start_time(pid)
         if started is not None and started > since + 5:
             return False
     return True
+
+
+def _ki_name(name: str) -> bool:
+    low = name.lower()
+    own = Path(sys.executable).name.lower() if getattr(sys, "frozen", False) else ""
+    return low.startswith("python") or low == own or bool(re.match(r"^ki(-app)?( \(\d+\))?\.exe$", low))
+
+
+def _handed_over(chain: list[tuple[int, str]], lock_pid: int | None) -> bool:
+    """Hat die laufende KI diese hier selbst gestartet (Neustart, App -> Terminal)? Nur wenn sie
+    es angekuendigt hat (KI_NEUSTART_VON) und direkt startete - mit einer Shell dazwischen
+    (z.B. per Shell-Befehl) zaehlt das nicht."""
+    if not lock_pid or os.environ.get("KI_NEUSTART_VON") != str(lock_pid):
+        return False
+    for pid, name in chain:
+        if pid == lock_pid:
+            return True
+        if not _ki_name(name):
+            return False
+    return False
 
 
 def _process_start_time(pid: int) -> float | None:
@@ -304,8 +326,11 @@ class StartGuard:
         table = self._get_table()
         chain = ancestry(table=table)
         lock_pid = self._lock_pid()
-        ki_pids = {lock_pid} if lock_pid and _pid_alive(lock_pid, table) else set()
-        who, unexpected = classify(chain, ki_pids)
+        if _handed_over(chain, lock_pid):
+            who, unexpected = "von der KI selbst (Neustart bzw. Wechsel App/Terminal)", False
+        else:
+            ki_pids = {lock_pid} if lock_pid and _pid_alive(lock_pid, table) else set()
+            who, unexpected = classify(chain, ki_pids)
         entry = {
             "zeit": datetime.now().isoformat(timespec="seconds"),
             "pid": os.getpid(),

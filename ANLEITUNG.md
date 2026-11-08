@@ -267,6 +267,12 @@ falsch kopiert. Guthaben prüfen, Schlüssel neu kopieren.
 der App unter Gehirn & Schlüssel „DeepSeek Flash“ wählen). Die alten Namen
 `deepseek-chat`/`deepseek-reasoner` stellt Nova seit Version 0.6.0 selbst um.
 
+**Nach einem Update öffnet sich das Desktop-Symbol nicht mehr (oder zeigt eine alte
+Version)** → Das lag an Versionen vor 0.6.1: Das Symbol zeigte danach in den Ordner
+`versionen`. Starte Nova einmal direkt aus ihrem Ordner (die `KI-App.exe` dort) – ab
+0.6.1 repariert sie solche Symbole beim ersten Start selbst. Oder lösch das Symbol und
+tippe im Chat `/verknuepfung`, dann legt Nova ein neues an.
+
 **Claude denkt mir zu lange nach** → In der App unter Gehirn & Schlüssel die
 Denk-Tiefe auf „schnell“ oder „ausgewogen“ stellen (im Chat: `/denken schnell`) –
 oder ein schnelleres Modell wählen, z. B. `/modell sonnet` oder `/modell haiku`.

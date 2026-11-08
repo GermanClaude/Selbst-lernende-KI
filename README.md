@@ -354,6 +354,13 @@ Deine Daten bleiben bei jedem Update unangetastet: `.env`, `config\settings.toml
 Einstellen unter `[update]` (`modus = "automatisch" | "fragen" | "aus"`).
 Die `KI.exe` holt sich neue Versionen aus den GitHub-Releases.
 
+**KI.exe / KI-App.exe auf dem Desktop oder in der Taskleiste:** Zieh die .exe ruhig auf
+den Desktop (Windows legt dabei eine Verknüpfung an) oder hefte sie an die Taskleiste.
+Seit Version 0.6.1 bleibt die Datei bei einem Update dieselbe – die neue Version wird
+beim Neustart in sie hineingeschrieben –, deshalb zeigen Verknüpfungen immer auf die
+aktuelle Version. Die Versionsnummer siehst du im Fenstertitel, oben im Terminal, in der
+Seitenleiste der App und unter Rechtsklick auf die .exe → Eigenschaften → Details.
+
 **Neue Version veröffentlichen:** in `assistant/__init__.py` die `__version__`
 erhöhen, in `CHANGELOG.md` oben einen Abschnitt dazu schreiben und auf den
 Standard-Branch bringen. Alle Installationen holen sie sich dann selbst; die

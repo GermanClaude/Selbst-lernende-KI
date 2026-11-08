@@ -4,6 +4,23 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.6.1 – 2026-11-08
+
+- **Verknüpfungen bleiben nach einem Update richtig:** Hast du die App auf den Desktop
+  oder in die Taskleiste gezogen, zeigt das Symbol nach einem Update jetzt weiter auf
+  die neue Version. Bisher „wanderte“ es mit der alten Version in den Sicherungsordner
+  „versionen“ – und ließ sich dann nicht mehr richtig öffnen.
+- Symbole, die schon falsch zeigen, repariert Nova beim ersten Start der neuen Version
+  von selbst. Wird trotzdem einmal eine alte gesicherte Version gestartet, öffnet Nova
+  stattdessen die aktuelle.
+- **Versionsnummer überall sichtbar:** im Fenstertitel, oben im Terminal, in der
+  Seitenleiste – und bei der .exe unter Rechtsklick → Eigenschaften → Details.
+- Klappt ein Update einmal nicht (z.B. weil der Virenscanner die neue Datei
+  festhält), sagt Nova dir das beim nächsten Start – statt still die alte Version
+  weiterlaufen zu lassen. Diese Version versucht sie dann nicht immer wieder von
+  selbst, sondern erst, wenn du `/update` eingibst. Die bisherige Version bleibt
+  dabei immer erhalten.
+
 ## 0.6.0 – 2026-11-08
 
 **Schnell oder gründlich – du bestimmst, wie Nova denkt**

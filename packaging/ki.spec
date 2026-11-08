@@ -58,6 +58,13 @@ pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 icon_file = project_root / "packaging" / "ki.ico"
 icon = str(icon_file) if icon_file.exists() else None
 
+# Versionsnummer in die .exe schreiben (Eigenschaften -> Details -> Dateiversion)
+sys.path.insert(0, str(project_root / "packaging"))
+from versionsinfo import version_info  # noqa: E402
+
+ki_version = version_info(project_root, "KI", "Nova - Selbst-lernende KI (Terminal)")
+app_version = version_info(project_root, "KI-App", "Nova - Selbst-lernende KI (App)")
+
 exe = EXE(
     pyz,
     a.scripts,
@@ -74,6 +81,7 @@ exe = EXE(
     console=True,  # Konsolenfenster (die KI redet dort mit dir)
     disable_windowed_traceback=False,
     icon=icon,
+    version=ki_version,
 )
 
 app_exe = EXE(
@@ -92,4 +100,5 @@ app_exe = EXE(
     console=False,  # eigenes Programmfenster, keine Konsole
     disable_windowed_traceback=False,
     icon=icon,
+    version=app_version,
 )

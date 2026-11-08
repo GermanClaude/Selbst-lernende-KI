@@ -637,6 +637,12 @@ class CLI:
         if not self.config.api_key:
             print(_c("\n" + KEY_HINT + "\n", YELLOW))
         try:
+            failed = self.updater.take_install_failure()
+        except OSError:
+            failed = None
+        if failed:
+            print(_c(f"\n[Update] {failed}", YELLOW))
+        try:
             if self._startup_update():
                 return self.exit_code  # Update installiert -> Neustart
             self._start_update_watch()
@@ -914,6 +920,11 @@ class CLI:
         info = up.check()
         if info is None:
             return False
+        if up.failed_before(info.new):
+            # Das Einspielen genau dieser Version ging zuletzt schief: nicht von selbst erneut
+            # (sonst endlos Download + Neustart) - nur anzeigen, /update versucht es nochmal.
+            self._pending_update = info
+            return False
         return self._offer_update(info, ask=not up.automatic)
 
     def _start_update_watch(self) -> None:
@@ -988,6 +999,9 @@ class CLI:
             try:
                 self.updater.restart_exe()
                 print(_c("Starte die neue Version …", CYAN))
+            except UpdateError as exc:  # z.B. neue Version vom Virenscanner entfernt: weiterlaufen
+                print(_c(str(exc), YELLOW))
+                return False
             except Exception as exc:  # noqa: BLE001
                 print(_c(f"Bitte starte KI.exe jetzt neu ({exc}).", YELLOW))
             self.exit_code = 0
@@ -1095,7 +1109,8 @@ class CLI:
 
         name = self.config.ki.name
         meaning = self.config.ki.bedeutung.strip()
-        print(_c(f"\n=== {name}{' - ' + meaning if meaning else ' - deine lernfaehige KI'} ===", BOLD))
+        print(_c(f"\n=== {name}{' - ' + meaning if meaning else ' - deine lernfaehige KI'} "
+                 f"(Version {__version__}) ===", BOLD))
         print(
             _c(
                 f"Gehirn: {self.config.active_provider} ({kurzbeschreibung(self.config)})"
