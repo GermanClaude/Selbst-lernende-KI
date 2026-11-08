@@ -12,14 +12,20 @@ from typing import Any
 
 from ..logging_setup import get_logger
 from .base import (
+    BILD_ABGELEHNT,
     CONNECT_TIMEOUT,
     LIMIT_NOTE,
     READ_TIMEOUT,
     SUMMARY_INSTRUCTION,
     TRUNCATED_NOTE,
     TRUNCATED_TOOL_ERROR,
+    BildTeil,
     LLMProvider,
     StreamFn,
+    aufteilen,
+    bild_gewicht,
+    bild_platzhalter,
+    leerer_bildtext,
     summary_input,
 )
 
@@ -41,6 +47,7 @@ class DeepSeekProvider(LLMProvider):
         # Lehnt DeepSeek das Nachdenken in diesem Gespraech ab (z.B. alter Verlauf ohne
         # Denk-Text), laeuft der Rest des Gespraechs ohne - statt bei jeder Frage zu scheitern.
         self._thinking_off = False
+        self._error_status: int | None = None  # HTTP-Status des letzten API-Fehlers
         # OpenAI-Format: System-Prompt ist die erste Nachricht.
         self.messages: list[dict[str, Any]] = [{"role": "system", "content": self.system_prompt}]
         if self.client is None:
@@ -71,6 +78,7 @@ class DeepSeekProvider(LLMProvider):
         max_tool_rounds: int | None = None,
         announce_limit: bool = True,
         allow_tools: bool = True,
+        bilder: list | None = None,
     ) -> str:
         self.hit_limit = False
         if self.client is None:
@@ -78,7 +86,13 @@ class DeepSeekProvider(LLMProvider):
                 on_text(_INSTALL_HINT)
             return _INSTALL_HINT
 
-        self.messages.append({"role": "user", "content": user_text})
+        start = len(self.messages)
+        if bilder:
+            turn = {"role": "user", "content": self._user_content(user_text, bilder)}
+            self.messages.append(turn)
+            self._bild_turn = (id(turn), user_text)
+        else:
+            self.messages.append({"role": "user", "content": user_text})
         final_parts: list[str] = []
         rounds = self._rounds(max_tool_rounds)
 
@@ -87,6 +101,15 @@ class DeepSeekProvider(LLMProvider):
             self._waiting()
             text, tool_calls, reasoning = self._one_turn(on_text, tool_choice="auto" if allow_tools else "none")
             if text is None:
+                if (bilder and len(self.messages) == start + 1 and _has_image_parts(self.messages[start])
+                        and self._error_status in (400, 413, 422)):
+                    # Neue Nachricht mit Bild wurde gar nicht angenommen -> wieder heraus (sie
+                    # wurde nie beantwortet); sonst scheitert jede weitere Anfrage am selben Bild.
+                    del self.messages[start:]
+                    self._bild_turn = None
+                    if on_text:
+                        on_text("\n" + BILD_ABGELEHNT)  # sonst sieht man nur den rohen API-Fehler
+                    return BILD_ABGELEHNT
                 return "Es gab ein Problem bei der Verbindung zu DeepSeek."
             if text:
                 final_parts.append(text)
@@ -119,6 +142,7 @@ class DeepSeekProvider(LLMProvider):
                         on_text(TRUNCATED_NOTE)
                 break
 
+            tool_images: list[tuple[str, list]] = []
             for tc in tool_calls:
                 try:
                     parsed = json.loads(tc["arguments"]) if tc["arguments"] else {}
@@ -130,9 +154,20 @@ class DeepSeekProvider(LLMProvider):
                     if on_text:
                         on_text(f"\n  … nutze Werkzeug: {tc['name']}\n")
                     output, _is_error = self._exec_tool(tc["name"], parsed)
+                output, images = aufteilen(output)
+                if images:
+                    if self._sees_images():
+                        tool_images.append((tc["name"], images))  # kommen nach allen tool-Antworten
+                    else:
+                        output = f"{output}\n\n{self._describe_images(images)}"
+                # Werkzeug-Antworten bleiben bei DeepSeek immer Text.
                 self.messages.append(
                     {"role": "tool", "tool_call_id": tc["id"], "content": output}
                 )
+            if tool_images:
+                # Erst wenn alle Werkzeugaufrufe beantwortet sind (sonst lehnt die API ab):
+                # die Bilder als Nachricht hinterher - nur dort duerfen bei DeepSeek Bilder stehen.
+                self.messages.append({"role": "user", "content": _tool_image_content(tool_images)})
         else:
             # Schritt-Limit erreicht: Bescheid geben statt stumm aufzuhoeren.
             self.hit_limit = True
@@ -143,6 +178,62 @@ class DeepSeekProvider(LLMProvider):
                     on_text(note)
 
         return "\n".join(final_parts).strip() or "(keine Textantwort)"
+
+    # -- Bilder -------------------------------------------------------------
+    def _sees_images(self) -> bool:
+        from ..modelle import sieht_bilder
+
+        return sieht_bilder("deepseek", self.config.deepseek.model)
+
+    def _user_content(self, user_text: str, bilder: list) -> Any:
+        """Nachricht mit Bildern: sieht das Modell Bilder, als Text- und Bild-Teile; sonst
+        beschreibt DeepSeek Flash die Bilder vorher und die Beschreibung steht als Text davor."""
+        text = leerer_bildtext(user_text, len(bilder))
+        if not self._sees_images():
+            return f"{self._describe_images(bilder)}\n\n{text}"
+        content: list[dict[str, Any]] = [{"type": "text", "text": text}]
+        for i, bild in enumerate(bilder, 1):
+            if len(bilder) > 1:
+                content.append({"type": "text", "text": f"Bild {i}:"})
+            content.append(_image_part(bild))
+        return content
+
+    def _describe_images(self, bilder: list) -> str:
+        """'[Bild 1 - Beschreibung: ...]' je Bild (Nebenaufruf an DeepSeek Flash)."""
+        lines = []
+        for i, bild in enumerate(bilder, 1):
+            self._waiting()
+            beschreibung = self._describe_image(bild)
+            if beschreibung:
+                lines.append(f"[Bild {i} \u2013 Beschreibung: {beschreibung}]")
+            else:
+                lines.append(f"[Bild {i}: {bild.platzhalter()} \u2013 {_NOT_SEEN}]")
+        return "\n".join(lines)
+
+    def _describe_image(self, bild: Any) -> str:
+        """Guenstiger Nebenaufruf (ohne Werkzeuge, ohne Nachdenken): Bild -> Beschreibung.
+        Gibt "" zurueck, wenn es nicht klappt. Kosten zaehlen mit (zum Flash-Preis)."""
+        from ..modelle import DEEPSEEK_SEHMODELL
+
+        try:
+            resp = self.client.chat.completions.create(
+                model=DEEPSEEK_SEHMODELL,
+                messages=[{"role": "user", "content": [
+                    {"type": "text", "text": _DESCRIBE_PROMPT},
+                    {"type": "image_url", "image_url": {"url": bild.data_url()}},
+                ]}],
+                max_tokens=_DESCRIBE_MAX_TOKENS,
+                stream=False,
+                timeout=_DESCRIBE_TIMEOUT,
+                extra_body={"thinking": {"type": "disabled"}},
+            )
+            self._track_usage(getattr(resp, "usage", None), model=DEEPSEEK_SEHMODELL)
+            text = (resp.choices[0].message.content or "").strip()
+        except Exception as exc:  # noqa: BLE001 - dann eben ohne Beschreibung
+            self._check_cancel()
+            logger.warning("Bildbeschreibung fehlgeschlagen: %s", type(exc).__name__)
+            return ""
+        return text[:_DESCRIBE_MAX_CHARS].strip()
 
     # -- Nachdenken ---------------------------------------------------------
     def settings_changed(self) -> None:
@@ -163,10 +254,15 @@ class DeepSeekProvider(LLMProvider):
 
     def _request_messages(self, thinking: bool) -> list[dict[str, Any]]:
         """Mit Nachdenken: jede Assistenten-Nachricht traegt einen Denk-Text (notfalls leer).
-        Ohne: Denk-Texte weglassen (werden dann ohnehin nicht gebraucht)."""
+        Ohne: Denk-Texte weglassen (werden dann ohnehin nicht gebraucht).
+        Sieht das Modell keine Bilder (z.B. nach dem Wechsel auf V4 Pro), werden Bilder im
+        Verlauf beim Senden zu "[Bild: name]" - der gespeicherte Verlauf bleibt gleich."""
+        sees = self._sees_images()
         out = []
         for m in self.messages:
             if m.get("role") != "assistant":
+                if not sees and _has_image_parts(m):
+                    m = {**m, "content": _parts_as_text(m["content"])}
                 out.append(m)
             elif thinking and "reasoning_content" not in m:
                 out.append({**m, "reasoning_content": ""})
@@ -195,10 +291,12 @@ class DeepSeekProvider(LLMProvider):
         else:
             kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
             kwargs["temperature"] = self.config.deepseek.temperature
+        self._error_status = None
         try:
             stream = self.client.chat.completions.create(**kwargs)
         except Exception as exc:  # noqa: BLE001
             self._check_cancel()
+            self._error_status = getattr(exc, "status_code", None)
             if thinking and _is_thinking_error(exc):
                 logger.warning("DeepSeek lehnt Nachdenken in diesem Gespraech ab - weiter ohne: %s", exc)
                 self._thinking_off = True
@@ -259,7 +357,7 @@ class DeepSeekProvider(LLMProvider):
         tool_calls = [tool_acc[i] for i in sorted(tool_acc) if tool_acc[i]["name"]]
         return ("".join(text_parts), tool_calls, "".join(reasoning_parts) if thinking else None)
 
-    def _track_usage(self, usage: Any) -> None:
+    def _track_usage(self, usage: Any, model: str | None = None) -> None:
         if not usage:
             return
         hit = getattr(usage, "prompt_cache_hit_tokens", None)
@@ -267,12 +365,13 @@ class DeepSeekProvider(LLMProvider):
         prompt = getattr(usage, "prompt_tokens", 0) or 0
         if hit is None and miss is None:
             # Kein Cache-Detail -> alles als voller Input werten.
-            self._count(input_full=prompt, output=getattr(usage, "completion_tokens", 0) or 0)
+            self._count(input_full=prompt, output=getattr(usage, "completion_tokens", 0) or 0, model=model)
             return
         self._count(
             input_full=miss or 0,
             cache_hit=hit or 0,
             output=getattr(usage, "completion_tokens", 0) or 0,
+            model=model,
         )
 
     # -- Verlauf / Kompaktierung -------------------------------------------
@@ -281,7 +380,9 @@ class DeepSeekProvider(LLMProvider):
         return max(0, len(self.messages) - 1)
 
     def user_turns(self) -> int:
-        return sum(1 for m in self.messages if m.get("role") == "user")
+        # Bilder eines Werkzeugs (eigene user-Nachricht) zaehlen nicht als Nachricht vom Menschen.
+        return sum(1 for m in self.messages
+                   if m.get("role") == "user" and not isinstance(m.get("content"), _ToolImages))
 
     def _close_open_tool_calls(self, messages: list) -> None:
         idx = next((i for i in range(len(messages) - 1, -1, -1)
@@ -300,7 +401,7 @@ class DeepSeekProvider(LLMProvider):
         changed = False
         for m in tool_msgs[: max(0, len(tool_msgs) - keep_last)]:
             content = m.get("content") or ""
-            if len(content) > 500:
+            if isinstance(content, str) and len(content) > 500:
                 m["content"] = content[:300] + _SHRUNK_NOTE
                 changed = True
         return changed
@@ -308,7 +409,7 @@ class DeepSeekProvider(LLMProvider):
     def history_chars(self) -> int:
         total = 0
         for m in self.messages[1:]:
-            total += len(m.get("content") or "") + len(m.get("reasoning_content") or "")
+            total += _content_chars(m.get("content")) + len(m.get("reasoning_content") or "")
             for tc in m.get("tool_calls") or []:
                 total += len(tc["function"]["arguments"] or "")
         return total
@@ -362,6 +463,73 @@ class DeepSeekProvider(LLMProvider):
             {"role": "user", "content": "Zusammenfassung unseres bisherigen Gespraechs:\n" + summary},
             {"role": "assistant", "content": "Verstanden, ich habe den Kontext."},
         ]
+        self._bild_turn = None
+
+
+# Nebenaufruf, wenn das gewaehlte Modell keine Bilder sieht (V4 Pro).
+_DESCRIBE_PROMPT = (
+    "Beschreibe dieses Bild ausfuehrlich auf Deutsch, inklusive allem lesbaren Text (woertlich), "
+    "Zahlen, Tabellen, Diagrammen, Bedienelementen und Fehlermeldungen. Antworte nur mit der "
+    "Beschreibung, ohne Einleitung."
+)
+_DESCRIBE_MAX_TOKENS = 1500
+_DESCRIBE_MAX_CHARS = 6000
+_DESCRIBE_TIMEOUT = 90.0
+_NOT_SEEN = ("Bild konnte nicht angesehen werden (das gewaehlte Modell sieht keine Bilder und "
+             "die Bildbeschreibung hat nicht geklappt). Sag das deinem Menschen freundlich und "
+             "schlag vor, es nochmal zu versuchen oder DeepSeek Flash zu waehlen.")
+
+
+class _ToolImages(list):
+    """Inhalt der user-Nachricht mit Bildern eines Werkzeugs - eine ganz normale Liste fuer
+    die API; nur zum Wiedererkennen (zaehlt nicht als Nachricht vom Menschen)."""
+
+    __slots__ = ()
+
+
+def _image_part(bild: Any) -> BildTeil:
+    return BildTeil({"type": "image_url", "image_url": {"url": bild.data_url()}}, bild_name=bild.name)
+
+
+def _tool_image_content(tool_images: list[tuple[str, list]]) -> _ToolImages:
+    content = _ToolImages()
+    for name, images in tool_images:
+        content.append({"type": "text", "text": f"Bild vom Werkzeug {name}:"})
+        content.extend(_image_part(b) for b in images)
+    return content
+
+
+def _has_image_parts(message: dict[str, Any]) -> bool:
+    content = message.get("content")
+    return isinstance(content, list) and any(
+        isinstance(p, dict) and p.get("type") == "image_url" for p in content)
+
+
+def _parts_as_text(content: Any) -> str:
+    """Teile einer Nachricht als Text - Bilder als "[Bild: name]" (nie Base64)."""
+    if not isinstance(content, list):
+        return str(content or "")
+    parts = []
+    for p in content:
+        kind = p.get("type") if isinstance(p, dict) else None
+        if kind == "text":
+            parts.append(str(p.get("text") or ""))
+        elif kind == "image_url":
+            parts.append(bild_platzhalter(p))
+    return "\n".join(x for x in parts if x)
+
+
+def _content_chars(content: Any) -> int:
+    if not isinstance(content, list):
+        return len(str(content or ""))
+    total = 0
+    for p in content:
+        kind = p.get("type") if isinstance(p, dict) else None
+        if kind == "text":
+            total += len(str(p.get("text") or ""))
+        elif kind == "image_url":
+            total += bild_gewicht(len(str((p.get("image_url") or {}).get("url") or "")))
+    return total
 
 
 _SHRUNK_NOTE = "\n…(aeltere Ausgabe gekuerzt, weil der Kontext voll war - bei Bedarf neu lesen)"
@@ -396,10 +564,14 @@ def _history_as_text(messages: list[dict[str, Any]]) -> str:
             continue
         content = msg.get("content")
         if role == "tool":
-            lines.append(f"werkzeug-ergebnis: {str(content or '')[:600]}")
+            lines.append(f"werkzeug-ergebnis: {_parts_as_text(content)[:600]}")
             continue
         if isinstance(content, str) and content:
             lines.append(f"{role}: {content}")
+        elif isinstance(content, list):
+            text = _parts_as_text(content)
+            if text:
+                lines.append(f"{role}: {text}")
         if msg.get("tool_calls"):
             for tc in msg["tool_calls"]:
                 args = (tc["function"].get("arguments") or "")[:200]

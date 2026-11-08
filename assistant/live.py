@@ -80,8 +80,10 @@ class SentenceSplitter:
 
     def _collect(self, pieces: list[str], final: bool) -> list[str]:
         out = []
+        from .ui.cli import vorlesetext  # ohne Bild-Adressen/-Pfade (spaeter Import: Kreisbezug)
+
         for piece in pieces:
-            spoken = speech_text(piece)
+            spoken = vorlesetext(piece)
             if not spoken or not re.search(r"\w", spoken):
                 continue
             if self.count == 0 and not out and not self.pending:

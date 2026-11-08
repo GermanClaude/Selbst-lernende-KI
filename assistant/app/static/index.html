@@ -110,6 +110,7 @@
       <button class="sb-btn" type="button" data-cmd="/update"><span data-icon="refresh"></span>Nach Updates suchen</button>
       <button class="sb-btn" type="button" data-cmd="/versionen"><span data-icon="history"></span>Versionen</button>
       <button class="sb-btn" type="button" data-cmd="/autostart"><span data-icon="power"></span>Autostart prüfen</button>
+      <button class="sb-btn" type="button" id="sb-feedback" aria-haspopup="dialog" title="Feedback &amp; Bewertung schicken (/feedback)"><span data-icon="star"></span>Feedback &amp; Bewertung</button>
       <button class="sb-btn" type="button" data-cmd="/hilfe"><span data-icon="help"></span>Hilfe</button>
       <button class="sb-btn" type="button" id="sb-terminal" aria-haspopup="dialog"><span data-icon="terminal"></span>Terminal-Version öffnen</button>
     </nav>
@@ -159,6 +160,15 @@
           <div class="ab-last" id="ab-last"><span class="ab-note" id="ab-note"></span><span class="ab-counts" id="ab-counts"></span></div>
         </div>
         <button class="btn small ab-btn" id="ab-btn" type="button">Ich bin zurück</button>
+      </div>
+    </div>
+
+    <!-- Bilder hineinziehen: Ablage-Flaeche ueber dem Chat (nur Anzeige, die Ereignisse faengt das Fenster) -->
+    <div class="drop-zone" id="drop-zone" aria-hidden="true" hidden>
+      <div class="dz-card">
+        <span class="dz-ic" data-icon="image"></span>
+        <span class="dz-title">Bilder hier ablegen</span>
+        <span class="dz-sub" id="dz-sub">PNG, JPG, GIF oder WebP</span>
       </div>
     </div>
 
@@ -222,7 +232,34 @@
           </div>
           <ol class="q-list" id="q-list"></ol>
         </div>
+        <!-- Nachfrage: "Wie gefällt dir Nova?" (kleine Karte, nimmt dir nie den Fokus weg) -->
+        <div class="fb-pop" id="fb-pop" role="region" aria-labelledby="fp-title" hidden>
+          <span class="fp-ic" aria-hidden="true"><span data-icon="star"></span></span>
+          <div class="fp-main">
+            <div class="fp-title" id="fp-title">Wie gefällt dir Nova?</div>
+            <div class="fp-sub" id="fp-sub">Wähle ein paar Sterne – ein, zwei Sätze dazu sind freiwillig.</div>
+            <div class="fb-stars fp-stars" id="fp-stars" role="radiogroup" aria-labelledby="fp-title"></div>
+          </div>
+          <div class="fp-btns">
+            <button class="btn small primary" id="fp-write" type="button" aria-haspopup="dialog">Feedback schreiben</button>
+            <button class="btn small ghost" id="fp-later" type="button">Später</button>
+          </div>
+          <button class="icon-btn fp-x" id="fp-close" type="button" aria-label="Später fragen" title="Später fragen" data-icon="x"></button>
+        </div>
+        <span class="sr-only" id="fp-live" aria-live="polite"></span>
+        <!-- Angehaengte Bilder (Vorschau ueber dem Eingabefeld) -->
+        <div class="att-tray" id="att-tray" role="group" aria-label="Angehängte Bilder" hidden>
+          <ul class="att-list" id="att-list"></ul>
+          <div class="att-side">
+            <span class="att-count" id="att-count"></span>
+            <button class="att-clear" id="att-clear" type="button" title="Alle Bilder entfernen" hidden>Alle entfernen</button>
+          </div>
+          <p class="att-err" id="att-err" role="alert" hidden></p>
+        </div>
         <div class="composer" id="composer" data-tour="eingabe">
+          <input id="attach-file" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple tabindex="-1" hidden>
+          <button class="c-btn attach-btn" id="attach-btn" type="button" aria-label="Bilder anhängen (auch mit Strg+V oder Hineinziehen)"
+                  title="Bilder anhängen – auch mit Strg+V einfügen oder ins Fenster ziehen" data-icon="paperclip"></button>
           <label class="sr-only" for="input">Nachricht</label>
           <textarea id="input" rows="1" placeholder="Schreib eine Nachricht …" autocomplete="off" spellcheck="true"
                     aria-autocomplete="list" aria-controls="cmd-pop" aria-expanded="false"></textarea>
@@ -594,6 +631,83 @@
   </div>
 </div>
 
+<!-- Feedback & Bewertung -->
+<div class="modal fmodal" id="fmodal" hidden>
+  <div class="dialog fdialog" id="fdialog" role="dialog" aria-modal="true" aria-labelledby="fb-title" aria-describedby="fb-sub" tabindex="-1">
+    <div class="dlg-head">
+      <div class="dlg-icon"><span data-icon="star"></span></div>
+      <div class="dlg-titles">
+        <h2 class="dlg-title" id="fb-title">Feedback &amp; Bewertung</h2>
+        <p class="dlg-sub" id="fb-sub">Sag uns ehrlich, wie es dir mit Nova geht – jede Rückmeldung hilft.</p>
+      </div>
+      <button class="icon-btn fb-x" id="fb-close" type="button" aria-label="Schließen" title="Schließen (Esc)" data-icon="x"></button>
+    </div>
+    <div class="dlg-body fb-body" id="fb-form">
+      <p class="fb-note" id="fb-note" hidden><span data-icon="info"></span><span id="fb-note-text"></span></p>
+      <div class="fb-pick">
+        <span class="field-label" id="fb-stars-label">Deine Bewertung <span class="opt">(optional)</span></span>
+        <div class="fb-rate">
+          <div class="fb-stars" id="fb-stars" role="radiogroup" aria-labelledby="fb-stars-label"></div>
+          <span class="fb-stars-text" id="fb-stars-text" aria-hidden="true"></span>
+        </div>
+      </div>
+      <div class="fb-pick">
+        <span class="field-label" id="fb-kind-label">Worum geht es?</span>
+        <div class="fb-kinds" id="fb-kinds" role="radiogroup" aria-labelledby="fb-kind-label"></div>
+      </div>
+      <label class="field">
+        <span class="field-label">Deine Nachricht</span>
+        <textarea class="input area fb-text" id="fb-text" rows="4" maxlength="20000" spellcheck="true"
+                  placeholder="Was gefällt dir? Was können wir besser machen? Fehler bitte genau beschreiben."></textarea>
+      </label>
+      <div class="fb-att" id="fb-att">
+        <div class="fb-att-top">
+          <span class="field-label" id="fb-att-label">Bilder <span class="opt" id="fb-att-max">(optional, höchstens 5)</span></span>
+          <button class="btn small secondary" id="fb-attach" type="button"><span data-icon="paperclip"></span>Bild anhängen</button>
+          <input id="fb-file" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple tabindex="-1" hidden>
+        </div>
+        <div class="att-tray fb-tray" id="fb-tray" role="group" aria-labelledby="fb-att-label" hidden>
+          <ul class="att-list" id="fb-att-list"></ul>
+          <div class="att-side"><span class="att-count" id="fb-att-count"></span></div>
+          <p class="att-err" id="fb-att-err" role="alert" hidden></p>
+        </div>
+        <p class="field-hint fb-tip"><span data-icon="info"></span><span>Tipp: Mit <kbd>Win</kbd>+<kbd>Umschalt</kbd>+<kbd>S</kbd> einen Ausschnitt kopieren und hier mit <kbd>Strg</kbd>+<kbd>V</kbd> einfügen.</span></p>
+      </div>
+      <label class="field">
+        <span class="field-label">Deine E-Mail für Rückfragen <span class="opt">(optional)</span></span>
+        <input class="input" id="fb-contact" type="email" maxlength="200" autocomplete="email" spellcheck="false" inputmode="email">
+      </label>
+      <p class="fb-privacy"><span data-icon="shield"></span><span>Text, Bewertung, App-Version und Bilder werden per E-Mail an den Entwickler geschickt. Bitte keine Passwörter oder privaten Daten.</span></p>
+      <p class="fb-err" id="fb-err" role="alert" hidden></p>
+    </div>
+    <div class="dlg-body fb-done" id="fb-done" role="status" hidden>
+      <span class="fbd-ic" id="fbd-ic" aria-hidden="true"></span>
+      <h3 class="fbd-title" id="fbd-title">Danke!</h3>
+      <p class="fbd-text" id="fbd-text"></p>
+    </div>
+    <div class="dlg-foot">
+      <button class="btn ghost" id="fb-cancel" type="button">Abbrechen</button>
+      <button class="btn primary fb-go" id="fb-go" type="button"><span data-icon="send"></span><span>Jetzt senden</span></button>
+    </div>
+  </div>
+</div>
+
+<!-- Grossansicht eines Bildes -->
+<div class="lightbox" id="lightbox" role="dialog" aria-modal="true" aria-labelledby="lb-title" aria-describedby="lb-cap" tabindex="-1" hidden>
+  <header class="lb-top">
+    <h2 class="lb-title" id="lb-title">Bild</h2>
+    <span class="lb-count" id="lb-count"></span>
+    <a class="btn small secondary lb-save" id="lb-save" href="#" download tabindex="0"><span data-icon="download"></span><span>Speichern</span></a>
+    <button class="icon-btn lb-x" id="lb-close" type="button" aria-label="Schließen (Esc)" title="Schließen (Esc)" data-icon="x"></button>
+  </header>
+  <div class="lb-stage" id="lb-stage">
+    <button class="lb-nav lb-prev" id="lb-prev" type="button" aria-label="Vorheriges Bild" title="Vorheriges Bild (←)" data-icon="chevronLeft"></button>
+    <img class="lb-img" id="lb-img" alt="">
+    <button class="lb-nav lb-next" id="lb-next" type="button" aria-label="Nächstes Bild" title="Nächstes Bild (→)" data-icon="chevronRight"></button>
+  </div>
+  <p class="lb-cap" id="lb-cap"></p>
+</div>
+
 <!-- Gehirn & Schluessel (Einrichtung) -->
 <div class="modal smodal" id="smodal" hidden>
   <div class="sdialog" id="sdialog" role="dialog" aria-modal="true" aria-labelledby="su-title" aria-describedby="su-sub" tabindex="-1">
@@ -645,6 +759,49 @@
         </div>
         <div class="su-result" id="su-result" role="status" aria-live="polite" hidden></div>
         <ol class="su-steps" id="su-steps" aria-label="So bekommst du den Schlüssel"></ol>
+        <!-- Bildgenerator (optional): AI Horde ohne Anmeldung oder Cloudflare mit eigenem Gratis-Schluessel -->
+        <section class="su-bilder" id="su-bilder" aria-labelledby="sbi-title" hidden>
+          <div class="sm-head">
+            <h3 class="su-label" id="sbi-title">Bilder (optional)</h3>
+            <span class="sm-saving" id="sbi-saving" hidden><span class="spinner" aria-hidden="true"></span>Speichere …</span>
+          </div>
+          <p class="sbi-active" id="sbi-active" role="status"><span data-icon="image"></span><span><span class="sbi-now">Bilder malt gerade:</span> <b id="sbi-active-text">AI Horde</b></span></p>
+          <div class="sm-sub" id="sbi-pick-label">Bildgenerator</div>
+          <div class="segctl sbi-seg" id="sbi-pick" role="radiogroup" aria-labelledby="sbi-pick-label" aria-describedby="sbi-pick-info"></div>
+          <p class="sbi-info" id="sbi-pick-info"></p>
+          <details class="pn-details sbi-cf" id="sbi-cf">
+            <summary>
+              <span data-icon="key"></span>
+              <span class="pd-title">Cloudflare einrichten <span class="sbi-sum-sub">schneller, kostenlos</span></span>
+              <span class="pd-badge sbi-badge" id="sbi-badge" hidden>eingerichtet</span>
+              <span class="pd-chev" data-icon="chevron"></span>
+            </summary>
+            <div class="pd-body sbi-body">
+              <ol class="su-steps sbi-steps" id="sbi-steps" aria-label="So bekommst du den Cloudflare-Schlüssel"></ol>
+              <div class="field">
+                <label class="field-label" for="sbi-konto">Konto-ID <span class="opt">(Account ID)</span></label>
+                <input class="input sbi-konto" id="sbi-konto" type="text" maxlength="64" autocomplete="off" spellcheck="false"
+                       autocapitalize="off" autocorrect="off" data-lpignore="true" data-1p-ignore placeholder="32 Zeichen, z.B. 0123abcd…">
+              </div>
+              <div class="field">
+                <label class="field-label" for="sbi-token">API-Token</label>
+                <div class="su-field">
+                  <span class="su-field-ic" data-icon="key"></span>
+                  <input class="input su-input" id="sbi-token" type="password" maxlength="200" autocomplete="off" spellcheck="false"
+                         autocapitalize="off" autocorrect="off" data-lpignore="true" data-1p-ignore placeholder="Token einfügen" aria-describedby="sbi-hint">
+                  <button class="su-eye" id="sbi-eye" type="button" aria-label="Token anzeigen" aria-pressed="false" title="Token anzeigen" data-icon="eye"></button>
+                </div>
+              </div>
+              <p class="su-hint" id="sbi-hint"></p>
+              <div class="sbi-btns">
+                <button class="btn small ghost" id="sbi-remove" type="button" hidden>Entfernen</button>
+                <button class="btn small primary" id="sbi-save" type="button"><span>Prüfen &amp; speichern</span></button>
+              </div>
+              <div class="su-result sbi-result" id="sbi-result" hidden></div>
+            </div>
+          </details>
+          <p class="sbi-privacy"><span data-icon="shield"></span><span>Bildbeschreibungen gehen an den Bilddienst – bitte keine persönlichen Daten hineinschreiben. Token und Konto-ID bleiben nur auf deinem PC.</span></p>
+        </section>
       </div>
       <footer class="su-foot">
         <span class="su-env" id="su-env"><span data-icon="shield"></span><span>Bleibt nur auf deinem PC</span></span>
@@ -657,6 +814,7 @@
 </div>
 
 <div class="toasts" id="toasts" aria-live="polite"></div>
+<script src="/static/helfer.js"></script>
 <script src="/static/app.js"></script>
 </body>
 </html>

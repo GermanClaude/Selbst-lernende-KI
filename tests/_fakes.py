@@ -1,7 +1,15 @@
 """Gefaelschte SDK-Clients fuer Tests (kein echter Netzzugriff/Schluessel noetig)."""
 from __future__ import annotations
 
+import copy
+import json
 from types import SimpleNamespace
+
+
+def dump(value) -> str:
+    """Anfrage so serialisieren, wie sie verschickt wuerde (fuer "byte-gleich"-Vergleiche).
+    SDK-Bloecke der Fakes (SimpleNamespace) werden wie dicts geschrieben."""
+    return json.dumps(value, default=lambda o: getattr(o, "__dict__", None) or repr(o), ensure_ascii=False)
 
 
 # ----- Anthropic ----------------------------------------------------------
@@ -24,14 +32,21 @@ class AnthroStream:
 
 
 class AnthroMessages:
+    """scripted: Liste von (Nachricht, Ereignisse) - oder eine Exception, die geworfen wird."""
+
     def __init__(self, scripted):
         self._scripted = scripted
         self.calls = 0
+        self.requests = []  # je Anfrage: so wurde 'messages' verschickt (serialisiert)
 
     def stream(self, **kwargs):
         self.last_kwargs = kwargs
-        msg, events = self._scripted[min(self.calls, len(self._scripted) - 1)]
+        self.requests.append(dump(kwargs.get("messages")))
+        item = self._scripted[min(self.calls, len(self._scripted) - 1)]
         self.calls += 1
+        if isinstance(item, BaseException):
+            raise item
+        msg, events = item
         return AnthroStream(msg, events)
 
     def create(self, **kwargs):
@@ -92,31 +107,50 @@ def ds_usage_chunk(prompt=100, completion=50, cache_hit=0, cache_miss=None):
     return SimpleNamespace(choices=[], usage=usage)
 
 
+def ds_reply(content="zusammenfassung", prompt=10, completion=5):
+    """Antwort auf eine nicht gestreamte Anfrage (Zusammenfassung, Bildbeschreibung)."""
+    return SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content=content))],
+        usage=SimpleNamespace(
+            prompt_tokens=prompt, completion_tokens=completion,
+            prompt_cache_hit_tokens=0, prompt_cache_miss_tokens=prompt,
+        ),
+    )
+
+
 class DSCompletions:
-    def __init__(self, scripted_streams):
+    """scripted_streams: Liste von Chunk-Listen - oder eine Exception, die geworfen wird.
+    non_stream: optional, (**kwargs) -> Antwort fuer nicht gestreamte Anfragen (darf werfen)."""
+
+    def __init__(self, scripted_streams, non_stream=None):
         self._scripted = scripted_streams
+        self.non_stream = non_stream
         self.calls = 0
+        self.last_kwargs = None        # letzte gestreamte Anfrage
+        self.requests = []             # je gestreamter Anfrage: Kopie von 'messages'
+        self.non_stream_calls = []     # alle nicht gestreamten Anfragen (kwargs)
 
     def create(self, **kwargs):
         if not kwargs.get("stream", False):
-            # Zusammenfassung (nicht gestreamt).
-            return SimpleNamespace(
-                choices=[SimpleNamespace(message=SimpleNamespace(content="zusammenfassung"))],
-                usage=SimpleNamespace(
-                    prompt_tokens=10, completion_tokens=5,
-                    prompt_cache_hit_tokens=0, prompt_cache_miss_tokens=10,
-                ),
-            )
-        chunks = self._scripted[min(self.calls, len(self._scripted) - 1)]
+            # Zusammenfassung / Bildbeschreibung (nicht gestreamt).
+            self.non_stream_calls.append(kwargs)
+            if self.non_stream is not None:
+                return self.non_stream(**kwargs)
+            return ds_reply()
+        self.last_kwargs = kwargs
+        self.requests.append(copy.deepcopy(kwargs.get("messages")))
+        item = self._scripted[min(self.calls, len(self._scripted) - 1)]
         self.calls += 1
-        return iter(chunks)
+        if isinstance(item, BaseException):
+            raise item
+        return iter(item)
 
 
 class DSChat:
-    def __init__(self, scripted_streams):
-        self.completions = DSCompletions(scripted_streams)
+    def __init__(self, scripted_streams, non_stream=None):
+        self.completions = DSCompletions(scripted_streams, non_stream)
 
 
 class DSClient:
-    def __init__(self, scripted_streams):
-        self.chat = DSChat(scripted_streams)
+    def __init__(self, scripted_streams, non_stream=None):
+        self.chat = DSChat(scripted_streams, non_stream)

@@ -16,11 +16,13 @@ import itertools
 import math
 import os
 import re
+import secrets
 import subprocess
 import sys
 import threading
 import time
 from contextlib import redirect_stdout
+from pathlib import Path
 from typing import Any, Callable
 
 from .. import __version__
@@ -31,7 +33,7 @@ from ..live import staying, wait_until_quiet
 from ..logging_setup import get_logger
 from ..modelle import kurzbeschreibung
 from ..permissions import Risk
-from ..ui.cli import CLI, JARVIS_HINT, KEY_HINT, _is_exit_phrase
+from ..ui.cli import BILD_HINWEIS, CLI, JARVIS_HINT, KEY_HINT, _is_exit_phrase, upload_kante, vorlesetext
 from ..voice import VoiceOutput
 
 logger = get_logger()
@@ -42,6 +44,10 @@ _AGENT_TOOL = re.compile(r"^\s*\[Agent (\w+)\] … nutze Werkzeug: (\S+)\s*$")
 _AGENT_START = re.compile(r"^\s*>> Agent '(\w+)' startet: (.*)$")
 _AGENT_END = re.compile(r"^\s*<< Agent '(\w+)' fertig\s*$")
 _INFO_LINE = re.compile(r"^\s*\[(Ich arbeite weiter[^\]]*)\]\s*$")
+_CLIENT_ID = re.compile(r"^[A-Za-z0-9_.:-]{1,64}$")
+_CF_TOKEN = re.compile(r"^[A-Za-z0-9_.-]{20,200}$")
+_CF_KONTO = re.compile(r"^[0-9a-fA-F]{32}$")
+_UPLOAD_TAGE = 30  # hochgeladene Bilder (nur fuer die Anzeige) so lange aufheben
 
 COMMANDS = [
     ("/status", "Einstellungen & Sicherheitslage"),
@@ -69,6 +75,7 @@ COMMANDS = [
     ("/afk", "ich bin weg - die KI arbeitet allein weiter (mit Bericht)"),
     ("/modell", "Modell waehlen - schnell oder besonders stark"),
     ("/denken", "wie gruendlich die KI nachdenkt (schnell ... maximal)"),
+    ("/feedback", "Feedback & Bewertung an den Entwickler schicken"),
     ("/terminal", "zur Terminal-Version wechseln"),
     ("/hilfe", "alle Befehle"),
     ("/beenden", "App schliessen"),
@@ -133,6 +140,7 @@ class AppController(CLI):
         self._afk_return: tuple[float, str] | None = None  # (Beginn der Abwesenheit, Bericht)
         self.tool_ctx.extra["afk_start"] = self._afk_request
         self.tool_ctx.extra["afk_update"] = self._state_changed
+        self._cloudflare_http = None  # fuer Tests austauschbar (None = echtes Netz)
         # Sphaere: reagiert auf deine Stimme beim Mikrofon-Knopf / F2
         self.voice_capture.on_level = lambda value: self._event({"type": "mic", "level": value})
 
@@ -162,7 +170,9 @@ class AppController(CLI):
             "model": self.config.active_model,
             "model_name": schoen(kurzbeschreibung(self.config)),
             "busy": self.busy,
-            "queue": [{"id": item["id"], "text": item["shown"] or item["text"]} for item in list(self._queue)],
+            "max_bilder": max(1, int(self.config.bilder.max_bilder_pro_nachricht or 10)),
+            "queue": [{"id": item["id"], "text": item["shown"] or item["text"],
+                       "images": list(item.get("images") or [])} for item in list(self._queue)],
             "afk": self._afk.status() if self._afk is not None else None,
             "afk_pending": self._afk_pending is not None,
             "auto_confirm": bool(self.permissions.settings.auto_confirm),
@@ -183,6 +193,7 @@ class AppController(CLI):
             "stuetzraeder": self.training_wheels_state(),
             "full_access": bool(self.permissions.settings.allow_full_filesystem),
             "tutorial_done": self._tutorial_done(),
+            "feedback_due": self._feedback_due(),
             "started_by": self.started_by,
             "commands": [{"cmd": c, "help": schoen(h)} for c, h in COMMANDS],
         }
@@ -274,11 +285,14 @@ class AppController(CLI):
         self._state_changed()
 
     # -- Senden -----------------------------------------------------------------
-    def send(self, text: str, model_text: str | None = None, live=None) -> tuple[bool, str]:
+    def send(self, text: str, model_text: str | None = None, live=None, bilder: list | None = None,
+             images: list | None = None, client_id: str | None = None) -> tuple[bool, str]:
         """text = was angezeigt wird; model_text = was die KI bekommt (z.B. mit Sprachmodus-Hinweis);
-        live = der Jarvis-Modus, dem diese Antwort gehoert (bekommt Text, Werkzeuge und das Ende)."""
+        live = der Jarvis-Modus, dem diese Antwort gehoert (bekommt Text, Werkzeuge und das Ende).
+        bilder = schon vorbereitete Bilder (assistant.bilder.Bild) fuer die KI, images = deren
+        Anzeige [{url, name}], client_id = Kennung des Fensters fuer das Echo."""
         text = (text or "").strip()
-        if not text:
+        if not text and not bilder:
             return False, "Leere Nachricht"
         text, shown = _mask_key(text)
         with self._lock:
@@ -290,23 +304,44 @@ class AppController(CLI):
             self._turn_mark = self._last_qid
             self.brain.provider.cancel_event.clear()  # unter der Sperre: ein Stopp gleich danach zaehlt
         threading.Thread(target=self._work, args=(text, None, model_text, shown), name="ki-antwort",
+                         kwargs={"bilder": bilder, "images": images, "client_id": client_id},
                          daemon=True).start()
         return True, ""
 
-    def submit(self, text: str, interrupt: bool = False) -> dict:
+    def submit(self, text: str, interrupt: bool = False, images: Any = None, client_id: Any = None) -> dict:
         """Getippte Nachricht aus dem Fenster. Arbeitet die KI noch, kommt sie in die Warteschlange
         (interrupt=True: die laufende Antwort anhalten und diese gleich beantworten). Laeuft der
-        AFK-Modus, heisst jede Nachricht: Ich bin zurueck."""
+        AFK-Modus, heisst jede Nachricht: Ich bin zurueck.
+
+        images = [{"name", "data": "data:image/...;base64,..."}] (Text darf dann leer sein): jedes
+        Bild wird hier EINMAL geprueft und verkleinert und fuer die Anzeige abgelegt."""
+        from ..bilder import BildFehler
+
         text = (text or "").strip()
-        if not text:
+        cid = client_id if isinstance(client_id, str) and _CLIENT_ID.match(client_id) else None
+        if images is not None and not isinstance(images, list):
+            return {"ok": False, "error": "Die Bilder kamen nicht richtig an."}
+        if not text and not images:
             return {"ok": False, "error": "Leere Nachricht"}
+        from ..schluessel import CLOUDFLARE_HINWEIS, find_cloudflare_token
+
+        if not text.startswith("/") and find_cloudflare_token(text):
+            return {"ok": False, "error": CLOUDFLARE_HINWEIS}
+        if images and _mask_key(text)[0].startswith("/"):
+            return {"ok": False, "error": schoen("Befehle (mit / am Anfang) und Schluessel bitte ohne Bilder "
+                                                 "schicken.")}
+        try:
+            bilder, anzeigen = self._bilder_annehmen(images)
+        except BildFehler as exc:
+            return {"ok": False, "error": str(exc)}
         for _attempt in range(3):
             with self._lock:
                 busy = self.busy
                 if busy:
                     sent, shown = _mask_key(text)
                     self._last_qid = next(self._queue_ids)
-                    item = {"id": self._last_qid, "text": sent, "model_text": None, "shown": shown}
+                    item = {"id": self._last_qid, "text": sent, "model_text": None, "shown": shown,
+                            "bilder": bilder, "images": anzeigen, "client_id": cid}
                     afk = self._afk
                     # Nur die ERSTE Nachricht beendet den AFK-Modus und kommt nach vorn; weitere,
                     # die kommen, waehrend er noch endet, reihen sich normal dahinter ein.
@@ -332,12 +367,64 @@ class AppController(CLI):
                 self._state_changed()
                 return {"ok": True, "queued": True, "id": item["id"], "interrupt": bool(back or interrupt),
                         "afk_ended": back}
-            ok, error = self.send(text)
+            ok, error = self.send(text, bilder=bilder, images=anzeigen, client_id=cid)
             if ok:
                 return {"ok": True}
             if not self.busy:  # anderer Grund (z.B. leer) - nicht "gerade beschaeftigt"
                 return {"ok": False, "error": error}
         return {"ok": False, "error": "Ich arbeite noch - gleich nochmal versuchen."}
+
+    def _bilder_annehmen(self, images: list | None) -> tuple[list, list[dict]]:
+        """Bilder aus /api/send -> (Bilder fuer die KI, Anzeige [{url, name}]). Wirft BildFehler.
+
+        Jedes Bild wird genau hier einmal verkleinert (danach nie mehr veraendert - Claude-Verlauf
+        ist nur anhaengend) und unter data/bilder/hochgeladen/<16 hex>.<endung> fuer die Anzeige
+        abgelegt. Base64 steht danach nirgends mehr (Verlauf, Ereignisse) - nur die URL."""
+        from ..bilder import BildFehler, aus_data_url
+
+        if not images:
+            return [], []
+        grenze = max(1, int(self.config.bilder.max_bilder_pro_nachricht or 10))
+        if len(images) > grenze:
+            raise BildFehler(f"H\u00f6chstens {grenze} Bilder pro Nachricht \u2013 bitte entferne "
+                             f"{len(images) - grenze}.")
+        kante = upload_kante(self.config)
+        fertig = []
+        for nummer, eintrag in enumerate(images, start=1):
+            if not isinstance(eintrag, dict):
+                raise BildFehler("Ein Bild kam nicht richtig an.")
+            name = str(eintrag.get("name") or f"bild{nummer}")[:200]
+            daten = eintrag.get("data")
+            fertig.append(aus_data_url(daten if isinstance(daten, str) else "", name, max_kante=kante))
+        ordner = self.upload_dir()
+        anzeigen = []
+        for bild in fertig:
+            try:
+                pfad = bild.speichern(ordner, stamm=secrets.token_hex(8))
+            except OSError as exc:
+                logger.warning("Bild nicht gespeichert: %s", type(exc).__name__)
+                raise BildFehler("Das Bild lie\u00df sich nicht speichern (ist die Festplatte voll?).") from exc
+            anzeigen.append({"url": f"/api/bild/h/{pfad.name}", "name": bild.name})
+        try:
+            alte_uploads_loeschen(ordner)
+            uploads_begrenzen(ordner)
+        except OSError:
+            pass
+        return fertig, anzeigen
+
+    def upload_dir(self) -> Path:
+        """Hochgeladene Bilder (nur fuer die Anzeige im Fenster): data/bilder/hochgeladen."""
+        return Path(self.config.project_root) / "data" / "bilder" / "hochgeladen"
+
+    def bild_ordner(self, kind: str) -> Path | None:
+        """Ordner fuer GET /api/bild/<kind>/<name>: h = hochgeladen, e = erstellt (Arbeitsordner)."""
+        from ..bildgenerator import bilder_ordner
+
+        if kind == "h":
+            return self.upload_dir()
+        if kind == "e":
+            return bilder_ordner(self.permissions.workspace_root)
+        return None
 
     def _remove_queued_locked(self, item: dict) -> None:
         index = self._queue.index(item)
@@ -443,12 +530,15 @@ class AppController(CLI):
 
     def _start_job(self, job: dict) -> None:
         """Naechste Aufgabe beginnen - self.busy ist dabei schon True."""
+        kwargs: dict = {}
         if "afk" in job:
             target, args = self._work, (None, lambda: self._run_afk(job["afk"]))
         else:
             item = job["message"]
             target, args = self._work, (item["text"], None, item["model_text"], item["shown"])
-        threading.Thread(target=target, args=args, name="ki-warteschlange", daemon=True).start()
+            kwargs = {"bilder": item.get("bilder"), "images": item.get("images"),
+                      "client_id": item.get("client_id")}
+        threading.Thread(target=target, args=args, kwargs=kwargs, name="ki-warteschlange", daemon=True).start()
 
     def run_background(self, fn: Callable[[], Any]) -> None:
         """Etwas wie eine Nachricht ausfuehren (Ausgaben -> Systemkarten), z.B. Update-Pruefung."""
@@ -460,7 +550,8 @@ class AppController(CLI):
         threading.Thread(target=self._work, args=(None, fn), name="ki-hintergrund", daemon=True).start()
 
     def _work(self, text: str | None, fn: Callable[[], Any] | None = None, model_text: str | None = None,
-              shown: str | None = None) -> None:
+              shown: str | None = None, bilder: list | None = None, images: list | None = None,
+              client_id: str | None = None) -> None:
         self._state_changed()
         writer = _NoticeWriter(self._notice)
         self._writer = writer
@@ -470,15 +561,13 @@ class AppController(CLI):
                 if fn is not None:
                     quit_code = fn()
                 elif text.startswith("/"):
-                    self.history.append({"role": "user", "text": shown or text})
-                    self._event({"type": "user", "text": shown or text})
+                    self._user_message(shown or text, None, client_id)
                     quit_code = self._command(text)
                 elif not self.config.api_key:
-                    self.history.append({"role": "user", "text": text})
-                    self._event({"type": "user", "text": text})
+                    self._user_message(text, images, client_id)
                     self._notice(KEY_HINT.replace("\n  ", "\n- "), "warn")
                 else:
-                    self._answer(text, model_text)
+                    self._answer(text, model_text, bilder=bilder, images=images, client_id=client_id)
         except Exception as exc:  # noqa: BLE001 - die App darf daran nicht sterben
             logger.exception("Fehler in der App")
             from ..schluessel import friendly_error
@@ -504,6 +593,18 @@ class AppController(CLI):
         elif job is not None:
             self._start_job(job)
 
+    def _user_message(self, text: str, images: list | None, client_id: str | None) -> dict:
+        """Deine Nachricht in den Verlauf und ins Fenster (Bilder nur als URL, nie Base64)."""
+        entry: dict = {"role": "user", "text": text}
+        if images:
+            entry["images"] = [dict(i) for i in images]
+        if client_id:
+            entry["client_id"] = client_id
+        self.history.append(entry)
+        self._event({"type": "user", "text": text, "images": [dict(i) for i in images or []],
+                     "client_id": client_id})
+        return entry
+
     def _command(self, text: str) -> int | None:
         if text.split()[0].lower() == "/app":
             print("Du bist schon in der App.")
@@ -516,13 +617,13 @@ class AppController(CLI):
         return self.exit_code if quit_now else None
 
     def _answer(self, text: str, model_text: str | None = None, as_notice: bool = False,
-                max_tool_rounds: int | None = None) -> None:
-        entry = {"role": "user", "text": text}
+                max_tool_rounds: int | None = None, bilder: list | None = None, images: list | None = None,
+                client_id: str | None = None) -> None:
+        entry: dict = {"role": "user", "text": text}
         if as_notice:  # AFK-Schritt: keine Sprechblase "von dir"
             self._notice(text, "afk")
         else:
-            self.history.append(entry)
-            self._event({"type": "user", "text": text})
+            entry = self._user_message(text, images, client_id)
             model_text = self._with_afk_hints(text, model_text)
         self._event({"type": "start"})
         self._answer_parts: list[str] = []
@@ -532,7 +633,8 @@ class AppController(CLI):
                 answer = self.brain.respond(model_text or text, on_text=self._emit,
                                             max_tool_rounds=max_tool_rounds, auto_continue=0)
             else:
-                answer = self.brain.respond(model_text or text, on_text=self._emit)
+                mit_bildern = {"bilder": list(bilder)} if bilder else {}
+                answer = self.brain.respond(model_text or text, on_text=self._emit, **mit_bildern)
         except KeyboardInterrupt:  # Stopp-Knopf (Abgebrochen) - oder Strg+C im Hintergrund
             # (Ein vorgemerkter AFK-Modus wird beim Anhalten dort verworfen, wo angehalten wird:
             # Stopp/Unterbrechen/Rueckkehr im Fenster, Stopp/Nachtrag/Chat-Modus im Sprachmodus.
@@ -564,7 +666,7 @@ class AppController(CLI):
         """Vorlesen am PC (Schalter 'Vorlesen') - die Sphaere spricht mit."""
         self._event({"type": "speaking", "on": True})
         try:
-            self.voice_out.speak(answer)
+            self.voice_out.speak(vorlesetext(answer))  # ohne Bild-Adressen und Markdown
         finally:
             self._event({"type": "speaking", "on": False})
 
@@ -580,9 +682,12 @@ class AppController(CLI):
             self.brain.provider.cancel()
         self._cancel_rest()
         if waiting:
-            texts = [item["text"] for item in waiting if not item["shown"]]  # Schluessel nie zurueck
-            if texts:
-                self._event({"type": "queue_returned", "text": "\n".join(texts)})
+            # Schluessel nie zurueck; Bilder kommen als URL zurueck (das Fenster holt sie wieder)
+            items = [{"text": item["text"], "images": [dict(i) for i in item.get("images") or []]}
+                     for item in waiting if not item["shown"]]
+            if items:
+                self._event({"type": "queue_returned", "text": "\n".join(i["text"] for i in items if i["text"]),
+                             "items": items})
             self._state_changed()
 
     # -- AFK-Modus: allein weiterarbeiten, waehrend du weg bist (abwesend.py) -------
@@ -825,7 +930,81 @@ class AppController(CLI):
                 for k in ("name", "info", "tempo", "preis"):
                     if entry.get(k):
                         entry[k] = schoen(entry[k])
+        info["bilder"] = self._bilder_info()
         return info
+
+    # -- Bildgenerator: Einstellungen (Abschnitt "Bilder" in Gehirn & Schluessel) ---------
+    def _bilder_info(self) -> dict:
+        """Fuer /api/setup - nie der Schluessel, nur ob einer da ist."""
+        from ..bildgenerator import aktiver_anbieter, cloudflare_eingerichtet
+
+        wahl = str(self.config.bilder.anbieter or "auto").strip().lower()
+        return {"anbieter": wahl if wahl in ("auto", "horde", "cloudflare") else "auto",
+                "cloudflare": cloudflare_eingerichtet(self.config),
+                "aktiv": aktiver_anbieter(self.config)}
+
+    def bilder_einstellen(self, data: dict) -> dict:
+        """POST /api/bilder/einstellen: {"anbieter"?, "cloudflare_account_id"?, "cloudflare_token"?,
+        "entfernen"?}. Schluessel in die .env (erst kurz pruefen), Anbieter in die Einstellungen.
+        Der Schluessel kommt nie zurueck - auch nicht in Fehlermeldungen."""
+        from ..bildgenerator import aktiver_anbieter, cloudflare_eingerichtet, pruefe_cloudflare
+        from ..config import save_env_value
+
+        def nein(text: str) -> dict:
+            return {"ok": False, "message": text, "error": text}
+
+        cfg, root = self.config, self.config.project_root
+        anbieter = data.get("anbieter")
+        if anbieter is not None and anbieter != "":
+            anbieter = str(anbieter).strip().lower()
+            if anbieter not in ("auto", "horde", "cloudflare"):
+                return nein("Unbekannter Bildgenerator \u2013 m\u00f6glich sind auto, horde und cloudflare.")
+        else:
+            anbieter = None
+        konto = str(data.get("cloudflare_account_id") or "").strip()
+        token = str(data.get("cloudflare_token") or "").strip()
+        entfernen = bool(data.get("entfernen"))
+        if not (anbieter or konto or token or entfernen):
+            return nein("Es gibt nichts zu speichern.")
+        teile: list[str] = []
+        try:
+            if entfernen:
+                for name in ("CLOUDFLARE_AI_API_KEY", "CLOUDFLARE_ACCOUNT_ID"):
+                    save_env_value(root, name, "")
+                    os.environ.pop(name, None)
+                cfg.cloudflare_api_key = cfg.cloudflare_account_id = None
+                teile.append("Der Cloudflare-Zugang ist entfernt.")
+            elif konto or token:
+                token = token or str(cfg.cloudflare_api_key or "").strip()
+                konto = konto or str(cfg.cloudflare_account_id or "").strip()
+                if not token:
+                    return nein("Bitte auch den Cloudflare-API-Token eintragen.")
+                if not konto:
+                    return nein("Bitte auch die Cloudflare-Konto-ID eintragen (steht auf derselben Seite "
+                                "wie der Token).")
+                if not _CF_TOKEN.match(token):
+                    return nein("Der API-Token sieht nicht richtig aus \u2013 bitte komplett kopieren "
+                                "(ohne Leerzeichen).")
+                if not _CF_KONTO.match(konto):
+                    return nein("Die Cloudflare-Konto-ID sieht nicht richtig aus (32 Zeichen aus 0-9 und a-f).")
+                ok, meldung = pruefe_cloudflare(token, konto, http=self._cloudflare_http)
+                if not ok:
+                    return nein(meldung)
+                save_env_value(root, "CLOUDFLARE_AI_API_KEY", token)
+                save_env_value(root, "CLOUDFLARE_ACCOUNT_ID", konto)
+                os.environ["CLOUDFLARE_AI_API_KEY"], os.environ["CLOUDFLARE_ACCOUNT_ID"] = token, konto
+                cfg.cloudflare_api_key, cfg.cloudflare_account_id = token, konto
+                teile.append(meldung)
+            if anbieter:
+                save_setting(root, "bilder", "anbieter", toml_string(anbieter))
+                cfg.bilder.anbieter = anbieter
+        except OSError as exc:
+            logger.warning("Bild-Einstellung nicht gespeichert: %s", type(exc).__name__)
+            return nein(schoen("Konnte die Einstellung nicht speichern (ist die Datei schreibgeschuetzt?)."))
+        teile.append(f"Neue Bilder kommen jetzt von {aktiver_anbieter(cfg)}.")
+        if cfg.bilder.anbieter == "cloudflare" and not cloudflare_eingerichtet(cfg):
+            teile.append("Cloudflare ist noch nicht eingerichtet \u2013 bis dahin nutze ich AI Horde.")
+        return {"ok": True, "message": " ".join(teile), "bilder": self._bilder_info()}
 
     def _model_changed(self) -> None:
         self.brain.model_changed()
@@ -883,8 +1062,105 @@ class AppController(CLI):
         else:
             print(result.get("error") or "Der Jarvis-Modus ging nicht.")
 
+    def _bildpfad_hinweis(self, pfad: str) -> None:
+        print("Bilder bitte \u00fcber die B\u00fcroklammer, mit Strg+V oder durch Hineinziehen anh\u00e4ngen.")
+
     def _tutorial_terminal(self) -> None:
         self._event({"type": "open", "what": "tutorial"})
+
+    def _feedback_terminal(self) -> None:
+        self._event({"type": "open", "what": "feedback"})
+
+    def _bild_hilfe(self) -> None:
+        print("Bilder schickst du in der App \u00fcber die B\u00fcroklammer neben dem Eingabefeld, mit Strg+V "
+              "oder indem du sie ins Fenster ziehst.")
+
+    # -- Bildgenerator: fertige Bilder und Fortschritt ins Fenster -----------------------
+    def _on_image(self, info: dict) -> None:
+        """Werkzeug bild_erstellen: {"pfad", "name", "prompt", "anbieter"} -> Ereignis "image"
+        (und Verlauf, damit das Bild nach dem Neuladen wieder erscheint)."""
+        from ..bildgenerator import DATEINAME_MUSTER, bilder_ordner
+
+        self._bild_fortschritt = ""
+        pfad = Path(str(info.get("pfad") or ""))
+        name = str(info.get("name") or pfad.name)
+        root = Path(self.permissions.workspace_root)
+        try:
+            rel = pfad.resolve().relative_to(root.resolve()).as_posix()
+        except (OSError, ValueError):
+            rel = name
+        try:
+            im_ordner = pfad.resolve().parent == bilder_ordner(root).resolve()
+        except OSError:
+            im_ordner = False
+        entry = {"name": name, "prompt": str(info.get("prompt") or "")[:2000], "pfad": rel,
+                 "anbieter": str(info.get("anbieter") or "")}
+        if im_ordner and DATEINAME_MUSTER.match(name):
+            entry = {"url": f"/api/bild/e/{name}", **entry}
+            self.history.append({"role": "image", **entry})
+            self._event({"type": "image", **entry})
+        else:  # kann die App nicht anzeigen - wenigstens sagen, wo es liegt
+            self._notice(f"Bild gespeichert: {rel}")
+        if self._bild_hinweis_faellig():
+            self._notice(BILD_HINWEIS)
+
+    def _on_image_progress(self, text: str) -> None:
+        text = " ".join(str(text or "").split())[:300]
+        if text:
+            self._event({"type": "image_progress", "text": schoen(text)})
+
+    # -- Feedback & Bewertung -------------------------------------------------------------
+    def feedback_status(self) -> dict:
+        """GET /api/feedback (kann einmal am Tag kurz im Netz nachsehen, ob ein Postfach da ist)."""
+        from .. import feedback
+
+        try:
+            return feedback.status(self.config, fetch=self._feedback_fetch)
+        except Exception as exc:  # noqa: BLE001
+            logger.info("Feedback-Status: %s", type(exc).__name__)
+            return {"ok": True, "configured": False, "due": self._feedback_due(), "pending": 0,
+                    "max_images": feedback.MAX_BILDER}
+
+    def feedback_send(self, data: dict) -> dict:
+        """POST /api/feedback - laeuft im Anfrage-Thread des Servers (der Chat bleibt frei)."""
+        from .. import feedback
+
+        images = data.get("images")
+        if images is not None and not isinstance(images, list):
+            return {"ok": False, "status": "abgelehnt", "error": "Die Bilder kamen nicht richtig an."}
+        # Aus dem Fenster nur eingebettete Bilder - nie Dateipfade (sonst liest die Anfrage beliebige
+        # Dateien, unter Windows auch \\server\freigabe).
+        if images and not all(isinstance(e, dict) and isinstance(e.get("data"), str)
+                              and e["data"].strip().lower().startswith("data:image/") for e in images):
+            return {"ok": False, "status": "abgelehnt", "error": "Die Bilder kamen nicht richtig an."}
+        contact = data.get("contact")
+        if not self._feedback_lock.acquire(blocking=False):  # Doppelklick: nur EINE Sendung
+            return {"ok": False, "status": "abgelehnt", "error": "Dein Feedback wird gerade schon gesendet."}
+        try:
+            ergebnis = feedback.abschicken(
+                self.config, kind=str(data.get("kind") or "feedback"), stars=data.get("stars"),
+                text=str(data.get("text") or ""), contact=str(contact) if contact else None,
+                bilder=images or None, trigger=str(data.get("trigger") or "menue"),
+                post=self._feedback_post, fetch=self._feedback_fetch)
+        finally:
+            self._feedback_lock.release()
+        if ergebnis.ok:
+            self._state_changed()  # Nachfrage erledigt
+        if ergebnis.status == "gesendet":
+            self._feedback_ausgang_bald()
+        return ergebnis.als_antwort()
+
+    def feedback_seen(self, which: str = "gezeigt") -> dict:
+        """POST /api/feedback/gezeigt (Pop-up erscheint) und /api/feedback/spaeter (weggeklickt):
+        beides heisst "jetzt gezeigt" - die naechste Nachfrage kommt erst in ein paar Tagen."""
+        from .. import feedback
+
+        feedback.gezeigt(root=self.config)
+        self._state_changed()
+        return {"ok": True, "due": self._feedback_due()}
+
+    def _feedback_changed(self) -> None:
+        self._state_changed()
 
     # -- Jarvis-Modus: freihaendig und live reden (live.py) ---------------------------
     def _jarvis_active(self) -> bool:
@@ -1146,6 +1422,11 @@ class AppController(CLI):
             self._notice(f"Fuer {self.config.provider_auto_switched} ist kein Schluessel da - ich nutze deshalb "
                          f"{self.config.active_provider}. Wechseln: /gehirn")
         self._start_update_watch()
+        self._start_feedback_watch()  # Nutzungszeit zaehlen, Feedback-Ausgang nachsenden
+        try:
+            alte_uploads_loeschen(self.upload_dir())
+        except Exception as exc:  # noqa: BLE001
+            logger.info("Alte Bilder nicht aufgeraeumt: %s", type(exc).__name__)
 
         def check() -> int | None:
             return self.exit_code if self._startup_update() else None
@@ -1204,6 +1485,52 @@ def _mask_key(text: str) -> tuple[str, str | None]:
     if key:
         return text, text.replace(key, mask(key))
     return text, None
+
+
+def uploads_begrenzen(ordner: Path, max_dateien: int = 1000, max_bytes: int = 500 * 1024 * 1024) -> int:
+    """Hochgeladene Bilder: hoechstens so viele/so gross - die aeltesten zuerst weg -> Anzahl."""
+    from ..bildgenerator import DATEINAME_MUSTER
+
+    if not Path(ordner).is_dir():
+        return 0
+    dateien = []
+    for pfad in Path(ordner).iterdir():
+        try:
+            if pfad.is_file() and DATEINAME_MUSTER.match(pfad.name):
+                st = pfad.stat()
+                dateien.append((st.st_mtime, st.st_size, pfad))
+        except OSError:
+            continue
+    dateien.sort()
+    gesamt = sum(groesse for _t, groesse, _p in dateien)
+    weg = 0
+    while dateien and (len(dateien) > max_dateien or gesamt > max_bytes):
+        _t, groesse, pfad = dateien.pop(0)
+        try:
+            pfad.unlink()
+            weg += 1
+        except OSError:
+            pass
+        gesamt -= groesse
+    return weg
+
+
+def alte_uploads_loeschen(ordner: Path, tage: int = _UPLOAD_TAGE, jetzt: float | None = None) -> int:
+    """Hochgeladene Bilder (data/bilder/hochgeladen) aelter als `tage` loeschen -> Anzahl."""
+    from ..bildgenerator import DATEINAME_MUSTER
+
+    grenze = (time.time() if jetzt is None else jetzt) - tage * 86400
+    weg = 0
+    if not Path(ordner).is_dir():
+        return 0
+    for pfad in Path(ordner).iterdir():
+        try:
+            if pfad.is_file() and DATEINAME_MUSTER.match(pfad.name) and pfad.stat().st_mtime < grenze:
+                pfad.unlink()
+                weg += 1
+        except OSError:
+            continue
+    return weg
 
 
 def _float_or_none(value: Any) -> float | None:

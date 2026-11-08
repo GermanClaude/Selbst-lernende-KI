@@ -5,6 +5,7 @@ from typing import Any
 
 from ..logging_setup import get_logger
 from .base import (
+    BILD_ABGELEHNT,
     CONNECT_TIMEOUT,
     LIMIT_NOTE,
     READ_TIMEOUT,
@@ -12,8 +13,13 @@ from .base import (
     SUMMARY_INSTRUCTION,
     TRUNCATED_NOTE,
     TRUNCATED_TOOL_ERROR,
+    BildTeil,
     LLMProvider,
     StreamFn,
+    aufteilen,
+    bild_gewicht,
+    bild_platzhalter,
+    leerer_bildtext,
     summary_input,
 )
 
@@ -26,6 +32,7 @@ class AnthropicProvider(LLMProvider):
     def __init__(self, *args: Any, **kwargs: Any):
         super().__init__(*args, **kwargs)
         self.messages: list[dict[str, Any]] = []
+        self._error_status: int | None = None  # HTTP-Status des letzten API-Fehlers
         if self.client is None:
             self.client = self._make_client()
 
@@ -76,8 +83,16 @@ class AnthropicProvider(LLMProvider):
         max_tool_rounds: int | None = None,
         announce_limit: bool = True,
         allow_tools: bool = True,
+        bilder: list | None = None,
     ) -> str:
-        self.messages.append({"role": "user", "content": user_text})
+        start = len(self.messages)
+        if bilder:
+            # Einmal beim Ankommen gebaut und danach nie mehr veraendert (append-only).
+            turn = {"role": "user", "content": self._user_content(user_text, bilder)}
+            self.messages.append(turn)
+            self._bild_turn = (id(turn), user_text)
+        else:
+            self.messages.append({"role": "user", "content": user_text})
         final_parts: list[str] = []
         rounds = self._rounds(max_tool_rounds)
         self.hit_limit = False
@@ -86,6 +101,15 @@ class AnthropicProvider(LLMProvider):
             self._waiting()
             response = self._one_turn(on_text, allow_tools)
             if response is None:
+                if bilder and len(self.messages) == start + 1 and self._rejected():
+                    # Die API hat die neue Nachricht mit Bild gar nicht angenommen (z.B. Bild
+                    # unlesbar) -> wieder herausnehmen. Sie wurde nie beantwortet, alles Fruehere
+                    # bleibt unveraendert; sonst scheiterte jede weitere Anfrage am selben Bild.
+                    del self.messages[start:]
+                    self._bild_turn = None
+                    if on_text:
+                        on_text("\n" + BILD_ABGELEHNT)  # sonst sieht man nur den rohen API-Fehler
+                    return BILD_ABGELEHNT
                 return "Es gab ein Problem bei der Verbindung zum Modell."
 
             self._track_usage(getattr(response, "usage", None))
@@ -136,7 +160,7 @@ class AnthropicProvider(LLMProvider):
                     {
                         "type": "tool_result",
                         "tool_use_id": block.id,
-                        "content": output,
+                        "content": _tool_content(output),
                         "is_error": is_error,
                     }
                 )
@@ -152,9 +176,32 @@ class AnthropicProvider(LLMProvider):
 
         return "\n".join(final_parts).strip() or "(keine Textantwort)"
 
+    def _user_content(self, user_text: str, bilder: list) -> list[dict[str, Any]]:
+        """Bilder vor dem Text (so versteht Claude sie am besten); bei mehreren Bildern
+        steht vor jedem ein kurzes "Bild 1:", damit die KI sie auseinanderhalten kann."""
+        from ..modelle import sieht_bilder
+
+        text = leerer_bildtext(user_text, len(bilder))
+        if not sieht_bilder("claude", self.config.claude.model):
+            # (gibt es derzeit nicht - alle Claude-Modelle sehen Bilder)
+            namen = " ".join(b.platzhalter() for b in bilder)
+            return [{"type": "text", "text": f"{namen} (Dieses Modell sieht keine Bilder.)\n\n{text}"}]
+        content: list[dict[str, Any]] = []
+        for i, bild in enumerate(bilder, 1):
+            if len(bilder) > 1:
+                content.append({"type": "text", "text": f"Bild {i}:"})
+            content.append(_bild_block(bild))
+        content.append({"type": "text", "text": text})
+        return content
+
+    def _rejected(self) -> bool:
+        """Hat die API die Anfrage selbst abgelehnt (4xx, nicht Ueberlast/Verbindung)?"""
+        return self._error_status in (400, 413, 422)
+
     def _one_turn(self, on_text: StreamFn | None, allow_tools: bool = True):
         import anthropic
 
+        self._error_status = None
         for attempt in (1, 2):
             emitted = False
             try:
@@ -167,6 +214,7 @@ class AnthropicProvider(LLMProvider):
                             emitted = True
                     return stream.get_final_message()
             except anthropic.APIStatusError as exc:
+                self._error_status = getattr(exc, "status_code", None)
                 logger.error("API-Fehler: %s", exc)
                 if on_text:
                     on_text(f"\n[Fehler vom Modell: {getattr(exc, 'message', exc)}]")
@@ -212,7 +260,8 @@ class AnthropicProvider(LLMProvider):
         return len(self.messages)
 
     def user_turns(self) -> int:
-        return sum(1 for m in self.messages if m["role"] == "user" and isinstance(m["content"], str))
+        # Nachrichten vom Menschen: Text oder Bilder+Text - nicht die Werkzeug-Ergebnisse.
+        return sum(1 for m in self.messages if m["role"] == "user" and _is_human_turn(m["content"]))
 
     def history_chars(self) -> int:
         return sum(_content_chars(m["content"]) for m in self.messages)
@@ -261,6 +310,28 @@ class AnthropicProvider(LLMProvider):
             {"role": "user", "content": "Zusammenfassung unseres bisherigen Gespraechs:\n" + summary},
             {"role": "assistant", "content": "Verstanden, ich habe den Kontext."},
         ]
+        self._bild_turn = None
+
+
+def _bild_block(bild: Any) -> BildTeil:
+    return BildTeil(
+        {"type": "image", "source": {"type": "base64", "media_type": bild.mime, "data": bild.b64()}},
+        bild_name=bild.name,
+    )
+
+
+def _tool_content(output: Any) -> Any:
+    """tool_result-Inhalt: Text wie bisher - mit Bildern eine Liste aus Text und Bild-Bloecken."""
+    text, bilder = aufteilen(output)
+    if not bilder:
+        return text
+    return [{"type": "text", "text": text or "Bild:"}, *(_bild_block(b) for b in bilder)]
+
+
+def _is_human_turn(content: Any) -> bool:
+    if isinstance(content, str):
+        return True
+    return bool(content) and not any(_field(b, "type") == "tool_result" for b in content)
 
 
 def _field(block: Any, name: str, default: Any = None) -> Any:
@@ -273,16 +344,20 @@ def _content_chars(content: Any) -> int:
     if isinstance(content, str):
         return len(content)
     total = 0
-    for block in content:
+    for block in content or []:
         btype = _field(block, "type")
         if btype == "text":
             total += len(_field(block, "text", "") or "")
         elif btype == "tool_use":
             total += len(str(_field(block, "input", "")))
         elif btype == "tool_result":
-            total += len(str(_field(block, "content", "")))
+            inner = _field(block, "content", "")
+            total += _content_chars(inner) if isinstance(inner, list) else len(str(inner or ""))
         elif btype == "thinking":
             total += len(_field(block, "thinking", "") or "")
+        elif btype == "image":
+            source = _field(block, "source", None) or {}
+            total += bild_gewicht(len(str(_field(source, "data", "") or "")))
     return total
 
 
@@ -301,5 +376,21 @@ def _history_as_text(messages: list[dict[str, Any]]) -> str:
                 args = str(_field(block, "input", ""))
                 lines.append(f"{role}: [Werkzeug {_field(block, 'name', '?')}: {args[:200]}]")
             elif btype == "tool_result":
-                lines.append(f"werkzeug-ergebnis: {str(_field(block, 'content', ''))[:600]}")
+                lines.append(f"werkzeug-ergebnis: {_result_text(_field(block, 'content', ''))[:600]}")
+            elif btype == "image":
+                lines.append(f"{role}: {bild_platzhalter(block)}")
     return "\n".join(lines)
+
+
+def _result_text(content: Any) -> str:
+    """Werkzeug-Ergebnis als Text - Bilder als "[Bild: name]", nie Base64."""
+    if not isinstance(content, list):
+        return str(content or "")
+    parts = []
+    for block in content:
+        btype = _field(block, "type")
+        if btype == "text":
+            parts.append(_field(block, "text", "") or "")
+        elif btype == "image":
+            parts.append(bild_platzhalter(block))
+    return " ".join(p for p in parts if p)

@@ -45,7 +45,9 @@ a = Analysis(
     binaries=extra_binaries,
     datas=added_files,
     # Optionale Extras werden nur eingebunden, wenn sie installiert sind.
-    hiddenimports=["anthropic", "openai", "requests", "bs4", "webview"],
+    # PIL: Bilder verkleinern/pruefen (nur bei Bedarf importiert, deshalb hier ausdruecklich).
+    hiddenimports=["anthropic", "openai", "requests", "bs4", "webview", "PIL", "PIL.Image", "PIL.ImageOps",
+                   "PIL.ImageGrab"],
     hookspath=[],
     runtime_hooks=[],
     excludes=[],

@@ -9,6 +9,7 @@ from typing import Any, Callable
 from ..cancel import Abgebrochen
 from ..config import Config
 from ..tools import ToolContext, ToolRegistry
+from ..tools.base import ToolOutput
 
 StreamFn = Callable[[str], None]
 
@@ -46,6 +47,55 @@ SUMMARY_INSTRUCTION = (
     "ist (welche Dateien gelesen, angelegt oder geaendert wurden, mit Pfad und dem "
     "Wichtigsten zum Inhalt); offene Probleme."
 )
+
+
+# Bilder im Verlauf: so viele Zeichen zaehlt ein Bild fuer die Kompaktierung (grob seine
+# Token-Kosten). Sehr grosse Bilder zaehlen nach ihrer Base64-Laenge mehr, damit die Anfrage
+# nie die Groessengrenze der API sprengt (400 000 Zeichen ~ hoechstens ~25 MB Bilddaten).
+BILD_ZEICHEN = 6000
+_BILD_BYTES_PRO_ZEICHEN = 64
+# Text, wenn jemand nur ein Bild ohne Worte schickt (die APIs wollen keinen leeren Text).
+LEER_EIN_BILD = "Schau dir das Bild an."
+LEER_BILDER = "Schau dir die Bilder an."
+# Antwort, wenn die API eine neue Nachricht mit Bild ablehnt (sie bleibt dann nicht im Verlauf).
+BILD_ABGELEHNT = ("Das Modell hat die Nachricht mit Bild abgelehnt (siehe Fehler oben). "
+                  "Bitte nochmal senden - wenn es wieder nicht klappt, mit einem anderen Bild.")
+
+
+class BildTeil(dict):
+    """Bild-Block im Verlauf - ein ganz normales dict fuer die API, merkt sich aber nebenbei
+    den Dateinamen (fuer "[Bild: name]" in Zusammenfassungen). Der Name geht nie mit an die
+    API; der Block selbst wird nach dem Anlegen nie mehr veraendert (append-only)."""
+
+    __slots__ = ("bild_name",)
+
+    def __init__(self, *args: Any, bild_name: str = "", **kwargs: Any):
+        super().__init__(*args, **kwargs)
+        self.bild_name = bild_name
+
+
+def bild_platzhalter(block: Any) -> str:
+    name = getattr(block, "bild_name", "") or ""
+    return f"[Bild: {name}]" if name else "[Bild]"
+
+
+def bild_gewicht(base64_laenge: int) -> int:
+    """Wie viele Zeichen ein Bild fuer die Kompaktierung zaehlt (siehe BILD_ZEICHEN)."""
+    return max(BILD_ZEICHEN, int(base64_laenge or 0) // _BILD_BYTES_PRO_ZEICHEN)
+
+
+def leerer_bildtext(user_text: str, anzahl: int) -> str:
+    """Der Text zur Nachricht - bei nur Bildern ein kurzer Auftrag statt leerem Text."""
+    if (user_text or "").strip():
+        return user_text
+    return LEER_BILDER if anzahl > 1 else LEER_EIN_BILD
+
+
+def aufteilen(output: Any) -> tuple[str, list]:
+    """Werkzeug-Ergebnis -> (Text, Bilder). Strings haben keine Bilder."""
+    if isinstance(output, ToolOutput):
+        return (output.text, list(output.bilder))
+    return (str(output), [])
 
 
 def summary_input(history_text: str, limit: int = 60_000, head: int = 8_000) -> str:
@@ -103,6 +153,9 @@ class LLMProvider(ABC):
         self._children: list["LLMProvider"] = []  # laufende Agenten (mit anhalten)
         # Sprachmodus: schneller antworten (Claude denkt weniger tief). None = Einstellung.
         self.effort_override: str | None = None
+        # Letzte Nachricht mit Bildern: (id der Verlaufs-Nachricht, Text des Menschen) - damit
+        # drop_turn sie wiedererkennt, obwohl dort Bild-Bloecke/Beschreibungen mit drinstehen.
+        self._bild_turn: tuple[int, str] | None = None
 
     # -- von Unterklassen zu implementieren ---------------------------------
     @abstractmethod
@@ -113,7 +166,10 @@ class LLMProvider(ABC):
         max_tool_rounds: int | None = None,
         announce_limit: bool = True,
         allow_tools: bool = True,
-    ) -> str: ...
+        bilder: list | None = None,
+    ) -> str:
+        """Eine Nachricht beantworten. `bilder` (list[assistant.bilder.Bild]) haengt Bilder an
+        diese eine Nachricht an - schon verkleinert, sie werden danach nie mehr veraendert."""
 
     # -- Abbrechen mit Strg+C ------------------------------------------------
     def history_snapshot(self) -> int:
@@ -143,12 +199,19 @@ class LLMProvider(ABC):
         if messages is None or snapshot is None or not 0 <= snapshot < len(messages):
             return False
         first = messages[snapshot]
-        if first.get("role") != "user" or _plain_text(first.get("content")).strip() != user_text.strip():
+        if first.get("role") != "user":
+            return False
+        same = _plain_text(first.get("content")).strip() == user_text.strip()
+        if not same and self._bild_turn is not None:
+            # Nachricht mit Bildern: dort stehen noch Bild-Bloecke/Beschreibungen mit drin.
+            same = self._bild_turn[0] == id(first) and self._bild_turn[1].strip() == user_text.strip()
+        if not same:
             return False
         if any(_has_tool_parts(m) for m in messages[snapshot:]):
             return False
         del messages[snapshot:]
         self.hit_limit = False
+        self._bild_turn = None
         return True
 
     def _close_open_tool_calls(self, messages: list) -> None:
@@ -213,28 +276,36 @@ class LLMProvider(ABC):
     def _rounds(self, max_tool_rounds: int | None) -> int:
         return max(1, max_tool_rounds or self.config.conversation.max_werkzeug_runden)
 
-    def _exec_tool(self, name: str, tool_input: Any) -> tuple[str, bool]:
-        """Fuehrt ein Werkzeug aus und kuerzt die Ausgabe im Sparmodus."""
+    def _exec_tool(self, name: str, tool_input: Any) -> tuple[str | ToolOutput, bool]:
+        """Fuehrt ein Werkzeug aus und kuerzt die Ausgabe im Sparmodus.
+
+        Ergebnis ist ein Text - oder ein ToolOutput, wenn das Werkzeug Bilder mitliefert
+        (gekuerzt wird dann nur der Text, nie die Bilddaten)."""
         self._check_cancel()
         output, is_error = self.registry.execute(self.tool_ctx, name, tool_input)
         self._check_cancel()
+        text, bilder = aufteilen(output)
         tool = self.registry.get(name)
         # Werkzeuge, die selbst abschnittsweise liefern (datei_lesen), nicht kuerzen -
         # sonst sieht die KI Dateien nie vollstaendig und liest sie immer wieder.
-        if tool is not None and not getattr(tool, "sparmodus_kuerzen", True):
-            return output, is_error
-        cap = self.config.economy.max_werkzeug_ausgabe if self.config.economy.aktiv else 0
-        if cap and len(output) > cap:
-            output = output[:cap] + "\n…(Ausgabe gekuerzt, um Token zu sparen)"
-        return output, is_error
+        if tool is None or getattr(tool, "sparmodus_kuerzen", True):
+            cap = self.config.economy.max_werkzeug_ausgabe if self.config.economy.aktiv else 0
+            if cap and len(text) > cap:
+                text = text[:cap] + "\n…(Ausgabe gekuerzt, um Token zu sparen)"
+        if bilder:
+            return ToolOutput(text, bilder), is_error
+        return text, is_error
 
     def settings_changed(self) -> None:
         """Modell oder Denk-Tiefe wurde umgestellt (gilt ab der naechsten Anfrage)."""
 
-    def _count(self, input_full: int = 0, cache_hit: int = 0, output: int = 0) -> None:
+    def _count(self, input_full: int = 0, cache_hit: int = 0, output: int = 0,
+               model: str | None = None) -> None:
         """Verbrauch zaehlen - mit dem Preis des Modells, das gerade eingestellt ist
-        (wer mitten im Gespraech das Modell wechselt, bekommt trotzdem stimmige Kosten)."""
-        usd, _eur = self.config.cost_estimate(input_full, cache_hit, output, provider=self.name, per_request=True)
+        (wer mitten im Gespraech das Modell wechselt, bekommt trotzdem stimmige Kosten).
+        `model`: ein anderes Modell hat gearbeitet (z.B. DeepSeek Flash beschreibt ein Bild)."""
+        usd, _eur = self.config.cost_estimate(input_full, cache_hit, output, provider=self.name,
+                                              model=model, per_request=True)
         self.usage.add(input_full=input_full, cache_hit=cache_hit, output=output, usd=usd)
 
     def cost(self) -> tuple[float, float]:

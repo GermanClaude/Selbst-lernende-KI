@@ -157,3 +157,17 @@ def test_server_texts_get_umlauts():
     assert "Schlüssel" in schoen(msg) and "füge" in schoen(msg)
     _, msg = schluessel.classify(Err(402), "deepseek")
     assert "->" not in msg and "„Top up“" in msg
+
+
+def test_cloudflare_token_in_chat_is_caught_but_normal_text_is_not():
+    from assistant.schluessel import find_cloudflare_token
+
+    token = "Ab3dEf6hIj9kLm2nOp5qRs8tUv1wXy4zAb7dEf0g"
+    assert len(token) == 40
+    assert find_cloudflare_token(token) == token
+    assert find_cloudflare_token(f"Hier mein Cloudflare Token: {token}") == token
+    assert find_cloudflare_token(f"`{token}`") == token
+    assert find_cloudflare_token("ein ganz normaler Satz ohne Schluessel") is None
+    # 40 Zeichen in einem normalen Satz (z.B. Commit-Hash) ohne Hinweis: kein Fehlalarm
+    assert find_cloudflare_token(f"schau dir mal {token} an, was meinst du") is None
+    assert find_cloudflare_token("a" * 40) is None  # nur Buchstaben: kein Token

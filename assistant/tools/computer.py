@@ -9,8 +9,9 @@ Bestaetigung. So behaelt der Mensch die Kontrolle ueber die physische Steuerung.
 """
 from __future__ import annotations
 
+from ..bilder import STANDARD_KANTE, BildFehler, vorbereiten
 from ..permissions import Risk
-from .base import Tool, ToolContext
+from .base import Tool, ToolContext, ToolOutput
 
 
 def _load_pyautogui():
@@ -28,17 +29,60 @@ def _load_pyautogui():
 
 class ScreenshotTool(Tool):
     name = "bildschirmfoto"
-    description = "Macht ein Foto des Bildschirms und speichert es im Arbeitsordner; gibt den Pfad zurueck."
+    description = (
+        "Macht ein Foto des Bildschirms, speichert es im Arbeitsordner und zeigt es dir - du "
+        "siehst das Bild. Ist es verkleinert, steht im Ergebnis, wie du Bild-Koordinaten fuer "
+        "maus_klick umrechnest."
+    )
     input_schema = {"type": "object", "properties": {}, "required": []}
 
-    def run(self, ctx: ToolContext) -> str:
+    def run(self, ctx: ToolContext) -> str | ToolOutput:
         ctx.permissions.require(Risk.MODERATE, "Bildschirmfoto aufnehmen")
         pyautogui, err = _load_pyautogui()
         if err:
             return err
         target = ctx.permissions.workspace_root / "bildschirmfoto.png"
-        pyautogui.screenshot(str(target))
-        return f"Bildschirmfoto gespeichert: {target}"
+        foto = pyautogui.screenshot(str(target))
+        text = f"Bildschirmfoto gespeichert: {target}"
+        try:
+            # Einmal verkleinert - so geht es an das Modell und wird nie mehr veraendert.
+            bild = vorbereiten(target.read_bytes(), target.name, max_kante=_max_kante(ctx))
+        except (BildFehler, OSError) as exc:
+            return f"{text} (Ich konnte es dir nicht zeigen: {exc})"
+        return ToolOutput(f"{text}\n{_masstab(pyautogui, foto, bild)}", [bild])
+
+
+# Claude: ab mehr als 20 Bildern in einer Anfrage darf keine Seite laenger als 2000 Pixel
+# sein - Bildschirmfotos sammeln sich bei PC-Aufgaben schnell im Verlauf.
+_MAX_KANTE_FOTO = 2000
+
+
+def _max_kante(ctx: ToolContext) -> int:
+    config = ctx.extra.get("config")
+    try:
+        kante = int(config.bilder.max_kantenlaenge) or STANDARD_KANTE
+    except (AttributeError, TypeError, ValueError):
+        kante = STANDARD_KANTE
+    return max(64, min(kante, _MAX_KANTE_FOTO))
+
+
+def _masstab(pyautogui, foto, bild) -> str:
+    """Wie Bild-Pixel zu Bildschirm-Pixeln (fuer maus_klick) passen."""
+    breite, hoehe = None, None
+    try:
+        breite, hoehe = (int(v) for v in pyautogui.size())
+    except Exception:  # noqa: BLE001 - dann eben die Groesse des Fotos
+        try:
+            breite, hoehe = (int(v) for v in foto.size)
+        except Exception:  # noqa: BLE001
+            pass
+    if not (breite and hoehe and bild.breite and bild.hoehe):
+        return "(Bildgroesse unbekannt - Koordinaten fuer maus_klick bitte vorsichtig schaetzen.)"
+    if (breite, hoehe) == (bild.breite, bild.hoehe):
+        return f"Bild in Originalgroesse ({breite}x{hoehe}) - die Koordinaten passen direkt fuer maus_klick."
+    faktor = breite / bild.breite
+    return (f"Bildschirm: {breite}x{hoehe} Pixel, das Bild hier: {bild.breite}x{bild.hoehe}. "
+            f"Fuer maus_klick die Bild-Koordinaten mal {faktor:.3f} nehmen.")
 
 
 class MouseClickTool(Tool):

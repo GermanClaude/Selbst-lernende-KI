@@ -65,3 +65,17 @@ def test_usage_accumulates(tmp_path):
     assert prov.usage.input_full_tokens == 200
     assert prov.usage.cache_hit_tokens == 1000
     mem.close()
+
+
+def test_request_without_images_is_exactly_as_before(tmp_path):
+    # Ohne Bilder darf sich an der Anfrage nichts aendern (Prompt-Cache, preserved thinking).
+    turn1 = (anthro_msg([tool_use_block("system_info", "t1", {})], stop_reason="tool_use"), [])
+    prov, mem = _provider(tmp_path, [turn1, (anthro_msg([text_block("fertig")]), [])])
+    prov.respond("Systeminfo")
+    kwargs = prov.client.messages.last_kwargs
+    assert set(kwargs) == {"model", "max_tokens", "system", "messages", "tools", "tool_choice",
+                           "thinking", "output_config", "extra_body"}
+    assert prov.messages[0] == {"role": "user", "content": "Systeminfo"}
+    result = prov.messages[2]["content"][0]
+    assert isinstance(result["content"], str) and set(result) == {"type", "tool_use_id", "content", "is_error"}
+    mem.close()

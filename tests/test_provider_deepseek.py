@@ -90,3 +90,19 @@ def test_missing_client_is_graceful(tmp_path):
         out = prov.respond("hallo")
         assert "openai" in out.lower() or "deepseek" in out.lower()
     mem.close()
+
+
+def test_request_without_images_is_exactly_as_before(tmp_path):
+    # Ohne Bilder: gleiche Anfrage wie bisher, Nachrichten unveraendert durchgereicht.
+    turn1 = [ds_toolcall_chunk(0, tid="c1", name="system_info", args_fragment="{}"), ds_usage_chunk()]
+    prov, mem = _provider(tmp_path, [turn1, [ds_text_chunk("fertig"), ds_usage_chunk()]])
+    prov.config.deepseek.denken = "aus"
+    prov.respond("Systeminfo")
+    kwargs = prov.client.chat.completions.last_kwargs
+    assert set(kwargs) == {"model", "messages", "tools", "tool_choice", "max_tokens", "stream",
+                           "stream_options", "extra_body", "temperature"}
+    assert all(sent is stored for sent, stored in zip(kwargs["messages"], prov.messages))
+    assert [m["role"] for m in prov.messages] == ["system", "user", "assistant", "tool", "assistant"]
+    assert isinstance(prov.messages[3]["content"], str)
+    assert not prov.client.chat.completions.non_stream_calls
+    mem.close()

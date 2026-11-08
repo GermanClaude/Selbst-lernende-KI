@@ -41,6 +41,28 @@ def find_key(text: str) -> str | None:
     return match.group(1) if match else None
 
 
+_CF_TOKEN = re.compile(r"(?<![A-Za-z0-9_\-])([A-Za-z0-9_\-]{40})(?![A-Za-z0-9_\-])")
+CLOUDFLARE_HINWEIS = ("Das sieht nach einem Cloudflare-Schl\u00fcssel aus \u2013 den schicke ich nicht an die KI. "
+                      "Bitte in \u201eGehirn & Schl\u00fcssel\u201c \u2192 \u201eBilder\u201c eintragen.")
+
+
+def find_cloudflare_token(text: str) -> str | None:
+    """Ein Cloudflare-Token (40 Zeichen, ohne festen Anfang) im Chat? Nur erkannt, wenn die
+    Nachricht praktisch nur aus dem Token besteht oder Cloudflare erwaehnt - sonst zu viele
+    Fehlalarme. Er geht dann NICHT an die KI."""
+    text = (text or "").strip()
+    match = _CF_TOKEN.search(text)
+    if not match:
+        return None
+    token = match.group(1)
+    if not (any(c.isdigit() for c in token) and any(c.isalpha() for c in token)):
+        return None
+    rest = text.replace(token, "").strip(" \t\r\n:=\"'`.,;")
+    if not rest or "cloudflare" in text.lower() or "token" in text.lower():
+        return token
+    return None
+
+
 def provider_for_key(key: str) -> str:
     return "claude" if key.startswith("sk-ant-") else "deepseek"
 

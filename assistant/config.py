@@ -177,6 +177,27 @@ class AfkSettings:
 
 
 @dataclass
+class BilderSettings:
+    # Bilder im Chat und Bildgenerator.
+    # anbieter: "auto" (Cloudflare, wenn ein Schluessel da ist, sonst AI Horde),
+    #           "horde" (kostenlos ohne Anmeldung, manchmal Wartezeit) oder "cloudflare"
+    #           (kostenlos mit eigenem Cloudflare-Konto, schneller; Schluessel in der .env).
+    anbieter: str = "auto"
+    max_bilder_pro_nachricht: int = 10
+    max_kantenlaenge: int = 1568  # hochgeladene Bilder: laengste Seite in Pixeln (kleiner = guenstiger)
+
+
+@dataclass
+class FeedbackSettings:
+    # Feedback & Bewertung: freundliche Nachfrage nach etwa einer Stunde Nutzung, danach alle
+    # paar Tage (immer wegklickbar). Jederzeit selbst aufrufbar: /feedback oder der Knopf.
+    nachfragen: bool = True
+    erste_nachfrage_minuten: int = 60
+    nachfrage_alle_tage: int = 12
+    adresse: str = ""  # nur fuer Entwickler/Tests: andere Web-App-URL (leer = eingebaute)
+
+
+@dataclass
 class MemorySettings:
     db_path: str = "data/memory.sqlite3"
     max_facts_in_context: int = 60
@@ -275,6 +296,10 @@ class Config:
     about: dict = field(default_factory=dict)  # "Ueber mich" (config/ueber_mich.json)
     provider_auto_switched: str = ""  # eingestelltes Gehirn hatte keinen Schluessel -> gewechselt
     afk: AfkSettings = field(default_factory=AfkSettings)
+    bilder: BilderSettings = field(default_factory=BilderSettings)
+    feedback: FeedbackSettings = field(default_factory=FeedbackSettings)
+    cloudflare_api_key: str | None = None  # Bildgenerator (optional, eigener Gratis-Schluessel)
+    cloudflare_account_id: str | None = None
 
     # -- Komfort-Eigenschaften ---------------------------------------------
     @property
@@ -505,6 +530,10 @@ def load_config(project_root: Path | None = None) -> Config:
         style=_merge(StyleSettings(), raw.get("stil", {})),
         about=_load_about(config_dir / "ueber_mich.json"),
         afk=_merge(AfkSettings(), raw.get("afk", {})),
+        bilder=_merge(BilderSettings(), raw.get("bilder", {})),
+        feedback=_merge(FeedbackSettings(), raw.get("feedback", {})),
+        cloudflare_api_key=os.environ.get("CLOUDFLARE_AI_API_KEY") or None,
+        cloudflare_account_id=os.environ.get("CLOUDFLARE_ACCOUNT_ID") or None,
     )
     # Eingestelltes Gehirn ohne Schluessel, das andere hat einen (z.B. nur DEEPSEEK_API_KEY in
     # .env, aber aktiv = "claude"): automatisch das Gehirn nehmen, fuer das es einen Schluessel gibt.
