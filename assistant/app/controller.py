@@ -1143,7 +1143,7 @@ class AppController(CLI):
         self._state_changed()
 
     def _after_provider_change(self) -> None:
-        self.sehen.gehirn_gewechselt()  # Zustimmung galt dem alten Gehirn
+        super()._after_provider_change()  # Live-Sehen: Zustimmung galt dem alten Gehirn
         self._state_changed()
 
     def _open_terminal(self) -> int | None:

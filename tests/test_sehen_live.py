@@ -92,3 +92,30 @@ def test_ohne_live_sehen_im_host_passiert_nichts():
     assert loop.seen is None and not loop.turn_active and host.turns == []
     step(loop, "utterance", Utterance("Schau weg", b"", 0.6))
     assert host.turns == ["Schau weg"]                 # ohne Live-Sehen ein ganz normaler Satz
+
+
+def test_pause_oder_aus_verwirft_die_wartende_wortmeldung():
+    loop, host, _v = _loop()
+    erlaubt = {"ok": True}
+    host.seen_ok = lambda: erlaubt["ok"]
+    loop.hearing = True
+    step(loop, "seen", "paket")
+    assert loop.seen == "paket"
+    erlaubt["ok"] = False                                # inzwischen Pause gedrueckt
+    loop.hearing = False
+    loop._tick()
+    assert host.seen_turns == [] and loop.seen is None
+    step(loop, "seen", "neu")                            # waehrend der Pause kommt gar nichts an
+    assert loop.seen is None
+
+
+def test_schau_weg_wirkt_auch_mitten_in_einer_antwort():
+    loop, host, voice_ = _loop()
+    step(loop, "utterance", Utterance("Erzaehl mir was", b"", 1.0))
+    step(loop, "text", "Es war einmal. ")
+    loop._handle_utterance(Utterance("Schau weg", b"", 0.6), "Schau weg")
+    assert host.pausen == 1 and host.cancels == [] and loop.turn_active   # deine Bitte laeuft weiter
+    loop2, host2, _v2 = _loop()
+    step(loop2, "seen", "paket")
+    loop2._handle_utterance(Utterance("Nicht hinschauen", b"", 0.6), "Nicht hinschauen")
+    assert host2.pausen == 1 and host2.cancels == [True]                  # Wortmeldung zurueckgenommen

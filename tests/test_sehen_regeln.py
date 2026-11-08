@@ -282,3 +282,30 @@ def test_kamera_nur_fuer_eigene_seite():
     assert kamera_entscheidung("Camera", "http://evil.example/", 5123, True) == "ablehnen"
     assert kamera_entscheidung("Microphone", "http://127.0.0.1:5123/", 5123, True) is None  # Standard bleibt
     assert kamera_entscheidung("Geolocation", "http://127.0.0.1:5123/", 5123, True) is None
+
+
+def test_wortmeldung_kennzeichnen_aendert_die_anfrage_nicht():
+    import json
+    from types import SimpleNamespace as NS
+
+    from assistant.providers.base import LLMProvider, Wortmeldung
+
+    p = NS(messages=[{"role": "user", "content": "hallo"}, {"role": "assistant", "content": [{"type": "text",
+                                                                                           "text": "hi"}]}],
+           _bild_turn=(1, "x"))
+    vorher = json.dumps(p.messages)
+    assert LLMProvider.als_wortmeldung(p, 1) == 1
+    assert json.dumps(p.messages) == vorher                 # byte-gleich fuer die API (append-only)
+    assert not isinstance(p.messages[0], Wortmeldung) and isinstance(p.messages[1], Wortmeldung)
+    assert LLMProvider.als_wortmeldung(p, 1) == 0 and p._bild_turn is None
+
+
+def test_deepseek_zaehlt_und_fasst_wortmeldungen_nicht_zusammen():
+    from assistant.providers.base import Wortmeldung
+    from assistant.providers.deepseek_provider import _history_as_text
+
+    msgs = [{"role": "system", "content": "s"}, {"role": "user", "content": "Hallo"},
+            Wortmeldung({"role": "user", "content": "Bildschirm: Kontostand"}),
+            Wortmeldung({"role": "assistant", "content": "Ich sehe den Kontostand"})]
+    text = _history_as_text(msgs)
+    assert "Hallo" in text and "Kontostand" not in text

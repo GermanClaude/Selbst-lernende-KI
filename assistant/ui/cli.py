@@ -933,7 +933,9 @@ class CLI:
 
     def _after_provider_change(self) -> None:
         """Fuer die App: Anzeige auffrischen. Live-Sehen: die Zustimmung galt dem alten Gehirn."""
-        self.sehen.gehirn_gewechselt()
+        sehen = getattr(self, "sehen", None)
+        if sehen is not None:
+            sehen.gehirn_gewechselt()
 
     def _brain_command(self, args: list[str]) -> None:
         from ..schluessel import PROVIDERS, braucht_schluessel, key_of, mask
@@ -1045,7 +1047,8 @@ class CLI:
             print(_c(result["message"], YELLOW))
             return
         (self.tool_ctx.extra.get("on_model") or self.brain.model_changed)()
-        self.sehen.gehirn_gewechselt()
+        if getattr(self, "sehen", None) is not None:
+            self.sehen.gehirn_gewechselt()
         where = "" if provider == self.config.active_provider else " (gilt, sobald du dieses Gehirn nutzt)"
         print(_c(f"Eingestellt: {result['message']}{where}", GREEN))
 

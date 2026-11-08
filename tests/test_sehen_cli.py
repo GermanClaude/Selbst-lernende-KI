@@ -81,6 +81,7 @@ def test_mit_ja_wird_zugestimmt_und_eingeschaltet(cli, capsys, monkeypatch, tmp_
 
 
 def test_terminal_ohne_jarvis_nimmt_das_gesehene_in_die_naechste_nachricht(cli, capsys):
+    cli.sehen.zustimmen()
     cli.sehen.aktiv = True
     paket = Weckpaket(text="x", anzeige="Nova hat etwas bemerkt: Fehlerfenster", zeilen=["Fehlerfenster in Excel"])
     cli._sehen_wecken(paket)
@@ -99,6 +100,8 @@ def test_terminal_jarvis_wortmeldung(cli, capsys):
 
     cli.brain.provider.client = AnthroClient([(anthro_msg([text_block("[still]")]), [SimpleNamespace(
         type="text", text="[still]")])])
+    cli.sehen.zustimmen()
+    cli.sehen.aktiv = True
     host = _TerminalLiveHost(cli)
     ende = []
     host.loop = SimpleNamespace(on_turn_end=lambda c=False: ende.append(c), on_text=lambda t: None,
@@ -108,3 +111,38 @@ def test_terminal_jarvis_wortmeldung(cli, capsys):
     host.worker.join(10)
     assert ende == [False] and len(cli.brain.provider.messages) == vorher   # [still]: zurueckgenommen
     assert "[still]" not in capsys.readouterr().out and not cli.permissions.away
+
+
+def test_pause_verwirft_das_gesehene_auch_im_terminal(cli):
+    cli.sehen.zustimmen()
+    cli.sehen.aktiv = True
+    cli._sehen_wecken(Weckpaket(text="x", anzeige="a", zeilen=["Fehlerfenster"]))
+    cli.sehen.pausiert = True
+    assert cli._sehen_kontext() == ""                    # pausiert: nichts nachreichen
+    cli.sehen.pausiert = False
+    cli._sehen_wecken(Weckpaket(text="x", anzeige="a", zeilen=["Fehlerfenster"]))
+    cli._sehen_halt()
+    assert cli._sehen_offen is None
+
+
+def test_gehirn_wechsel_im_terminal(cli, capsys):
+    cli.sehen.zustimmen()
+    cli.sehen.aktiv = True
+    cli.config.sehen.einverstanden_fuer = "ollama-oder-so"
+    cli._after_provider_change()
+    assert not cli.sehen.aktiv
+
+
+def test_fehlende_teile_ehrlich_melden(cli, capsys, monkeypatch):
+    from assistant.sehen import fehlende_pakete
+
+    alles = lambda name: True  # noqa: E731
+    assert fehlende_pakete("win32", alles) == []
+    ohne_ocr = lambda name: not name.startswith("winrt")  # noqa: E731
+    assert fehlende_pakete("win32", ohne_ocr) == ["winrt-Windows.Media.Ocr (Texterkennung)"]
+    assert fehlende_pakete("linux", lambda n: n != "numpy") == ["numpy"]
+    monkeypatch.setattr("sys.frozen", True, raising=False)
+    monkeypatch.setattr("assistant.sehen.fehlende_pakete", lambda: ["comtypes (Passwortschutz)"])
+    cli._sehen_einrichten()
+    out = capsys.readouterr().out
+    assert "fehlen Teile" in out and "comtypes" in out and "schon dabei" not in out

@@ -168,6 +168,8 @@ def test_wortmeldung_mit_text_und_bild(app):
 
     server = app([_streamed("Da ist ein Fehlerfenster \u2013 soll ich helfen?")])
     ctl = server.controller
+    _einschalten(server, quelle="bildschirm")
+    _events_until(server, "notice")
     ctl._sehen_wecken(_paket(bilder=[vorbereiten(_jpeg(), "bildschirm.jpg")]))
     events = _events_until(server, "done")
     kinds = [e["type"] for e in events]
@@ -179,18 +181,22 @@ def test_wortmeldung_mit_text_und_bild(app):
     assert any("Gerade passiert" in b.get("text", "") for b in gesendet["content"] if b.get("type") == "text")
     assert ctl.permissions.away is False and ctl.busy is False
     rollen = [m["role"] for m in _req(server, "/api/history")[1]["messages"]]
-    assert rollen == ["notice", "assistant"]
+    assert rollen == ["notice", "notice", "assistant"]
+    assert ctl.brain.provider.user_turns() == 0          # zaehlt nicht als deine Nachricht
 
 
 def test_nichts_zu_sagen_wird_ganz_zurueckgenommen(app):
     server = app([_streamed("[still]")])
     ctl = server.controller
+    _einschalten(server, quelle="bildschirm")
+    _events_until(server, "notice")
     vorher = len(ctl.brain.provider.messages)
+    verlauf = _req(server, "/api/history")[1]["messages"]
     ctl._sehen_wecken(_paket())
     events = _events_until(server, "sehen_still")
     assert events[-1]["chip"] is True and "chunk" not in [e["type"] for e in events]
     assert len(ctl.brain.provider.messages) == vorher
-    assert _req(server, "/api/history")[1]["messages"] == []
+    assert _req(server, "/api/history")[1]["messages"] == verlauf
 
 
 def test_wortmeldung_wartet_auf_die_laufende_antwort_und_deine_nachricht_geht_vor(app):
@@ -235,6 +241,7 @@ def test_deine_nachricht_unterbricht_eine_wortmeldung_ohne_abbruch_notiz(app):
 
     server = app([(anthro_msg([text_block("bla bla")]), _Langsam()), _streamed("Antwort auf dich")])
     ctl = server.controller
+    _einschalten(server, quelle="bildschirm")
     vorher = len(ctl.brain.provider.messages)
     ctl._sehen_wecken(_paket())
     _events_until(server, "chunk")
@@ -333,6 +340,7 @@ def test_in_einer_wortmeldung_darf_nova_nur_lesen(app):
               _streamed("Ich habe nur geschaut.")]
     server = app(script)
     ctl = server.controller
+    _einschalten(server, quelle="bildschirm")
     ctl._sehen_wecken(_paket())
     _events_until(server, "done")
     assert ctl.memory.count_facts() == 0
@@ -341,3 +349,97 @@ def test_in_einer_wortmeldung_darf_nova_nur_lesen(app):
                 for b in m["content"] if isinstance(b, dict) and b.get("type") == "tool_result"]
     assert ergebnis and ergebnis[0]["is_error"] and "nur lesen" in json.dumps(ergebnis[0], ensure_ascii=False)
     assert "nur_diese_werkzeuge" not in ctl.tool_ctx.extra and ctl.permissions.away is False
+
+
+# -- Pruefbefunde -------------------------------------------------------------------------------
+def test_pause_verwirft_wartende_und_haelt_laufende_wortmeldung_an(app):
+    server = app([(anthro_msg([text_block("bla")]), _Langsam()), _streamed("x")])
+    ctl = server.controller
+    _einschalten(server, quelle="bildschirm")
+    with ctl._lock:
+        ctl.busy = True
+    ctl._sehen_wecken(_paket())
+    assert ctl._sehen_pending is not None
+    _req(server, "/api/sehen", {"aktion": "pause"})
+    assert ctl._sehen_pending is None
+    ctl._release()
+    time.sleep(0.2)
+    assert ctl.brain.provider.client.messages.calls == 0 and not ctl.busy
+    # laufende Wortmeldung: Pause haelt sie an und nimmt sie zurueck
+    _req(server, "/api/sehen", {"aktion": "weiter"})
+    vorher = len(ctl.brain.provider.messages)
+    ctl._sehen_wecken(_paket())
+    assert ctl._sehen_turn is True                       # schon unter der Sperre gesetzt
+    _events_until(server, "chunk")
+    _req(server, "/api/sehen", {"aktion": "pause"})
+    _events_until(server, "sehen_still")
+    time.sleep(0.2)
+    assert len(ctl.brain.provider.messages) == vorher and not ctl.busy
+    ctl._sehen_wecken(_paket())                          # waehrend der Pause: gar nichts
+    time.sleep(0.2)
+    assert ctl.brain.provider.client.messages.calls == 1
+
+
+def test_gehirn_wechsel_in_der_app_schaltet_live_sehen_aus(app):
+    server = app([])
+    ctl = server.controller
+    _einschalten(server, quelle="bildschirm")
+    ctl.config.sehen.einverstanden_fuer = "deepseek"     # als haette man auf DeepSeek gewechselt
+    ctl._after_provider_change()
+    assert not ctl.sehen.aktiv
+    assert any("Gehirn gewechselt" in m["text"] for m in ctl.history if m["role"] == "notice")
+
+
+def test_wortmeldung_mit_werkzeug_endet_sauber_ohne_werkzeug_und_ohne_weiter(app):
+    from tests._fakes import tool_use_block
+
+    script = [(anthro_msg([tool_use_block("system_info", "t1", {})], stop_reason="tool_use"), []),
+              (anthro_msg([tool_use_block("system_info", "t2", {})], stop_reason="tool_use"), []),
+              _streamed("Da ist ein Fehler.")]
+    server = app(script)
+    ctl = server.controller
+    _einschalten(server, quelle="bildschirm")
+    ctl._sehen_wecken(_paket())
+    _events_until(server, "done")
+    client = ctl.brain.provider.client.messages
+    assert client.calls == 3 and client.last_kwargs.get("tool_choice") == {"type": "none"}
+    msgs = ctl.brain.provider.messages
+    assert msgs[-1]["role"] == "assistant" and not ctl.brain.provider.hit_limit
+    assert ctl.brain.provider.user_turns() == 0
+    from assistant.providers.anthropic_provider import _history_as_text
+    from assistant.providers.base import Wortmeldung
+
+    assert all(isinstance(m, Wortmeldung) for m in msgs) and _history_as_text(msgs) == ""
+
+
+def test_wortmeldung_fasst_nie_zusammen_und_bleibt_aus_der_zusammenfassung(app):
+    server = app([_streamed("Ich sehe einen Fehler."), _streamed("Hallo zurueck")])
+    ctl = server.controller
+    _einschalten(server, quelle="bildschirm")
+    gerufen = []
+    ctl.brain._maybe_compact = lambda *a, **k: gerufen.append(1) or True
+    ctl._sehen_wecken(_paket("Geheimes Fenster mit Kontostand"))
+    _events_until(server, "done")
+    assert gerufen == []                                 # Wortmeldung: nie zusammenfassen
+    import json as _json
+
+    roh = _json.dumps(ctl.brain.provider.messages, default=lambda o: getattr(o, "__dict__", repr(o)))
+    from assistant.providers.anthropic_provider import _history_as_text
+
+    assert "Kontostand" in roh and "Kontostand" not in _history_as_text(ctl.brain.provider.messages)
+    time.sleep(1.2)                                      # 20 s Ruhe nach dir gilt nur fuer neue Meldungen
+    ctl.submit("Hallo")
+    _events_until(server, "done")
+    assert ctl.brain.provider.user_turns() == 1 and gerufen == [1]
+
+
+def test_eigenes_fenster_wird_geschuetzt_sobald_es_da_ist(app):
+    server = app([])
+    ctl = server.controller
+    gesetzt = []
+    ctl._fenster_schutz = lambda an: gesetzt.append(an) or ""
+    ctl.sehen_fenster_schuetzen()
+    assert gesetzt == []                                 # aus: nichts
+    _einschalten(server, quelle="bildschirm")
+    ctl.sehen_fenster_schuetzen()
+    assert gesetzt == [True]

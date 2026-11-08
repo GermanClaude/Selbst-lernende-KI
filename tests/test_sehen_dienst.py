@@ -62,13 +62,17 @@ def dienst(tmp_path):
             augen.append(auge)
             return auge
 
+        frei = {"kostenlos": kostenlos}
+        halte = []
         d = SehDienst(cfg, on_notiz=notizen.append, wecken=pakete.append, sieht_bilder=lambda: sieht,
-                      kostenlos=lambda: kostenlos, auge_fabrik=fabrik, bildschirm_moeglich=True,
+                      kostenlos=lambda: frei["kostenlos"], auge_fabrik=fabrik, bildschirm_moeglich=True,
                       fenster_schutz=lambda an: schutz.append(an) or "", uhr=Uhr(),
-                      speichern=lambda k, v: gespeichert.__setitem__(k, v), mit_thread=False)
+                      speichern=lambda k, v: gespeichert.__setitem__(k, v), mit_thread=False,
+                      on_halt=lambda: halte.append(1))
         if zustimmung:
             d.zustimmen()
         d.t = (notizen, pakete, schutz, gespeichert, augen)
+        d.frei, d.halte = frei, halte
         return d
     return make
 
@@ -351,3 +355,92 @@ def test_still_filter():
     f("[")
     assert not f.ende() and raus == ["["]
     assert ist_still(" [STILL]") and not ist_still("Alles still hier")
+
+
+# -- Pruefbefunde: Gehirn-Wechsel, Pause, Sperren, Abgleich mit dem Auge -----------------------------
+def test_gehirn_wechsel_schaltet_aus_und_fragt_neu(dienst):
+    d = dienst()
+    d.an("bildschirm")
+    assert d.darf_melden()
+    d.config.sehen.einverstanden_fuer = "anderes-gehirn"     # Zustimmung galt dem alten Gehirn
+    assert not d.darf_melden()
+    d.tick()
+    assert not d.aktiv and any("Gehirn gewechselt" in n for n in d.t[0]) and d.halte
+    assert d.aktuelles_bild()[0] is None and d.an() == (False, "zustimmung")
+    d2 = dienst()
+    assert d2.gehirn_gewechselt() is False                  # aus: nichts zu tun
+
+
+def test_euro_grenze_gilt_auch_nach_dem_wechsel_von_ollama(dienst):
+    d = dienst(kostenlos=True, max_euro_pro_stunde=0.05)
+    d.an("bildschirm")
+    assert d.euro_rest() is None
+    d.frei["kostenlos"] = False                             # jetzt ein Gehirn, das Geld kostet
+    d.gebucht(0.10)
+    _fehlerfenster(d)
+    _warten(d, 2.0)
+    assert d.t[1] == [] and d.euro_rest() == 0.0 and any("Budget" in n for n in d.t[0])
+
+
+def test_pause_aus_und_afk_verwerfen_geplante_wortmeldungen(dienst):
+    d = dienst()
+    d.an("bildschirm")
+    d.pause()
+    assert len(d.halte) == 1 and not d.darf_melden()
+    d.weiter()
+    assert d.darf_melden()
+    d.setze_abwesend(True)
+    assert len(d.halte) == 2 and not d.darf_melden()
+    d.setze_abwesend(False)
+    d.aus()
+    assert len(d.halte) == 3
+
+
+def test_pausetaste_verwirft_und_das_hauptprogramm_entscheidet(dienst):
+    import time as _t
+
+    d = dienst()
+    d.an("bildschirm")
+    auge = d.t[4][0]
+    d.verarbeite({"art": "pause", "quelle": "taste"})
+    for _ in range(50):
+        if d.halte:
+            break
+        _t.sleep(0.01)
+    assert d.pausiert and d.halte and auge.befehle[-1] == ("pause",)
+    d.setze_abwesend(True)
+    d.verarbeite({"art": "weiter", "quelle": "taste"})       # Bitte "wieder hinschauen" waehrend AFK
+    assert auge.befehle[-1] == ("pause",)                    # bleibt weg, solange du AFK bist
+    d.setze_abwesend(False)
+    assert auge.befehle[-1] == ("weiter",)
+
+
+def test_neustart_des_auges_behaelt_die_pause(dienst):
+    d = dienst()
+    d.an("bildschirm")
+    d.pause()
+    d._nachricht(("ende", "Fehler im Auge (OSError)"))
+    assert len(d.t[4]) == 2 and d.t[4][1].befehle[0] == ("pause",)
+
+
+def test_paket_wird_ausserhalb_der_sperre_gebaut_und_pause_wirkt_noch(dienst):
+    import threading as _th
+
+    d = dienst(sieht=True)
+    d.an("bildschirm")
+    auge = d.t[4][0]
+    echt = auge.lies
+    frei = []
+
+    def lies(timeout=0.1):
+        # waehrend auf das Bildschirmfoto gewartet wird: Sperre frei? Und du drueckst Pause.
+        t = _th.Thread(target=lambda: frei.append(d._lock.acquire(timeout=0.5) and (d._lock.release() or True)))
+        t.start()
+        t.join()
+        d.pause()
+        return echt(timeout)
+
+    auge.lies = lies
+    _fehlerfenster(d)
+    _warten(d, 1.0)
+    assert frei == [True] and d.t[1] == []                   # Pause kam dazwischen: keine Wortmeldung

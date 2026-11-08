@@ -1,5 +1,4 @@
 """Handy-Kamera: QR-Code (segno) und Quellen-Adapter fuer das Live-Sehen (ohne aiortc)."""
-import threading
 import time
 
 import pytest
@@ -62,8 +61,6 @@ def test_pumpe_reicht_nur_neue_bilder_weiter():
     fake.bild_nr = 3
     time.sleep(0.1)
     assert erhalten[-1] == b"\xff\xd8JPEG2" and len(erhalten) == anzahl == 2
-    assert not any(t.name == "handy-kamera-pumpe" and t.is_alive() for t in threading.enumerate()
-                   if t is not threading.current_thread()) or True  # Daemon endet beim naechsten Takt
 
 
 def test_pumpe_ueberlebt_fehler_im_empfaenger():
@@ -91,7 +88,7 @@ def test_qr_svg_und_text():
     svg = qr.qr_svg(link)
     assert svg.startswith("<svg") and "nova-qr" in svg and "<?xml" not in svg
     text = qr.qr_text(link)
-    assert text and "\u2580" in text or "\u2584" in text or "\u2588" in text
+    assert text and any(z in text for z in ("\u2580", "\u2584", "\u2588"))
     daten = qr.qr_daten(link, "ABCD-EFGH")
     assert daten["svg"] and daten["code"] == "ABCD-EFGH" and daten["link"] == link
 

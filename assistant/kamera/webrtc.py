@@ -349,7 +349,11 @@ class HandyKamera:
                     log.debug("Signal-Nachricht verworfen: %s", exc)
                     continue
                 if nachricht is not None:
-                    await self._behandle(nachricht)
+                    try:
+                        await self._behandle(nachricht)
+                    except sig.RelayFehler as exc:  # Antwort kam nicht raus - Handy darf neu anfragen
+                        self._setze_fehler(str(exc))
+                        await self._schliesse_pc()
 
     async def _sende(self, typ: str, daten: dict | None = None) -> None:
         text = self._kanal.verpacke(typ, daten)
