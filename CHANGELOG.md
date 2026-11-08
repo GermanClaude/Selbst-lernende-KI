@@ -4,6 +4,33 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.7.0 – 2026-11-08
+
+**Bilder zeigen – Nova sieht mit**
+- Du kannst Bilder in den Chat einfügen (**Strg+V**), ins Fenster ziehen oder über die
+  **Büroklammer** auswählen – bis zu 10 pro Nachricht, auch ohne Text. Nova sieht sie und
+  kann dir z.B. Fehlermeldungen, Fotos oder Bildschirmausschnitte erklären.
+- Im Terminal geht das mit `/bild <Pfad>` oder indem du ein Bild hineinziehst.
+- Klappt mit Claude und DeepSeek Flash direkt; bei DeepSeek V4 Pro schaut sich Flash das
+  Bild kurz an und beschreibt es.
+- Auch ihre eigenen Bildschirmfotos sieht Nova jetzt wirklich (nicht nur den Dateinamen).
+
+**Bilder erstellen lassen – kostenlos**
+- Sag einfach „Mal mir …“. Nova erstellt das Bild über **AI Horde** (kostenlos, ohne
+  Anmeldung, manchmal mit etwas Wartezeit) und zeigt es direkt im Chat. Gespeichert wird es
+  im Arbeitsordner unter `bilder/`.
+- Schneller geht es optional mit einem kostenlosen **Cloudflare**-Konto – die Anleitung steht
+  in „Gehirn & Schlüssel“ unter „Bilder“.
+- Bitte keine persönlichen Daten in Bildbeschreibungen: Bei AI Horde werden sie öffentlich
+  geteilt.
+
+**Feedback & Bewertung**
+- Neuer Knopf **„Feedback & Bewertung“** (und `/feedback`): Sterne vergeben, Lob, Ideen oder
+  Fehler beschreiben, Bilder anhängen – und mit „Jetzt senden“ direkt an den Entwickler.
+- Nach etwa einer Stunde Nutzung und danach alle paar Tage fragt Nova einmal freundlich
+  nach. Das kannst du einfach wegklicken.
+- Ohne Internet wird dein Feedback gespeichert und später automatisch nachgeschickt.
+
 ## 0.6.1 – 2026-11-08
 
 - **Verknüpfungen bleiben nach einem Update richtig:** Hast du die App auf den Desktop

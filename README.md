@@ -37,6 +37,9 @@ Tastatur steuern.
 - 🎭 **Persönlichkeit & Werte**, die du selbst in Textdateien festlegst.
 - 🌙 **AFK-Modus**: „Ich bin mal weg“ – sie arbeitet allein weiter, sicher und mit Bericht.
 - ⚡ **Schnell oder gründlich**: Modell und Denk-Tiefe frei wählbar.
+- 🖼️ **Bilder**: Bilder in den Chat einfügen (Nova sieht sie) und Bilder erstellen lassen –
+  kostenlos.
+- ⭐ **Feedback & Bewertung**: Lob, Ideen und Fehler mit Bildern direkt an den Entwickler.
 - 🔒 **Sicherheit zuerst**: ein Berechtigungssystem mit „Safe Mode“, Nachfragen
   und einem Papierkorb, damit nichts versehentlich zerstört wird.
 - 📦 **Als `.exe` baubar** für den Doppelklick-Start unter Windows.
@@ -316,6 +319,34 @@ die alte in `data/persona-sicherungen/` gesichert), „Über mich“ in
 - Über dem Eingabefeld siehst du, was wartet – mit „Jetzt“ (unterbrechen) und „✕“ (entfernen).
 - **Stopp** hält an; wartende Nachrichten kommen zurück ins Eingabefeld.
 
+## Bilder: zeigen und erstellen lassen
+
+- **Bilder zeigen:** In der App mit **Strg+V** einfügen, ins Fenster ziehen oder über die
+  **Büroklammer** auswählen (bis zu 10 pro Nachricht). Im Terminal: `/bild <Pfad> [Frage]`
+  oder einfach den Bildpfad hineinziehen; `/bild` allein nimmt das Bild aus der
+  Zwischenablage. Claude und DeepSeek Flash sehen Bilder direkt; bei DeepSeek V4 Pro
+  beschreibt Flash das Bild kurz vorher (kostet nur Bruchteile eines Cents). Bilder werden
+  vorher verkleinert, das spart Kosten.
+- **Bilder erstellen:** Sag z.B. „Mal mir einen Fuchs im Weltraum“. Weder Claude noch
+  DeepSeek können selbst Bilder erzeugen, deshalb nutzt Nova einen kostenlosen Dienst:
+  - **AI Horde** (Standard, ohne Anmeldung): Rechner von Freiwilligen – manchmal dauert es
+    eine Minute. Anonyme Bildbeschreibungen und Bilder werden öffentlich geteilt (LAION),
+    also keine persönlichen Daten hineinschreiben.
+  - **Cloudflare** (optional, schneller): mit einem kostenlosen eigenen Konto – Anleitung in
+    der App unter **„Gehirn & Schlüssel“ → „Bilder“**.
+  
+  Fertige Bilder landen im Arbeitsordner unter `bilder/` und erscheinen direkt im Chat.
+
+## Feedback & Bewertung
+
+Über **„Feedback & Bewertung“** in der Seitenleiste oder `/feedback` kannst du Sterne
+vergeben, Lob, Ideen oder Fehler beschreiben und Bilder anhängen (Tipp: mit
+**Win+Umschalt+S** einen Ausschnitt kopieren und mit **Strg+V** einfügen) – dann einfach
+**„Jetzt senden“**. Nach etwa einer Stunde Nutzung und danach alle paar Tage fragt Nova
+freundlich nach; das kannst du jederzeit wegklicken (abschalten: `[feedback] nachfragen =
+false` in `config/settings.toml`). Ohne Internet wird das Feedback gespeichert und später
+gesendet.
+
 ## AFK-Modus: „Ich bin mal weg“
 
 Sag Nova „Ich bin jetzt AFK“ oder „Ich bin für zwei Stunden weg, recherchier bitte …“,
@@ -390,6 +421,8 @@ stoppt die Steuerung sofort.
 | `/jarvis` | Jarvis-Modus: einfach reden, live (zurück: „Chat-Modus“ sagen) |
 | `/afk [Auftrag]` | AFK-Modus: Nova arbeitet allein weiter (zurück: Nachricht bzw. Strg+C) |
 | `/modell [name]` | Modell zeigen bzw. wählen (z.B. `/modell sonnet`, `/modell deepseek pro`) |
+| `/bild <Pfad> [Frage]` | Bild anhängen (ohne Pfad: aus der Zwischenablage) |
+| `/feedback` | Feedback & Bewertung an den Entwickler schicken |
 | `/denken [stufe]` | Denk-Tiefe: schnell, ausgewogen, gründlich, sehr gründlich, maximal |
 | `/gehirn [deepseek\|claude]` | Gehirn zeigen bzw. wechseln |
 | `/update` | jetzt nach einer neuen Version schauen |

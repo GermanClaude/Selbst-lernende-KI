@@ -160,6 +160,8 @@ Standardmäßig ist **Claude** eingestellt. Für **DeepSeek** (billig):
 | `/kosten` | zeigt Token-Verbrauch und geschätzte Kosten der Sitzung |
 | `/gedaechtnis` | zeigt, was die KI gelernt hat |
 | `/sprache einrichten` | Spracheingabe per F2 einrichten (einmalig) |
+| `/bild <Pfad>` | ein Bild anhängen, das Nova sich ansehen soll |
+| `/feedback` | Feedback & Bewertung schicken |
 | `/update` | nach einer neuen Version schauen |
 | `/versionen` / `/zurueck <Nr>` | alte Versionen anzeigen / zurückholen |
 | `/autostart` | zeigen und abstellen, was die KI von selbst startet |
@@ -176,6 +178,15 @@ dann Enter.
 antwortet laut und hört dann wieder zu. Du kannst sie jederzeit unterbrechen.
 Zurück zum Tippen: „Chat-Modus“ sagen. Beim ersten Mal lädt sie einmalig ein
 deutsches Sprachmodell (~50 MB) – das dauert kurz.
+
+**Bilder zeigen und erstellen:** In der App ein Bild mit **Strg+V** einfügen, ins
+Fenster ziehen oder über die **Büroklammer** wählen – Nova sieht es. Im Terminal:
+`/bild C:\Pfad\zum\bild.png` (oder das Bild einfach ins Fenster ziehen). Bilder
+erstellen: einfach „Mal mir …“ schreiben – kostenlos, manchmal mit kurzer Wartezeit.
+Die Bilder landen im Arbeitsordner unter `bilder`.
+
+**Feedback geben:** Knopf **„Feedback & Bewertung“** oder `/feedback` – Sterne, Text und
+Bilder, dann „Jetzt senden“.
 
 **Updates kommen von allein:** Einmal am Tag schaut die KI nach einer neuen
 Version, erklärt dir, was neu ist, sichert die alte Version und startet neu.
