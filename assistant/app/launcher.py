@@ -100,19 +100,19 @@ def open_existing_window(root: Path, pid: int) -> bool:
     if int(info.get("pid", 0)) != pid or not info.get("url"):
         return False
     if info.get("fenster") != "programm":
-        open_window(info["url"], Path(root) / "data" / "app-fenster")  # Browser-Ersatz: Fenster dazu
+        open_window(info["url"], Path(root) / "data" / "browser-fenster")  # Browser-Ersatz: Fenster dazu
     else:
         message_box("Die KI-App ist schon offen - schau in der Taskleiste nach.")
     return True
 
 
-def spawn_app(root: Path, wait_for_pid: int | None = None) -> bool:
+def spawn_app(root: Path, wait_for_pid: int | None = None, extra: list[str] | None = None) -> bool:
     """Startet die KI als App in einem eigenen Prozess (unter Windows ohne Konsole)."""
     env = dict(os.environ)
     if wait_for_pid:
         env["KI_NEUSTART_VON"] = str(wait_for_pid)
     if getattr(sys, "frozen", False):
-        cmd = [sys.executable, "--app"]
+        cmd = [sys.executable, "--app", *(extra or [])]
         env = {k: v for k, v in env.items() if not k.startswith("_PYI_")}
         env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
     else:
@@ -120,7 +120,7 @@ def spawn_app(root: Path, wait_for_pid: int | None = None) -> bool:
         pythonw = os.path.join(os.path.dirname(exe), "pythonw.exe")
         if sys.platform == "win32" and os.path.exists(pythonw):
             exe = pythonw
-        cmd = [exe, "-m", "assistant", "--app"]
+        cmd = [exe, "-m", "assistant", "--app", *(extra or [])]
     flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
     try:
         subprocess.Popen(cmd, cwd=str(root), env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
@@ -221,6 +221,44 @@ def native_window_available() -> bool:
         return False
 
 
+def webview_storage(root: Path) -> Path:
+    """Profilordner des App-Fensters (WebView2): lokal unter %LOCALAPPDATA% - nicht auf dem
+    Desktop/OneDrive (dort kann WebView2 scheitern) und nicht im Programmordner."""
+    import hashlib
+
+    base = os.environ.get("LOCALAPPDATA")
+    if sys.platform == "win32" and base:
+        key = hashlib.sha1(str(Path(root).resolve()).lower().encode("utf-8")).hexdigest()[:10]
+        return Path(base) / "SelbstLernendeKI" / f"fenster-{key}"
+    return Path(root) / "data" / "app-fenster"
+
+
+def _watch_dotnet_crash(root: Path) -> None:
+    """Stuerzt das Fenster in .NET ab (pythonnet), beendet Windows sonst still das ganze
+    Programm. Vorher: ins Protokoll schreiben, Bescheid sagen, Browser-Ersatz anbieten."""
+    if sys.platform != "win32":
+        return
+    try:
+        import clr  # type: ignore  # noqa: F401 - pythonnet, dieselbe Laufzeit nutzt pywebview
+        from System import AppDomain, UnhandledExceptionEventHandler  # type: ignore
+    except Exception as exc:  # noqa: BLE001
+        logger.info("Kein .NET-Absturzmelder: %s", exc)
+        return
+
+    def on_crash(_sender, args) -> None:
+        try:
+            logger.error("App-Fenster abgestuerzt (.NET): %s", args.ExceptionObject)
+            for handler in logger.handlers:
+                handler.flush()
+            if ask_yes_no("Das App-Fenster ist leider abgestuerzt (Einzelheiten in logs\\ki.log).\n\n"
+                          "Soll ich mich stattdessen in einem Browser-Fenster oeffnen?"):
+                spawn_app(root, wait_for_pid=os.getpid(), extra=["--browser"])
+        except Exception:  # noqa: BLE001
+            pass
+
+    AppDomain.CurrentDomain.UnhandledException += UnhandledExceptionEventHandler(on_crash)
+
+
 def run_native_window(server, ctl, title: str, storage: Path, on_quit_holder: dict) -> bool:
     """Zeigt die App in einem echten Programmfenster. Blockiert, bis es zu ist.
 
@@ -232,11 +270,19 @@ def run_native_window(server, ctl, title: str, storage: Path, on_quit_holder: di
         return False
     shown = threading.Event()
     try:
-        logger.info("App: Programmfenster wird geoeffnet (pywebview %s)", getattr(webview, "__version__", "?"))
+        logger.info("App: Programmfenster wird geoeffnet (pywebview %s, Profil %s)",
+                    getattr(webview, "__version__", "?"), storage)
         window = webview.create_window(
             title, server.url, width=1200, height=860, min_size=(480, 560),
             background_color="#111318", text_select=True,
         )
+        steps = {"initialized": "Darstellung bereit", "before_show": "Fenster wird gezeigt",
+                 "shown": "Fenster sichtbar", "loaded": "Seite geladen"}
+        for name, text in steps.items():
+            try:
+                getattr(window.events, name).__iadd__(lambda *a, _t=text: logger.info("App: %s", _t))
+            except Exception:  # noqa: BLE001 - aeltere pywebview
+                pass
         try:
             window.events.shown += lambda *a: shown.set()
         except Exception:  # noqa: BLE001 - aeltere pywebview: dann eben ohne diese Pruefung
@@ -246,25 +292,90 @@ def run_native_window(server, ctl, title: str, storage: Path, on_quit_holder: di
             on_quit_holder["started"] = True
             ctl.startup()
         storage.mkdir(parents=True, exist_ok=True)
+        if os.environ.get("KI_SELBSTTEST"):
+            threading.Thread(target=_selftest, args=(webview, window, shown, server, on_quit_holder),
+                             daemon=True).start()
+        else:
+            threading.Thread(target=_watch_blank, args=(window, shown, server, on_quit_holder),
+                             daemon=True).start()
+        _watch_dotnet_crash(Path(server.root) if hasattr(server, "root") else Path.cwd())
         webview.start(private_mode=False, storage_path=str(storage))  # laeuft bis das Fenster zu ist
     except Exception as exc:  # noqa: BLE001 - z.B. WebView2 fehlt
         logger.warning("Programmfenster ging nicht: %s", exc, exc_info=True)
         on_quit_holder.pop("close", None)
         return False
-    if not shown.is_set() and not server.hub.ever_connected:
-        # Das Fenster ist nie erschienen (z.B. WebView2 kaputt) - nicht still beenden!
-        logger.warning("App: Programmfenster ist nie erschienen")
+    if on_quit_holder.get("beendet"):
+        logger.info("App: Programmfenster geschlossen (gewollt)")
+        return True
+    if on_quit_holder.pop("leer", False) or not server.hub.ever_connected:
+        # Das Fenster hat die Oberflaeche nie geladen (z.B. WebView2 kaputt) - nicht still beenden!
+        logger.warning("App: Oberflaeche wurde im Programmfenster nie geladen (gezeigt=%s)", shown.is_set())
         on_quit_holder.pop("close", None)
         return False
     logger.info("App: Programmfenster geschlossen")
     return True
 
 
-def run_app(config, started_by: str | None = None) -> int:
-    """Startet Server + Fenster; kehrt zurueck, wenn das Fenster geschlossen ist."""
+def _watch_blank(window, shown: threading.Event, server, holder: dict) -> None:
+    """Wachhund: Bleibt das Fenster leer (Seite laedt nie), Fenster zu -> Browser-Ersatz anbieten."""
+    if not shown.wait(120):
+        return
+    end = time.monotonic() + 40
+    while time.monotonic() < end:
+        if server.hub.ever_connected:
+            return
+        time.sleep(0.5)
+    logger.warning("App: Fenster bleibt leer - die Oberflaeche laedt nicht (WebView2?)")
+    holder["leer"] = True
+    try:
+        window.destroy()
+    except Exception as exc:  # noqa: BLE001
+        logger.info("Leeres Fenster liess sich nicht schliessen: %s", exc)
+
+
+def _selftest(webview, window, shown: threading.Event, server, holder: dict) -> None:
+    """KI_SELBSTTEST=1 (Pruefung auf GitHub): erscheint das Fenster, laedt die Seite? Dann zu."""
+    ok_shown = shown.wait(90)
+    logger.info("Selbsttest: Fenster gezeigt=%s, Darstellung=%s", ok_shown, getattr(webview, "renderer", "?"))
+    end = time.monotonic() + 45
+    while time.monotonic() < end and not server.hub.ever_connected:
+        time.sleep(0.5)
+    loaded = server.hub.ever_connected
+    logger.info("Selbsttest: Seite geladen und verbunden=%s", loaded)
+    holder["selftest"] = "ok" if ok_shown and loaded else "fehler"
+    time.sleep(2)
+    try:
+        window.destroy()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Selbsttest: Fenster liess sich nicht schliessen: %s", exc)
+
+
+def _crashed_last_time(info: Path) -> bool:
+    """Liegt noch app.json vom letzten Programmfenster da, dessen Prozess nicht mehr laeuft?
+    Dann ist das Fenster damals hart abgestuerzt (sonst raeumt die App app.json weg)."""
+    try:
+        data = json.loads(info.read_text(encoding="utf-8"))
+        pid = int(data.get("pid", 0))
+    except (OSError, ValueError, TypeError):
+        return False
+    if data.get("fenster") != "programm" or not pid or pid == os.getpid():
+        return False
+    try:
+        from ..selbststart import _pid_alive, _process_table
+
+        return not _pid_alive(pid, _process_table())
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def run_app(config, started_by: str | None = None, browser: bool = False) -> int:
+    """Startet Server + Fenster; kehrt zurueck, wenn das Fenster geschlossen ist.
+
+    browser=True: gleich im Browser-Fenster (z.B. nachdem das Programmfenster abgestuerzt ist)."""
     root = Path(config.project_root)
     server = AppServer(lambda broadcast: AppController(config, broadcast, started_by=started_by))
     server.start()
+    server.root = root
     ctl = server.controller
     quit_now = threading.Event()
     result = {"code": 0}
@@ -272,6 +383,8 @@ def run_app(config, started_by: str | None = None) -> int:
 
     def on_quit(code: int) -> None:
         result["code"] = code
+        holder["beendet"] = True  # gewollt (z.B. Neustart nach Update) - kein Fensterfehler
+        logger.info("App: wird beendet (Code %s)", code)
         quit_now.set()
         close = holder.get("close")
         if close:
@@ -282,6 +395,13 @@ def run_app(config, started_by: str | None = None) -> int:
 
     ctl.on_quit = on_quit
     info = _info_file(root)
+    if not browser and _crashed_last_time(info):
+        logger.warning("App: der letzte Start ist abgestuerzt - biete das Browser-Fenster an")
+        if sys.platform == "win32" and ask_yes_no(
+            "Beim letzten Mal ist das App-Fenster abgestuerzt.\n\nDiesmal lieber im Browser-Fenster oeffnen?\n"
+            "(Nein = das Programmfenster nochmal versuchen)"
+        ):
+            browser = True
     try:
         info.parent.mkdir(parents=True, exist_ok=True)
         info.write_text(json.dumps({"pid": os.getpid(), "url": server.url, "fenster": "programm"}),
@@ -292,8 +412,18 @@ def run_app(config, started_by: str | None = None) -> int:
     meaning = config.ki.bedeutung.strip()
     title = f"{config.ki.name} - {meaning}" if meaning else f"{config.ki.name} - Selbst-lernende KI"
     try:
-        if run_native_window(server, ctl, title, root / "data" / "app-fenster", holder):
+        if browser:
+            logger.info("App: im Browser-Fenster (gewuenscht)")
+            _browser_fallback(server, ctl, root, quit_now, holder)
             return result["code"]
+        if run_native_window(server, ctl, title, webview_storage(root), holder):
+            if os.environ.get("KI_SELBSTTEST"):
+                logger.info("Selbsttest: Ergebnis %s", holder.get("selftest", "fehler"))
+                return 0 if holder.get("selftest") == "ok" else 3
+            return result["code"]
+        if os.environ.get("KI_SELBSTTEST"):
+            logger.warning("Selbsttest: Programmfenster ging nicht")
+            return 3
         # Ersatz nur nach Rueckfrage - die App soll ein eigenes Programm sein.
         if sys.platform == "win32" and not ask_yes_no(
             "Das App-Fenster konnte nicht geoeffnet werden (fehlt die Microsoft WebView2-Laufzeit?).\n\n"
@@ -316,7 +446,12 @@ def run_app(config, started_by: str | None = None) -> int:
 def _browser_fallback(server, ctl, root: Path, quit_now: threading.Event, holder: dict | None = None) -> None:
     """Ersatz: Edge/Chrome im App-Modus; endet, wenn kein Fenster mehr verbunden ist."""
     logger.info("App: Ersatz-Fenster im Browser")
-    open_window(server.url, root / "data" / "app-fenster")
+    try:  # ein zweiter Start oeffnet dann ein weiteres Browser-Fenster statt "schon offen"
+        _info_file(root).write_text(json.dumps({"pid": os.getpid(), "url": server.url, "fenster": "browser"}),
+                                    encoding="utf-8")
+    except OSError:
+        pass
+    open_window(server.url, root / "data" / "browser-fenster")
     if holder is None or not holder.get("started"):
         ctl.startup()
     began = time.monotonic()

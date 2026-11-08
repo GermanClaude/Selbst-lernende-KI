@@ -89,6 +89,22 @@ def exe_flavor(path) -> str:
     return "app" if stem.endswith("app") else "terminal"
 
 
+def own_exe_flavor(path) -> str:
+    """Art der laufenden .exe aus ihrem Programmkopf: Windows-Programm ohne Konsole = 'app'.
+    (Sicherer als der Name - bei ausgeblendeten Endungen heisst sie schnell 'KI-App.exe.exe'.)"""
+    try:
+        with open(path, "rb") as fh:
+            head = fh.read(4096)
+        pe = int.from_bytes(head[0x3C:0x40], "little")
+        if head[pe:pe + 4] == b"PE\0\0":
+            subsystem = int.from_bytes(head[pe + 0x5C:pe + 0x5E], "little")
+            if subsystem in (2, 3):
+                return "app" if subsystem == 2 else "terminal"
+    except (OSError, ValueError):
+        pass
+    return exe_flavor(path)
+
+
 def is_newer(candidate: str, current: str) -> bool:
     return parse_version(candidate) > parse_version(current)
 
@@ -255,7 +271,7 @@ class Updater:
         assets = release.get("assets", [])
         # Jedes Programm holt sich SEINE Datei (KI.exe bzw. KI-App.exe) - auch wenn es lokal
         # "KI-App (1).exe" heisst. Ersetzt wird immer die eigene Datei (Name bleibt).
-        flavor = exe_flavor(self.exe_path)
+        flavor = own_exe_flavor(self.exe_path)
         asset = next((a for a in assets if str(a.get("name", "")).lower().endswith(".exe")
                       and exe_flavor(a.get("name", "")) == flavor), None)
         if asset is None:

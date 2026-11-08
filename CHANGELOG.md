@@ -4,6 +4,18 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.4.3 – 2026-11-08
+
+- **Die App verschwindet nicht mehr still.** Stürzt das App-Fenster ab oder bleibt es
+  leer, sagt Nova dir Bescheid und öffnet sich auf Wunsch im Browser-Fenster. War es
+  beim letzten Mal abgestürzt, bietet sie das gleich beim nächsten Start an.
+- Das App-Fenster speichert seine Daten jetzt in einem lokalen Ordner (statt auf dem
+  Desktop bzw. in OneDrive, wo es Probleme machen konnte).
+- Auch „KI-App.exe.exe“ (passiert leicht, wenn Windows die Endungen ausblendet) startet
+  als App und findet beim Update die richtige Datei.
+- Jede neue Version wird vor der Veröffentlichung auf einem echten Windows gestartet –
+  nur wenn das Fenster aufgeht, wird sie veröffentlicht.
+
 ## 0.4.2 – 2026-11-08
 
 - **KI-App.exe startet auch mit anderem Namen.** Lädt man sie zweimal herunter, nennt

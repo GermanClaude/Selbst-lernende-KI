@@ -112,6 +112,15 @@ def main() -> int:
         from assistant.__main__ import main as app_main
 
         code = app_main()
+    except SystemExit as exc:  # z.B. argparse: falsche Argumente - in der App nicht still enden
+        code = exc.code if isinstance(exc.code, int) else 1
+        if code and "--app" in sys.argv:
+            try:
+                from assistant.app.launcher import message_box
+
+                message_box(f"Die KI konnte nicht starten (Code {code}). Starte KI-App.exe bitte per Doppelklick.")
+            except Exception:  # noqa: BLE001
+                pass
     except Exception:  # noqa: BLE001 - in der .exe sonst unsichtbar
         traceback.print_exc()
         if "--app" in sys.argv:  # kein Konsolenfenster: Fehler als Meldung zeigen

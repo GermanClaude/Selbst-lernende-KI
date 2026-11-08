@@ -1,0 +1,75 @@
+# Prueft die App auf einem echten Windows-Rechner: KI-App.exe bauen, starten und schauen,
+# ob das Programmfenster erscheint und die Oberflaeche laedt (KI_SELBSTTEST=1 schliesst
+# das Fenster danach selbst). Laeuft bei Aenderungen auf Arbeits-Branches und von Hand.
+name: App-Selbsttest (Windows)
+
+on:
+  push:
+    branches: ["claude/**"]
+    paths:
+      - "assistant/**"
+      - "run_ki.py"
+      - "packaging/**"
+      - "requirements.txt"
+      - ".github/workflows/app-selbsttest.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: app-selbsttest-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  selbsttest:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Pakete installieren
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller==6.22.3 pyinstaller-hooks-contrib==2026.9 pywebview==6.2.1 pythonnet==3.2.1 clr_loader==0.3.1 sounddevice SpeechRecognition pyttsx3 pyautogui pillow
+
+      - name: Live-Mitschrift (vosk) dazu
+        continue-on-error: true
+        shell: bash
+        run: pip install vosk || pip install --use-pep517 vosk
+
+      - name: Versionen
+        shell: bash
+        run: |
+          python --version
+          pip show pywebview pythonnet clr_loader pyinstaller | grep -E "^(Name|Version)"
+
+      - name: KI-App.exe bauen
+        run: pyinstaller packaging/ki.spec --noconfirm
+
+      - name: KI-App.exe starten (auch umbenannt)
+        shell: pwsh
+        run: |
+          $failed = $false
+          foreach ($name in @("KI-App.exe", "KI-App (1).exe")) {
+            $dir = Join-Path $env:RUNNER_TEMP ("test-" + ($name -replace '[^A-Za-z0-9]', ''))
+            New-Item -ItemType Directory -Force -Path $dir | Out-Null
+            Copy-Item "dist/KI-App.exe" (Join-Path $dir $name)
+            $env:KI_SELBSTTEST = "1"
+            $started = Get-Date
+            $p = Start-Process -FilePath (Join-Path $dir $name) -WorkingDirectory $dir -PassThru
+            if (-not $p.WaitForExit(180000)) {
+              Write-Host "ZEITUEBERSCHREITUNG - Prozess haengt"
+              Stop-Process -Id $p.Id -Force
+              $failed = $true
+            }
+            $secs = [int]((Get-Date) - $started).TotalSeconds
+            Write-Host "=== $name : Exitcode $($p.ExitCode) nach $secs s"
+            if ($p.ExitCode -ne 0) { $failed = $true }
+            foreach ($f in @("logs/ki.log", "logs/absturz.log", "data/starts.json")) {
+              $fp = Join-Path $dir $f
+              if (Test-Path $fp) { Write-Host "--- $f"; Get-Content $fp -Tail 80 }
+            }
+          }
+          if ($failed) { exit 1 }

@@ -46,7 +46,7 @@ jobs:
         if: steps.version.outputs.neu == 'true'
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt pyinstaller pywebview sounddevice SpeechRecognition pyttsx3 pyautogui pillow
+          pip install -r requirements.txt pyinstaller==6.22.3 pyinstaller-hooks-contrib==2026.9 pywebview==6.2.1 pythonnet==3.2.1 clr_loader==0.3.1 sounddevice SpeechRecognition pyttsx3 pyautogui pillow
 
       - name: Live-Mitschrift (vosk) dazu
         if: steps.version.outputs.neu == 'true'
@@ -57,6 +57,23 @@ jobs:
       - name: KI.exe und KI-App.exe bauen
         if: steps.version.outputs.neu == 'true'
         run: pyinstaller packaging/ki.spec --noconfirm
+
+      # Nur veroeffentlichen, wenn das App-Fenster auf Windows wirklich aufgeht und die
+      # Oberflaeche laedt (KI_SELBSTTEST=1 prueft das und schliesst sich wieder).
+      - name: Fenster-Test (KI-App.exe)
+        if: steps.version.outputs.neu == 'true'
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP "fenstertest"
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          Copy-Item "dist/KI-App.exe" (Join-Path $dir "KI-App.exe")
+          $env:KI_SELBSTTEST = "1"
+          $p = Start-Process -FilePath (Join-Path $dir "KI-App.exe") -WorkingDirectory $dir -PassThru
+          if (-not $p.WaitForExit(180000)) { Stop-Process -Id $p.Id -Force; Write-Host "Haengt"; exit 1 }
+          $log = Join-Path $dir "logs/ki.log"
+          if (Test-Path $log) { Get-Content $log -Tail 40 }
+          Write-Host "Exitcode: $($p.ExitCode)"
+          if ($p.ExitCode -ne 0) { exit 1 }
 
       - name: Release veroeffentlichen
         if: steps.version.outputs.neu == 'true'

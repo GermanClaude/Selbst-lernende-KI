@@ -68,7 +68,7 @@ def test_app_without_console_starts(tmp_path, monkeypatch):
 
     started = {}
 
-    def fake_run_app(config, started_by=None):
+    def fake_run_app(config, started_by=None, **kw):
         from assistant.app.controller import AppController
 
         AppController(config, lambda e: None)  # hier stuerzte es ab (isatty auf None)
