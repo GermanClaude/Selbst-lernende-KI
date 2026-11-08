@@ -290,7 +290,7 @@ class Kurzzeit:
             self._zeilen.append((jetzt, zeile))
 
     def zeilen(self, jetzt: float) -> list[str]:
-        return [z for t, z in self._zeilen if jetzt - t <= self.sekunden]
+        return [z for t, z in list(self._zeilen) if jetzt - t <= self.sekunden]  # Kopie: anderer Thread haengt an
 
     def leeren(self) -> None:
         self._zeilen.clear()

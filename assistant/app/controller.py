@@ -992,6 +992,7 @@ class AppController(CLI):
         aus der Aufnahme nehmen."""
         if self.sehen.aktiv and "bildschirm" in self.sehen.quellen:
             hinweis = self._fenster_schutz(True)
+            self.sehen.eigenes_fenster_neu()
             if hinweis:
                 self._notice(hinweis, "sehen")
 

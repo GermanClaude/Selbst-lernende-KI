@@ -309,3 +309,55 @@ def test_deepseek_zaehlt_und_fasst_wortmeldungen_nicht_zusammen():
             Wortmeldung({"role": "assistant", "content": "Ich sehe den Kontostand"})]
     text = _history_as_text(msgs)
     assert "Hallo" in text and "Kontostand" not in text
+
+
+def test_eigenes_fenster_nur_unsichtbar_wenn_windows_es_bestaetigt():
+    class User32:
+        def __init__(self, ok):
+            self.ok, self.gesetzt = ok, []
+
+        def EnumWindows(self, proc, _l):  # noqa: N802
+            proc(11, 0)
+            proc(12, 0)
+
+        def GetWindowThreadProcessId(self, hwnd, zeiger):  # noqa: N802
+            zeiger._obj.value = 42 if hwnd == 11 else 7
+
+        def IsWindowVisible(self, hwnd):  # noqa: N802
+            return True
+
+        def SetWindowDisplayAffinity(self, hwnd, wert):  # noqa: N802
+            self.gesetzt.append((hwnd, wert))
+            return self.ok
+
+    for ok, erwartet in ((1, True), (0, False)):
+        ergebnis, u = {}, User32(ok)
+        assert eigene_fenster_schuetzen(True, build=22631, user32=u, pid=42, ergebnis=ergebnis) == ""
+        assert u.gesetzt == [(11, 0x11)] and ergebnis["unsichtbar"] is erwartet
+    ergebnis = {}
+    eigene_fenster_schuetzen(True, build=22631, user32=User32(1), pid=999, ergebnis=ergebnis)
+    assert ergebnis["unsichtbar"] is False                 # kein eigenes Fenster (Terminal, Browser)
+    eigene_fenster_schuetzen(True, build=18363, user32=User32(1), pid=42, ergebnis=ergebnis)
+    assert ergebnis["unsichtbar"] is False                 # altes Windows
+
+
+def test_kurzzeit_verkraftet_gleichzeitiges_anhaengen():
+    import threading
+
+    k = Kurzzeit(sekunden=1e9, max_zeilen=50)
+    stopp = threading.Event()
+
+    def schreiben():
+        i = 0
+        while not stopp.is_set():
+            k.hinzu(float(i), f"zeile {i}")
+            i += 1
+
+    t = threading.Thread(target=schreiben)
+    t.start()
+    try:
+        for _ in range(3000):
+            k.zeilen(0.0)
+    finally:
+        stopp.set()
+        t.join()

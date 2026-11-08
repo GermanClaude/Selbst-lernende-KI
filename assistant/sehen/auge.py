@@ -119,6 +119,8 @@ class Auge:
     def __init__(self, befehle, ausgang, einst: dict, teile: AugenTeile, eltern=None):
         self.eltern = eltern  # Hauptprogramm (multiprocessing.parent_process()) - endet es, endet das Auge
         self.letztes_fremdes: dict | None = None  # letztes normales Fenster vorne (fuer "ansehen" aus Nova)
+        # Nur wenn Windows bestaetigt hat, dass Novas Fenster nicht mit aufgenommen wird
+        self.eigenes_unsichtbar = bool(einst.get("eigenes_unsichtbar"))
         self.befehle = befehle
         self.ausgang = ausgang
         self.einst = einst
@@ -260,6 +262,8 @@ class Auge:
                 self.diff.zuruecksetzen()
             elif art == "weiter" and self.pause:
                 self.pause = False
+            elif art == "eigenes_unsichtbar" and len(befehl) > 1:
+                self.eigenes_unsichtbar = bool(befehl[1])
             elif art == "fps" and len(befehl) > 1:
                 try:
                     self.fps = max(1, min(240, int(befehl[1])))
@@ -286,7 +290,9 @@ class Auge:
             return None, "privat"
         ziel = self.vorne
         if self.vorne_eigen:
-            # Novas eigenes Fenster ist vorne (ist aus der Aufnahme genommen): das Fenster dahinter zeigen
+            if not self.eigenes_unsichtbar:
+                return None, "eigen"  # Novas Fenster waere selbst im Bild (Terminal, Browser, altes Windows)
+            # Novas eigenes Fenster ist vorne (aus der Aufnahme genommen): das Fenster dahinter zeigen
             ziel = self.letztes_fremdes
             if ziel and self.t.fenster_info is not None:
                 frisch = self.t.fenster_info(ziel.get("hwnd"))
@@ -432,7 +438,7 @@ class Auge:
                 if self.pause:
                     self.t.schlafe(0.05)
                     continue
-                if not self.vorne_privat:
+                if not self.vorne_privat and not (self.vorne_eigen and not self.eigenes_unsichtbar):
                     try:
                         bild = self.quelle.bild()
                     except Exception as exc:  # noqa: BLE001

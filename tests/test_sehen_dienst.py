@@ -444,3 +444,18 @@ def test_paket_wird_ausserhalb_der_sperre_gebaut_und_pause_wirkt_noch(dienst):
     _fehlerfenster(d)
     _warten(d, 1.0)
     assert frei == [True] and d.t[1] == []                   # Pause kam dazwischen: keine Wortmeldung
+
+
+def test_eigenes_fenster_unsichtbar_geht_ans_auge_und_eigen_hat_einen_text(dienst):
+    d = dienst()
+    sichtbar = {"wert": False}
+    d.eigenes_unsichtbar = lambda: sichtbar["wert"]
+    d.an("bildschirm")
+    auge = d.t[4][0]
+    assert auge.einst["eigenes_unsichtbar"] is False
+    sichtbar["wert"] = True
+    d.eigenes_fenster_neu()
+    assert auge.befehle[-1] == ("eigenes_unsichtbar", True)
+    auge.jpeg, auge.grund = None, "eigen"
+    bild, text = d.aktuelles_bild()
+    assert bild is None and "eigenes Fenster" in text

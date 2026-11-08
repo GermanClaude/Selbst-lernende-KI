@@ -89,11 +89,15 @@ class SehDienst:
                  auge_fabrik: Callable[[dict], Any] | None = None, bildschirm_moeglich: bool | None = None,
                  fenster_schutz: Callable[[bool], str] | None = None, uhr: Callable[[], float] = time.monotonic,
                  speichern: Callable[[str, str], None] | None = None, mit_thread: bool = True,
-                 on_halt: Callable[[], None] | None = None):
+                 on_halt: Callable[[], None] | None = None,
+                 eigenes_unsichtbar: Callable[[], bool] | None = None):
         self.config = config
         self.on_notiz = on_notiz or (lambda _t: None)
         self.on_status = on_status or (lambda: None)
         self.on_halt = on_halt or (lambda: None)  # Pause/Aus: schon geplante Wortmeldungen verwerfen
+        # Hat Windows bestaetigt, dass Novas Fenster nicht mit aufgenommen wird? Nur dann darf das Auge
+        # "durch" Novas Fenster auf das Fenster dahinter schauen.
+        self.eigenes_unsichtbar = eigenes_unsichtbar or (lambda: False)
         self.wecken = wecken or (lambda _p: None)
         self.sieht_bilder = sieht_bilder or (lambda: False)
         self.kostenlos = kostenlos or (lambda: False)
@@ -191,6 +195,17 @@ class SehDienst:
     def _euro_grenze(self) -> float | None:
         """Bei jeder Pruefung neu: Ollama kostet nichts, Claude/DeepSeek schon (Gehirn kann wechseln)."""
         return None if self.kostenlos() else self.regeln.max_euro_pro_stunde
+
+    def _unsichtbar(self) -> bool:
+        try:
+            return bool(self.eigenes_unsichtbar())
+        except Exception:  # noqa: BLE001
+            return False
+
+    def eigenes_fenster_neu(self) -> None:
+        """Novas Fenster ist (spaeter) dazugekommen/geschuetzt worden - dem Auge sagen."""
+        if self._auge is not None:
+            self._auge.senden(("eigenes_unsichtbar", self._unsichtbar()))
 
     def _auge_abgleichen(self) -> None:
         """Der Hauptprozess bestimmt, ob das Auge hinschaut (Pause, AFK) - nie das Auge selbst."""
@@ -349,7 +364,7 @@ class SehDienst:
         r = self.regeln
         einst = {"aufnahme": r.aufnahme, "monitor": r.monitor, "fps": r.fps, "ocr": r.ocr,
                  "ocr_sprache": r.ocr_sprache, "ausnahmen": list(r.ausnahmen), "eigene_pid": os.getpid(),
-                 "eigene_titel": [EIGENER_TITEL],
+                 "eigene_titel": [EIGENER_TITEL], "eigenes_unsichtbar": self._unsichtbar(),
                  "hotkey": r.hotkey, "bilder": r.bilder_an_ki, "max_kante": r.max_kante,
                  "jpeg_qualitaet": r.jpeg_qualitaet}
         try:
@@ -628,7 +643,9 @@ class SehDienst:
             texte = {"privat": "Vorne ist ein privates Fenster \u2013 da schaue ich nicht hin.",
                      "passwort": "Gerade ist ein Passwortfeld aktiv \u2013 da schaue ich nicht hin.",
                      "unbekannt": "Ich kann nicht pr\u00fcfen, ob ein Passwortfeld aktiv ist \u2013 deshalb kein Bild.",
-                     "pause": "Ich schaue gerade nicht hin (Pause)."}
+                     "pause": "Ich schaue gerade nicht hin (Pause).",
+                     "eigen": "Gerade ist mein eigenes Fenster vorne \u2013 und ich kann nicht sicher sein, dass ich "
+                              "nur das Fenster dahinter sehe. Wechsle kurz zu dem Fenster, das ich ansehen soll."}
             return None, texte.get(grund, "Gerade habe ich kein Bild.")
         try:
             return vorbereiten(daten, name, max_kante=self.regeln.max_kante), ""

@@ -332,6 +332,9 @@ def test_ansehen_aus_novas_fenster_zeigt_das_fenster_dahinter():
     zustand["vorne"] = nova
     auge._vorne_pruefen()
     auge.bild = _mit_fenster()
+    assert auge.schnappschuss() == (None, "eigen")     # nicht bestaetigt unsichtbar: Nova waere im Bild
+    befehle.put(("eigenes_unsichtbar", True))           # z.B. Fenster spaeter geschuetzt
+    auge._befehle()
     jpeg, grund = auge.schnappschuss()
     assert grund == "" and jpeg
     # privates Fenster dazwischen: danach nie "daneben" schauen
@@ -370,3 +373,17 @@ def test_dxcam_kennt_die_lage_des_bildschirms():
     assert DxcamQuelle(0, modul=ohne).ursprung == (0, 0)
     with pytest.raises(QuellenFehler):
         DxcamQuelle(1, modul=ohne)
+
+
+def test_ohne_bestaetigten_schutz_wird_novas_fenster_gar_nicht_aufgenommen():
+    nova = {"hwnd": 6, "pid": 99, "exe": "windowsterminal.exe", "titel": "Nova (sieht zu)", "klasse": "X",
+            "rechteck": (0, 0, W, H)}
+    auge, befehle, ausgang, ocr, _z = _auge(vorne=nova, eigene_titel=["(sieht zu)"])
+    zaehler = {"n": 0}
+    echte = auge.t.quelle.bild
+    auge.t.quelle.bild = lambda: zaehler.__setitem__("n", zaehler["n"] + 1) or echte()
+    _laufen(auge, befehle, sekunden=1.0)
+    assert zaehler["n"] == 0 and ocr.aufrufe == 0
+    auge2, befehle2, _a, ocr2, _z2 = _auge(vorne=nova, eigene_titel=["(sieht zu)"], eigenes_unsichtbar=True)
+    _laufen(auge2, befehle2, sekunden=1.0)
+    assert ocr2.aufrufe == 0                            # aufgenommen, aber nichts gemeldet/gelesen

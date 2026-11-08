@@ -182,7 +182,7 @@ class CLI:
         self.sehen = SehDienst(config, on_notiz=self._sehen_notiz, on_status=self._sehen_status,
                                wecken=self._sehen_wecken, sieht_bilder=self._sieht_bilder,
                                kostenlos=lambda: bool(self.config.kostenlos), fenster_schutz=self._fenster_schutz,
-                               on_halt=self._sehen_halt)
+                               on_halt=self._sehen_halt, eigenes_unsichtbar=self._eigenes_fenster_unsichtbar)
         self.tool_ctx.extra["sehen"] = self.sehen
         self.brain = Brain(config, self.memory, self.registry, self.tool_ctx)
         self.brain.provider.wait_fn = self.thinking.start
@@ -699,6 +699,7 @@ class CLI:
         host.loop = loop
         host.install()  # Rueckfragen per Stimme ("ja", "immer", "nein")
         self._jarvis_loop = loop  # Live-Sehen meldet sich hier von selbst
+        self._jarvis_host = host
         provider = self.brain.provider
         provider.effort_override = (settings.live_denktiefe or "").strip() or None
         print(_c("\n[Jarvis-Modus] Sprich einfach - ich hoere die ganze Zeit zu und du kannst mich jederzeit "
@@ -710,6 +711,7 @@ class CLI:
             self._afk_pending = None  # Strg+C: du bist da
         finally:
             self._jarvis_loop = None
+            self._jarvis_host = None
             self.brain.provider.effort_override = None
             host.wait()
             host.uninstall()
@@ -741,7 +743,14 @@ class CLI:
         from ..sehen.windows import eigene_fenster_schuetzen
 
         self._konsolen_titel(an)
-        return eigene_fenster_schuetzen(an)
+        ergebnis: dict = {}
+        hinweis = eigene_fenster_schuetzen(an, ergebnis=ergebnis)
+        self._eigenes_unsichtbar = bool(ergebnis.get("unsichtbar"))
+        return hinweis
+
+    def _eigenes_fenster_unsichtbar(self) -> bool:
+        """Hat Windows bestaetigt, dass Novas Fenster in Aufnahmen nicht vorkommt?"""
+        return bool(getattr(self, "_eigenes_unsichtbar", False))
 
     def _konsolen_titel(self, an: bool) -> None:
         if sys.platform != "win32":
@@ -767,6 +776,11 @@ class CLI:
         loop = self._jarvis_loop
         if loop is not None:
             loop.seen = None
+        host = getattr(self, "_jarvis_host", None)
+        worker = getattr(host, "worker", None)
+        if worker is not None and worker.is_alive() and worker.name == "jarvis-sehen":
+            host.drop = True  # laufende Wortmeldung ganz zuruecknehmen
+            self.brain.provider.cancel()
 
     def _sehen_wecken(self, paket) -> None:
         """Live-Sehen hat etwas bemerkt. Im Terminal meldet sich Nova nur im Jarvis-Modus von selbst -

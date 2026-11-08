@@ -146,3 +146,26 @@ def test_fehlende_teile_ehrlich_melden(cli, capsys, monkeypatch):
     cli._sehen_einrichten()
     out = capsys.readouterr().out
     assert "fehlen Teile" in out and "comtypes" in out and "schon dabei" not in out
+
+
+def test_pause_haelt_eine_laufende_wortmeldung_im_terminal_jarvis_an(cli):
+    import threading as _th
+
+    halt = _th.Event()
+    worker = _th.Thread(target=halt.wait, args=(5,), name="jarvis-sehen")
+    worker.start()
+    host = SimpleNamespace(worker=worker, drop=False)
+    cli._jarvis_host = host
+    try:
+        cli.brain.provider.cancel_event.clear()
+        cli._sehen_halt()
+        assert host.drop is True and cli.brain.provider.cancel_event.is_set()
+    finally:
+        halt.set()
+        worker.join()
+    cli.brain.provider.cancel_event.clear()
+    normal = _th.Thread(target=lambda: None, name="jarvis-antwort")
+    host2 = SimpleNamespace(worker=normal, drop=False)
+    cli._jarvis_host = host2
+    cli._sehen_halt()                                   # deine eigene Frage wird nie angehalten
+    assert host2.drop is False and not cli.brain.provider.cancel_event.is_set()

@@ -65,9 +65,14 @@ def _user32():
     return u
 
 
-def eigene_fenster_schuetzen(an: bool, build: int | None = None, user32=None, pid: int | None = None) -> str:
+def eigene_fenster_schuetzen(an: bool, build: int | None = None, user32=None, pid: int | None = None,
+                             ergebnis: dict | None = None) -> str:
     """Novas Fenster aus Bildschirmaufnahmen herausnehmen (an) bzw. wieder zeigen (aus).
-    Gibt einen Hinweis zurueck ("" = alles gut)."""
+    Gibt einen Hinweis zurueck ("" = alles gut). ergebnis["unsichtbar"] = True nur, wenn mindestens ein
+    eigenes Fenster gefunden wurde und Windows es fuer JEDES bestaetigt hat (sonst False: z.B. Terminal,
+    Browser-Ersatzfenster, altes Windows, Fehler)."""
+    if ergebnis is not None:
+        ergebnis["unsichtbar"] = False
     if sys.platform != "win32" and user32 is None:
         return ""
     build = windows_build() if build is None else build
@@ -82,7 +87,7 @@ def eigene_fenster_schuetzen(an: bool, build: int | None = None, user32=None, pi
     u = user32 or _user32()
     pid = os.getpid() if pid is None else pid
     fenster: list[int] = []
-    PROC = ctypes.WINFUNCTYPE(w.BOOL, w.HWND, w.LPARAM)
+    PROC = getattr(ctypes, "WINFUNCTYPE", ctypes.CFUNCTYPE)(w.BOOL, w.HWND, w.LPARAM)
 
     def sammeln(hwnd, _lparam):
         eigner = w.DWORD(0)
@@ -93,10 +98,12 @@ def eigene_fenster_schuetzen(an: bool, build: int | None = None, user32=None, pi
 
     try:
         u.EnumWindows(PROC(sammeln), 0)
-        for hwnd in fenster:
-            u.SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE if an else WDA_NONE)
+        geklappt = [bool(u.SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE if an else WDA_NONE))
+                    for hwnd in fenster]
     except Exception:  # noqa: BLE001
         return ""
+    if ergebnis is not None:
+        ergebnis["unsichtbar"] = bool(an and geklappt and all(geklappt))
     return ""
 
 
