@@ -1025,7 +1025,7 @@ class AppController(CLI):
         if not model and not denken:
             return {"ok": False, "error": "Bitte ein Modell oder eine Denk-Tiefe angeben."}
         try:
-            result = waehle(self.config, provider, model=model, denken=denken)
+            result = waehle(self.config, provider, model=model, denken=denken, http=self._ollama_http)
         except Exception as exc:  # noqa: BLE001 - z.B. settings.toml nicht beschreibbar
             logger.warning("Modell-Wahl: %s", exc)
             return {"ok": False, "error": schoen(f"Konnte die Einstellung nicht speichern: {exc}")}

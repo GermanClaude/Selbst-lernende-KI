@@ -119,9 +119,12 @@ def test_terminal_befehle(server, capsys):
     ctl._handle_command("/gehirn ollama")
     out = capsys.readouterr().out
     assert ctl.config.active_provider == "ollama" and "kostenlos" in out
-    ctl._handle_command("/modell ollama qwen3.5:9b")
+    ctl._handle_command("/modell ollama qwen3.5:9b")   # laeuft, aber nicht heruntergeladen -> nicht speichern
     out = capsys.readouterr().out
-    assert ctl.config.ollama.model == "qwen3.5:9b" and "noch nicht heruntergeladen" in out
+    assert ctl.config.ollama.model == "qwen3.5:4b" and "noch nicht heruntergeladen" in out
+    ctl._handle_command("/modell sonnet")                # Claude-Name, waehrend Ollama aktiv ist
+    out = capsys.readouterr().out
+    assert ctl.config.ollama.model == "qwen3.5:4b" and "Claude" in out and "/gehirn claude" in out
     ctl._handle_command("/ollama adresse ftp://x")
     assert "http://" in capsys.readouterr().out and ctl.config.ollama.adresse == "http://localhost:11434"
     ctl._handle_command("/ollama quatsch")

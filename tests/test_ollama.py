@@ -88,7 +88,9 @@ def test_kosten_sind_immer_null(cfg):
     assert cfg.prices.for_provider("ollama") == (0.0, 0.0, 0.0)
 
 
-def test_modell_und_denktiefe_waehlen(cfg):
+def test_modell_und_denktiefe_waehlen(cfg, monkeypatch):
+    # Ollama laeuft hier nicht (dann wird ohne Pruefung gespeichert)
+    monkeypatch.setattr(ollama, "_http_standard", FakeOllama(offline=True))
     r = modelle.waehle(cfg, "ollama", model="qwen3.5:9b")
     assert r["ok"] and cfg.ollama.model == "qwen3.5:9b" and "Qwen 3.5 (9B)" in r["message"]
     assert modelle.waehle(cfg, "ollama", model="hf.co/Nutzer/Modell:Q4_K_M")["ok"]
@@ -498,7 +500,7 @@ def test_ollama_einschalten(cfg):
     assert forced["ok"] and cfg.active_provider == "ollama"
     cfg.provider.aktiv = "claude"
     # eingestelltes Modell fehlt, ein anderes ist da -> das andere nehmen
-    r = schluessel.setup(cfg, provider="ollama", http=FakeOllama(caps={"llama3.2:3b": ["tools"]}))
+    r = schluessel.setup(cfg, provider="ollama", http=FakeOllama(caps={"llama3.2:3b": ["completion", "tools"]}))
     assert r["ok"] and r["changed_provider"] and cfg.ollama.model == "llama3.2:3b" and "kostenlos" in r["message"]
     assert load_config(cfg.project_root).active_provider == "ollama"
     leer = schluessel.setup(cfg, provider="ollama", http=FakeOllama(caps={}, models=[]))
@@ -528,3 +530,102 @@ def test_werkzeug_gehirn_einstellen(cfg, monkeypatch):
     assert cfg.ollama.model == "qwen3.5:4b"
     assert tool.run(ctx, "setzen", denken="gruendlich").startswith("Eingestellt")
     assert "/gehirn ollama" in tool.description
+
+
+# ---------------------------------------------------------------------------
+# Nachbesserungen nach dem Review
+# ---------------------------------------------------------------------------
+def test_client_passt_immer_zur_adresse(tmp_path, cfg, monkeypatch):
+    import sys
+
+    prov, mem = _provider(tmp_path, cfg, FakeOllama())
+    alt = prov.client
+    cfg.ollama.kontext = 32768
+    prov.settings_changed()
+    assert prov.client is alt and alt.kontext == 32768            # gleiche Adresse: weiterbenutzen
+    cfg.ollama.adresse = "http://127.0.0.1:11435"
+    prov.settings_changed()
+    assert isinstance(prov.client, ollama.OllamaClient) and prov.client is not alt
+    assert prov.client.dienst.adresse == "http://127.0.0.1:11435"
+    pytest.importorskip("openai")
+    cfg.ollama.adresse = "http://localhost:1234/v1"
+    prov.settings_changed()
+    assert type(prov.client).__name__ == "OpenAI" and str(prov.client.base_url).rstrip("/") == cfg.ollama.adresse
+    cfg.ollama.adresse = "http://localhost:5678/v1"              # /v1 -> anderes /v1
+    prov.settings_changed()
+    assert str(prov.client.base_url).rstrip("/") == "http://localhost:5678/v1"
+    monkeypatch.setitem(sys.modules, "openai", None)            # openai fehlt -> kein Client
+    cfg.ollama.adresse = "http://localhost:9999/v1"
+    prov.settings_changed()
+    assert prov.client is None
+    cfg.ollama.adresse = "http://localhost:11434"               # zurueck zu Ollama: wieder ein Client
+    prov.settings_changed()
+    assert isinstance(prov.client, ollama.OllamaClient) and prov.client.dienst.adresse == "http://localhost:11434"
+    # neues Gespraech bekommt den alten Client - mit inzwischen anderer Adresse
+    cfg.ollama.adresse = "http://127.0.0.1:2222"
+    neu = OllamaProvider(cfg, "S", build_registry(), prov.tool_ctx, client=prov.client)
+    assert neu.client is not prov.client and neu.client.dienst.adresse == "http://127.0.0.1:2222"
+    mem.close()
+
+
+def test_kostenlose_token_kosten_nach_dem_wechsel_nichts(tmp_path, cfg):
+    from assistant.abwesend import settings_session
+    from assistant.brain import Brain
+    from tests._fakes import DSClient, ds_text_chunk, ds_usage_chunk
+
+    prov, mem = _provider(tmp_path, cfg, FakeOllama(chats=[[ollama_chunk("hi", done=True, prompt=900_000,
+                                                                          completion=100_000)]]))
+    brain = Brain(cfg, mem, build_registry(), prov.tool_ctx, provider=prov)
+    brain.respond("Hallo")
+    assert brain.usage.total_tokens == 1_000_000 and brain.cost() == (0.0, 0.0)
+    cfg.deepseek_api_key = "sk-1234567890abcdef1234567890ab"
+    cfg.provider.aktiv = "deepseek"
+    brain.switch_provider()
+    assert brain.provider.name == "deepseek" and brain.usage.total_tokens == 1_000_000
+    assert brain.cost() == (0.0, 0.0) and brain.cost_now_eur() == 0.0       # keine Phantom-Kosten
+    session = settings_session(cfg.afk, "", None, None, start_eur=brain.cost_now_eur())
+    assert session.start_eur == 0.0
+    # danach zaehlt DeepSeek ganz normal (nur seine Token)
+    brain.provider.client = DSClient([[ds_text_chunk("ok"), ds_usage_chunk(prompt=1_000_000, completion=0)]])
+    brain.respond("Weiter")
+    usd, _ = brain.cost()
+    assert usd > 0 and usd == pytest.approx(brain.usage.usd)
+    assert usd < 1_000_000 * 2 * 0.3 / 1_000_000                 # nur DeepSeeks 1 Mio. Token, nicht 2 Mio.
+    mem.close()
+
+
+def test_einschalten_nimmt_nie_ein_embedding_modell(cfg):
+    cfg.provider.aktiv = "claude"
+    nur_embedding = FakeOllama(caps={"all-minilm:latest": ["embedding"]})
+    r = schluessel.setup(cfg, provider="ollama", http=nur_embedding)
+    assert r["ok"] and cfg.ollama.model == "qwen3.5:4b" and "noch kein passendes Modell" in r["message"]
+    gemischt = FakeOllama(caps={"all-minilm:latest": ["embedding"], "gemma3:4b": ["completion", "vision"],
+                                "llama3.2:3b": ["completion", "tools"]})
+    schluessel.setup(cfg, provider="ollama", http=gemischt)
+    assert cfg.ollama.model == "llama3.2:3b"                     # mit Werkzeugen bevorzugt
+    cfg.ollama.model = "fehlt:1b"
+    schluessel.setup(cfg, provider="ollama", http=FakeOllama(caps={"all-minilm:latest": ["embedding"],
+                                                                   "gemma3:4b": ["completion", "vision"]}))
+    assert cfg.ollama.model == "gemma3:4b"                       # notfalls ohne Werkzeuge
+
+
+def test_claude_und_deepseek_namen_sind_keine_ollama_modelle(cfg):
+    for name, gehirn in (("sonnet", "Claude"), ("opus", "Claude"), ("flash", "DeepSeek"),
+                         ("deepseek-chat", "DeepSeek")):
+        r = modelle.waehle(cfg, "ollama", model=name, http=FakeOllama(offline=True))
+        assert not r["ok"] and gehirn in r["message"] and cfg.ollama.model == "qwen3.5:4b"
+    r = modelle.waehle(cfg, "ollama", model="qwen3.5:9b", http=FakeOllama())   # laeuft, nicht heruntergeladen
+    assert not r["ok"] and "/ollama laden qwen3.5:9b" in r["message"] and cfg.ollama.model == "qwen3.5:4b"
+    r = modelle.waehle(cfg, "ollama", model="gemma3:4b",
+                       http=FakeOllama(caps={"qwen3.5:4b": ["completion"], "gemma3:4b": ["completion"]}))
+    assert r["ok"] and cfg.ollama.model == "gemma3:4b"
+    r = modelle.waehle(cfg, "ollama", model="llama3.2:3b", http=FakeOllama(offline=True))  # nicht pruefbar
+    assert r["ok"] and cfg.ollama.model == "llama3.2:3b"
+
+
+def test_meldung_nennt_keine_falsche_adresse():
+    kind, message = schluessel.classify(ConnectionRefusedError("connection refused"), "ollama")
+    assert kind == "ollama_offline" and "localhost" not in message and "Ollama antwortet nicht" in message
+    kind, message = schluessel.classify(ollama.OllamaFehler(
+        ollama.NICHT_ERREICHBAR.format(adresse="http://pc2:11434"), "offline"), "ollama")
+    assert "http://pc2:11434" in message

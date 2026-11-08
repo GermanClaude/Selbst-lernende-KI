@@ -46,6 +46,7 @@ class OllamaProvider(DeepSeekProvider):
         self._gewarnt: set[str] = set()   # Modelle, zu denen der Werkzeug-Hinweis schon kam
         self._ohne_werkzeuge: set[str] = set()  # Ollama hat Werkzeuge abgelehnt
         super().__init__(*args, **kwargs)
+        self._client_pruefen()  # z.B. neues Gespraech mit dem Client des alten (evtl. andere Adresse)
 
     # -- Verbindung -------------------------------------------------------
     @property
@@ -77,15 +78,32 @@ class OllamaProvider(DeepSeekProvider):
         super().settings_changed()
         self._ohne_werkzeuge.clear()
         self._caps.clear()  # neues Modell oder neue Adresse: neu nachfragen
-        # Adresse/Kontext koennen sich geaendert haben
-        if isinstance(self.client, ollama.OllamaClient):
-            if self._openai:
-                self.client = self._make_client()
-            else:
-                self.client.dienst.adresse = self.adresse.rstrip("/")
-                self.client.kontext = max(2048, int(self.config.ollama.kontext or 16384))
-        elif self.client is not None and not self._openai and type(self.client).__name__ == "OpenAI":
+        self._client_pruefen()
+
+    @staticmethod
+    def _client_adresse(client: Any) -> str | None:
+        """Fuer welche Adresse der Client gebaut wurde (None = unbekannt, z.B. ein Test-Client)."""
+        if isinstance(client, ollama.OllamaClient):
+            return client.dienst.adresse.rstrip("/")
+        if type(client).__name__ == "OpenAI" and getattr(client, "base_url", None) is not None:
+            return str(client.base_url).rstrip("/")
+        return None
+
+    def _client_pruefen(self) -> None:
+        """Passt der Client noch zur eingestellten Adresse? Sonst neu bauen. Fehlt er (openai-
+        Bibliothek fehlte fuer eine /v1-Adresse), wird es erneut versucht. Nur ein Ollama-Client
+        fuer dieselbe Adresse wird weiterbenutzt (Kontext-Laenge wird angepasst)."""
+        adresse = self.adresse.rstrip("/")
+        if self.client is None:
             self.client = self._make_client()
+            return
+        gebaut = self._client_adresse(self.client)
+        if gebaut is None:
+            return  # fremder Client (Tests) - so lassen
+        if isinstance(self.client, ollama.OllamaClient) and not self._openai and gebaut == adresse:
+            self.client.kontext = max(2048, int(self.config.ollama.kontext or 16384))
+            return
+        self.client = self._make_client()
 
     def cancel(self) -> None:
         """Stopp-Knopf: auch eine Anfrage beenden, auf deren Antwort Ollama noch rechnet."""
@@ -127,6 +145,7 @@ class OllamaProvider(DeepSeekProvider):
     def respond(self, user_text: str, on_text: StreamFn | None = None, max_tool_rounds: int | None = None,
                 announce_limit: bool = True, allow_tools: bool = True, bilder: list | None = None) -> str:
         self.hit_limit = False
+        self._client_pruefen()
         if self.client is not None:
             # Vorher pruefen, ob Ollama laeuft und das Modell da ist - dann kommt eine klare
             # Meldung, und der Verlauf bleibt unberuehrt.

@@ -167,7 +167,7 @@ class Brain:
                 self.provider._children.remove(agent)
             u = agent.usage  # Kosten des Agenten zaehlen zur Sitzung
             self.provider.usage.add(input_full=u.input_full_tokens, cache_hit=u.cache_hit_tokens,
-                                    output=u.output_tokens, usd=u.usd)
+                                    output=u.output_tokens, usd=u.usd, bepreist=u.bepreist)
         emit(f"  << Agent '{role}' fertig\n")
         if limit_reached:
             result += "\n(Hinweis: Der Agent hat sein Schritt-Limit erreicht - das Ergebnis ist evtl. unvollstaendig.)"

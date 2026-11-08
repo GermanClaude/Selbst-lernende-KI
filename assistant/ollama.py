@@ -76,6 +76,7 @@ NICHT_ERREICHBAR = (
     "\u201eOllama\u201c \u00f6ffnen (das Lama-Symbol erscheint unten rechts). Noch nicht installiert? "
     "Kostenlos herunterladen: " + DOWNLOAD_SEITE + " \u2013 oder in \u201eGehirn & Schl\u00fcssel\u201c."
 )
+NICHT_ERREICHBAR_KURZ = NICHT_ERREICHBAR.replace(" ({adresse})", "")
 MODELL_FEHLT = (
     "Das Modell \u201e{modell}\u201c ist noch nicht heruntergeladen. Lade es in \u201eGehirn & "
     "Schl\u00fcssel\u201c herunter oder tippe: /ollama laden {modell}"
@@ -477,6 +478,26 @@ def ist_installiert(modell: str, namen: set[str] | list[str]) -> bool:
     if ":" not in modell and f"{modell}:latest" in namen:
         return True
     return modell.endswith(":latest") and modell[: -len(":latest")] in namen
+
+
+def bestes_modell(dienst: "Dienst", namen: list[str]) -> str | None:
+    """Ein heruntergeladenes Modell, das schreiben kann (Faehigkeit "completion" - also kein reines
+    Embedding-Modell wie all-minilm). Bevorzugt: Empfehlungen, dann Modelle mit Werkzeugen."""
+    reihenfolge = [m["id"] for m in EMPFOHLEN if ist_installiert(m["id"], namen)]
+    reihenfolge = [next((n for n in namen if ist_installiert(r, [n])), r) for r in reihenfolge]
+    reihenfolge += [n for n in namen if n not in reihenfolge]
+    ohne_werkzeuge = None
+    for name in reihenfolge:
+        try:
+            caps = dienst.faehigkeiten(name)
+        except OllamaFehler:
+            continue
+        if "completion" not in caps:
+            continue
+        if "tools" in caps:
+            return name
+        ohne_werkzeuge = ohne_werkzeuge or name
+    return ohne_werkzeuge
 
 
 def empfohlen_info(modell: str) -> dict | None:

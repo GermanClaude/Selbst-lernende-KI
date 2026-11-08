@@ -829,7 +829,8 @@ class CLI:
         from ..modelle import waehle
 
         try:
-            result = waehle(self.config, provider, model=model, denken=denken)
+            result = waehle(self.config, provider, model=model, denken=denken,
+                            http=getattr(self, "_ollama_http", None))
         except Exception as exc:  # noqa: BLE001 - z.B. settings.toml schreibgeschuetzt
             print(_c(f"Konnte die Einstellung nicht speichern: {exc}", YELLOW))
             return
@@ -839,12 +840,6 @@ class CLI:
         (self.tool_ctx.extra.get("on_model") or self.brain.model_changed)()
         where = "" if provider == self.config.active_provider else " (gilt, sobald du dieses Gehirn nutzt)"
         print(_c(f"Eingestellt: {result['message']}{where}", GREEN))
-        if provider == "ollama" and model:
-            from .. import ollama
-
-            info = ollama.status(self.config, http=getattr(self, "_ollama_http", None))
-            if info["laeuft"] and not info["modell_da"]:
-                print(_c(ollama.MODELL_FEHLT.format(modell=self.config.ollama.model), YELLOW))
 
     def _model_command(self, args: list[str]) -> None:
         from ..modelle import MODELLE, kurzbeschreibung
@@ -1020,7 +1015,7 @@ class CLI:
 
         info = ollama.status(self.config, http=getattr(self, "_ollama_http", None))
         if info["laeuft"] and not info["modell_da"] and ollama.ist_installiert(modell, [m["name"] for m in info["modelle"]]):
-            result = waehle(self.config, "ollama", model=modell)
+            result = waehle(self.config, "ollama", model=modell, http=getattr(self, "_ollama_http", None))
             if result["ok"]:
                 (self.tool_ctx.extra.get("on_model") or self.brain.model_changed)()
                 return f"Ich nutze jetzt {result['message']}"

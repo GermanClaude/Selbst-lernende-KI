@@ -128,11 +128,12 @@ def classify(exc: Exception, provider: str) -> tuple[str, str]:
 
 
 def _classify_ollama(exc: Exception, art: str | None) -> tuple[str, str]:
-    from .ollama import NICHT_ERREICHBAR, STANDARD_ADRESSE
+    from .ollama import NICHT_ERREICHBAR_KURZ
 
     text = str(exc)
     if art == "offline" or "connection refused" in text.lower() or "connect" in type(exc).__name__.lower():
-        return "ollama_offline", text if art == "offline" else NICHT_ERREICHBAR.format(adresse=STANDARD_ADRESSE)
+        # OllamaFehler "offline" nennt schon die eingestellte Adresse; sonst lieber gar keine nennen
+        return "ollama_offline", text if art == "offline" else NICHT_ERREICHBAR_KURZ
     if art == "modell_fehlt":
         return "ollama_model", text
     if art in ("keine_werkzeuge", "kein_denken"):
@@ -238,8 +239,8 @@ def setup_ollama(config, pruefen: bool = True, http=None) -> dict:
     hinweis = ""
     namen = [m["name"] for m in info["modelle"]]
     if info["laeuft"] and not info["modell_da"]:
-        ersatz = next((m["id"] for m in ollama.EMPFOHLEN if ollama.ist_installiert(m["id"], namen)), None)
-        ersatz = ersatz or (namen[0] if namen else None)
+        ersatz = ollama.bestes_modell(ollama.Dienst(info["adresse"], http), namen) if not info["openai"] \
+            else (namen[0] if namen else None)
         if ersatz:
             from .config import save_setting, toml_string
 
@@ -247,7 +248,7 @@ def setup_ollama(config, pruefen: bool = True, http=None) -> dict:
             config.ollama.model = ersatz
             hinweis = f" Ich nutze {modell_name('ollama', ersatz)}, das schon auf deinem PC ist."
         else:
-            hinweis = (" Es ist aber noch kein Modell heruntergeladen - lade eins in \u201eGehirn & Schluessel\u201c "
+            hinweis = (" Es ist aber noch kein passendes Modell heruntergeladen - lade eins in \u201eGehirn & Schluessel\u201c "
                        f"herunter (empfohlen: {ollama.STANDARD_MODELL}) oder tippe /ollama laden "
                        f"{ollama.STANDARD_MODELL}.")
     elif not info["laeuft"]:

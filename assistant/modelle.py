@@ -274,6 +274,8 @@ def _finde_modell(provider: str, wanted: str) -> str | None:
         found = finde_empfohlen(wanted)
         if found:
             return found
+        if fremdes_modell(wanted):
+            return None  # "sonnet", "flash" ... sind keine Ollama-Modelle
         # jedes Ollama-Modell ist erlaubt (Gross-/Kleinschreibung wie eingegeben)
         raw = (wanted_raw or "").strip()
         return raw if _OLLAMA_ID.match(raw) and ".." not in raw else None
@@ -281,6 +283,14 @@ def _finde_modell(provider: str, wanted: str) -> str | None:
         names = {m["id"], m["kurz"], m["name"].lower(), m["name"].lower().replace("claude ", "").replace("deepseek ", "")}
         if wanted in names or wanted.replace(" ", "-") in names:
             return m["id"]
+    return None
+
+
+def fremdes_modell(wanted: str) -> str | None:
+    """Gehoert der Name zu Claude oder DeepSeek? -> dieses Gehirn (sonst None)."""
+    for other in ("claude", "deepseek"):
+        if _finde_modell(other, wanted):
+            return other
     return None
 
 
@@ -309,9 +319,10 @@ def finde_denktiefe(provider: str, wanted: str) -> str | None:
 
 
 def waehle(config, provider: str | None = None, model: str | None = None,
-           denken: str | None = None) -> dict:
+           denken: str | None = None, http=None) -> dict:
     """Modell und/oder Denk-Tiefe einstellen und dauerhaft speichern.
 
+    Ollama: laeuft es, wird vorher nachgesehen, ob das Modell heruntergeladen ist (http: fuer Tests).
     Gibt {"ok", "message", "changed", "provider"} zurueck."""
     provider = (provider or config.active_provider).strip().lower()
     if provider not in MODELLE:
@@ -320,10 +331,20 @@ def waehle(config, provider: str | None = None, model: str | None = None,
     new_model, new_level = section.model, getattr(section, level_key)
     if model:
         found = _finde_modell(provider, model) or (model.strip() if model.strip() == section.model else None)
+        if not found and provider == "ollama":
+            other = fremdes_modell(model)
+            hint = (f"'{model}' ist ein Modell von {'Claude' if other == 'claude' else 'DeepSeek'} - Ollama nutzt "
+                    f"eigene Modelle (z.B. qwen3.5:4b). Zu {other} wechseln: /gehirn {other}") if other \
+                else f"'{model}' ist kein gueltiger Modellname fuer Ollama (z.B. qwen3.5:4b)."
+            return {"ok": False, "changed": False, "provider": provider, "message": hint}
         if not found:
             names = ", ".join(m["kurz"] for m in MODELLE[provider])
             return {"ok": False, "changed": False, "provider": provider,
                     "message": f"Das Modell '{model}' kenne ich nicht. Moeglich: {names}."}
+        if provider == "ollama" and found != section.model:
+            fehlt = _ollama_fehlt(config, found, http)
+            if fehlt:
+                return {"ok": False, "changed": False, "provider": provider, "message": fehlt}
         new_model = found
     if denken:
         found = finde_denktiefe(provider, denken)
@@ -353,6 +374,23 @@ def waehle(config, provider: str | None = None, model: str | None = None,
     if provider == "claude" and new_model == "claude-fable-5-1" and new_level in ("xhigh", "max"):
         message += " Achtung: Fable denkt so sehr lange und ist teuer."
     return {"ok": True, "message": message, "changed": changed, "provider": provider}
+
+
+def _ollama_fehlt(config, modell: str, http=None) -> str:
+    """Laeuft Ollama und ist das Modell NICHT heruntergeladen: Hinweis (sonst "" - auch wenn Ollama
+    gerade nicht laeuft, dann wird gespeichert und spaeter beim Benutzen gemeldet)."""
+    from . import ollama
+
+    adresse = ollama.adresse_aus(config)
+    if ollama.ist_openai_adresse(adresse):
+        return ""
+    try:
+        namen = [m["name"] for m in ollama.Dienst(adresse, http).modelle()]
+    except Exception:  # noqa: BLE001 - laeuft nicht: nicht pruefbar
+        return ""
+    if ollama.ist_installiert(modell, namen):
+        return ""
+    return ollama.MODELL_FEHLT.format(modell=modell)
 
 
 def beschreibung(config) -> dict:
