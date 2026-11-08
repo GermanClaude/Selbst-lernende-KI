@@ -4,6 +4,12 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.11.1 – 2026-11-09
+
+- **Korrektur „Handy als Kamera“:** Im Kopplungs-Fenster erschien statt des QR-Codes nur ein
+  leeres Bild mit dem Text „QR-Code für die Handy-Kamera“. Der QR-Code wird jetzt richtig
+  angezeigt – einfach mit der Handy-Kamera scannen.
+
 ## 0.11.0 – 2026-11-08
 
 **Spielmodus: Nova spielt selbst – auch über Nacht**

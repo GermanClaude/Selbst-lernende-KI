@@ -30,8 +30,15 @@ def qr_svg(text: str, *, skala: int = 6, rand: int = 3, dunkel: str = "#111111",
         return None
     try:
         code = segno.make(text, error="m", micro=False)
-        return code.svg_inline(scale=skala, border=rand, dark=dunkel, light=hell, title=titel,
-                               svgclass="nova-qr", lineclass=None)
+        puffer = io.BytesIO()
+        # svgns=True: ohne xmlns zeigt der Browser das SVG als Bild (data:-URL im <img>) nicht an.
+        code.save(puffer, kind="svg", xmldecl=False, svgns=True, nl=False, scale=skala, border=rand,
+                  dark=dunkel, light=hell, title=titel, svgclass="nova-qr", lineclass=None,
+                  encoding="utf-8")
+        svg = puffer.getvalue().decode("utf-8")
+        if "xmlns=" not in svg.split(">", 1)[0]:
+            svg = svg.replace("<svg", '<svg xmlns="http://www.w3.org/2000/svg"', 1)
+        return svg
     except Exception as exc:  # noqa: BLE001
         log.info("QR-Code nicht erzeugt (%s)", type(exc).__name__)
         return None
