@@ -76,6 +76,7 @@ COMMANDS = [
     ("/ollama", "Ollama: kostenlose KI auf deinem PC (Stand, Modelle laden)"),
     ("/afk", "ich bin weg - die KI arbeitet allein weiter (mit Bericht)"),
     ("/sehen", "Live-Sehen: Nova schaut auf Bildschirm/Webcam (an, aus, pause, status)"),
+    ("/spiel", "Spielmodus: Nova spielt selbst (z.B. Manor Lords) - start, nacht, stopp, kalibrieren"),
     ("/sehen handy", "Handy als Kamera koppeln (QR-Code)"),
     ("/modell", "Modell waehlen - schnell oder besonders stark"),
     ("/denken", "wie gruendlich die KI nachdenkt (schnell ... maximal)"),
@@ -151,6 +152,13 @@ class AppController(CLI):
         self._sehen_turn = False
         # Sphaere: reagiert auf deine Stimme beim Mikrofon-Knopf / F2
         self.voice_capture.on_level = lambda value: self._event({"type": "mic", "level": value})
+        # Spielmodus: Meldungen als Karten, Stand als kleines Ereignis, Bericht mit Bildern
+        self.spiel.on_notiz = lambda text: self._notice(text, "spiel")
+        self.spiel.on_status = lambda: self._event({"type": "spiel", "spiel": self.spiel.status()})
+        self.spiel.on_bericht = self._spiel_bericht
+        self.spiel.on_vorschlag = lambda v: self._event({"type": "spiel_vorschlag", "ziel": v.get("ziel", ""),
+                                                         "modus": v.get("modus", "normal")})
+        self.spiel.afk_aktiv = lambda: self._afk is not None or self._afk_pending is not None
 
     # -- Ereignisse -----------------------------------------------------------
     def _event(self, event: dict) -> None:
@@ -184,6 +192,7 @@ class AppController(CLI):
             "afk": self._afk.status() if self._afk is not None else None,
             "afk_pending": self._afk_pending is not None,
             "sehen": self.sehen.status(),
+            "spiel": self.spiel.status(),
             "auto_confirm": bool(self.permissions.settings.auto_confirm),
             "safe_mode": bool(self.permissions.settings.safe_mode),
             "speak": bool(self.voice_out.enabled),
@@ -435,14 +444,17 @@ class AppController(CLI):
         """Hochgeladene Bilder (nur fuer die Anzeige im Fenster): data/bilder/hochgeladen."""
         return Path(self.config.project_root) / "data" / "bilder" / "hochgeladen"
 
-    def bild_ordner(self, kind: str) -> Path | None:
-        """Ordner fuer GET /api/bild/<kind>/<name>: h = hochgeladen, e = erstellt (Arbeitsordner)."""
+    def bild_ordner(self, kind: str, name: str = "") -> Path | None:
+        """Ordner fuer GET /api/bild/<kind>/<name>: h = hochgeladen, e = erstellt (Arbeitsordner),
+        s = Spielbericht (workspace/spiele/<JJJJ-MM-TT>, Datum steht vorn im Namen)."""
         from ..bildgenerator import bilder_ordner
 
         if kind == "h":
             return self.upload_dir()
         if kind == "e":
             return bilder_ordner(self.permissions.workspace_root)
+        if kind == "s" and re.match(r"^\d{8}_", name or ""):
+            return Path(self.permissions.workspace_root) / "spiele" / f"{name[:4]}-{name[4:6]}-{name[6:8]}"
         return None
 
     def _remove_queued_locked(self, item: dict) -> None:
@@ -758,6 +770,8 @@ class AppController(CLI):
         Hast du schon den AFK-Knopf gedrueckt, gelten dessen Grenzen (die KI fuellt hoechstens den
         Auftrag auf). True = vorgemerkt."""
         auftrag = str(auftrag or "")[:2000]
+        if self.spiel.aktiv:
+            return False  # Spielmodus und AFK-Modus nie gleichzeitig
         with self._lock:
             if self._afk is not None:
                 return False
@@ -793,6 +807,8 @@ class AppController(CLI):
             return {"ok": False, "error": schoen(f"Unbekannte Aktion '{action}'.")}
         if not self.config.api_key:
             return {"ok": False, "error": schoen("Dafuer brauche ich erst einen Schluessel (Gehirn & Schluessel).")}
+        if self.spiel.aktiv:
+            return {"ok": False, "error": "Gerade l\u00e4uft der Spielmodus \u2013 erst anhalten, dann AFK."}
         request = {"auftrag": str(data.get("auftrag") or "")[:2000],
                    "minutes": _int_or_none(data.get("minuten")),
                    "budget": _float_or_none(data.get("budget"))}
@@ -879,7 +895,7 @@ class AppController(CLI):
         with self._lock:
             back, self._afk_return = self._afk_return, None
         base = model_text or text
-        result = model_text_for(base, back=back, active=self._afk is not None)
+        result = self._spiel_rueckkehr() + model_text_for(base, back=back, active=self._afk is not None)
         return result if result != base else model_text
 
     def _afk_command(self, args: list[str]) -> None:
@@ -895,6 +911,72 @@ class AppController(CLI):
         else:
             print("AFK-Modus nicht gestartet - du hast ja schon weitergeschrieben.")
 
+    # -- Spielmodus (assistant/spiel) -------------------------------------------------
+    def _spiel_bericht(self, sitzung) -> None:
+        """Bericht als Karte mit Bildern - einmal im Verlauf, einmal als Ereignis (nie doppelt angezeigt)."""
+        text = schoen(sitzung.bericht_text or "")
+        bilder = [{"url": f"/api/bild/s/{p.name}", "name": p.name} for p in list(sitzung.bericht_bilder)[:5]]
+        self.history.append({"role": "notice", "level": "spiel", "text": text, "bilder": bilder})
+        self._event({"type": "spiel_bericht", "text": text, "bilder": bilder, "grund": sitzung.ende})
+        self._state_changed()
+
+    def spiel_api(self, data: dict) -> dict:
+        """POST /api/spiel: {"aktion": "status"|"start"|"stopp"|"kalibrieren"|"ablehnen", ...}."""
+        aktion = str(data.get("aktion") or "status")
+        if aktion == "status":
+            return {"ok": True, "spiel": self.spiel.status(), "laufend": self.spiel.laufende_spiele(),
+                    "warnung": schoen(self.spiel.warnung()), "kostenlos": bool(self.config.kostenlos)}
+        if aktion == "start":
+            if self._afk is not None or self._afk_pending is not None:
+                return {"ok": False, "error": "Gerade l\u00e4uft der AFK-Modus \u2013 erst zur\u00fcckkommen."}
+            ergebnis = self.spiel.starten(str(data.get("ziel") or ""), str(data.get("modus") or "normal"),
+                                          stunden=_float_or_none(data.get("stunden")),
+                                          euro=_float_or_none(data.get("euro")),
+                                          schritte=_int_or_none(data.get("schritte")),
+                                          einverstanden=data.get("einverstanden") is True)
+            if ergebnis.get("ok"):
+                self._notice(ergebnis["text"], "spiel")
+            elif ergebnis.get("warnung"):
+                ergebnis["warnung"] = schoen(ergebnis["warnung"])
+            self._state_changed()
+            return ergebnis
+        if aktion == "stopp":
+            text = self.spiel.stoppen("nutzer")
+            self._state_changed()
+            return {"ok": True, "text": text, "spiel": self.spiel.status()}
+        if aktion == "kalibrieren":
+            return {"ok": True, "text": self.spiel.kalibrieren()}
+        if aktion == "ablehnen":
+            self.spiel.vorschlag = None
+            self._state_changed()
+            return {"ok": True}
+        return {"ok": False, "error": f"Unbekannte Aktion '{aktion}'."}
+
+    def _spiel_command(self, rest: str) -> None:
+        """/spiel im Fenster: Start ohne Warten (die App bleibt frei); Zustimmung im Dialog."""
+        teile = rest.split(None, 1)
+        sub = teile[0].lower() if teile else ""
+        start, nacht = ("start", "starten", "los"), ("nacht", "nachts", "afk")
+        andere = ("status", "hilfe", "help", "stopp", "stop", "aus", "ende", "kalibrieren", "kalibrierung")
+        if sub in start or sub in nacht or (sub and sub not in andere):
+            modus = "nacht" if sub in nacht else "normal"
+            ziel = (teile[1] if len(teile) > 1 else "") if sub in start + nacht else rest
+            if self.spiel.braucht_zustimmung():
+                self._event({"type": "open", "what": "spiel", "ziel": ziel, "modus": modus})
+                print("Bitte einmal im Spielmodus-Dialog zustimmen \u2013 dann geht es los.")
+                return
+            if self._afk is not None or self._afk_pending is not None:
+                print("Gerade l\u00e4uft der AFK-Modus \u2013 erst zur\u00fcckkommen.")
+                return
+            ergebnis = self.spiel.starten(ziel, modus)
+            print(ergebnis.get("text") if ergebnis.get("ok") else ergebnis.get("error", "Ging nicht."))
+            self._state_changed()
+            return
+        if sub == "" and not self.spiel.aktiv:  # laeuft schon: nur der Stand (nie anhalten)
+            self._event({"type": "open", "what": "spiel", "ziel": "", "modus": "normal"})
+        super()._spiel_command(rest)
+        self._state_changed()
+
     # -- Live-Sehen (assistant/sehen) -------------------------------------------------
     def _sehen_notiz(self, text: str) -> None:
         self._notice(text, "sehen")
@@ -909,6 +991,8 @@ class AppController(CLI):
         der Sprachmodus, wann Nova ausgeredet hat und du nicht sprichst."""
         if paket.abwesend or not self.config.api_key or not self.sehen.darf_melden():
             return
+        if self.spiel.aktiv:
+            return  # Nova spielt gerade - keine Wortmeldungen (sie wuerden die Spiel-Eingaben sperren)
         live = self._live
         if live is not None and not live.stop_event.is_set():
             live.seen_event(paket)

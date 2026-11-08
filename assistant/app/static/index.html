@@ -67,6 +67,12 @@
         <span class="sba-text"><span class="sba-title" id="sb-afk-title">Ich bin weg</span><span class="sba-sub" id="sb-afk-sub">KI arbeitet allein weiter</span></span>
         <span class="sba-chev" data-icon="chevronRight"></span>
       </button>
+      <!-- Spielmodus: Nova spielt ein Einzelspieler-Spiel selbst (auch über Nacht) -->
+      <button class="sb-afk sb-spiel" id="sb-spiel" type="button" aria-haspopup="dialog">
+        <span class="sba-ic" data-icon="gamepad"></span>
+        <span class="sba-text"><span class="sba-title" id="sb-spiel-title">Spielmodus</span><span class="sba-sub" id="sb-spiel-sub">Nova spielt selbst, z. B. Manor Lords</span></span>
+        <span class="sba-chev" data-icon="chevronRight"></span>
+      </button>
       <div class="switch-row wheels" data-toggle="stuetzraeder" data-tour="stuetzraeder">
         <div class="switch-text">
           <span class="switch-title" id="lbl-stuetzraeder"><span data-icon="shield"></span>Stützräder</span>
@@ -186,6 +192,23 @@
           <button class="btn small sehen-handy" id="sb2-handy" type="button" hidden>Handy-Kamera …</button>
           <button class="btn small sehen-pause" id="sb2-pause" type="button" title="Sofort wegschauen (F4)">Pause</button>
           <button class="btn small sehen-stop" id="sb2-stop" type="button" title="Live-Sehen ausschalten">Ausschalten</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Spielmodus laeuft: immer sichtbar, solange Nova spielt (mit Stopp) -->
+    <div class="sehen-band spiel-band" id="spiel-band" role="region" aria-labelledby="sp-title" data-mode="spielt" hidden>
+      <div class="ab-inner">
+        <span class="sehen-eye spiel-ic" aria-hidden="true"><span data-icon="gamepad"></span></span>
+        <div class="ab-main">
+          <div class="ab-top">
+            <span class="ab-title sehen-title" id="sp-title" role="status">Nova spielt</span>
+            <span class="ab-meta"><span class="ab-meta-in"><span id="sp-zug"></span><span id="sp-zeit"></span><span id="sp-kosten"></span></span></span>
+          </div>
+          <div class="ab-last"><span class="ab-note" id="sp-last"></span></div>
+        </div>
+        <div class="sehen-btns">
+          <button class="btn small sehen-stop" id="sp-stop" type="button">Stopp</button>
         </div>
       </div>
     </div>
@@ -686,6 +709,55 @@
   </div>
 </div>
 
+<!-- Spielmodus starten (Ziel, Modus, Grenzen, beim ersten Mal die Zustimmung) -->
+<div class="modal sehen-modal" id="spiel-modal" hidden>
+  <div class="dialog sehen-dialog spiel-dialog" id="spiel-dialog" role="dialog" aria-modal="true" aria-labelledby="spd-title" aria-describedby="spd-sub" tabindex="-1">
+    <div class="dlg-head">
+      <div class="dlg-icon"><span data-icon="gamepad"></span></div>
+      <div class="dlg-titles">
+        <h2 class="dlg-title" id="spd-title">Spielmodus</h2>
+        <p class="dlg-sub" id="spd-sub">Nova spielt ein Einzelspieler-Spiel selbst – mit Maus und Tastatur, nur im Spielfenster.</p>
+      </div>
+    </div>
+    <div class="dlg-body sehen-body spiel-body">
+      <p class="spiel-erkannt" id="spd-erkannt" role="status"></p>
+      <label class="field">
+        <span class="field-label">Was soll ich im Spiel erreichen?</span>
+        <textarea class="input area" id="spd-ziel" rows="2" maxlength="2000" spellcheck="true"
+                  placeholder="z. B. Bau eine wunderschöne mittelalterliche Stadt"></textarea>
+      </label>
+      <div class="afk-pick">
+        <span class="field-label" id="spd-modus-label">Modus</span>
+        <div class="segctl afk-seg" id="spd-modus" role="radiogroup" aria-labelledby="spd-modus-label">
+          <button class="segctl-btn" type="button" role="radio" aria-checked="true" data-modus="normal">Normal – ich bin dabei</button>
+          <button class="segctl-btn" type="button" role="radio" aria-checked="false" data-modus="nacht">Über Nacht (Spiel-AFK)</button>
+        </div>
+      </div>
+      <div class="spiel-grenzen">
+        <label class="spiel-grenze"><span class="field-label">Stunden</span><input class="input" id="spd-stunden" type="text" inputmode="decimal" maxlength="5"></label>
+        <label class="spiel-grenze" id="spd-euro-box"><span class="field-label">Euro höchstens</span><input class="input" id="spd-euro" type="text" inputmode="decimal" maxlength="6"></label>
+        <label class="spiel-grenze"><span class="field-label">Züge höchstens</span><input class="input" id="spd-schritte" type="text" inputmode="numeric" maxlength="5"></label>
+      </div>
+      <ul class="sehen-list" id="spd-info">
+        <li><b>Nur im Spiel:</b> Nova drückt nur etwas, solange das Spielfenster vorne ist. Nach dem Start wechselst du ins Spiel (z. B. Alt+Tab).</li>
+        <li><b>Sofort anhalten:</b> <span id="spd-taste">Strg+Alt+Umschalt+P</span> (überall), der Stopp-Knopf oder einfach die Maus bewegen.</li>
+        <li><b>Nur Einzelspieler:</b> nie Online- oder Mehrspieler-Spiele.</li>
+        <li><b>Bildschirm nicht sperren:</b> sonst sieht und drückt Nova nichts. Im Spiel am besten „Randloses Vollbild“.</li>
+      </ul>
+      <div class="spiel-zustimmung" id="spd-zustimmung" hidden>
+        <div class="md spiel-warnung" id="spd-warnung"></div>
+        <label class="spiel-ok"><input type="checkbox" id="spd-ok"> <span>Ich habe das gelesen und bin einverstanden.</span></label>
+      </div>
+      <p class="afk-err" id="spd-err" role="alert" hidden></p>
+    </div>
+    <div class="dlg-foot">
+      <button class="btn ghost" id="spd-kalibrieren" type="button" title="Positionen der Anzeigen beim nächsten Zug neu suchen">Neu kalibrieren</button>
+      <button class="btn ghost" id="spd-cancel" type="button">Abbrechen</button>
+      <button class="btn primary" id="spd-go" type="button"><span data-icon="gamepad"></span><span>Los geht's</span></button>
+    </div>
+  </div>
+</div>
+
 <!-- Live-Sehen: Zustimmung beim ersten Mal (und nach einem Gehirn-Wechsel) -->
 <div class="modal sehen-modal" id="sehen-modal" hidden>
   <div class="dialog sehen-dialog" id="sehen-dialog" role="dialog" aria-modal="true" aria-labelledby="sd-title" aria-describedby="sd-intro" tabindex="-1">
@@ -971,5 +1043,6 @@
 <script src="/static/helfer.js"></script>
 <script src="/static/app.js"></script>
 <script src="/static/sehen.js"></script>
+<script src="/static/spiel.js"></script>
 </body>
 </html>

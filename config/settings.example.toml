@@ -181,6 +181,32 @@ hotkey_pause = "Strg+Alt+Umschalt+S"   # sofort wegschauen / wieder hinschauen (
 # Browserfenstern): Programmnamen ("meinebank.exe") oder Teile von Fenstertiteln ("Online-Banking").
 ausnahmen = []
 
+# ----------------------------------------------------------------------------
+# Spielmodus (/spiel): Nova spielt ein Einzelspieler-Spiel (z.B. Manor Lords) selbst -
+# auch nachts, waehrend du schlaefst (/spiel nacht ...). Maus und Tastatur steuert sie NUR,
+# solange das Spielfenster vorne ist. Nie fuer Online-/Mehrspieler-Spiele.
+# Not-Aus: die stopp_taste (ueberall in Windows), der Stopp-Knopf oder die Maus bewegen.
+# ----------------------------------------------------------------------------
+[spiel]
+max_stunden = 2                  # normaler Spielmodus: hoechstens so lange
+max_euro = 1.0                   # ... und so viel Kosten (Ollama: kostenlos)
+max_schritte = 300               # ... und so viele Zuege (ansehen, handeln, laufen lassen)
+nacht_max_stunden = 10           # Spiel-AFK ueber Nacht
+nacht_max_euro = 5.0
+nacht_max_schritte = 3000
+laufen_sekunden = 10             # so lange laeuft das Spiel zwischen zwei Zuegen weiter
+max_aktionen_pro_zug = 6         # Werkzeug-Schritte pro Zug
+stopp_taste = "Strg+Alt+Umschalt+P"   # Not-Aus ueberall in Windows
+screenshots_speichern = true     # 3-5 Bilder des Spielfensters fuer den Bericht (workspace/spiele)
+erlaubte_spiele = ["manor_lords"]
+quickload_erlaubt = false        # im Notfall den letzten Spielstand laden
+max_kante = 1280                 # Bild an die KI: laengste Seite (kleiner = guenstiger)
+raster = true                    # duennes Koordinaten-Raster ins Bild (hilft beim Zielen)
+warten_auf_spiel_sekunden = 300  # Spielfenster nicht vorne: so lange warten, dann Bericht
+neustart_nach_zuegen = 8         # danach frisches Gespraech aus Ziel + Tagebuch (spart Kosten)
+bei_mausbewegung_stoppen = true  # bewegst du die Maus, haelt Nova sofort an
+
+
 [memory]
 db_path = "data/memory.sqlite3"
 max_facts_in_context = 60

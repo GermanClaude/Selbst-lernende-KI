@@ -27,6 +27,7 @@ added_files = [
     (str(project_root / ".env.example"), "."),
     (str(project_root / "assistant" / "app" / "static"), "assistant/app/static"),  # App-Oberflaeche
     (str(project_root / "assistant" / "umlaute.json"), "assistant"),  # schoene Texte in der App
+    (str(project_root / "assistant" / "spiel" / "profile"), "assistant/spiel/profile"),  # Spielwissen (.md)
 ]
 
 # Live-Mitschrift im Jarvis-Modus (Vosk): die DLL liegt im Paketordner.
@@ -98,7 +99,8 @@ a = Analysis(
     # Optionale Extras werden nur eingebunden, wenn sie installiert sind.
     # PIL: Bilder verkleinern/pruefen (nur bei Bedarf importiert, deshalb hier ausdruecklich).
     hiddenimports=["anthropic", "openai", "requests", "bs4", "webview", "PIL", "PIL.Image", "PIL.ImageOps",
-                   "PIL.ImageGrab"] + sehen_imports + handy_imports,
+                   "PIL.ImageGrab", "PIL.ImageDraw",
+                   "assistant.spiel.profile.manor_lords"] + sehen_imports + handy_imports,
     hookspath=[],
     runtime_hooks=[],
     excludes=["cv2"],  # OpenCV nie mitnehmen (dxcam braucht es mit processor_backend="numpy" nicht)

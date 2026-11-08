@@ -351,6 +351,22 @@ neuer Text) und weckt Nova nur, wenn es wichtig ist.
   Android) scannen, „Kamera starten“, fertig. Handy und PC müssen im selben WLAN sein.
 - Source-Nutzer: einmal `/sehen einrichten` (installiert die nötigen Pakete).
 
+## Spielmodus: Nova spielt selbst (Windows)
+
+Nova kann Einzelspieler-Spiele selbst spielen – zuerst **Manor Lords**. Sag ihr, was sie bauen
+soll, oder lass sie über Nacht allein eine Stadt bauen.
+
+- Start: Knopf **„Spielmodus“** in der Seitenleiste, oder `/spiel start <Ziel>` bzw. über Nacht
+  `/spiel nacht <Ziel>`. Danach ins Spiel wechseln.
+- Nova pausiert das Spiel, schaut hin, handelt, lässt das Spiel ein paar Sekunden laufen – und
+  von vorn. Am Ende gibt es einen **Bericht mit Bildern** (`workspace/spiele/<Datum>/`).
+- **Anhalten:** Strg+Alt+Umschalt+P, Stopp-Knopf oder einfach die Maus bewegen. Nova drückt nur
+  etwas, solange das Spielfenster vorne ist; gefährliche Tasten (Alt+F4, Windows-Taste …) sind
+  gesperrt. Nie Online- oder Mehrspieler-Spiele.
+- Grenzen: normal 2 Std./1 €, nachts 10 Std./5 € (einstellbar, mit Ollama kostenlos).
+- Tipps: „Randloses Vollbild“, Spiel nicht als Administrator starten, Bildschirm nicht sperren
+  lassen, ein Modell nehmen, das Bilder sieht.
+
 ## Bilder: zeigen und erstellen lassen
 
 - **Bilder zeigen:** In der App mit **Strg+V** einfügen, ins Fenster ziehen oder über die
@@ -455,6 +471,7 @@ stoppt die Steuerung sofort.
 | `/afk [Betrag] [Auftrag]` | AFK-Modus: Nova arbeitet allein weiter, z. B. `/afk 0,30€ …` (zurück: Nachricht bzw. Strg+C) |
 | `/modell [name]` | Modell zeigen bzw. wählen (z.B. `/modell sonnet`, `/modell deepseek pro`) |
 | `/sehen [an\|aus\|pause\|status]` | Live-Sehen: Nova schaut auf Bildschirm/Webcam |
+| `/spiel [start\|nacht\|stopp\|kalibrieren] <Ziel>` | Spielmodus: Nova spielt selbst (z. B. Manor Lords) |
 | `/bild <Pfad> [Frage]` | Bild anhängen (ohne Pfad: aus der Zwischenablage) |
 | `/feedback` | Feedback & Bewertung an den Entwickler schicken |
 | `/denken [stufe]` | Denk-Tiefe: schnell, ausgewogen, gründlich, sehr gründlich, maximal |

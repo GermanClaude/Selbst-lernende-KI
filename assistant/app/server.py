@@ -8,14 +8,15 @@ koennen. Der Server spricht nur mit der eigenen Oberflaeche:
   GET  /api/events       Ereignisstrom (Server-Sent Events)
   GET  /api/state, /api/history, /api/profile, /api/memory, /api/tutorial, /api/appearance, /custom.css,
        /api/setup, /api/feedback, /api/ollama
-  GET  /api/bild/<h|e>/<name>?t=   Bild anzeigen: h = hochgeladen (data/bilder/hochgeladen),
-                                   e = erstellt (<Arbeitsordner>/bilder) - nur PNG/JPEG/GIF/WebP
+  GET  /api/bild/<h|e|s>/<name>?t=   Bild anzeigen: h = hochgeladen (data/bilder/hochgeladen),
+                                   e = erstellt (<Arbeitsordner>/bilder), s = Spielbericht
+                                   (<Arbeitsordner>/spiele/<Datum>) - nur PNG/JPEG/GIF/WebP
   POST /api/send (Text + Bilder, Warteschlange, interrupt), /api/queue, /api/afk, /api/stop,
        /api/answer, /api/voice, /api/toggle, /api/profile, /api/memory, /api/jarvis, /api/tutorial,
        /api/setup, /api/modell, /api/update, /api/feedback, /api/feedback/spaeter,
        /api/feedback/gezeigt, /api/bilder/einstellen,
        /api/ollama/laden, /api/ollama/abbrechen, /api/ollama/adresse, /api/ollama/starten,
-       /api/sehen (Live-Sehen an/aus/pause/Quelle/Kamera-Meldung)
+       /api/sehen (Live-Sehen an/aus/pause/Quelle/Kamera-Meldung), /api/spiel (Spielmodus)
   POST /api/kamera/bild  ein Webcam-Bild (rohe JPEG/PNG/WebP-Bytes, hoechstens 2 MB) - nur im Speicher
 Anfragen duerfen hoechstens 1 MB gross sein - /api/send und /api/feedback (mit Bildern) 40 MB.
 """
@@ -42,7 +43,7 @@ _MAX_BODY_BILDER = 40 * 1024 * 1024           # /api/send und /api/feedback (Bil
 _GROSSE_ANFRAGEN = ("/api/send", "/api/feedback")
 _MAX_VERWERFEN = 64 * 1024 * 1024             # zu grosse Anfrage bis hierhin noch lesen (sauberes 413)
 _MAX_BILD_DATEI = 30 * 1024 * 1024            # groesser liefert /api/bild nichts aus
-_BILD_ARTEN = ("h", "e")                      # hochgeladen | erstellt
+_BILD_ARTEN = ("h", "e", "s")                 # hochgeladen | erstellt | Spielbericht
 _MAX_KAMERA_BILD = 2 * 1024 * 1024            # /api/kamera/bild: ein Webcam-Bild
 _KAMERA_TYPEN = ("image/jpeg", "image/png", "image/webp")
 _ZU_GROSS = ("Die Nachricht ist zu gro\u00df (h\u00f6chstens 40 MB). Bitte weniger oder kleinere "
@@ -201,7 +202,7 @@ class AppServer:
                 kind, _, name = rest.partition("/")
                 if kind not in _BILD_ARTEN or not DATEINAME_MUSTER.match(name):
                     return self._deny(404)
-                ordner = server.controller.bild_ordner(kind)
+                ordner = server.controller.bild_ordner(kind, name)
                 if ordner is None:
                     return self._deny(404)
                 try:
@@ -311,6 +312,8 @@ class AppServer:
                     return self._json(ctl.afk(body))
                 if url.path == "/api/sehen":
                     return self._json(ctl.sehen_api(body))
+                if url.path == "/api/spiel":
+                    return self._json(ctl.spiel_api(body))
                 if url.path == "/api/stop":
                     ctl.stop()
                     return self._json({"ok": True})

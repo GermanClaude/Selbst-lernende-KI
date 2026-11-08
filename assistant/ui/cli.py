@@ -34,6 +34,11 @@ Sonderbefehle (mit '/' beginnen):
   /ollama starten     - das installierte Ollama starten
   /afk [Betrag] [Auftrag] - ich bin weg: die KI arbeitet allein weiter, z.B. /afk 0,30€ ...
                        (Strg+C = zurueck)
+  /spiel              - Spielmodus: Stand und Hilfe (Nova spielt Einzelspieler-Spiele wie Manor Lords)
+  /spiel start <Ziel> - Nova spielt jetzt, z.B. /spiel start Bau eine wunderschoene mittelalterliche Stadt
+  /spiel nacht <Ziel> - Spiel-AFK ueber Nacht (laenger, mit Bericht am Morgen)
+  /spiel stopp | /spiel kalibrieren - anhalten | Positionen der Anzeigen neu suchen
+                       (Not-Aus ueberall: Strg+Alt+Umschalt+P - oder einfach die Maus bewegen)
   /bild <pfad> [frage] - Bild mitschicken, z.B. /bild foto.jpg Was steht da drauf? (mehrere Pfade
                         moeglich, mit Leerzeichen in Anfuehrungszeichen; ohne Pfad: Zwischenablage).
                         Ein Bildpfad allein (z.B. ins Fenster gezogen) geht auch.
@@ -189,6 +194,17 @@ class CLI:
         self.tool_ctx.extra["sehen"] = self.sehen
         self.brain = Brain(config, self.memory, self.registry, self.tool_ctx)
         self.brain.provider.wait_fn = self.thinking.start
+        # Spielmodus (assistant/spiel): Nova spielt selbst - nur nach deinem Start, nur im Spielfenster
+        from ..spiel.bild import OcrLeser
+        from ..spiel.steuerung import SpielSteuerung
+
+        self._spiel_vorschlag: dict | None = None
+        self.spiel = SpielSteuerung(
+            config, self.permissions, self.memory, self._spiel_provider, on_notiz=self._spiel_notiz,
+            on_vorschlag=self._spiel_vorgeschlagen, nutzung_buchen=self._spiel_nutzung,
+            afk_aktiv=lambda: self.tool_ctx.extra.get("afk_session") is not None,
+            sieht_bilder=self._spiel_sieht_bilder, ocr=OcrLeser(config.sehen.ocr_sprache))
+        self.tool_ctx.extra["spiel_vorschlag"] = self.spiel.vorschlagen
         self.voice_out = VoiceOutput(config.voice.speak_responses)
         self.voice_in = VoiceInput(config.voice.enabled)
         self.voice_mode = config.voice.enabled and self.voice_in.available()
@@ -788,8 +804,8 @@ class CLI:
     def _sehen_wecken(self, paket) -> None:
         """Live-Sehen hat etwas bemerkt. Im Terminal meldet sich Nova nur im Jarvis-Modus von selbst -
         sonst kommt es vor die naechste Eingabe und in die naechste Nachricht an die KI."""
-        if paket.abwesend:
-            return
+        if paket.abwesend or getattr(getattr(self, "spiel", None), "aktiv", False):
+            return  # auch nicht, waehrend Nova spielt
         loop = self._jarvis_loop
         if loop is not None and not loop.stop_event.is_set():
             loop.seen_event(paket)
@@ -1098,6 +1114,111 @@ class CLI:
             self._afk_return = (session.started, report)
             print("\n" + _c(report.replace("**", ""), CYAN))
             print(_c("Schreib einfach weiter - z.B. welche Vorschlaege ich umsetzen soll.", GREY))
+
+    # -- Spielmodus (assistant/spiel) ---------------------------------------------------
+    def _spiel_provider(self, system_prompt: str, registry, ctx):
+        """Eigenes Gespraech fuer die Spielsitzung - nur mit den drei Spielwerkzeugen."""
+        from ..providers import build_provider
+
+        return build_provider(self.config, system_prompt, registry, ctx, client=self.brain.provider.client)
+
+    def _spiel_sieht_bilder(self) -> bool:
+        if self.config.active_provider == "ollama":
+            try:
+                return bool(self.brain.provider._sees_images())
+            except Exception:  # noqa: BLE001
+                return False
+        return self._sieht_bilder()
+
+    def _spiel_nutzung(self, usages: list) -> None:
+        """Kosten der Spielsitzung zaehlen zur Sitzung (/kosten)."""
+        for u in usages:
+            self.brain.provider.usage.add(input_full=u.input_full_tokens, cache_hit=u.cache_hit_tokens,
+                                          output=u.output_tokens, usd=u.usd, bepreist=u.bepreist)
+
+    def _spiel_notiz(self, text: str) -> None:
+        print(_c(f"[Spiel] {text}", GREY), flush=True)
+
+    def _spiel_vorgeschlagen(self, vorschlag: dict) -> None:
+        self._spiel_vorschlag = dict(vorschlag)
+
+    def _spiel_rueckkehr(self) -> str:
+        """Nach einer Spielsitzung: der Bericht einmal vor deine naechste Nachricht (Nova weiss, was war)."""
+        bericht, self.spiel.rueckkehr = self.spiel.rueckkehr, ""
+        if not bericht:
+            return ""
+        return ("[Bericht deiner letzten Spielsitzung (du hast allein gespielt). Geh darauf ein, wenn es passt:]\n"
+                + bericht + "\n\n")
+
+    def _spiel_hilfe(self) -> str:
+        st = self.spiel.status()
+        zeilen = []
+        if st.get("aktiv"):
+            zeilen.append(f"Spielmodus laeuft: {st.get('spiel') or 'wartet aufs Spiel'} - Zug {st.get('zuege', 0)}, "
+                          f"{st.get('minuten', 0)} Min. {st.get('letztes', '')}")
+        else:
+            zeilen.append("Spielmodus ist aus. Freigegebene Spiele: " + (", ".join(st["spiele"]) or "keine"))
+        zeilen += [
+            "  /spiel start <Ziel>  - jetzt spielen (danach ins Spiel wechseln)",
+            "  /spiel nacht <Ziel>  - Spiel-AFK ueber Nacht (laenger, mit Bericht)",
+            "  /spiel stopp         - anhalten",
+            "  /spiel kalibrieren   - Positionen der Anzeigen beim naechsten Zug neu suchen",
+            f"Not-Aus ueberall: {st['stopp_taste']} - oder einfach die Maus bewegen. Nur Einzelspieler-Spiele.",
+        ]
+        return "\n".join(zeilen)
+
+    def _spiel_zustimmung(self) -> bool:
+        if not self.spiel.braucht_zustimmung():
+            return True
+        print(_c("\n" + self.spiel.warnung().replace("**", "") + "\n", YELLOW))
+        if not self._ask_yes("Spielmodus erlauben? [j/N]"):
+            print("Okay, kein Spielmodus.")
+            return False
+        self.spiel.zustimmen()
+        return True
+
+    def _spiel_command(self, rest: str) -> None:
+        teile = rest.split(None, 1)
+        sub = teile[0].lower() if teile else ""
+        ziel = teile[1] if len(teile) > 1 else ""
+        if sub in ("", "status", "hilfe", "help"):
+            print(_c(self._spiel_hilfe(), CYAN))
+        elif sub in ("start", "starten", "los"):
+            self._spiel_terminal(ziel, "normal")
+        elif sub in ("nacht", "afk", "nachts"):
+            self._spiel_terminal(ziel, "nacht")
+        elif sub in ("stopp", "stop", "aus", "ende"):
+            print(self.spiel.stoppen("nutzer"))
+        elif sub in ("kalibrieren", "kalibrierung"):
+            print(self.spiel.kalibrieren())
+        else:  # "/spiel Bau eine Stadt" = Start mit diesem Ziel
+            self._spiel_terminal(rest, "normal")
+
+    def _spiel_terminal(self, ziel: str, modus: str) -> None:
+        """Im Terminal laeuft die Sitzung im Vordergrund: Strg+C oder die Not-Aus-Taste halten an."""
+        grund = self.spiel.pruefen(ziel)
+        if grund:
+            print(_c(grund, YELLOW))
+            return
+        if not self._spiel_zustimmung():
+            return
+        vorher = self.spiel.letzte_sitzung
+        ergebnis = self.spiel.starten(ziel, modus, einverstanden=True)
+        if not ergebnis.get("ok"):
+            print(_c(ergebnis.get("error", "Der Spielmodus ging nicht."), YELLOW))
+            return
+        print(_c(f"\n[Spielmodus] {ergebnis['text']}", BOLD))
+        print(_c("Strg+C hier im Terminal haelt ebenfalls an.", GREY))
+        try:
+            while not self.spiel.warten(0.5):
+                pass
+        except KeyboardInterrupt:
+            print(_c("\n[Halte an ...]", YELLOW))
+            self.spiel.stoppen("nutzer")
+            self.spiel.warten(30)
+        bericht = self.spiel.letzter_bericht if self.spiel.letzte_sitzung is not vorher else ""
+        if bericht:
+            print("\n" + _c(bericht.replace("**", ""), CYAN))
 
     def _split_provider(self, args: list[str]) -> tuple[str, list[str]]:
         """'/modell deepseek pro' -> ('deepseek', ['pro']); ohne Gehirn-Name: das aktive."""
@@ -1477,8 +1598,8 @@ class CLI:
             mit_bildern = {"bilder": bilder} if bilder else {}
             self.sehen.nutzer_aktiv(user_text)
             try:
-                answer = self.brain.respond(self._sehen_kontext() + model_text_for(user_text, back=back),
-                                            on_text=self._emit, **mit_bildern)
+                answer = self.brain.respond(self._sehen_kontext() + self._spiel_rueckkehr()
+                                            + model_text_for(user_text, back=back), on_text=self._emit, **mit_bildern)
             except KeyboardInterrupt:
                 self._afk_pending = None  # angehalten -> doch nicht weg
                 self.thinking.stop()
@@ -1513,6 +1634,15 @@ class CLI:
             if self._afk_pending is not None:  # "Ich bin jetzt weg" -> die KI hat den AFK-Modus vorgemerkt
                 pending, self._afk_pending = self._afk_pending, None
                 self._afk_terminal(**pending)
+            if self._spiel_vorschlag is not None:  # Nova hat den Spielmodus vorgeschlagen -> du entscheidest
+                vorschlag, self._spiel_vorschlag = self._spiel_vorschlag, None
+                nacht = " (ueber Nacht)" if vorschlag.get("modus") == "nacht" else ""
+                if self._ask_yes(f"Spielmodus{nacht} jetzt starten? Ziel: {vorschlag.get('ziel') or 'frei spielen'} "
+                                 "[j/N]"):
+                    self._spiel_terminal(vorschlag.get("ziel", ""), vorschlag.get("modus", "normal"))
+                else:
+                    self.spiel.vorschlag = None
+                    print("Okay, kein Spielmodus.")
 
     # -- Ein-/Ausgabe -------------------------------------------------------
     def _emit(self, chunk: str) -> None:
@@ -1590,6 +1720,8 @@ class CLI:
             self._brain_command(cmd.split()[1:])
         elif base in ("/afk", "/weg", "/abwesend"):
             self._afk_command(cmd.split()[1:])
+        elif base in ("/spiel", "/spielen", "/spielmodus"):
+            self._spiel_command(cmd.split(None, 1)[1] if len(cmd.split(None, 1)) > 1 else "")
         elif base in ("/modell", "/model", "/modelle"):
             self._model_command(cmd.split()[1:])
         elif base == "/ollama":
@@ -1944,6 +2076,12 @@ class CLI:
     def _shutdown(self) -> None:
         try:
             self.sehen.aus()  # nie weiter zusehen, wenn die KI endet
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            if self.spiel.aktiv:  # nie weiterspielen, wenn die KI endet
+                self.spiel.stoppen("nutzer")
+                self.spiel.warten(10)
         except Exception:  # noqa: BLE001
             pass
         self._nutzung_speichern()  # Nutzungszeit fuer die Feedback-Nachfrage

@@ -64,7 +64,8 @@ def test_alle_symbole_gibt_es():
 
 def test_helfer_wird_vor_app_geladen():
     scripts = re.findall(r'<script src="([^"]+)"></script>', HTML)
-    assert scripts == ["/static/helfer.js", "/static/app.js", "/static/sehen.js"]  # sehen.js: Live-Sehen
+    assert scripts == ["/static/helfer.js", "/static/app.js", "/static/sehen.js",
+                       "/static/spiel.js"]  # sehen.js: Live-Sehen, spiel.js: Spielmodus
 
 
 def test_dialoge_sind_zugaenglich():
