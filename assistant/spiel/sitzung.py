@@ -33,7 +33,9 @@ logger = get_logger()
 
 MAX_AKTIONEN = 12
 MAX_BILDER_IM_GESPRAECH = 60   # danach frisches Gespraech (Claude: hoechstens 100 Bilder pro Anfrage)
-MAX_BILD_BYTES_IM_GESPRAECH = 20 * 1024 * 1024  # ... oder so viele Bild-Bytes (Claude: 32 MB pro Anfrage)
+MAX_BILD_BYTES_IM_GESPRAECH = 15 * 1024 * 1024  # ... oder so viele Bild-Bytes (Base64 ~20 MB, Claude: 32 MB)
+MIN_PAUSE = 0.5                # jede Wiederholung der Hauptschleife wartet mindestens so lange
+MELDUNG_ABSTAND = 30.0         # "Spiel weg"/"wieder vorne" hoechstens so oft als Karte
 MAX_FEHLER_FOLGE = 6           # so viele Fehler hintereinander (z.B. Netz weg), dann Schluss
 # Woran man erkennt, dass das Modell nicht geantwortet hat (die Provider liefern dann einen Text)
 FEHLER_MUSTER = re.compile(
@@ -178,6 +180,7 @@ class SpielSitzung:
         self._gespraech_kaputt = False   # Modell hat nicht geantwortet -> frisches Gespraech
         self._werkzeug_aufrufe = 0
         self._zug_fehler = False         # dieser Zug ging schief -> das Spiel NICHT laufen lassen
+        self._fenster_meldung = -1e9     # wann zuletzt "weg"/"wieder vorne" als Karte kam
         self._letztes_png: bytes | None = None
         self._zwischenbilder: list[Path] = []
         self._letztes_zwischenbild = 0.0
@@ -277,7 +280,7 @@ class SpielSitzung:
                     self.ende = grund
                     break
                 if not self._warte_auf_spiel():
-                    self.ende = self._grenze or "fenster"
+                    self.ende = self._grenze_erreicht() or "fenster"  # z.B. Zeit um, waehrend Nova wartete
                     break
                 self.zustand = "spielt"
                 self._aktualisieren()
@@ -289,10 +292,10 @@ class SpielSitzung:
                 if grund:
                     self.ende = grund
                     break
-                if self._fenster_weg:
-                    continue
-                if self._zug_fehler:  # ohne Antwort der KI laeuft das Spiel nicht unbeaufsichtigt weiter
-                    self._zug_fehler = False
+                if self._fenster_weg or self._zug_fehler:
+                    # ohne Spiel vorne bzw. ohne Antwort der KI laeuft das Spiel nicht weiter - und nie
+                    # ohne Pause wieder von vorn (sonst Endlosschleife)
+                    self._pause(MIN_PAUSE)
                     continue
                 self._lassen_laufen()
         except Exception:  # noqa: BLE001 - lieber aufhoeren als unbeaufsichtigt Fehler wiederholen
@@ -357,16 +360,25 @@ class SpielSitzung:
             return "budget"
         return ""
 
+    def _fenster_melden(self, text: str) -> None:
+        """'weg'/'wieder vorne' hoechstens alle MELDUNG_ABSTAND Sekunden als Karte - sonst nur im Band."""
+        jetzt = self.uhr()
+        wichtig = jetzt - self._fenster_meldung >= MELDUNG_ABSTAND
+        if wichtig:
+            self._fenster_meldung = jetzt
+        self._melden(text, wichtig=wichtig)
+
     def _warte_auf_spiel(self) -> bool:
         """Spielfenster vorne? Sonst warten (nichts druecken) - hoechstens grenzen.warten_sekunden."""
         if self.eingabe.ist_vorne():
             if self._fenster_weg:
-                self._melden("Das Spiel ist wieder vorne \u2013 ich spiele weiter.")
+                self._fenster_melden("Das Spiel ist wieder vorne \u2013 ich spiele weiter.")
                 self.journal.notiz("system", "Spiel wieder vorne.")
             self._fenster_weg = False
             return True
         self.zustand = "wartet"
-        self._melden(f"Ich warte, bis {self.profil.name} wieder vorne ist (ich dr\u00fccke so lange nichts).")
+        self._fenster_melden(f"Ich warte, bis {self.profil.name} wieder vorne ist (ich dr\u00fccke so lange "
+                             "nichts).")
         self._aktualisieren()
         ende = self.uhr() + self.grenzen.warten_sekunden
         while self.uhr() < ende:
@@ -375,7 +387,7 @@ class SpielSitzung:
             if self.eingabe.ist_vorne():
                 self._fenster_weg = False
                 self.eingabe.neuer_zug()
-                self._melden("Das Spiel ist wieder vorne \u2013 ich spiele weiter.")
+                self._fenster_melden("Das Spiel ist wieder vorne \u2013 ich spiele weiter.")
                 self.journal.notiz("system", "Spiel wieder vorne.")
                 return True
             self.schlafe(0.25)
@@ -403,6 +415,7 @@ class SpielSitzung:
 
     def _zug(self) -> str:
         """Ein Zug. Rueckgabe: Grund zum Aufhoeren oder ''."""
+        self._zug_fehler = False  # gilt nur fuer genau diesen Zug
         try:
             self._pause_sicherstellen()
             rechteck = self._rechteck()
@@ -480,7 +493,9 @@ class SpielSitzung:
             self.journal.speichern()
         problem = self._antwort_problem(provider, antwort, "".join(gesehen), aufrufe_vorher)
         if problem:
-            self._gespraech_kaputt = True  # unbeantwortete Bilder nicht weiter anhaeufen
+            # Ein einzelner Aussetzer: Gespraech behalten; ab dem zweiten in Folge frisch beginnen
+            # (unbeantwortete Bilder sollen sich nicht anhaeufen).
+            self._gespraech_kaputt = self._fehler_folge >= 1
             return self._fehler(f"KI hat nicht geantwortet: {problem}")
         self._fehler_folge = 0
         satz = " ".join(str(antwort or "").split())[:200]

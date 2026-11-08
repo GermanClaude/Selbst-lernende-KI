@@ -100,6 +100,8 @@ class SendInputTasten:  # pragma: no cover - nur unter Windows
         self._u.GetSystemMetrics.argtypes = [ctypes.c_int]
         self._u.GetCursorPos.argtypes = [ctypes.POINTER(w.POINT)]
         self._u.SetCursorPos.argtypes = [ctypes.c_int, ctypes.c_int]
+        self._u.GetAsyncKeyState.argtypes = [ctypes.c_int]
+        self._u.GetAsyncKeyState.restype = ctypes.c_short
 
     def _senden(self, eingabe) -> None:
         ctypes = self._ctypes
@@ -157,6 +159,11 @@ class SendInputTasten:  # pragma: no cover - nur unter Windows
         eingabe.mi = self._MI(dx=0, dy=0, mouseData=wert & 0xFFFFFFFF, dwFlags=MOUSEEVENTF_WHEEL, time=0,
                               dwExtraInfo=0)
         self._senden(eingabe)
+
+    def modifier_gehalten(self) -> bool:
+        """Haelt jemand (physisch) Strg, Alt, Umschalt oder Windows? (GetAsyncKeyState)"""
+        abfrage = self._u.GetAsyncKeyState
+        return any(abfrage(vk) & 0x8000 for vk in (0x10, 0x11, 0x12, 0x5B, 0x5C))
 
     def cursor(self) -> tuple[int, int] | None:
         from ctypes import wintypes as w

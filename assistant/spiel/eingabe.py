@@ -175,10 +175,15 @@ class Eingabe:
 
     # -- Waechter --------------------------------------------------------------------
     def ist_vorne(self) -> bool:
+        """Spiel vorne UND mit Groesse (minimiert/Aufloesungswechsel = wie "nicht vorne": warten)."""
         try:
-            return self.ziel.passt(self.vordergrund())
+            info = self.vordergrund()
         except Exception:  # noqa: BLE001
             return False
+        if not self.ziel.passt(info):
+            return False
+        rechteck = info.get("rechteck") or (0, 0, 0, 0)
+        return len(rechteck) == 4 and rechteck[2] > 0 and rechteck[3] > 0
 
     def pruefen(self) -> dict:
         """Vor JEDER Eingabe: angehalten? Spiel vorne? Maus selbst bewegt? -> Fenster-Info."""
@@ -454,6 +459,23 @@ class Eingabe:
         x, y, b, h = rechteck
         return x <= pos[0] < x + b and y <= pos[1] < y + h
 
+    def _modifier_frei(self, hoechstens: float = 2.0) -> bool:
+        """Sind Strg/Alt/Umschalt/Windows wirklich losgelassen (z.B. nach der Not-Aus-Taste)?
+        Wartet hoechstens `hoechstens` Sekunden. Ohne Abfrage-Moeglichkeit: True."""
+        abfrage = getattr(self.tasten, "modifier_gehalten", None)
+        if abfrage is None:
+            return True
+        ende = self.uhr() + hoechstens
+        while True:
+            try:
+                if not abfrage():
+                    return True
+            except Exception:  # noqa: BLE001
+                return True
+            if self.uhr() >= ende:
+                return False
+            self.schlafe(0.05)
+
     def notfall_pause(self, name: str) -> bool:
         """Zum Schluss einmal die Pausentaste - auch nach einem Stopp (sonst liefe die Stadt allein
         weiter). Nur wenn das Spiel vorne ist. True = gedrueckt."""
@@ -462,6 +484,8 @@ class Eingabe:
             self.erlaubnis.sperre_pruefen([name])
             if not self.ziel.passt(self.vordergrund()):
                 return False
+            if not self._modifier_frei():
+                return False  # sonst kaeme z.B. Strg+Alt+Umschalt+Leertaste im Spiel an
             vk, erw = TASTEN[name]
             self.tasten.taste(vk, True, erw)
             self.schlafe(_DEFAULT_HALTEN)

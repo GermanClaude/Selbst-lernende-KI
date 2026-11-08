@@ -732,8 +732,9 @@ def test_modellfehler_zaehlen_als_fehler_und_das_spiel_laeuft_nicht_weiter(tmp_p
     s = u.spielen()
     assert s.ende == "fehler"
     assert u.tasten.gedrueckt(0x20) == 0  # nie unbeaufsichtigt weiterlaufen lassen
-    assert len(u.provider) >= 5  # nach jedem Fehler ein frisches Gespraech (keine Bilder-Stapel)
-    assert all(len(json.loads(r)) == 1 for r in u.client.messages.requests)
+    # ein Aussetzer behaelt das Gespraech, ab dem zweiten in Folge ein frisches (keine Bilder-Stapel)
+    assert len(u.provider) >= 4
+    assert all(len(json.loads(r)) <= 2 for r in u.client.messages.requests)
     assert "nicht geantwortet" in " ".join(s.journal.von("problem"))
 
 
@@ -823,3 +824,86 @@ def test_stopp_kurz_vor_dem_start_der_sitzung_wird_nie_verschluckt(tmp_path):
     assert u.st.starten("Stadt", einverstanden=True)["ok"]
     assert u.st.warten(20)
     assert u.st.letzte_sitzung is None and not u.tasten.ereignisse and u.client.messages.calls == 0
+
+
+def test_minimiertes_spiel_vorne_kein_endlos_kreisen(tmp_path):
+    from assistant.spiel.sitzung import MAX_BILD_BYTES_IM_GESPRAECH
+
+    class Zaehlend(Vorne):
+        def __init__(self):
+            super().__init__(dict(SPIEL, rechteck=(0, 0, 0, 0)))  # minimiert, aber "vorne"
+            self.n = 0
+
+        def __call__(self):
+            self.n += 1
+            return super().__call__()
+
+    vorne = Zaehlend()
+    u = Umgebung(tmp_path, [_text("ok")], vorne=vorne, warten_auf_spiel_sekunden=3600)
+    s = u.spielen(stunden=0.05)
+    assert s.ende == "zeit"
+    assert u.client.messages.calls == 0 and not u.tasten.ereignisse
+    assert len(u.notizen) < 10  # kein Strom aus "wieder vorne"-Karten
+    assert vorne.n < 5000       # kein Kreisen ohne Pause
+    assert MAX_BILD_BYTES_IM_GESPRAECH == 15 * 1024 * 1024
+
+
+def test_wieder_vorne_meldungen_sind_gedrosselt(tmp_path):
+    class Flackert(Vorne):
+        def __init__(self):
+            super().__init__()
+            self.n = 0
+
+        def __call__(self):
+            self.n += 1
+            return dict(SPIEL) if self.n % 7 else dict(NOVA)  # das Fenster wechselt staendig
+
+    u = Umgebung(tmp_path, [_aktion(1, [{"typ": "warten", "zahl": 0.1}]), _text("ok")], vorne=Flackert())
+    u.cfg.spiel.max_schritte = 30
+    s = u.spielen()
+    karten = [n for n in u.notizen if "vorne" in n]
+    assert s.ende in ("schritte", "zeit")
+    assert len(karten) <= 2 + s.minuten * 2 + 2
+
+
+def test_not_aus_pause_erst_wenn_die_modifier_los_sind():
+    tasten = FakeTasten()
+    gehalten = {"n": 0}
+
+    def modifier_gehalten():
+        gehalten["n"] += 1
+        return gehalten["n"] <= 3  # Strg+Alt+Umschalt noch kurz gedrueckt
+
+    tasten.modifier_gehalten = modifier_gehalten
+    e = _eingabe(tasten=tasten)
+    assert e.notfall_pause("space") and tasten.gedrueckt(0x20) == 1 and gehalten["n"] == 4
+    tasten.ereignisse.clear()
+    tasten.modifier_gehalten = lambda: True  # bleibt gedrueckt -> lieber gar nicht pausieren
+    assert not e.notfall_pause("space") and not tasten.ereignisse
+
+
+def test_not_aus_taste_waehrend_des_laufens_pausiert_erst_nach_dem_loslassen(tmp_path):
+    u = Umgebung(tmp_path, [_aktion(1, [{"typ": "warten", "zahl": 0.1}]), _text("weiter")], laufen_sekunden=60)
+    u.tasten.modifier_gehalten = lambda: True  # die Not-Aus-Taste wird noch gehalten
+    gestartet = {}
+
+    class NotAus:
+        def stop(self):
+            pass
+
+    def notaus(gedrueckt):
+        gestartet["taste"] = gedrueckt
+        return NotAus()
+
+    u.st.notaus_fabrik = notaus
+    original = u.st.schlafe
+    def schlafe(sek):
+        s = u.st.sitzung
+        if s is not None and s.zustand == "laeuft" and "taste" in gestartet:
+            gestartet.pop("taste")()
+        original(sek)
+
+    u.st.schlafe = schlafe
+    s = u.spielen()
+    assert s.ende == "taste"
+    assert u.tasten.gedrueckt(0x20) == 1  # nur das Weiterlaufen - keine Leertaste zu gehaltenen Modifiern
