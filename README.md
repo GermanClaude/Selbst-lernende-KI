@@ -323,12 +323,15 @@ drück in der App **„Ich bin weg“** oder tippe `/afk <Auftrag>`. Dann arbeit
 Schritten allein weiter – an deinem Auftrag oder an dem, woran ihr zuletzt gearbeitet
 habt – und handelt so, wie du es nach allem, was sie über dich weiß, wollen würdest.
 
-- **Erlaubt**: lesen, im Internet recherchieren, planen, **neue** Dateien im
-  Arbeitsordner anlegen, sich Dinge merken.
+- **Erlaubt**: im Arbeitsordner lesen, im Internet recherchieren (Websuche und die
+  dabei gefundenen Seiten), planen, **neue** Dateien im Arbeitsordner anlegen, sich
+  Dinge merken.
 - **Nicht erlaubt** (egal wie die Stützräder stehen): löschen, bestehende Dateien
   überschreiben, Befehle/Programme ausführen, den PC steuern, etwas verschicken oder
-  kaufen. Solche Schritte schreibt sie als **Vorschlag** auf. Nachgefragt wird in der
-  Zeit nie – es ist ja niemand da.
+  kaufen, ihren eigenen Programmordner (Schlüssel, Einstellungen) anfassen, selbst
+  zusammengebaute Internet-Adressen aufrufen. Solche Schritte schreibt sie als
+  **Vorschlag** auf. Nachgefragt wird in der Zeit nie – es ist ja niemand da.
+  Anweisungen, die auf Webseiten oder in Dateien stehen, befolgt sie nicht.
 - **Grenzen**: höchstens 2 Stunden, ca. 1 € und 12 Schritte (in der App beim Start
   wählbar, sonst in `config/settings.toml` unter `[afk]`).
 - **Zurück**: einfach eine Nachricht schreiben (im Terminal: Strg+C). Du bekommst einen
