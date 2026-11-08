@@ -37,12 +37,15 @@ Sonderbefehle (mit '/' beginnen):
   /bild <pfad> [frage] - Bild mitschicken, z.B. /bild foto.jpg Was steht da drauf? (mehrere Pfade
                         moeglich, mit Leerzeichen in Anfuehrungszeichen; ohne Pfad: Zwischenablage).
                         Ein Bildpfad allein (z.B. ins Fenster gezogen) geht auch.
-  /sehen [an|aus|pause|weiter|bildschirm|webcam|beides|status] - Live-Sehen: Nova schaut auf deinen
-                       Bildschirm (Windows) und meldet sich, wenn etwas Wichtiges passiert.
+  /sehen [an|aus|pause|weiter|bildschirm|webcam|handy|beides|status] - Live-Sehen: Nova schaut auf
+                       deinen Bildschirm (Windows) oder durch eine Kamera und meldet sich,
+                       wenn etwas Wichtiges passiert.
                        Nur mit deiner Zustimmung; Pause ueberall: Strg+Alt+Umschalt+S.
                        Im Terminal bezieht Nova das Gesehene in ihre naechste Antwort ein - von
-                       selbst meldet sie sich hier nur im Jarvis-Modus. Webcam: nur in der App.
-  /sehen einrichten   - die Pakete fuer Live-Sehen installieren (numpy, dxcam, mss, ...)
+                       selbst meldet sie sich hier nur im Jarvis-Modus. PC-Webcam: nur in der App.
+  /sehen handy        - dein Handy als Kamera: QR-Code scannen (Handy und PC im selben WLAN);
+                       /sehen handy aus beendet es
+  /sehen einrichten   - die Pakete fuer Live-Sehen installieren (numpy, dxcam, mss, Handy-Kamera ...)
   /feedback           - Feedback & Bewertung an den Entwickler schicken (auch /bewertung)
   /denken [stufe]     - wie gruendlich die KI nachdenkt: schnell, ausgewogen, gruendlich ...
   /app                - zur App wechseln (eigenes Fenster statt Terminal)
@@ -851,9 +854,17 @@ class CLI:
         if sub == "einrichten":
             self._sehen_einrichten()
             return
+        if sub == "handy" and len(args) > 1 and args[1].lower() in ("aus", "beenden", "stopp"):
+            print(self.sehen.handy_beenden())
+            return
+        if sub == "handy":
+            if self.sehen.braucht_zustimmung() and not self._sehen_zustimmung():
+                return
+            self._sehen_handy()
+            return
         if sub not in ("an", "ein", *QUELLEN):
-            print("So geht es: /sehen an | aus | pause | weiter | bildschirm | webcam | beides | auto | status | "
-                  "einrichten")
+            print("So geht es: /sehen an | aus | pause | weiter | bildschirm | webcam | handy | handy aus | beides | "
+                  "auto | status | einrichten")
             return
         wunsch = sub if sub in QUELLEN else (args[1].lower() if len(args) > 1 and args[1].lower() in QUELLEN
                                              else None)
@@ -878,12 +889,34 @@ class CLI:
             else:
                 print(f"Es fehlen noch Pakete ({', '.join(fehlt)}) - /sehen einrichten installiert sie.")
 
+    def _sehen_handy(self) -> None:
+        """/sehen handy im Terminal: koppeln und QR-Code, Link und Kurzcode zeigen."""
+        from ..kamera.qr import qr_text
+
+        ergebnis = self.sehen.handy_koppeln()
+        if not ergebnis.get("ok"):
+            print(_c(str(ergebnis.get("error") or "Die Handy-Kamera ging nicht."), YELLOW))
+            return
+        link, code = str(ergebnis["link"]), ergebnis.get("code")
+        bild = qr_text(link)
+        print("\nScanne diesen Code mit der Kamera deines Handys:\n")
+        if bild:
+            print(bild)
+        else:
+            print(_c("(QR-Code nicht m\u00f6glich - Paket 'segno' fehlt. \u00d6ffne den Link am Handy.)", YELLOW))
+        print(f"Link: {link}")
+        if code:
+            print(f"Code (f\u00fcr die installierte Handy-App): {code}")
+        print(_c("Die Kopplung gilt etwa 5 Minuten. " + str(ergebnis.get("hinweis") or ""), GREY))
+        print(_c("Beenden: /sehen handy aus", GREY))
+
     def _sehen_status_text(self) -> str:
         s = self.sehen.status()
         if not s["aktiv"]:
             frage = " (fragt beim ersten Mal um Erlaubnis)" if s["zustimmung_noetig"] else ""
             return f"Live-Sehen ist aus. Einschalten: /sehen an{frage}."
-        quellen = " und ".join({"bildschirm": "Bildschirm", "webcam": "Webcam"}[q] for q in s["quellen"])
+        quellen = " und ".join({"bildschirm": "Bildschirm", "webcam": "Webcam", "handy": "Handy-Kamera"}[q]
+                               for q in s["quellen"])
         zeilen = [f"Live-Sehen ist an: {quellen}" + (" - gerade Pause" if s["pausiert"] else "")
                   + (" - im AFK-Modus schaue ich nicht hin" if s["abwesend"] else "") + "."]
         if s["technik"]:
@@ -892,6 +925,12 @@ class CLI:
         geld = "kostenlos" if s["kostenlos"] else (f"{s['eur_stunde']:.2f} von {s['max_eur']:.2f} EUR"
                                                    .replace(".", ","))
         zeilen.append(f"Diese Stunde: {s['weckungen_stunde']} von {s['max_weckungen']} Wortmeldungen, {geld}.")
+        handy = s.get("handy")
+        if handy:
+            text = {"wartet": "wartet auf dein Handy", "verbunden": "verbunden",
+                    "getrennt": "getrennt (neu koppeln: /sehen handy)", "fehler": "Fehler"}.get(
+                handy["zustand"], handy["zustand"])
+            zeilen.append(f"Handy-Kamera: {text}" + (f" - {handy['fehler']}" if handy.get("fehler") else "") + ".")
         if s["letztes"]:
             zeilen.append(f"Zuletzt gesehen: {s['letztes']}")
         if s["hotkey"] and "bildschirm" in s["quellen"]:
@@ -905,24 +944,31 @@ class CLI:
         return "\n".join(zeilen)
 
     def _sehen_einrichten(self) -> None:
-        from ..sehen import SEH_PAKETE
+        """Pakete fuer Live-Sehen (Bildschirm) und die Handy-Kamera - ehrlich, was wirklich da ist."""
+        from ..kamera import HANDY_PAKETE
+        from ..kamera import fehlende_pakete as handy_fehlt
+        from ..sehen import SEH_PAKETE, fehlende_pakete
 
         if getattr(sys, "frozen", False):
-            from ..sehen import fehlende_pakete
-
-            fehlt = fehlende_pakete()
+            fehlt, handy = fehlende_pakete(), handy_fehlt()
             if fehlt:
-                print("In dieser KI.exe fehlen Teile f\u00fcr Live-Sehen am Bildschirm: " + ", ".join(fehlt)
-                      + ". Nachinstallieren geht in der .exe nicht \u2013 die Webcam in der App geht trotzdem; "
-                      "ein Update bringt die Teile hoffentlich mit.")
+                print("In dieser KI.exe fehlen Teile f\u00fcr Live-Sehen am Bildschirm: " + ", ".join(fehlt) + ".")
+            if handy:
+                print("In dieser KI.exe fehlen Teile f\u00fcr die Handy-Kamera: " + ", ".join(handy) + ".")
+            if fehlt or handy:
+                print("Nachinstallieren geht in der .exe nicht \u2013 die Webcam in der App geht trotzdem; ein "
+                      "Update bringt die Teile hoffentlich mit.")
             else:
-                print("In der KI.exe ist alles f\u00fcr Live-Sehen schon dabei.")
+                print("In der KI.exe ist alles f\u00fcr Live-Sehen und die Handy-Kamera schon dabei.")
             return
-        print(f"Ich installiere die Pakete f\u00fcr Live-Sehen ({len(SEH_PAKETE)} St\u00fcck) ...")
-        ok, message = install_voice_packages(packages=list(SEH_PAKETE))
-        if not ok and "pep517" not in message.lower():
-            ok, message = install_voice_packages(packages=["--use-pep517", *SEH_PAKETE])
-        print(message if not ok else "Fertig - Live-Sehen kann los: /sehen an")
+        for titel, pakete in (("Live-Sehen am Bildschirm", SEH_PAKETE), ("die Handy-Kamera", HANDY_PAKETE)):
+            print(f"Ich installiere die Pakete f\u00fcr {titel} ({len(pakete)} St\u00fcck) ...")
+            ok, message = install_voice_packages(packages=list(pakete))
+            if not ok and "pep517" not in message.lower():
+                ok, message = install_voice_packages(packages=["--use-pep517", *pakete])
+            print(message if not ok else "Fertig.")
+        rest = fehlende_pakete() + handy_fehlt()
+        print("Es fehlt noch: " + ", ".join(rest) if rest else "Alles da - Live-Sehen kann los: /sehen an")
 
     # -- Gehirn & Schluessel ----------------------------------------------------
     def _setup_key(self, key: str | None = None, provider: str | None = None) -> bool:

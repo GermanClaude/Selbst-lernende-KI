@@ -76,6 +76,7 @@ COMMANDS = [
     ("/ollama", "Ollama: kostenlose KI auf deinem PC (Stand, Modelle laden)"),
     ("/afk", "ich bin weg - die KI arbeitet allein weiter (mit Bericht)"),
     ("/sehen", "Live-Sehen: Nova schaut auf Bildschirm/Webcam (an, aus, pause, status)"),
+    ("/sehen handy", "Handy als Kamera koppeln (QR-Code)"),
     ("/modell", "Modell waehlen - schnell oder besonders stark"),
     ("/denken", "wie gruendlich die KI nachdenkt (schnell ... maximal)"),
     ("/feedback", "Feedback & Bewertung an den Entwickler schicken"),
@@ -1033,6 +1034,12 @@ class AppController(CLI):
                 ok, text = dienst.an(quelle)
                 ergebnis = {"ok": ok, "message": schoen(text), "error": "" if ok else schoen(text)}
                 self._notice(text, "sehen")
+        elif aktion == "handy_koppeln":
+            if data.get("einverstanden") is True and dienst.braucht_zustimmung():
+                dienst.zustimmen()
+            return self._handy_koppeln_antwort()
+        elif aktion == "handy_beenden":
+            self._notice(dienst.handy_beenden(), "sehen")
         elif aktion == "kamera":
             vorhanden = data.get("vorhanden")
             dienst.kamera_meldung(vorhanden=None if vorhanden is None else bool(vorhanden),
@@ -1042,6 +1049,32 @@ class AppController(CLI):
         self._state_changed()
         ergebnis["sehen"] = dienst.status()
         return ergebnis
+
+    def _handy_koppeln_antwort(self) -> dict:
+        """Antwort fuer den Kopplungs-Dialog: Link, Code, QR-Code (SVG), Ablauf. Der Link enthaelt den
+        Schluessel - er steht NUR in dieser Antwort (nie im Zustand, in Ereignissen oder im Verlauf)."""
+        from ..kamera.qr import qr_daten
+
+        dienst = self.sehen
+        ergebnis = dienst.handy_koppeln()
+        if ergebnis.get("zustimmung"):
+            return {"ok": False, "zustimmung": True, "warnung": schoen(dienst.warnung()),
+                    "error": schoen("Bitte erst zustimmen."), "sehen": dienst.status()}
+        if not ergebnis.get("ok"):
+            self._state_changed()
+            return {"ok": False, "error": schoen(str(ergebnis.get("error") or "Das ging nicht.")),
+                    "sehen": dienst.status()}
+        qr = qr_daten(str(ergebnis["link"]), ergebnis.get("code"))
+        self._notice("Live-Sehen: Ich warte auf dein Handy \u2013 scanne den QR-Code im Fenster.", "sehen")
+        self._state_changed()
+        return {"ok": True, "link": qr["link"], "code": qr["code"], "svg": qr["svg"], "ablauf": ergebnis.get("ablauf"),
+                "hinweis": schoen(qr["hinweis"]), "tipps": schoen(ergebnis.get("hinweis") or ""),
+                "sehen": dienst.status()}
+
+    def _sehen_handy(self) -> None:
+        """/sehen handy im Fenster: der Dialog holt sich Link und QR-Code selbst (nie in den Chat)."""
+        self._event({"type": "open", "what": "handy"})
+        print("Ich zeige dir den QR-Code f\u00fcr dein Handy im Fenster.")
 
     def _sehen_quelle_speichern(self, quelle: str) -> None:
         try:

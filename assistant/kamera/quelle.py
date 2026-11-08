@@ -1,6 +1,6 @@
 """Kamera-Quellen fuer das Live-Sehen-"Auge": eine gemeinsame Schnittstelle + Handy-Adapter.
 
-Schnittstelle (``KameraQuelle``, Abfrage-Modell - das Auge holt sich Bilder, wenn es will):
+Schnittstelle (``HandyQuellenProtokoll``, Abfrage-Modell - das Auge holt sich Bilder, wenn es will):
     name: str                         - Anzeigename, z.B. "Handy"
     start() -> dict                   - Quelle einschalten; Rueckgabe je nach Quelle
                                         (HandyQuelle: {"link", "ablauf", "code"} fuer den QR-Code)
@@ -13,9 +13,10 @@ Schnittstelle (``KameraQuelle``, Abfrage-Modell - das Auge holt sich Bilder, wen
 So nutzt das Live-Sehen das Handy (Vorschlag fuer die Einbindung):
   * Abfragen: Das Auge/der SehDienst ruft z.B. jede Sekunde ``quelle.latest_frame(max_kante=1280,
     als="jpeg")`` und behandelt das Bild wie ein Webcam-Bild. None heisst: nichts Neues/getrennt.
-  * Schieben: Die vorhandene ``assistant.sehen.quellen.KameraQuelle`` (gleicher Name, anderes
-    Modell: Bilder kommen per ``nimm(jpeg)`` herein, wie bei der Browser-Webcam) laesst sich direkt
-    fuettern:  ``stopp = handy.pumpe(sehen_kamera.nimm, intervall=1.0)`` - nur neue Bilder werden
+  * Schieben (so macht es Live-Sehen): ``assistant.sehen.quellen.HandyKameraQuelle`` (eine
+    KameraQuelle im Schieben-Modell - Bilder kommen per ``nimm(jpeg)`` herein, wie bei der Browser-
+    Webcam; deshalb heisst die Schnittstelle hier HandyQuellenProtokoll) wird so gefuettert:
+    ``stopp = handy.pumpe(sehen_kamera.nimm, intervall=1.0)`` - nur neue Bilder werden
     weitergereicht; ``stopp()`` beendet das. Dann funktionieren Bewegungserkennung und
     "letztes Bild" der Sehen-Quelle ohne Aenderung.
   * Zustimmung/Anzeige: Das Handy zeigt selbst "Nova sieht zu", solange verbunden. Nova sollte
@@ -28,7 +29,7 @@ from typing import Callable, Protocol, runtime_checkable
 
 
 @runtime_checkable
-class KameraQuelle(Protocol):
+class HandyQuellenProtokoll(Protocol):
     name: str
 
     def start(self) -> dict: ...
@@ -41,7 +42,7 @@ class KameraQuelle(Protocol):
 
 
 class HandyQuelle:
-    """Adapter: HandyKamera als KameraQuelle (plus ``pumpe`` fuer das Schieben-Modell)."""
+    """Adapter: HandyKamera als HandyQuellenProtokoll (plus ``pumpe`` fuer das Schieben-Modell)."""
 
     name = "Handy"
     art = "handy"

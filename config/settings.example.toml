@@ -161,7 +161,8 @@ nachfrage_alle_tage = 12
 # ----------------------------------------------------------------------------
 [sehen]
 aktiv = false                    # true = beim Start gleich zusehen (nur nach deiner Zustimmung)
-quelle = "auto"                  # auto (Webcam, wenn da und sinnvoll, sonst Bildschirm) | bildschirm | webcam | beides
+quelle = "auto"                  # auto (PC-Webcam, sonst gekoppeltes Handy, sonst Bildschirm) | bildschirm | webcam | handy | beides
+# handy = dein Handy als Kamera (/sehen handy zeigt einen QR-Code; Handy und PC im selben WLAN)
 aufnahme = "auto"                # Bildschirm-Technik: auto (dxcam, sonst mss) | dxcam | mss
 fps = 15                         # Bilder pro Sekunde fuer die Aenderungserkennung (mehr = mehr Rechenleistung)
 aufmerksamkeit = "normal"        # niedrig | normal | hoch - wie leicht sich Nova von selbst meldet

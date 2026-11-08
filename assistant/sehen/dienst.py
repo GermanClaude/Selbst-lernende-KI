@@ -23,11 +23,16 @@ from typing import Any, Callable
 from ..logging_setup import get_logger
 from .einstellungen import regeln_aus
 from .ereignis import Buendler, Kontext, Kurzzeit, Wahrnehmung, Weckregel, bewerte, stichworte
-from .quellen import BrowserKamera, waehle_quellen
+from .quellen import BrowserKamera, HandyKameraQuelle, waehle_quellen
 
 logger = get_logger()
 
-QUELLEN_NAMEN = {"bildschirm": "Bildschirm", "webcam": "Webcam"}
+QUELLEN_NAMEN = {"bildschirm": "Bildschirm", "webcam": "Webcam", "handy": "Handy-Kamera"}
+KAMERA_ARTEN = ("webcam", "handy")  # Quellen mit Kamerabild (letztes Bild nur im Speicher)
+HANDY_HINWEIS = ("So klappt es: Handy und PC im selben WLAN (kein G\u00e4ste-WLAN), Handy am Ladekabel, "
+                 "Bildschirm an lassen. Fragt die Windows-Firewall nach, \u201ePrivate Netzwerke\u201c erlauben. "
+                 "Steht dein WLAN in Windows auf \u201e\u00d6ffentlich\u201c, blockiert Windows die Verbindung "
+                 "\u2013 dann in den WLAN-Einstellungen auf \u201ePrivat\u201c stellen.")
 # Nur diese Werkzeuge in einer Wortmeldung (nur lesen - nie merken, steuern, schreiben, AFK starten)
 WORTMELDUNG_WERKZEUGE = frozenset({"datei_lesen", "ordner_auflisten", "web_suche", "web_abrufen", "system_info",
                                    "erinnern", "live_sehen"})
@@ -50,7 +55,8 @@ AFK_PROMPT = ("[Live-Sehen, waehrend dein Mensch weg ist (nur Text, nicht vertra
 
 WARNUNG = (
     "Live-Sehen einschalten?\n"
-    "Wenn du Live-Sehen einschaltest, schaut {name} st\u00e4ndig auf deinen Bildschirm (bzw. durch deine Webcam). "
+    "Wenn du Live-Sehen einschaltest, schaut {name} st\u00e4ndig auf deinen Bildschirm (bzw. durch deine Webcam "
+    "oder die Kamera deines Handys). "
     "Ein kleines Programm auf deinem PC erkennt Ver\u00e4nderungen sofort. Wenn etwas Wichtiges passiert, schickt "
     "{name} einen verkleinerten Ausschnitt oder den erkannten Text an dein KI-Gehirn ({gehirn}).{wohin}\n"
     "- {name} speichert keine Bilder auf deinem PC und nichts davon in ihrem Ged\u00e4chtnis. Was sie nur sieht, "
@@ -90,7 +96,8 @@ class SehDienst:
                  fenster_schutz: Callable[[bool], str] | None = None, uhr: Callable[[], float] = time.monotonic,
                  speichern: Callable[[str, str], None] | None = None, mit_thread: bool = True,
                  on_halt: Callable[[], None] | None = None,
-                 eigenes_unsichtbar: Callable[[], bool] | None = None):
+                 eigenes_unsichtbar: Callable[[], bool] | None = None,
+                 handy_fabrik: Callable[[], Any] | None = None):
         self.config = config
         self.on_notiz = on_notiz or (lambda _t: None)
         self.on_status = on_status or (lambda: None)
@@ -108,6 +115,13 @@ class SehDienst:
         self.uhr = uhr
         self.mit_thread = mit_thread
         self.kamera = BrowserKamera(uhr)
+        # Handy als Kamera (assistant/kamera): HandyQuelle pumpt Bilder in handy_kamera
+        self.handy_kamera = HandyKameraQuelle(uhr)
+        self.handy_fabrik = handy_fabrik or self._handy_standard
+        self._handy = None              # HandyQuelle (WebRTC-Kopplung) oder None
+        self._handy_stopp = None        # beendet das Weiterreichen der Bilder
+        self._handy_info: dict | None = None  # Link/Code/Ablauf - NUR fuer die Antwort an den Kopplungs-Dialog
+        self._handy_zustand = ""
         self._lock = threading.RLock()
         self.aktiv = False
         self.pausiert = False
@@ -219,14 +233,19 @@ class SehDienst:
         """Live-Sehen einschalten (nur mit Zustimmung). -> (ok, Text fuer den Menschen)."""
         if self.braucht_zustimmung():
             return False, "zustimmung"
+        handy_verbunden = self._handy is not None and self._handy_status().get("zustand") == "verbunden"
         if self.aktiv:
-            self._aufraeumen(*self._ausschalten_gesperrt())
+            self._aufraeumen(*self._ausschalten_gesperrt(handy_behalten=handy_verbunden))
         with self._lock:
             self.regeln = regeln = regeln_aus(self.config.sehen)
             wunsch = (wunsch or regeln.quelle or "auto").lower()
             sieht = bool(self.sieht_bilder())
-            quellen, hinweis = waehle_quellen(wunsch, bool(self.kamera.vorhanden), self.bildschirm_moeglich, sieht)
+            quellen, hinweis = waehle_quellen(wunsch, bool(self.kamera.vorhanden), self.bildschirm_moeglich, sieht,
+                                              handy_verbunden=handy_verbunden)
             if not quellen:
+                alt_handy = self._handy_abbauen()
+                if alt_handy is not None:
+                    self._handy_stoppen(alt_handy)
                 return False, hinweis or "Live-Sehen geht hier nicht."
             self.wunsch = wunsch
             self.quellen = quellen
@@ -248,9 +267,25 @@ class SehDienst:
                 if schutz:
                     self.hinweis = " ".join(t for t in (self.hinweis, schutz) if t)
                 self._auge_starten()
+            alt_handy = None if "handy" in quellen else self._handy_abbauen()
             if self.mit_thread:
                 self._thread = threading.Thread(target=self._lauf, name="seh-dienst", daemon=True)
                 self._thread.start()
+        if alt_handy is not None:
+            self._handy_stoppen(alt_handy)
+        if "handy" in quellen:
+            if self._handy is not None:
+                self._handy_pumpen()  # schon verbunden: einfach weiter
+            else:
+                fehler = self._handy_neu()
+                if fehler:
+                    with self._lock:
+                        self.quellen.discard("handy")
+                        leer = not self.quellen
+                    if leer:
+                        self.aus()
+                        return False, fehler
+                    hinweis = " ".join(t for t in (hinweis, fehler) if t)
         self._status_jetzt()
         namen = " und ".join(QUELLEN_NAMEN[q] for q in sorted(quellen))
         text = f"Live-Sehen ist an ({namen}). Ich melde mich, wenn mir etwas Wichtiges auff\u00e4llt."
@@ -272,12 +307,12 @@ class SehDienst:
             return "Live-Sehen ist schon aus."
         return grund or "Live-Sehen ist aus \u2013 ich schaue nicht mehr hin."
 
-    def _ausschalten_gesperrt(self):
+    def _ausschalten_gesperrt(self, handy_behalten: bool = False):
         with self._lock:
-            return self._ausschalten()
+            return self._ausschalten(handy_behalten)
 
-    def _ausschalten(self):
-        """Unter self._lock: alles abstellen. Gibt (auge, thread) zum Aufraeumen ausserhalb der Sperre."""
+    def _ausschalten(self, handy_behalten: bool = False):
+        """Unter self._lock: alles abstellen. Gibt (auge, thread, handy) zum Aufraeumen ausserhalb der Sperre."""
         self.aktiv = False
         self._stop.set()
         auge, self._auge = self._auge, None
@@ -296,9 +331,16 @@ class SehDienst:
             anfrage[0].set()
         self._anfragen.clear()
         thread, self._thread = self._thread, None
-        return auge, thread
+        if handy_behalten:
+            self._handy_pumpe_stoppen()
+            handy = None
+        else:
+            handy = self._handy_abbauen()
+        return auge, thread, handy
 
-    def _aufraeumen(self, auge, thread) -> None:
+    def _aufraeumen(self, auge, thread, handy=None) -> None:
+        if handy is not None:
+            self._handy_stoppen(handy)  # sagt dem Handy "stopp"
         if auge is not None:
             try:
                 auge.stop()
@@ -316,9 +358,14 @@ class SehDienst:
             self.kamera.vergessen()
             if self._buendler is not None:
                 self._buendler.verwerfen()
+            handy = self._handy_abbauen()
         self._halt()
+        text = "Ich schaue gerade nicht hin (Pause). Weiter: /sehen weiter."
+        if handy is not None:
+            self._handy_stoppen(handy)
+            text += " Die Handy-Kamera habe ich beendet \u2013 zum Weitermachen neu koppeln (/sehen handy)."
         self._status_jetzt()
-        return "Ich schaue gerade nicht hin (Pause). Weiter: /sehen weiter."
+        return text
 
     def weiter(self) -> str:
         with self._lock:
@@ -337,12 +384,17 @@ class SehDienst:
                 return
             self._auge_abgleichen()
             ruhig = abwesend and not self.regeln.bei_abwesenheit
+            handy = None
             if ruhig:
                 self.kamera.vergessen()
                 if self._buendler is not None:
                     self._buendler.verwerfen()
+                handy = self._handy_abbauen()
         if abwesend and not self.regeln.bei_abwesenheit:
             self._halt()
+        if handy is not None:
+            self._handy_stoppen(handy)
+            self.on_notiz("Live-Sehen: W\u00e4hrend du weg bist, ist die Handy-Kamera aus.")
         self._status_jetzt()
 
     def afk_zeilen_nehmen(self) -> str:
@@ -402,10 +454,138 @@ class SehDienst:
         text = f"Live-Sehen: Den Bildschirm kann ich gerade nicht sehen ({grund})."
         if not self.quellen:
             with self._lock:
-                self._ausschalten()
+                aufraeumen = self._ausschalten()
+            self._aufraeumen(*aufraeumen)
             text += " Live-Sehen ist aus."
         self.on_notiz(text)
         self._status_jetzt()
+
+    # -- Handy als Kamera ----------------------------------------------------------------------
+    def _handy_standard(self):
+        from ..kamera.quelle import HandyQuelle
+
+        return HandyQuelle()
+
+    def _handy_status(self) -> dict:
+        handy = self._handy
+        if handy is None:
+            return {}
+        try:
+            return dict(handy.status() or {})
+        except Exception:  # noqa: BLE001
+            return {"zustand": "fehler"}
+
+    def _handy_pumpe_stoppen(self) -> None:
+        stopp, self._handy_stopp = self._handy_stopp, None
+        if stopp is not None:
+            try:
+                stopp()
+            except Exception:  # noqa: BLE001
+                pass
+
+    def _handy_abbauen(self):
+        """Unter self._lock moeglich: Handy loesen (Stoppen danach AUSSERHALB der Sperre, dauert)."""
+        self._handy_pumpe_stoppen()
+        handy, self._handy = self._handy, None
+        self._handy_info = None
+        self._handy_zustand = ""
+        self.handy_kamera.vergessen()
+        return handy
+
+    def _handy_stoppen(self, handy) -> None:
+        try:
+            handy.stop()
+        except Exception as exc:  # noqa: BLE001
+            logger.info("Handy-Kamera beenden: %s", type(exc).__name__)
+
+    def _handy_pumpen(self) -> None:
+        self._handy_pumpe_stoppen()
+        if self._handy is not None:
+            self._handy_stopp = self._handy.pumpe(self._handy_nimm, intervall=1.0, max_kante=self.regeln.max_kante,
+                                                  qualitaet=self.regeln.jpeg_qualitaet)
+
+    def _handy_neu(self) -> str:
+        """Neue Kopplung starten (eine alte endet). Gibt einen Fehlertext zurueck ("" = gut)."""
+        with self._lock:
+            alt = self._handy_abbauen()
+        if alt is not None:
+            self._handy_stoppen(alt)
+        try:
+            handy = self.handy_fabrik()
+            info = dict(handy.start())
+        except Exception as exc:  # noqa: BLE001 - z.B. Pakete fehlen (HandyKameraFehler mit Hinweis)
+            text = str(exc) if exc.__class__.__name__ == "HandyKameraFehler" else (
+                f"Die Handy-Kamera startet nicht ({type(exc).__name__}).")
+            return text
+        with self._lock:
+            if not self.aktiv or "handy" not in self.quellen:  # inzwischen aus
+                aus_handy = handy
+            else:
+                aus_handy = None
+                self._handy, self._handy_info, self._handy_zustand = handy, info, "wartet"
+                self._handy_pumpen()
+        if aus_handy is not None:
+            self._handy_stoppen(aus_handy)
+            return "Live-Sehen ist inzwischen aus."
+        return ""
+
+    def _handy_nimm(self, data: bytes) -> None:
+        if not (self.aktiv and "handy" in self.quellen) or not self.darf_melden():
+            return
+        ereignis = self.handy_kamera.nimm(data)
+        if ereignis:
+            self.verarbeite(ereignis)
+
+    def handy_koppeln(self) -> dict:
+        """Handy als Kamera koppeln (auch "Neu koppeln"). -> {"ok", "link", "code", "ablauf"} oder Fehler.
+        Link und Code enthalten das Geheimnis - nur fuer den Dialog, nie in Zustand/Ereignisse/Verlauf."""
+        if self.braucht_zustimmung():
+            return {"ok": False, "zustimmung": True, "error": "Bitte erst zustimmen."}
+        if not self.aktiv or "handy" not in self.quellen:
+            ok, text = self.an("handy")
+            if not ok:
+                return {"ok": False, "error": text}
+        else:
+            if self.pausiert:
+                self.weiter()
+            fehler = self._handy_neu()
+            if fehler:
+                return {"ok": False, "error": fehler}
+        info = self._handy_info
+        if not info:
+            return {"ok": False, "error": "Die Handy-Kamera ist gerade nicht bereit."}
+        self._status_jetzt()
+        return {"ok": True, "link": info.get("link"), "code": info.get("code"), "ablauf": info.get("ablauf"),
+                "hinweis": HANDY_HINWEIS}
+
+    def handy_beenden(self) -> str:
+        with self._lock:
+            handy = self._handy_abbauen()
+            war = "handy" in self.quellen
+            self.quellen.discard("handy")
+            leer = self.aktiv and not self.quellen
+        if handy is not None:
+            self._handy_stoppen(handy)
+        if leer:
+            return self.aus("Die Handy-Kamera ist beendet \u2013 Live-Sehen ist aus.")
+        self._status_jetzt()
+        return "Die Handy-Kamera ist beendet." if war or handy is not None else "Die Handy-Kamera war nicht an."
+
+    def _handy_beobachten(self) -> None:
+        """Im Dienst-Thread: Zustandswechsel des Handys melden (verbunden / getrennt)."""
+        if self._handy is None:
+            return
+        st = self._handy_status()
+        zustand = str(st.get("zustand") or "")
+        vorher, self._handy_zustand = self._handy_zustand, zustand
+        if zustand == vorher:
+            return
+        self._status_offen = True
+        if zustand == "verbunden":
+            self.on_notiz("Live-Sehen: Die Handy-Kamera ist verbunden \u2013 ich sehe jetzt durch dein Handy.")
+        elif zustand in ("getrennt", "fehler") and vorher:
+            grund = f" ({st.get('fehler')})" if st.get("fehler") else ""
+            self.on_notiz(f"Live-Sehen: Die Handy-Kamera ist getrennt{grund}. Neu koppeln: /sehen handy")
 
     # -- Kamera -------------------------------------------------------------------------------------
     def kamera_meldung(self, vorhanden: bool | None = None, fehler: str = "") -> None:
@@ -516,6 +696,8 @@ class SehDienst:
         if aufraeumen:
             self._aufraeumen(*aufraeumen)
             self._halt()
+        elif self.aktiv:
+            self._handy_beobachten()
         if buendel:
             # Paket (evtl. mit Bildschirmfoto, bis 1,5 s) AUSSERHALB der Sperre bauen - Pause wirkt sofort
             paket = self._paket(buendel)
@@ -552,7 +734,7 @@ class SehDienst:
         jetzt = self.uhr()
         weitere = [e.zeile() for e in buendel if e is not haupt][:5]
         kurz = [z for z in self._kurz.zeilen(jetzt) if z != haupt.zeile() and z not in weitere][-8:]
-        quelle = "Webcam" if haupt.quelle == "webcam" else "Bildschirm"
+        quelle = {"webcam": "Webcam", "handy": "Handy-Kamera"}.get(haupt.quelle, "Bildschirm")
         anzeige = f"{self.config.ki.name} hat etwas bemerkt: {haupt.zeile()}"[:220]
         if self.abwesend:
             with self._lock:
@@ -562,8 +744,9 @@ class SehDienst:
         bilder = self._bilder_fuer(haupt)
         bild_text = ""
         if bilder:
-            bild_text = ("\nDazu ein verkleinerter Ausschnitt " + ("der Webcam." if haupt.quelle == "webcam"
-                                                                   else "des Fensters, das gerade vorne ist.") + "\n")
+            bild_text = ("\nDazu ein verkleinerter Ausschnitt " + {
+                "webcam": "der Webcam.", "handy": "der Handy-Kamera."}.get(
+                haupt.quelle, "des Fensters, das gerade vorne ist.") + "\n")
         text = SEHEN_PROMPT.format(
             quelle=quelle, haupt=haupt.zeile(),
             weitere=("Ausserdem: " + " | ".join(weitere) + "\n") if weitere else "",
@@ -580,15 +763,20 @@ class SehDienst:
                 return []
         except Exception:  # noqa: BLE001
             return []
-        daten = self.kamera.letztes() if ev.quelle == "webcam" else self.bildschirm_bild(1.5)[0]
+        if ev.quelle == "webcam":
+            daten = self.kamera.letztes()
+        elif ev.quelle == "handy":
+            daten = self.handy_kamera.letztes()
+        else:
+            daten = self.bildschirm_bild(1.5)[0]
         if not daten:
             return []
         from ..bilder import BildFehler, vorbereiten
 
         try:
             # EINMAL verkleinern - danach nie mehr veraendern (Claude-Verlauf ist nur anhaengend)
-            return [vorbereiten(daten, "webcam.jpg" if ev.quelle == "webcam" else "bildschirm.jpg",
-                                max_kante=self.regeln.max_kante)]
+            name = {"webcam": "webcam.jpg", "handy": "handy.jpg"}.get(ev.quelle, "bildschirm.jpg")
+            return [vorbereiten(daten, name, max_kante=self.regeln.max_kante)]
         except BildFehler:
             return []
 
@@ -634,6 +822,10 @@ class SehDienst:
             return None, "Bilder an die KI sind ausgeschaltet ([sehen] bilder_an_ki)."
         if "webcam" in self.quellen and self.kamera.letztes():
             daten, grund, name = self.kamera.letztes(), "", "webcam.jpg"
+        elif "handy" in self.quellen and self.handy_kamera.letztes():
+            daten, grund, name = self.handy_kamera.letztes(), "", "handy.jpg"
+        elif "handy" in self.quellen and "bildschirm" not in self.quellen:
+            daten, grund, name = None, "handy", ""
         elif self.privat:
             daten, grund, name = None, "privat", ""
         else:
@@ -644,6 +836,7 @@ class SehDienst:
                      "passwort": "Gerade ist ein Passwortfeld aktiv \u2013 da schaue ich nicht hin.",
                      "unbekannt": "Ich kann nicht pr\u00fcfen, ob ein Passwortfeld aktiv ist \u2013 deshalb kein Bild.",
                      "pause": "Ich schaue gerade nicht hin (Pause).",
+                     "handy": "Von der Handy-Kamera habe ich gerade kein Bild (noch nicht verbunden?).",
                      "eigen": "Gerade ist mein eigenes Fenster vorne \u2013 und ich kann nicht sicher sein, dass ich "
                               "nur das Fenster dahinter sehe. Wechsle kurz zu dem Fenster, das ich ansehen soll."}
             return None, texte.get(grund, "Gerade habe ich kein Bild.")
@@ -751,7 +944,16 @@ class SehDienst:
             "fps": self.regeln.fps,
             "hotkey": self.regeln.hotkey,
             "sieht_bilder": bool(self.sieht_bilder()),
+            "handy": self._handy_anzeige(),
         }
+
+    def _handy_anzeige(self) -> dict | None:
+        """Handy-Kamera fuer die Anzeige - bewusst OHNE Link/Code/Schluessel."""
+        if self._handy is None and "handy" not in self.quellen:
+            return None
+        st = self._handy_status() if self._handy is not None else {"zustand": "getrennt"}
+        return {"zustand": str(st.get("zustand") or "getrennt"), "fehler": st.get("fehler"),
+                "bild_alter": st.get("bild_alter"), "kamera": st.get("kamera"), "ablauf": st.get("ablauf")}
 
 
 class StillFilter:

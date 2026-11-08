@@ -71,7 +71,7 @@ class Wahrnehmung:
             "text": "Neuer Text",
             "inhalt": f"Gro\u00dfe \u00c4nderung im Bild ({round(self.anteil * 100)} %)",
             "video": "Bewegtes Bild (Video/Spiel)",
-            "bewegung": "Bewegung vor der Webcam",
+            "bewegung": "Bewegung vor der Handy-Kamera" if self.quelle == "handy" else "Bewegung vor der Webcam",
             "pause": "Pause",
             "weiter": "Weiter",
             "hinweis": "Hinweis:",

@@ -20,7 +20,7 @@ import numpy as np  # noqa: E402
 from aiortc import RTCConfiguration, RTCPeerConnection, RTCSessionDescription, VideoStreamTrack  # noqa: E402
 
 from assistant.kamera import signal as sig  # noqa: E402
-from assistant.kamera.quelle import HandyQuelle, KameraQuelle  # noqa: E402
+from assistant.kamera.quelle import HandyQuelle, HandyQuellenProtokoll  # noqa: E402
 from assistant.kamera.webrtc import HandyKamera  # noqa: E402
 
 # In Test-Containern haben die Netzwerkkarten oft keine Privatadresse (z.B. 192.0.2.x) -
@@ -182,7 +182,7 @@ def test_loopback_bilder_kommen_an_und_stop_ist_sauber(relay):
 
         # Quelle-Adapter
         quelle = HandyQuelle(kamera)
-        assert isinstance(quelle, KameraQuelle)
+        assert isinstance(quelle, HandyQuellenProtokoll)
         assert quelle.status()["zustand"] == "verbunden"
         assert quelle.latest_frame(max_kante=100) is not None
 

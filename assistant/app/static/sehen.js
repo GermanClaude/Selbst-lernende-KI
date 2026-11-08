@@ -13,7 +13,8 @@
   const KAMERA_TAKT = 1000;        // ein Bild pro Sekunde
   const KAMERA_BREITE = 640;       // verkleinert (spart Rechenzeit und Kosten)
   const KAMERA_GUETE = 0.7;
-  const QUELLE_TEXT = { bildschirm: 'Bildschirm', webcam: 'Webcam' };
+  const QUELLE_TEXT = { bildschirm: 'Bildschirm', webcam: 'Webcam', handy: 'Handy-Kamera' };
+  const HANDY_ZUSTAND = { wartet: 'wartet aufs Handy', verbunden: 'verbunden', getrennt: 'getrennt', fehler: 'Fehler' };
 
   async function post(path, body) {
     try {
@@ -56,7 +57,11 @@
           : st.abwesend ? name + ' schaut nicht hin, solange du weg bist'
             : st.privat ? 'Privates Fenster – ' + name + ' schaut weg' : name + ' sieht zu';
         const quellen = (Array.isArray(st.quellen) ? st.quellen : []).map((q) => QUELLE_TEXT[q] || q);
-        byId('sb2-quelle').textContent = quellen.join(' + ');
+        const handy = st.handy && typeof st.handy === 'object' ? st.handy : null;
+        byId('sb2-quelle').textContent = quellen.join(' + ') +
+          (handy && HANDY_ZUSTAND[handy.zustand] ? ' (' + HANDY_ZUSTAND[handy.zustand] + ')' : '');
+        const hb = byId('sb2-handy');
+        if (hb) hb.hidden = !(st.quellen || []).includes('handy');
         const n = Number(st.weckungen_stunde) || 0;
         byId('sb2-anzahl').textContent = (n === 1 ? '1 Hinweis' : n + ' Hinweise') + ' diese Stunde';
         byId('sb2-kosten').textContent = st.kostenlos ? 'kostenlos' : eur(st.eur_stunde) + ' diese Stunde';
@@ -112,6 +117,8 @@
   }
 
   async function einschalten(quelle) {
+    const q = quelle || (st && st.wunsch) || '';
+    if (q === 'handy') { handyDialog(true); return; } // das Handy braucht den QR-Code
     if (st && st.zustimmung_noetig) { oeffneZustimmung(quelle); return; }
     const r = await anfrage({ aktion: 'an', quelle: quelle || undefined });
     if (r && r.zustimmung) { oeffneZustimmung(quelle); return; }
@@ -146,6 +153,7 @@
       const b = e.target.closest('[data-quelle]');
       if (!b || b.disabled) return;
       const quelle = b.dataset.quelle;
+      if (quelle === 'handy') { handyDialog(true); return; }
       if (st && st.aktiv) {
         const r = await anfrage({ aktion: 'quelle', quelle });
         if (r && !r.ok) app().toast(r.error || 'Das ging nicht.', 'error', 6000);
@@ -186,7 +194,7 @@
     const lokal = /ollama/i.test(provider);
     const gehirn = provider || 'dein KI-Gehirn';
     byId('sd-intro').textContent = 'Wenn du Live-Sehen einschaltest, schaut ' + name + ' ständig auf deinen ' +
-      'Bildschirm (oder durch deine Webcam). Ein kleines Programm auf deinem PC erkennt Veränderungen sofort. ' +
+      'Bildschirm (oder durch deine Webcam bzw. die Kamera deines Handys). Ein kleines Programm auf deinem PC erkennt Veränderungen sofort. ' +
       'Wenn etwas Wichtiges passiert, schickt ' + name + ' einen verkleinerten Ausschnitt oder den erkannten ' +
       'Text an dein KI-Gehirn (' + gehirn + ').' + (lokal ? ' Mit Ollama bleibt alles auf deinem PC.'
       : ' Dort gelten die Datenschutzregeln des Anbieters.');
@@ -223,6 +231,7 @@
     byId('sd-ok').addEventListener('click', async () => {
       const quelle = zQuelle;
       schliesseZustimmung();
+      if (quelle === 'handy') { handyKoppeln(true); return; }
       const r = await anfrage({ aktion: 'an', einverstanden: true, quelle: quelle || undefined });
       if (r && !r.ok) app().toast(r.error || 'Live-Sehen ging nicht.', 'error', 6000);
     });
@@ -364,6 +373,116 @@
   window.addEventListener('pagehide', () => kameraStoppen());
 
   // ---------------------------------------------------------------------
+  // Handy als Kamera: QR-Code, Code, Ablauf, Zustand. Link/Code kommen NUR aus der Antwort auf
+  // "handy_koppeln" und werden beim Schließen oder Verbinden sofort wieder aus der Seite entfernt.
+  // ---------------------------------------------------------------------
+  const hModal = byId('handy-modal');
+  const handy = { ablauf: 0, timer: 0, zurueck: null };
+
+  function handyGeheimnisWeg() {
+    const bild = byId('hd-qr-bild');
+    if (bild) { bild.removeAttribute('src'); bild.hidden = true; }
+    if (byId('hd-link')) byId('hd-link').value = '';
+    if (byId('hd-code')) byId('hd-code').textContent = '';
+    if (byId('hd-qr')) byId('hd-qr').hidden = true;
+    handy.ablauf = 0;
+  }
+
+  function handyRender() {
+    if (!hModal || hModal.hidden) return;
+    const name = app().name();
+    const h = st && st.handy && typeof st.handy === 'object' ? st.handy : null;
+    const zustand = h ? String(h.zustand || '') : '';
+    const status = byId('hd-status');
+    let text = 'Noch nicht gekoppelt.';
+    if (zustand === 'wartet') text = 'Wartet auf dein Handy – Code scannen.';
+    else if (zustand === 'verbunden') text = 'Verbunden – ' + name + ' sieht durch dein Handy.';
+    else if (zustand === 'getrennt') text = 'Getrennt.' + (h && h.fehler ? ' ' + h.fehler : '') + ' „Neu koppeln“ startet von vorn.';
+    else if (zustand === 'fehler') text = 'Fehler: ' + (h && h.fehler ? h.fehler : 'unbekannt') + '.';
+    if (zustand === 'verbunden') handyGeheimnisWeg(); // gekoppelt: Link/QR nicht mehr zeigen
+    const rest = handy.ablauf ? Math.max(0, Math.round(handy.ablauf - Date.now() / 1000)) : 0;
+    const cd = byId('hd-countdown');
+    if (handy.ablauf && zustand !== 'verbunden') {
+      cd.textContent = rest > 0 ? 'Noch ' + Math.floor(rest / 60) + ':' + String(rest % 60).padStart(2, '0') +
+        ' Minuten gültig.' : 'Abgelaufen – bitte „Neu koppeln“.';
+      if (rest <= 0) { handyGeheimnisWeg(); text = 'Die Kopplung ist abgelaufen.'; }
+    } else cd.textContent = '';
+    status.textContent = text;
+    byId('hd-beenden').hidden = !(st && (st.quellen || []).includes('handy'));
+  }
+
+  function handyFehler(text) {
+    const el = byId('hd-fehler');
+    if (!el) return;
+    el.textContent = text || '';
+    el.hidden = !text;
+  }
+
+  async function handyKoppeln(einverstanden) {
+    handyFehler('');
+    byId('hd-status').textContent = 'Kopplung wird vorbereitet …';
+    const r = await post('/api/sehen', { aktion: 'handy_koppeln', einverstanden: einverstanden === true ? true : undefined });
+    if (r && r.sehen) { st = r.sehen; render(); }
+    if (r && r.zustimmung) { handySchliessen(); oeffneZustimmung('handy'); return; }
+    if (!r || !r.ok) { handyFehler((r && r.error) || 'Die Handy-Kamera ging nicht.'); handyRender(); return; }
+    if (hModal.hidden) return; // inzwischen geschlossen: nichts mehr zeigen
+    const bild = byId('hd-qr-bild');
+    if (typeof r.svg === 'string' && r.svg.trim().startsWith('<svg')) {
+      // als Bild (data:-Adresse) – nie als HTML in die Seite
+      bild.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(r.svg);
+      bild.hidden = false;
+    } else bild.hidden = true;
+    byId('hd-hinweis').textContent = String(r.hinweis || '');
+    byId('hd-code').textContent = String(r.code || '–');
+    byId('hd-link').value = String(r.link || '');
+    byId('hd-qr').hidden = false;
+    handy.ablauf = Number(r.ablauf) || 0;
+    handyRender();
+  }
+
+  function handyDialog(koppeln) {
+    if (!hModal) return;
+    if (hModal.hidden) {
+      handy.zurueck = document.activeElement;
+      handyGeheimnisWeg();
+      handyFehler('');
+      hModal.hidden = false;
+      clearInterval(handy.timer);
+      handy.timer = setInterval(handyRender, 1000);
+      const neu = byId('hd-neu');
+      if (neu) neu.focus();
+    }
+    handyRender();
+    const h = st && st.handy;
+    if (koppeln && !(h && h.zustand === 'verbunden')) handyKoppeln(false);
+  }
+
+  function handySchliessen() {
+    if (!hModal || hModal.hidden) return;
+    hModal.hidden = true;
+    clearInterval(handy.timer);
+    handyGeheimnisWeg();
+    if (handy.zurueck && typeof handy.zurueck.focus === 'function') handy.zurueck.focus();
+    handy.zurueck = null;
+  }
+
+  if (hModal) {
+    byId('hd-neu').addEventListener('click', () => handyKoppeln(false));
+    byId('hd-schliessen').addEventListener('click', () => handySchliessen());
+    byId('hd-beenden').addEventListener('click', async () => {
+      handySchliessen();
+      await anfrage({ aktion: 'handy_beenden' });
+    });
+    byId('hd-link').addEventListener('focus', (e) => e.target.select());
+    hModal.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); handySchliessen(); }
+    });
+    hModal.addEventListener('click', (e) => { if (e.target === hModal) handySchliessen(); });
+  }
+  const handyBtn = byId('sb2-handy');
+  if (handyBtn) handyBtn.addEventListener('click', () => handyDialog(false));
+
+  // ---------------------------------------------------------------------
   // Von app.js aufgerufen
   // ---------------------------------------------------------------------
   let gesucht = false;
@@ -375,6 +494,8 @@
       if (!gesucht) { gesucht = true; kameraSuchen(); }
       render();
       kameraAbgleich();
+      handyRender();
     },
+    handyDialog(koppeln) { handyDialog(koppeln === true); },
   });
 })();

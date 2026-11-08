@@ -66,6 +66,18 @@ jobs:
           python -c "from assistant.sehen import fehlende_pakete as f; print('Live-Sehen fehlt:', f() or 'nichts')"
           if [ -n "$fehlt" ]; then echo "::warning::Live-Sehen unvollstaendig:$fehlt"; fi
 
+      - name: Handy-Kamera (aiortc, PyAV, cryptography, segno) dazu
+        if: steps.version.outputs.neu == 'true'
+        continue-on-error: true
+        shell: bash
+        run: |
+          fehlt=""
+          for paket in "aiortc>=1.16,<1.17" "av>=14,<20" "cryptography>=44" "segno>=1.6"; do
+            pip install "$paket" || { echo "::warning::Handy-Kamera: $paket liess sich nicht installieren"; fehlt="$fehlt $paket"; }
+          done
+          python -c "from assistant.kamera import fehlende_pakete as f; print('Handy-Kamera fehlt:', f() or 'nichts')"
+          if [ -n "$fehlt" ]; then echo "::warning::Handy-Kamera unvollstaendig:$fehlt"; fi
+
       - name: Live-Mitschrift (vosk) dazu
         if: steps.version.outputs.neu == 'true'
         continue-on-error: true
@@ -75,6 +87,13 @@ jobs:
       - name: KI.exe und KI-App.exe bauen
         if: steps.version.outputs.neu == 'true'
         run: pyinstaller packaging/ki.spec --noconfirm
+
+      - name: Groesse der exe
+        if: steps.version.outputs.neu == 'true'
+        shell: bash
+        run: |
+          ls -l dist/*.exe
+          for f in dist/*.exe; do echo "### $(basename "$f"): $(( $(stat -c %s "$f") / 1048576 )) MB" >> "$GITHUB_STEP_SUMMARY"; done
 
       # Nur veroeffentlichen, wenn das App-Fenster auf Windows wirklich aufgeht und die
       # Oberflaeche laedt (KI_SELBSTTEST=1 prueft das und schliesst sich wieder).

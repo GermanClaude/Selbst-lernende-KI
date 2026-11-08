@@ -183,6 +183,7 @@
           <div class="ab-last"><span class="ab-note" id="sb2-last"></span></div>
         </div>
         <div class="sehen-btns">
+          <button class="btn small sehen-handy" id="sb2-handy" type="button" hidden>Handy-Kamera …</button>
           <button class="btn small sehen-pause" id="sb2-pause" type="button" title="Sofort wegschauen (F4)">Pause</button>
           <button class="btn small sehen-stop" id="sb2-stop" type="button" title="Live-Sehen ausschalten">Ausschalten</button>
         </div>
@@ -529,6 +530,7 @@
                 <button class="segctl-btn" type="button" role="radio" aria-checked="true" data-quelle="auto">Automatisch</button>
                 <button class="segctl-btn" type="button" role="radio" aria-checked="false" data-quelle="bildschirm">Bildschirm</button>
                 <button class="segctl-btn" type="button" role="radio" aria-checked="false" data-quelle="webcam">Webcam</button>
+                <button class="segctl-btn" type="button" role="radio" aria-checked="false" data-quelle="handy">Handy</button>
                 <button class="segctl-btn" type="button" role="radio" aria-checked="false" data-quelle="beides">Beides</button>
               </div>
               <p class="sec-text sehen-hint" id="sec-sehen-hint" hidden></p>
@@ -701,6 +703,42 @@
     <div class="dlg-foot">
       <button class="btn ghost" id="sd-cancel" type="button">Abbrechen</button>
       <button class="btn primary" id="sd-ok" type="button"><span data-icon="eye"></span><span>Ich verstehe – einschalten</span></button>
+    </div>
+  </div>
+</div>
+
+<!-- Live-Sehen: Handy als Kamera koppeln (QR-Code). Link und Code stehen nur hier, solange gekoppelt wird. -->
+<div class="modal sehen-modal" id="handy-modal" hidden>
+  <div class="dialog sehen-dialog handy-dialog" id="handy-dialog" role="dialog" aria-modal="true" aria-labelledby="hd-title" aria-describedby="hd-status" tabindex="-1">
+    <div class="dlg-head">
+      <div class="dlg-icon"><span data-icon="eye"></span></div>
+      <div class="dlg-titles">
+        <h2 class="dlg-title" id="hd-title">Handy als Kamera</h2>
+        <p class="dlg-sub" id="hd-status" role="status">Einen Moment …</p>
+      </div>
+    </div>
+    <div class="dlg-body sehen-body">
+      <div class="handy-qr" id="hd-qr" hidden>
+        <img id="hd-qr-bild" alt="QR-Code für die Handy-Kamera" width="240" height="240" hidden>
+        <div class="handy-daten">
+          <p class="handy-hinweis" id="hd-hinweis"></p>
+          <p class="handy-zeile"><span class="handy-lbl">Code</span> <b id="hd-code" class="handy-code"></b></p>
+          <p class="handy-zeile"><span class="handy-lbl">Link</span> <input class="input handy-link" id="hd-link" type="text" readonly aria-label="Link für das Handy"></p>
+          <p class="handy-zeile" id="hd-countdown"></p>
+        </div>
+      </div>
+      <ul class="sehen-list" id="hd-tipps">
+        <li><b>Gleiches WLAN:</b> Handy und PC im selben WLAN (kein Gäste-WLAN, kein mobiles Netz).</li>
+        <li><b>Strom:</b> Handy am besten ans Ladekabel, Bildschirm anlassen.</li>
+        <li><b>Firewall:</b> Fragt Windows einmal nach, „Private Netzwerke“ erlauben.</li>
+        <li><b>WLAN „Öffentlich“?</b> Dann blockiert Windows die Verbindung – in den WLAN-Einstellungen auf „Privat“ stellen.</li>
+      </ul>
+      <p class="afk-err" id="hd-fehler" role="alert" hidden></p>
+    </div>
+    <div class="dlg-foot">
+      <button class="btn ghost" id="hd-beenden" type="button">Beenden</button>
+      <button class="btn ghost" id="hd-schliessen" type="button">Schließen</button>
+      <button class="btn primary" id="hd-neu" type="button">Neu koppeln</button>
     </div>
   </div>
 </div>
