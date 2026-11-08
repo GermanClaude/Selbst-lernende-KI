@@ -6,9 +6,15 @@ fremde Webseiten im Browser nicht ueber Umwege (DNS-Rebinding) Befehle schicken
 koennen. Der Server spricht nur mit der eigenen Oberflaeche:
   GET  /, /static/*      Oberflaeche
   GET  /api/events       Ereignisstrom (Server-Sent Events)
-  GET  /api/state, /api/history, /api/profile, /api/memory, /api/tutorial, /api/appearance, /custom.css
-  POST /api/send (Warteschlange, interrupt), /api/queue, /api/afk, /api/stop, /api/answer,
-       /api/voice, /api/toggle, /api/profile, /api/memory, /api/jarvis, /api/tutorial
+  GET  /api/state, /api/history, /api/profile, /api/memory, /api/tutorial, /api/appearance, /custom.css,
+       /api/setup, /api/feedback
+  GET  /api/bild/<h|e>/<name>?t=   Bild anzeigen: h = hochgeladen (data/bilder/hochgeladen),
+                                   e = erstellt (<Arbeitsordner>/bilder) - nur PNG/JPEG/GIF/WebP
+  POST /api/send (Text + Bilder, Warteschlange, interrupt), /api/queue, /api/afk, /api/stop,
+       /api/answer, /api/voice, /api/toggle, /api/profile, /api/memory, /api/jarvis, /api/tutorial,
+       /api/setup, /api/modell, /api/update, /api/feedback, /api/feedback/spaeter,
+       /api/feedback/gezeigt, /api/bilder/einstellen
+Anfragen duerfen hoechstens 1 MB gross sein - /api/send und /api/feedback (mit Bildern) 40 MB.
 """
 from __future__ import annotations
 
@@ -29,6 +35,13 @@ logger = get_logger()
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 _MAX_BODY = 1_000_000
+_MAX_BODY_BILDER = 40 * 1024 * 1024           # /api/send und /api/feedback (Bilder als data:-URL)
+_GROSSE_ANFRAGEN = ("/api/send", "/api/feedback")
+_MAX_VERWERFEN = 64 * 1024 * 1024             # zu grosse Anfrage bis hierhin noch lesen (sauberes 413)
+_MAX_BILD_DATEI = 30 * 1024 * 1024            # groesser liefert /api/bild nichts aus
+_BILD_ARTEN = ("h", "e")                      # hochgeladen | erstellt
+_ZU_GROSS = ("Die Nachricht ist zu gro\u00df (h\u00f6chstens 40 MB). Bitte weniger oder kleinere "
+             "Bilder anh\u00e4ngen.")
 
 
 class EventHub:
@@ -167,18 +180,76 @@ class AppServer:
                     return self._json(ctl.appearance())
                 if url.path == "/api/setup":
                     return self._json(ctl.setup_info())
+                if url.path == "/api/feedback":
+                    return self._json(ctl.feedback_status())
+                if url.path.startswith("/api/bild/"):
+                    return self._bild(url.path[len("/api/bild/"):])
                 return self._deny(404)
+
+            def _bild(self, rest: str) -> None:
+                """Ein Bild aus einem der beiden Bilder-Ordner - nie ein anderer Pfad, nie SVG."""
+                from ..bilder import erkenne_typ
+                from ..bildgenerator import DATEINAME_MUSTER
+
+                kind, _, name = rest.partition("/")
+                if kind not in _BILD_ARTEN or not DATEINAME_MUSTER.match(name):
+                    return self._deny(404)
+                ordner = server.controller.bild_ordner(kind)
+                if ordner is None:
+                    return self._deny(404)
+                try:
+                    ordner = Path(ordner).resolve()
+                    pfad = ordner / name
+                    # Auch ein Verweis (Symlink) im Ordner darf nicht nach draussen zeigen.
+                    if pfad.resolve().parent != ordner or not pfad.is_file():
+                        return self._deny(404)
+                    if pfad.stat().st_size > _MAX_BILD_DATEI:
+                        return self._deny(404)
+                    data = pfad.read_bytes()
+                except OSError:
+                    return self._deny(404)
+                mime = erkenne_typ(data)  # Typ an den Bytes, nicht am Namen (nie HTML/SVG ausliefern)
+                if mime is None:
+                    return self._deny(415)
+                self._send(200, data, mime, {"Content-Disposition": f'inline; filename="{name}"',
+                                             "Content-Security-Policy": "default-src 'none'; sandbox"})
+
+            def _verwerfen(self, length: int) -> None:
+                """Zu grosse Anfrage: den Rest lesen und wegwerfen (sonst haelt die Gegenseite die
+                Antwort nie in der Hand) und danach die Verbindung schliessen - die ungelesenen
+                Bytes duerfen nie als naechste Anfrage gelten."""
+                self.close_connection = True
+                if length > _MAX_VERWERFEN:
+                    return
+                try:
+                    self.connection.settimeout(10)
+                    rest = length
+                    while rest > 0:
+                        stueck = self.rfile.read(min(rest, 1 << 20))
+                        if not stueck:
+                            break
+                        rest -= len(stueck)
+                except OSError:
+                    pass
 
             def do_POST(self):  # noqa: N802
                 url = urlparse(self.path)
                 if not self._host_ok() or not self._token_ok({}):
+                    self.close_connection = True  # Inhalt ungelesen -> nicht weiter auf dieser Verbindung
                     return self._deny()
                 try:
                     length = int(self.headers.get("Content-Length") or 0)
-                    if length > _MAX_BODY:
-                        return self._deny(413)
+                    if length < 0:
+                        raise ValueError("Content-Length")
+                    grenze = _MAX_BODY_BILDER if url.path in _GROSSE_ANFRAGEN else _MAX_BODY
+                    if length > grenze:
+                        self._verwerfen(length)
+                        return self._send(413, json.dumps({"ok": False, "error": _ZU_GROSS}, ensure_ascii=False)
+                                          .encode("utf-8"), "application/json; charset=utf-8",
+                                          {"Connection": "close"})
                     body = json.loads(self.rfile.read(length) or b"{}") if length else {}
                 except (ValueError, json.JSONDecodeError):
+                    self.close_connection = True
                     return self._json({"ok": False, "error": "ungueltige Anfrage"}, 400)
                 if not isinstance(body, dict):
                     return self._json({"ok": False, "error": "ungueltige Anfrage"}, 400)
@@ -193,7 +264,14 @@ class AppServer:
             def _post(self, url, body: dict):
                 ctl = server.controller
                 if url.path == "/api/send":
-                    return self._json(ctl.submit(str(body.get("text", "")), bool(body.get("interrupt"))))
+                    return self._json(ctl.submit(str(body.get("text") or ""), bool(body.get("interrupt")),
+                                                 images=body.get("images"), client_id=body.get("client_id")))
+                if url.path == "/api/feedback":
+                    return self._json(ctl.feedback_send(body))
+                if url.path in ("/api/feedback/spaeter", "/api/feedback/gezeigt"):
+                    return self._json(ctl.feedback_seen(url.path.rsplit("/", 1)[-1]))
+                if url.path == "/api/bilder/einstellen":
+                    return self._json(ctl.bilder_einstellen(body))
                 if url.path == "/api/queue":
                     return self._json(ctl.queue_action(str(body.get("action", "")), body.get("id")))
                 if url.path == "/api/afk":

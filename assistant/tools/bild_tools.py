@@ -84,7 +84,8 @@ class BildErstellenTool(Tool):
         if fmt is None:
             return f"Unbekanntes format '{format}' - erlaubt sind quadrat, hoch oder quer."
         config = ctx.extra.get("config")
-        anbieter = bildgenerator.aktiver_anbieter(config)
+        dienste = bildgenerator.empfaenger(config)
+        anbieter = dienste[0] + (f" (falls das nicht klappt: {', '.join(dienste[1:])})" if dienste[1:] else "")
 
         # Pfad VOR dem Malen pruefen und freigeben lassen: die Beschreibung verlaesst sonst
         # schon den PC, bevor der Mensch nein sagen konnte. Die Endung kommt erst mit dem Bild.

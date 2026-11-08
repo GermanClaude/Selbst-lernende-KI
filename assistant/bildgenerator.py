@@ -137,6 +137,14 @@ def aktiver_anbieter(config: Any) -> str:
     return NAMEN[waehle_anbieter(config)]
 
 
+def empfaenger(config: Any) -> list[str]:
+    """Anzeigenamen aller Dienste, an die die Beschreibung gehen KANN (in dieser Reihenfolge):
+    bei auto mit Cloudflare auch AI Horde (Ausweichen) - wichtig fuer die Freigabe-Frage."""
+    if waehle_anbieter(config) == CLOUDFLARE:
+        return [NAMEN[CLOUDFLARE], NAMEN[HORDE]] if _gewuenscht(config) == "auto" else [NAMEN[CLOUDFLARE]]
+    return [NAMEN[HORDE]]
+
+
 def format_name(wert: str | None) -> str | None:
     """'quadrat' | 'hoch' | 'quer' (auch Synonyme wie 'landscape'); unbekannt -> None."""
     return _FORMAT_NAMEN.get(str(wert or "quadrat").strip().lower())
@@ -788,9 +796,15 @@ class Bildgenerator:
         if not bilder or not isinstance(bilder[0], dict):
             raise GeneratorFehler("AI Horde hat kein Bild geliefert. Bitte noch einmal versuchen.")
         bild = bilder[0]
-        if bild.get("censored") or str(bild.get("state") or "").lower() in ("censored", "csam"):
-            raise GeneratorFehler("Der Sicherheitsfilter von AI Horde hat das Bild zur\u00fcckgehalten. Bitte "
-                                  "anders beschreiben - ohne Gewalt, Erwachsenen-Inhalte oder echte Personen.",
+        zensur = [m for m in (bild.get("gen_metadata") or [])
+                  if isinstance(m, dict) and str(m.get("type") or "").lower() == "censorship"]
+        if bild.get("censored") or zensur or str(bild.get("state") or "").lower() in ("censored", "csam"):
+            # Der Filter des Rechners irrt sich manchmal auch bei harmlosen Bildern (selbst erlebt:
+            # ein Leuchtturm) - dann hilft ein neuer Versuch; sonst die Beschreibung aendern.
+            raise GeneratorFehler("Der Sicherheitsfilter von AI Horde hat das Bild zur\u00fcckgehalten. Das "
+                                  "passiert manchmal auch bei harmlosen Bildern - bei einer harmlosen "
+                                  "Beschreibung einfach noch einmal versuchen, sonst anders beschreiben "
+                                  "(ohne Gewalt, Erwachsenen-Inhalte oder echte Personen).",
                                   ausweichen=False)
         try:
             data = self._netz(_bild_holen, self.http, bild.get("img"))

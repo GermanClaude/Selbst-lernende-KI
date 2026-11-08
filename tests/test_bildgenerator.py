@@ -209,6 +209,14 @@ def test_waehle_anbieter():
     assert bg.cloudflare_eingerichtet(_config(token=TOKEN)) is False
 
 
+def test_empfaenger_nennt_auch_das_ausweichziel():
+    assert bg.empfaenger(None) == ["AI Horde"]
+    assert bg.empfaenger(_config(token=TOKEN, konto=KONTO)) == ["Cloudflare", "AI Horde"]
+    assert bg.empfaenger(_config("cloudflare", TOKEN, KONTO)) == ["Cloudflare"]
+    assert bg.empfaenger(_config("horde", TOKEN, KONTO)) == ["AI Horde"]
+    assert bg.empfaenger(_config("cloudflare")) == ["AI Horde"]
+
+
 def test_waehle_anbieter_mit_echter_config():
     cfg = dataclasses.replace(load_config(), bilder=BilderSettings(), cloudflare_api_key=None,
                               cloudflare_account_id=None)
@@ -368,13 +376,31 @@ def test_horde_gibt_nach_neun_minuten_auf():
     assert http.urls("DELETE", "/generate/status/auftrag-0001")
 
 
-def test_horde_zensiertes_bild():
-    http = horde(status=_status(censored=True))
+@pytest.mark.parametrize("merkmal", [
+    {"censored": True},
+    {"censored": False, "state": "censored"},
+    {"censored": False, "gen_metadata": [{"type": "censorship", "value": "nsfw"}]},
+])
+def test_horde_zensiertes_bild(merkmal):
+    http = horde(status=_status(**merkmal))
     gen, _m, _u = _gen(http)
     with pytest.raises(bg.GeneratorFehler) as info:
         gen.erstellen("something")
-    assert "Sicherheitsfilter" in str(info.value) and info.value.ausweichen is False
+    assert "Sicherheitsfilter" in str(info.value) and "noch einmal versuchen" in str(info.value)
+    assert info.value.ausweichen is False
     assert not http.urls("GET", "r2.example.com")  # zensiertes Bild gar nicht erst laden
+
+
+def test_horde_echte_statusantwort():
+    """Form einer echten Antwort von /generate/status (live mitgeschnitten, Bildadresse gekuerzt)."""
+    echt = {"generations": [{"img": BILD_URL, "seed": "1535416857", "id": "5c4da96f-e02f-4a05-8d62-53fb0d4a7f36",
+                             "censored": False, "gen_metadata": [], "worker_id": "e4b7d1b5-7beb-4424-aa81-a8b45e555dd1",
+                             "worker_name": "GlintDGXSpark", "model": "Flux.1-Schnell fp8 (Compact)", "state": "ok"}],
+            "shared": False, "finished": 1, "processing": 0, "restarted": 0, "waiting": 0, "done": True,
+            "faulted": False, "wait_time": 0, "queue_position": 0, "kudos": 84.0, "is_possible": True,
+            "eligible_workers": 4, "eligible_worker_threads": 6, "might_stall": False}
+    erg = _gen(horde(status=echt))[0].erstellen("a red apple")
+    assert erg.data == WEBP and erg.seed == "1535416857" and erg.modell == "Flux.1-Schnell fp8 (Compact)"
 
 
 def test_horde_abbruch_beim_warten():
@@ -873,7 +899,7 @@ def test_werkzeug_nennt_cloudflare_in_der_frage(tmp_path, netz):
                    extra={"on_image": bilder.append})
     out, err = build_registry().execute(ctx, "bild_erstellen", {"beschreibung": "a dog"})
     assert not err and "(Cloudflare, Modell" in out
-    assert "Cloudflare" in fragen[0] and TOKEN not in fragen[0]
+    assert "Cloudflare (falls das nicht klappt: AI Horde)" in fragen[0] and TOKEN not in fragen[0]
     (datei,) = list((pm.workspace_root / "bilder").iterdir())
     assert datei.suffix == ".jpg" and bilder[0]["anbieter"] == "Cloudflare"
 

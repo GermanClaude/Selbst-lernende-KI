@@ -514,7 +514,7 @@ def test_deepseek_pro_gets_a_description_from_flash(tmp_path):
     sent = prov.client.chat.completions.last_kwargs
     assert sent["model"] == "deepseek-v4-pro"
     user = sent["messages"][1]["content"]
-    assert user == "[Bild 1 – Beschreibung: Eine rote Flaeche mit dem Text HALLO.]\n\nWas steht da?"
+    assert user == "[Bild 1 \u2013 Beschreibung: Eine rote Flaeche mit dem Text HALLO.]\n\nWas steht da?"
     assert "image_url" not in json.dumps(sent["messages"])
     # Kosten der Beschreibung zaehlen mit - zum Flash-Preis.
     flash_usd, _ = prov.config.cost_estimate(1000, 0, 100, provider="deepseek", model="deepseek-flash",
@@ -535,7 +535,7 @@ def test_deepseek_pro_description_failure_is_explained(tmp_path):
     out = prov.respond("", bilder=[_bild("scan.png")])
     assert out == "Tut mir leid."
     user = prov.client.chat.completions.last_kwargs["messages"][1]["content"]
-    assert user.startswith("[Bild 1: [Bild: scan.png] – Bild konnte nicht angesehen werden")
+    assert user.startswith("[Bild 1: [Bild: scan.png] \u2013 Bild konnte nicht angesehen werden")
     assert user.endswith(LEER_EIN_BILD)
     mem.close()
 
@@ -547,7 +547,7 @@ def test_deepseek_pro_tool_image_is_described(tmp_path):
     prov.registry.register(BildWerkzeug())
     prov.respond("Werkzeug!")
     assert [m["role"] for m in prov.messages] == ["system", "user", "assistant", "tool", "assistant"]
-    assert prov.messages[3]["content"] == "Hier das Bild.\n\n[Bild 1 – Beschreibung: Eine gruene Flaeche.]"
+    assert prov.messages[3]["content"] == "Hier das Bild.\n\n[Bild 1 \u2013 Beschreibung: Eine gruene Flaeche.]"
     mem.close()
 
 

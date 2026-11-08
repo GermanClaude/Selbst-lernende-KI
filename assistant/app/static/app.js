@@ -52,6 +52,9 @@
     }
   }
 
+  // Reine Hilfen ohne Seite (helfer.js): Bild-Typen und -Groessen, eigene Bild-Adressen, Feedback
+  const HL = window.NovaHelfer;
+
   // =====================================================================
   // Symbole (feste, eigene SVG-Zeichnungen – kein Fremdtext)
   // =====================================================================
@@ -126,6 +129,12 @@
     eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
     eyeOff: '<path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c6.5 0 10 7 10 7a18.5 18.5 0 0 1-2.16 3.19"/><path d="M6.61 6.61A13.53 13.53 0 0 0 2 12s3.5 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/><path d="m2 2 20 20"/>',
     external: '<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
+    paperclip: '<path d="m21.4 11.1-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/>',
+    image: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/>',
+    star: '<path d="M12 2.8l2.85 5.78 6.38.93-4.62 4.5 1.09 6.35L12 17.36l-5.7 3 1.09-6.35-4.62-4.5 6.38-.93z"/>',
+    bug: '<path d="M9 7.1V6a3 3 0 0 1 6 0v1.1"/><path d="M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6z"/><path d="M12 20v-9M6 13H2M22 13h-4M6.5 9C4.6 8.8 3 7.1 3 5M17.5 9C19.4 8.8 21 7.1 21 5M3 21c0-2.1 1.7-3.9 3.8-4M21 21c0-2.1-1.7-3.9-3.8-4"/>',
+    maximize: '<path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>',
+    chevronLeft: '<path d="m15 6-6 6 6 6"/>',
   };
 
   function icon(name, cls) {
@@ -1055,6 +1064,10 @@
   const tourEl = byId('tour');
   const cmodal = byId('cmodal');
   const amodal = byId('amodal'); // AFK-Modus starten ("Ich bin weg")
+  const fmodal = byId('fmodal'); // Feedback & Bewertung
+  const fdialog = byId('fdialog');
+  const lbEl = byId('lightbox'); // Grossansicht eines Bildes
+  let chatTray = null;           // angehaengte Bilder im Chat (siehe "Bilder anhaengen")
   const jv = {
     open: false, starting: false, cancelStart: false, closing: false, closeTimer: 0, closeWaiters: [], left: false,
     leaveTimer: 0, openedAt: 0, state: 'starting', label: '', labelTimer: 0, working: false,
@@ -1234,6 +1247,7 @@
       jv.setupFailed = false;
       renderLive();
     } else if (s.jarvis === false && jv.open && !jv.starting && performance.now() - jv.openedAt > 2500) closeJarvisView();
+    fpCheck(); // Nachfrage "Wie gefaellt dir Nova?" (nur, wenn faellig und Nova frei ist)
   }
 
   const WHEELS_SUB = {
@@ -1358,9 +1372,13 @@
   }
 
   function updateSendBtn() {
-    const has = !!input.value.trim();
-    sendBtn.disabled = ended || !has;
-    hintNow.disabled = ended || !has;
+    // Senden geht mit Text ODER Bild; solange Bilder noch vorbereitet werden, kurz warten
+    const pics = chatTray ? chatTray.items.length : 0;
+    const preparing = !!chatTray && chatTray.busy();
+    const has = !!input.value.trim() || pics > 0;
+    sendBtn.disabled = ended || !has || preparing;
+    hintNow.disabled = ended || !has || preparing;
+    byId('attach-btn').disabled = ended;
     // AFK-Modus laeuft: jede Nachricht heisst "ich bin zurueck" (sie wartet nicht);
     // startet er gleich, wartet sie – und der AFK-Modus startet dann nicht
     const away = ended ? '' : afkRunning() ? 'afk' : busy && state.afk_pending === true ? 'afkpending' : '';
@@ -1874,12 +1892,47 @@
     updateStatus();
   }
 
-  function addUser(text) {
-    const row = h('div', 'msg user' + (String(text).trim().startsWith('/') ? ' cmd' : ''));
-    row.append(h('div', 'bubble', text));
+  /** Nutzer-Blase. imgs: [{src, name}] – Miniaturen ueber dem Text (Klick = Grossansicht). */
+  function addUser(text, imgs) {
+    const t = String(text == null ? '' : text);
+    const list = Array.isArray(imgs) ? imgs.filter((b) => b && b.src) : [];
+    const row = h('div', 'msg user' + (t.trim().startsWith('/') && !list.length ? ' cmd' : ''));
+    if (list.length) {
+      const col = h('div', 'user-col');
+      col.append(userImages(list));
+      if (t.trim()) col.append(h('div', 'bubble', t));
+      row.append(col);
+    } else row.append(h('div', 'bubble', t));
     msgs.append(row);
     added();
     return row;
+  }
+
+  /** Bild vom Server (Verlauf, Echo) -> {src mit ?t=TOKEN, name}; fremde Adressen fallen weg. */
+  function serverImg(b) {
+    const src = HL.bildUrl(b && b.url, TOKEN);
+    return src ? { src, name: HL.anzeigeName(b.name, b.url), save: true } : null;
+  }
+
+  function userImages(list) {
+    const box = h('div', 'u-imgs' + (list.length === 1 ? ' one' : ''));
+    const shown = list.map((b) => ({ src: b.src, name: b.name || 'Bild', caption: b.name || '', save: b.save !== false }));
+    list.forEach((b, k) => {
+      const btn = h('button', 'u-img');
+      btn.type = 'button';
+      btn.title = (b.name || 'Bild') + ' – groß ansehen';
+      btn.setAttribute('aria-label', 'Bild groß ansehen: ' + (b.name || 'Bild'));
+      const img = h('img');
+      img.alt = b.name || 'Bild';
+      img.decoding = 'async';
+      img.src = b.src;
+      img.addEventListener('load', () => keepBottom());
+      img.addEventListener('error', () => { btn.classList.add('broken'); btn.disabled = true; btn.title = 'Bild nicht mehr da'; });
+      btn.append(img);
+      btn.addEventListener('click', () => openLightbox(shown, k, btn));
+      box.append(btn);
+    });
+    return box;
   }
 
   // Ausgaben der Befehle (/status, /kosten, /hilfe) haben eingerueckte Spalten:
@@ -2047,6 +2100,7 @@
     tastenkombination: ['keyboard', 'Tastenkombination'],
     agent_beauftragen: ['bot', 'Agent beauftragen'],
     abwesenheit: ['moon', 'AFK-Modus'],
+    bild_erstellen: ['image', 'Erstelle ein Bild …'],
   };
   function toolInfo(name) {
     const n = String(name || 'werkzeug');

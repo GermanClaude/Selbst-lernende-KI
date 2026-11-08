@@ -29,6 +29,10 @@ Sonderbefehle (mit '/' beginnen):
   /gehirn [deepseek|claude] - Gehirn zeigen bzw. wechseln (Schluessel: einfach in den Chat einfuegen)
   /modell [name]      - Modell zeigen bzw. waehlen (z.B. /modell sonnet, /modell flash)
   /afk [Auftrag]      - ich bin weg: die KI arbeitet allein weiter (Strg+C = zurueck)
+  /bild <pfad> [frage] - Bild mitschicken, z.B. /bild foto.jpg Was steht da drauf? (mehrere Pfade
+                        moeglich, mit Leerzeichen in Anfuehrungszeichen; ohne Pfad: Zwischenablage).
+                        Ein Bildpfad allein (z.B. ins Fenster gezogen) geht auch.
+  /feedback           - Feedback & Bewertung an den Entwickler schicken (auch /bewertung)
   /denken [stufe]     - wie gruendlich die KI nachdenkt: schnell, ausgewogen, gruendlich ...
   /app                - zur App wechseln (eigenes Fenster statt Terminal)
   /verknuepfung       - Symbol fuer die App auf den Desktop legen
@@ -41,9 +45,11 @@ Strg+C waehrend einer Antwort haelt die KI an - du kannst gleich weiterschreiben
 from __future__ import annotations
 
 import os
+import re
 import sys
 import threading
 import time
+from pathlib import Path
 
 from .. import __version__
 from ..brain import Brain
@@ -170,6 +176,20 @@ class CLI:
         self._pending_update: UpdateInfo | None = None
         self._pending_shown = False
         self._stop_watch = threading.Event()
+        # Bildgenerator (Werkzeug bild_erstellen): fertiges Bild und Fortschritt anzeigen
+        self.tool_ctx.extra["on_image"] = self._on_image
+        self.tool_ctx.extra["on_image_progress"] = self._on_image_progress
+        self._bild_fortschritt = ""
+        # Feedback & Bewertung: Nutzungszeit (fuer die Nachfrage), Ausgang nachsenden.
+        # _feedback_post/_feedback_fetch: fuer Tests austauschbar (None = echtes Netz).
+        self._feedback_post = None
+        self._feedback_fetch = None
+        self._feedback_lock = threading.Lock()
+        self._feedback_watch = False
+        self._feedback_hint_shown = False
+        self._feedback_from_hint = False
+        self._nutzung_lock = threading.Lock()
+        self._nutzung_offen = 0.0  # gezaehlte, noch nicht gespeicherte Sekunden
 
     def _permission_answer(self, message: str, risk: Risk) -> str:
         """'einmal', 'immer' oder 'nein' - im Terminal per Eingabe, in der App per Knopf."""
@@ -335,6 +355,287 @@ class CLI:
                     self.brain.provider.abort_turn(snapshot, step["zeigen"])
                 print()
         mark_done(self.config.project_root)
+
+    # -- Bilder: anhaengen (/bild) und erzeugte Bilder zeigen ------------------------
+    def _bild_command(self, args: str) -> tuple[list, str] | None:
+        """'/bild <pfad> [pfad ...] [frage]' -> (Bilder, Frage). Ohne Pfad: Zwischenablage.
+        None = nichts zu senden (Hinweis ist schon ausgegeben)."""
+        from ..bilder import BildFehler
+
+        text = _ohne_ps_aufruf(args.strip())
+        try:
+            pfade, frage = bildpfade_abtrennen(text, self._bild_basis())
+            if pfade:
+                bilder = [self._bild_laden(pfad) for pfad in pfade]
+            else:
+                erstes = teile(text)[0][0] if text else ""
+                if erstes and _sieht_aus_wie_pfad(erstes):
+                    print(_c(f"Datei nicht gefunden: {erstes}", YELLOW))
+                    return None
+                bild, problem = self._zwischenablage_bild()
+                if bild is None:
+                    print(_c(problem, YELLOW))
+                    return None
+                bilder, frage = [bild], text
+        except BildFehler as exc:
+            print(_c(str(exc), YELLOW))
+            return None
+        grenze = max(1, int(self.config.bilder.max_bilder_pro_nachricht or 10))
+        if len(bilder) > grenze:
+            print(_c(f"Hoechstens {grenze} Bilder pro Nachricht.", YELLOW))
+            return None
+        return bilder, frage
+
+    def _nur_bildpfade(self, text: str) -> list | None:
+        """Besteht die Nachricht nur aus Bildpfaden (z.B. Datei ins Terminal gezogen)? -> Bilder.
+        Wirft BildFehler, wenn eine der Dateien kein lesbares Bild ist."""
+        text = _ohne_ps_aufruf(text.strip())
+        pfade, rest = bildpfade_abtrennen(text, self._bild_basis())
+        if not pfade or rest:
+            return None
+        grenze = max(1, int(self.config.bilder.max_bilder_pro_nachricht or 10))
+        return [self._bild_laden(pfad) for pfad in pfade[:grenze]]
+
+    def _bild_basis(self) -> list[Path]:
+        """Wo relative Bildpfade gesucht werden: aktueller Ordner, dann der Arbeitsordner."""
+        return [Path.cwd(), Path(self.permissions.workspace_root)]
+
+    def _bild_laden(self, pfad: Path):
+        from ..bilder import BildFehler, aus_datei
+
+        try:
+            return aus_datei(pfad, max_kante=upload_kante(self.config))
+        except OSError as exc:  # z.B. keine Leserechte
+            raise BildFehler(f"Die Datei laesst sich nicht lesen: {pfad.name}") from exc
+
+    def _zwischenablage_bild(self):
+        """Bild aus der Zwischenablage (Pillow ImageGrab, Windows/macOS) -> (Bild | None, Hinweis)."""
+        import io
+
+        from ..bilder import BildFehler, vorbereiten
+
+        nutzung = "Kopiere zuerst ein Bild (z.B. Win+Umschalt+S) oder gib einen Pfad an: /bild foto.jpg"
+        try:
+            from PIL import ImageGrab
+        except Exception:  # noqa: BLE001 - Pillow fehlt
+            return None, "Fuer Bilder aus der Zwischenablage fehlt Pillow (pip install pillow). " + nutzung
+        try:
+            inhalt = ImageGrab.grabclipboard()
+        except Exception:  # noqa: BLE001 - z.B. Linux ohne xclip/wl-paste
+            return None, "Die Zwischenablage laesst sich hier nicht lesen. Gib den Pfad an: /bild foto.jpg"
+        if isinstance(inhalt, list):  # kopierte Dateien (Explorer)
+            dateien = [Path(p) for p in inhalt if Path(str(p)).suffix.lower() in BILD_ENDUNGEN]
+            if dateien:
+                return self._bild_laden(dateien[0]), ""
+            inhalt = None
+        if inhalt is None:
+            return None, "In der Zwischenablage ist kein Bild. " + nutzung
+        try:
+            puffer = io.BytesIO()
+            inhalt.save(puffer, "PNG")
+            return vorbereiten(puffer.getvalue(), "zwischenablage.png", upload_kante(self.config)), ""
+        except BildFehler as exc:
+            return None, str(exc)
+        except Exception:  # noqa: BLE001
+            return None, "Das Bild aus der Zwischenablage liess sich nicht lesen. " + nutzung
+
+    def _bild_hilfe(self) -> None:
+        print(_c("Bild mitschicken: /bild <pfad> [frage]  - z.B. /bild foto.jpg Was steht da drauf? "
+                 "Ohne Pfad nehme ich das Bild aus der Zwischenablage.", CYAN))
+
+    def _on_image(self, info: dict) -> None:
+        """Werkzeug bild_erstellen hat ein Bild gespeichert."""
+        self._bild_fortschritt = ""
+        print(_c(f"\n[Gespeichert: {info.get('pfad')}]", GREEN))
+        if self._bild_hinweis_faellig():
+            print(_c(BILD_HINWEIS, GREY))
+
+    def _on_image_progress(self, text: str) -> None:
+        text = str(text or "").strip()
+        if not text or text == self._bild_fortschritt:
+            return
+        self._bild_fortschritt = text
+        self.thinking.stop()
+        print(_c(f"\n  [{text}]", GREY), end="", flush=True)
+
+    def _bild_hinweis_faellig(self) -> bool:
+        """Beim ersten erzeugten Bild einmal sagen, wohin Bildbeschreibungen gehen (dann gemerkt)."""
+        import json
+
+        pfad = Path(self.config.project_root) / "data" / "bilder" / "hinweis.json"
+        if pfad.is_file():
+            return False
+        try:
+            pfad.parent.mkdir(parents=True, exist_ok=True)
+            pfad.write_text(json.dumps({"gezeigt": time.strftime("%Y-%m-%dT%H:%M:%S")}), encoding="utf-8")
+        except OSError as exc:
+            logger.info("Bild-Hinweis nicht gemerkt: %s", exc)
+        return True
+
+    # -- Feedback & Bewertung ------------------------------------------------------
+    def _feedback_terminal(self) -> None:
+        """/feedback im Terminal: Art, Sterne, Text, Bilder, Kontakt nacheinander abfragen."""
+        from .. import feedback
+        from ..bilder import BildFehler
+
+        trigger = "popup" if self._feedback_from_hint else "menue"
+        print(_c("\nFeedback & Bewertung", BOLD))
+        print(_c("Text, Bewertung, App-Version und Bilder werden per E-Mail an den Entwickler geschickt. "
+                 "Bitte keine Passwoerter oder privaten Daten. (q = abbrechen)", GREY))
+        try:
+            auswahl = "  ".join(f"{i} = {label}" for i, (_, label) in enumerate(FEEDBACK_ARTEN, 1))
+            while True:
+                antwort = _feedback_frage(f"Worum geht es? {auswahl} [1]: ")
+                if not antwort:
+                    kind = FEEDBACK_ARTEN[0][0]
+                    break
+                if antwort.isdigit() and 1 <= int(antwort) <= len(FEEDBACK_ARTEN):
+                    kind = FEEDBACK_ARTEN[int(antwort) - 1][0]
+                    break
+                print(_c(f"Bitte eine Zahl von 1 bis {len(FEEDBACK_ARTEN)} eingeben.", YELLOW))
+            while True:
+                antwort = _feedback_frage("Wie viele Sterne gibst du? (1-5, Enter = keine): ")
+                if not antwort:
+                    stars = None
+                    break
+                if antwort.strip("*") == "" or (antwort.isdigit() and 1 <= int(antwort) <= 5):
+                    stars = len(antwort) if antwort.strip("*") == "" else int(antwort)
+                    if 1 <= stars <= 5:
+                        break
+                print(_c("Bitte eine Zahl von 1 bis 5 (oder einfach Enter).", YELLOW))
+            print(_c("Was gefaellt dir? Was koennen wir besser machen? Fehler bitte genau beschreiben.", CYAN))
+            print(_c("(Mehrere Zeilen moeglich - eine leere Zeile beendet den Text.)", GREY))
+            zeilen: list[str] = []
+            while True:
+                zeile = _feedback_frage("> ", abbruch=not zeilen)
+                if not zeile:
+                    break
+                zeilen.append(zeile)
+            text = "\n".join(zeilen)
+            bilder: list = []
+            while True:
+                antwort = _feedback_frage("Bilder anhaengen? Pfade (mehrere mit Leerzeichen, Enter = keine): ")
+                if not antwort:
+                    break
+                pfade = [t for t, _a, _e in teile(_ohne_ps_aufruf(antwort))]
+                try:
+                    bilder = feedback.bilder_vorbereiten(pfade)
+                    print(_c(f"{len(bilder)} Bild(er) angehaengt.", GREY))
+                    break
+                except BildFehler as exc:
+                    print(_c(str(exc), YELLOW))
+            contact = _feedback_frage("Deine E-Mail fuer Rueckfragen (optional, Enter = keine): ")
+        except _FeedbackAbbruch:
+            print(_c("Abgebrochen - es wurde nichts gesendet.", GREY))
+            return
+        if stars is None and not text.strip() and not bilder:
+            print(_c("Ohne Sterne, Text oder Bild gibt es nichts zu senden - abgebrochen.", GREY))
+            return
+        print(_c("Sende …", GREY))
+        if not self._feedback_lock.acquire(blocking=False):
+            print(_c("Es wird gerade schon ein Feedback gesendet - einen Moment.", YELLOW))
+            return
+        try:
+            ergebnis = feedback.abschicken(self.config, kind, stars, text, contact or None, bilder, trigger,
+                                           post=self._feedback_post, fetch=self._feedback_fetch)
+        finally:
+            self._feedback_lock.release()
+        color = GREEN if ergebnis.status == "gesendet" else (CYAN if ergebnis.ok else YELLOW)
+        print(_c(ergebnis.meldung, color))
+        if ergebnis.status == "gesendet":
+            self._feedback_ausgang_bald()
+
+    def _feedback_due(self) -> bool:
+        from .. import feedback
+
+        try:
+            return bool(feedback.ist_faellig(self.config))
+        except Exception as exc:  # noqa: BLE001 - nie wegen der Nachfrage abstuerzen
+            logger.info("Feedback-Plan: %s", exc)
+            return False
+
+    def _show_feedback_hint(self) -> bool:
+        """Terminal: ist die Nachfrage faellig, einmal vor einer Eingabe darauf hinweisen."""
+        if self._feedback_hint_shown or not self._feedback_due():
+            return False
+        from .. import feedback
+
+        self._feedback_hint_shown = True
+        print(_c(f"\n[Magst du {self.config.ki.name} bewerten? Tippe /feedback - dauert nur eine Minute.]", CYAN))
+        try:
+            feedback.gezeigt(root=self.config)
+        except Exception as exc:  # noqa: BLE001
+            logger.info("Feedback-Plan: %s", exc)
+        return True
+
+    _NUTZUNG_TAKT = 60.0          # Sekunden zwischen zwei Zaehlungen
+    _NUTZUNG_SPEICHERN = 5        # alle 5 Zaehlungen (= 5 min) speichern
+    _AUSGANG_TAKT = 30 * 60.0     # Feedback-Ausgang alle 30 Minuten nachsenden
+
+    def _start_feedback_watch(self) -> None:
+        """Nutzungszeit zaehlen (fuer die Nachfrage) und den Feedback-Ausgang nachsenden -
+        beides in eigenen Hintergrund-Threads, die mit dem Programm enden."""
+        if self._feedback_watch:
+            return
+        self._feedback_watch = True
+        threading.Thread(target=self._nutzung_zaehlen, name="nutzung", daemon=True).start()
+        threading.Thread(target=self._ausgang_schleife, name="feedback-ausgang", daemon=True).start()
+
+    def _nutzung_zaehlen(self) -> None:
+        zuletzt = time.monotonic()
+        takte = 0
+        faellig = self._feedback_due()
+        while not self._stop_watch.wait(self._NUTZUNG_TAKT):
+            jetzt = time.monotonic()
+            # Standby/angehaltener Rechner zaehlt nicht: hoechstens zwei Takte auf einmal
+            with self._nutzung_lock:
+                self._nutzung_offen += max(0.0, min(jetzt - zuletzt, 2 * self._NUTZUNG_TAKT))
+            zuletzt = jetzt
+            takte += 1
+            if takte % max(1, self._NUTZUNG_SPEICHERN):
+                continue
+            self._nutzung_speichern()
+            neu = self._feedback_due()
+            if neu != faellig:
+                faellig = neu
+                self._feedback_changed()
+
+    def _nutzung_speichern(self) -> None:
+        from .. import feedback
+
+        with self._nutzung_lock:
+            offen, self._nutzung_offen = self._nutzung_offen, 0.0
+        if offen <= 0:
+            return
+        try:
+            feedback.nutzung_hinzufuegen(offen, root=self.config)
+        except Exception as exc:  # noqa: BLE001
+            logger.info("Nutzungszeit nicht gespeichert: %s", exc)
+
+    def _ausgang_schleife(self) -> None:
+        while True:
+            self._feedback_ausgang_senden()
+            if self._stop_watch.wait(self._AUSGANG_TAKT):
+                return
+
+    def _feedback_ausgang_senden(self) -> None:
+        from .. import feedback
+
+        try:
+            feedback.ausgang_senden(self.config, post=self._feedback_post, fetch=self._feedback_fetch)
+        except Exception as exc:  # noqa: BLE001 - naechstes Mal wieder
+            logger.info("Feedback-Ausgang: %s", type(exc).__name__)
+
+    def _feedback_ausgang_bald(self) -> None:
+        """Nach einer erfolgreichen Sendung: Wartendes gleich hinterher (eigener Thread)."""
+        from .. import feedback
+
+        if feedback.ausgang_anzahl(self.config):
+            threading.Thread(target=self._feedback_ausgang_senden, name="feedback-nachsenden",
+                             daemon=True).start()
+
+    def _feedback_changed(self) -> None:
+        """Fuer die App: Anzeige auffrischen (Nachfrage faellig / erledigt)."""
 
     # -- Jarvis-Modus im Terminal -------------------------------------------------
     def _jarvis_terminal(self) -> None:
@@ -646,6 +947,7 @@ class CLI:
             if self._startup_update():
                 return self.exit_code  # Update installiert -> Neustart
             self._start_update_watch()
+            self._start_feedback_watch()
             self._loop()
         except (KeyboardInterrupt, EOFError):
             print()
@@ -655,9 +957,13 @@ class CLI:
         return self.exit_code
 
     def _loop(self) -> None:
+        from ..bilder import BildFehler
+
         while True:
             self._show_pending_update()
+            hint = self._show_feedback_hint()
             user_text = self._get_input()
+            self._feedback_from_hint = hint  # /feedback direkt nach dem Hinweis = Antwort darauf
             if user_text is None:
                 continue
             user_text = user_text.strip()
@@ -669,13 +975,30 @@ class CLI:
             if key and not user_text.startswith("/"):
                 self._setup_key(key)  # Schluessel eingefuegt: einrichten - geht NIE an die KI
                 continue
-            if user_text.startswith("/"):
+            bilder: list = []
+            if user_text.split()[0].lower() in ("/bild", "/bilder"):
+                parsed = self._bild_command(user_text.split(None, 1)[1] if " " in user_text else "")
+                if parsed is None:
+                    continue
+                bilder, user_text = parsed
+            elif not user_text.startswith("/"):
+                try:
+                    bilder = self._nur_bildpfade(user_text) or []
+                except BildFehler as exc:
+                    print(_c(str(exc), YELLOW))
+                    continue
+                if bilder:
+                    user_text = ""
+            if user_text.startswith("/") and not bilder:
                 if self._handle_command(user_text):
                     break
                 continue
             if not self.config.api_key:
                 print(_c(KEY_HINT, YELLOW))
                 continue
+            for bild in bilder:
+                size = f", {bild.breite}x{bild.hoehe}" if bild.breite and bild.hoehe else ""
+                print(_c(f"[Bild angehaengt: {bild.name}{size}]", GREY))
 
             # Antwort streamen. Strg+C haelt nur diese Antwort an, nicht die ganze KI.
             print(_c(f"\n{self.config.ki.name}: ", CYAN), end="", flush=True)
@@ -685,8 +1008,9 @@ class CLI:
             back, self._afk_return = self._afk_return, None
             self._afk_pending = None
             self.brain.provider.cancel_event.clear()  # z.B. vom AFK-Waechter liegengeblieben
+            mit_bildern = {"bilder": bilder} if bilder else {}
             try:
-                answer = self.brain.respond(model_text_for(user_text, back=back), on_text=self._emit)
+                answer = self.brain.respond(model_text_for(user_text, back=back), on_text=self._emit, **mit_bildern)
             except KeyboardInterrupt:
                 self._afk_pending = None  # angehalten -> doch nicht weg
                 self.thinking.stop()
@@ -714,7 +1038,7 @@ class CLI:
                     self._print_cost_line()
                 print()
                 if self.voice_out.enabled:
-                    self.voice_out.speak(answer)
+                    self.voice_out.speak(vorlesetext(answer))
             except KeyboardInterrupt:
                 self.voice_out.stop()  # Strg+C beim Vorlesen: nur das Vorlesen anhalten
                 print(_c("\n[Vorlesen angehalten.]", GREY))
@@ -812,6 +1136,10 @@ class CLI:
             self._name_command(cmd.split(None, 1)[1] if len(cmd.split(None, 1)) > 1 else "")
         elif base in ("/verknuepfung", "/verknüpfung"):
             self._shortcut_command()
+        elif base in ("/feedback", "/bewertung", "/bewerten"):
+            self._feedback_terminal()
+        elif base in ("/bild", "/bilder"):
+            self._bild_hilfe()  # im Terminal faengt _loop /bild vorher ab
         else:
             print(_c(f"Unbekannter Befehl: {base}. /hilfe zeigt alle.", YELLOW))
         return False
@@ -1132,6 +1460,7 @@ class CLI:
             )
 
     def _shutdown(self) -> None:
+        self._nutzung_speichern()  # Nutzungszeit fuer die Feedback-Nachfrage
         print(_c("Speichere, was ich gelernt habe…", GREY))
         try:
             self.brain.end_session_summary()
@@ -1167,6 +1496,97 @@ def _yes(question: str, default: bool = False) -> bool:
     if not answer:
         return default
     return answer in ("j", "ja", "y", "yes")
+
+
+BILD_ENDUNGEN = (".png", ".jpg", ".jpeg", ".gif", ".webp")
+BILD_HINWEIS = (
+    "Gut zu wissen: Bildbeschreibungen gehen an AI Horde (ein Netz von Freiwilligen-Rechnern; anonym "
+    "erstellte Bilder werden dort mit LAION f\u00fcr Forschung geteilt) bzw. an Cloudflare, wenn du es "
+    "eingerichtet hast. Schreib deshalb keine pers\u00f6nlichen Daten in Bildbeschreibungen."
+)
+FEEDBACK_ARTEN = [("bewertung", "Lob/Bewertung"), ("bug", "Fehler"), ("idee", "Idee"), ("feedback", "Sonstiges")]
+_TEIL = re.compile(r'"([^"]*)"|\'([^\']*)\'|(\S+)')
+_BILD_MARKDOWN = re.compile(r"!\[[^\]]*\]\([^)]*\)")
+_BILD_ADRESSE = re.compile(r"data:image/[^\s)]+|(?:https?://[^\s/)]+)?/api/bild/[^\s)]+", re.I)
+_BILD_DATEI = re.compile(r"(?:[A-Za-z]:)?[^\s:()\[\]\"']*[\\/][^\s\\/()\[\]\"']+\.(?:png|jpe?g|webp|gif)\b", re.I)
+
+
+class _FeedbackAbbruch(Exception):
+    """q / Strg+C / Ende der Eingabe im Feedback-Ablauf."""
+
+
+def _feedback_frage(prompt: str, abbruch: bool = True) -> str:
+    try:
+        antwort = input(_c(prompt, CYAN)).strip()
+    except (EOFError, KeyboardInterrupt):
+        raise _FeedbackAbbruch from None
+    if abbruch and antwort.lower() in ("q", "/abbrechen", "abbrechen"):
+        raise _FeedbackAbbruch
+    return antwort
+
+
+def upload_kante(config) -> int:
+    """Laengste Seite fuer angehaengte Bilder: [bilder] max_kantenlaenge, aber nie ueber 2000 px
+    (Claude lehnt groessere ab, sobald mehr als 20 Bilder in einer Anfrage stecken)."""
+    try:
+        kante = int(config.bilder.max_kantenlaenge or 1568)
+    except (TypeError, ValueError, AttributeError):
+        kante = 1568
+    return max(256, min(kante, 2000))
+
+
+def teile(text: str) -> list[tuple[str, int, int]]:
+    """Woerter/Pfade einer Eingabe; Anfuehrungszeichen halten Pfade mit Leerzeichen zusammen.
+    -> [(Text, Anfang, Ende)]. Backslashes bleiben (Windows-Pfade)."""
+    return [(next(g for g in m.groups() if g is not None), m.start(), m.end()) for m in _TEIL.finditer(text or "")]
+
+
+def _ohne_ps_aufruf(text: str) -> str:
+    """PowerShell setzt beim Hineinziehen manchmal '& ' vor den Pfad."""
+    return text[2:].lstrip() if text.startswith("& ") else text
+
+
+def _sieht_aus_wie_pfad(token: str) -> bool:
+    return "/" in token or "\\" in token or Path(token).suffix.lower() in BILD_ENDUNGEN
+
+
+def _bildpfad(token: str, basis: list[Path]) -> Path | None:
+    """Ein vorhandener Bildpfad (absolut oder relativ zu einem der Basis-Ordner) - oder None."""
+    if not token or Path(token).suffix.lower() not in BILD_ENDUNGEN:
+        return None
+    pfad = Path(token).expanduser()
+    kandidaten = [pfad] if pfad.is_absolute() else [b / pfad for b in basis]
+    for kandidat in kandidaten:
+        try:
+            if kandidat.is_file():
+                return kandidat
+        except OSError:
+            continue
+    return None
+
+
+def bildpfade_abtrennen(text: str, basis: list[Path]) -> tuple[list[Path], str]:
+    """'"C:\\Meine Bilder\\a.png" b.jpg Was ist das?' -> ([a.png, b.jpg], 'Was ist das?'):
+    fuehrende vorhandene Bildpfade abtrennen, der Rest ist die Frage."""
+    pfade: list[Path] = []
+    ende = 0
+    for token, _anfang, schluss in teile(text):
+        pfad = _bildpfad(token, basis)
+        if pfad is None:
+            break
+        pfade.append(pfad)
+        ende = schluss
+    return pfade, text[ende:].strip() if pfade else text.strip()
+
+
+def vorlesetext(text: str) -> str:
+    """Antwort zum Vorlesen: ohne Bild-Markdown, Bild-Adressen und Bild-Dateipfade."""
+    from ..voice import speech_text
+
+    text = _BILD_MARKDOWN.sub(" ", text or "")
+    text = _BILD_ADRESSE.sub(" ", text)
+    text = _BILD_DATEI.sub(" ", text)
+    return speech_text(text)
 
 
 def run_cli(config: Config, started_by: str | None = None) -> int:
