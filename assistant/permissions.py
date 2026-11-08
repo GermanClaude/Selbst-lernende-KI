@@ -78,6 +78,24 @@ class PermissionManager:
         self._away_created: set[Path] = set()
         self._away_write_ok = False  # check_path_write hat die naechste Datei-Aktion freigegeben
         self.away_urls: set[str] = set()  # im AFK-Modus abrufbar: nur Links aus der Websuche
+        # Spielmodus (assistant/spiel): eng begrenzte Ausnahme fuer Maus/Tastatur - nur das Spielfenster,
+        # nur in einer Spielsitzung, die dein Mensch selbst gestartet hat (eigene Zustimmung).
+        self.spiel = ""
+
+    def begin_spiel(self, fenster: str) -> None:
+        self.spiel = str(fenster or "Spiel")
+
+    def end_spiel(self) -> None:
+        self.spiel = ""
+
+    def require_spiel(self) -> None:
+        """Eingaben im Spiel: nur in einer laufenden Spielsitzung, nie im AFK-Modus. Unabhaengig von
+        safe_mode/Nachfragen - die Zustimmung gab es beim Start, und der Eingabe-Waechter laesst nur das
+        Spielfenster zu (assistant/spiel/eingabe.py)."""
+        if not self.spiel:
+            raise PermissionError_("Maus und Tastatur steuerst du im Spiel nur in einer laufenden Spielsitzung.")
+        if self.away:
+            raise PermissionError_("Im AFK-Modus gibt es keinen Spielmodus.")
 
     def begin_away(self) -> None:
         self.away = True

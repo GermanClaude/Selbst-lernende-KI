@@ -8,7 +8,7 @@ nutzen kann.
 from __future__ import annotations
 
 from . import (abwesenheit, agents, aussehen, bild_tools, computer, filesystem, gehirn, memory_tools, sehen,
-               shell, system_info, web)
+               shell, spiel, system_info, web)
 from .base import Tool, ToolContext, ToolRegistry
 
 __all__ = ["READ_ONLY_TOOLS", "Tool", "ToolContext", "ToolRegistry", "build_registry", "subset"]
@@ -30,6 +30,7 @@ def build_registry(include_computer: bool = True, include_agents: bool = True) -
     gehirn.register(registry)
     abwesenheit.register(registry)
     sehen.register(registry)
+    spiel.register(registry)
     return registry
 
 
