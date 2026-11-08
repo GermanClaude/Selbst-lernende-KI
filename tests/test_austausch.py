@@ -214,3 +214,147 @@ def test_running_app_exe_is_recognized_as_the_ki(monkeypatch):
     for name in ("KI-App.exe", "KI-App (1).exe", "KI.exe"):
         assert _pid_alive(100, {100: (1, name)}), name
     assert not _pid_alive(100, {100: (1, "notepad.exe")})
+
+
+def test_failed_install_is_not_retried_automatically_in_a_loop(tmp_path):
+    from assistant.ui.cli import CLI
+
+    up, exe = _exe_update(tmp_path)
+    info = up.check()
+    up.install(info, say=lambda m: None)
+    # Der Helfer scheitert, startet die alte Version (0.6.0) wieder:
+    austausch.record_failure(up.root, "Die neue Version konnte nicht eingesetzt werden.")
+    again = Updater(UpdateSettings(), up.root, fetch=up.fetch, current_version="0.6.0",
+                    frozen=True, exe_path=exe, inplace=True)
+    assert again.take_install_failure()
+    assert not again.due()  # letzte Pruefung bleibt: hoechstens einmal pro Tag nachschauen
+    assert again.failed_before("0.7.0") and not again.failed_before("0.7.1")
+    state = json.loads(again.state_path.read_text(encoding="utf-8"))
+    assert state["installiert"] == "0.6.0"
+    # Selbst wenn die Pruefung wieder faellig ist: diese Version nicht von selbst installieren.
+    again._save_state(letzte_pruefung=None)
+    offered = []
+    fake = SimpleNamespace(updater=again, _pending_update=None,
+                           _offer_update=lambda i, ask: offered.append(ask) or True)
+    assert CLI._startup_update(fake) is False and offered == []
+    assert fake._pending_update.new == "0.7.0"  # wird angezeigt, /update versucht es erneut
+    again.install(again.check(), say=lambda m: None)  # /update: neuer Versuch erlaubt
+    assert not again.failed_before("0.7.0")
+
+
+def test_moving_never_loses_the_old_exe(tmp_path, monkeypatch):
+    dst = tmp_path / "KI-App.exe"
+    dst.write_bytes(b"MZ-alt")
+    src = tmp_path / "KI-App.exe.neu"
+    src.write_bytes(b"MZ-neu")
+    aside = tmp_path / "KI-App.exe.alt"
+    real_replace = os.replace
+    back_fails = {"n": 1}
+
+    def flaky(a, b):
+        a, b = os.fspath(a), os.fspath(b)
+        if a == str(src):
+            raise PermissionError("neue Datei gesperrt")
+        if a == str(aside) and back_fails["n"]:
+            back_fails["n"] -= 1
+            raise PermissionError("alte Datei kurz gesperrt")
+        return real_replace(a, b)
+
+    monkeypatch.setattr(austausch.os, "replace", flaky)
+    assert austausch.replace_by_moving(src, dst, attempts=3, delay=0) is False
+    assert dst.read_bytes() == b"MZ-alt"  # die alte ist wieder an ihrem Platz
+    assert not aside.exists() and src.read_bytes() == b"MZ-neu"
+
+
+def test_moving_gives_up_without_touching_anything_when_the_new_file_is_gone(tmp_path):
+    dst = tmp_path / "KI-App.exe"
+    dst.write_bytes(b"MZ-alt")
+    assert austausch.replace_by_moving(tmp_path / "weg.neu", dst, attempts=3, delay=0) is False
+    assert dst.read_bytes() == b"MZ-alt" and not (tmp_path / "KI-App.exe.alt").exists()
+
+
+def test_moving_puts_a_stranded_old_exe_back_first(tmp_path):
+    dst = tmp_path / "KI-App.exe"
+    (tmp_path / "KI-App.exe.alt").write_bytes(b"MZ-alt")  # nur noch als .alt da
+    assert austausch.replace_by_moving(tmp_path / "weg.neu", dst, attempts=2, delay=0) is False
+    assert dst.read_bytes() == b"MZ-alt"
+
+
+def test_moving_keeps_the_old_exe_when_it_cannot_be_put_back(tmp_path, monkeypatch):
+    dst = tmp_path / "KI-App.exe"
+    dst.write_bytes(b"MZ-alt")
+    src = tmp_path / "KI-App.exe.neu"
+    src.write_bytes(b"MZ-neu")
+    aside = tmp_path / "KI-App.exe.alt"
+    real_replace = os.replace
+
+    def stuck(a, b):
+        if os.fspath(a) in (str(src), str(aside)):
+            raise PermissionError("gesperrt")
+        return real_replace(a, b)
+
+    monkeypatch.setattr(austausch.os, "replace", stuck)
+    monkeypatch.setattr(austausch.time, "sleep", lambda s: None)
+    assert austausch.replace_by_moving(src, dst, attempts=5, delay=0) is False
+    assert aside.read_bytes() == b"MZ-alt"  # nicht geloescht - after_start holt sie zurueck
+
+
+def test_exe_left_as_alt_renames_itself_back_and_repairs_nothing_wrong(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(austausch, "repair_shortcuts", lambda exe, root: calls.append(exe) or 1)
+    monkeypatch.setattr(austausch.tempfile, "gettempdir", lambda: str(tmp_path))
+    alt = tmp_path / "KI-App.exe.alt"
+    alt.write_bytes(b"MZ-alt")
+    assert austausch.after_start(alt, tmp_path, "0.6.1", background=False)
+    assert (tmp_path / "KI-App.exe").read_bytes() == b"MZ-alt" and not alt.exists()
+    assert calls == [tmp_path / "KI-App.exe"]  # Verknuepfungen auf die .exe, nie auf die .alt
+    up = Updater(UpdateSettings(), tmp_path, frozen=True, exe_path=alt, inplace=True)
+    assert up.exe_path == tmp_path / "KI-App.exe"
+    # Liegt die richtige .exe schon da, wird von der .alt aus nichts umgebogen.
+    alt.write_bytes(b"MZ-alt")
+    calls.clear()
+    assert austausch.after_start(alt, tmp_path, "0.6.2", background=False) is False and calls == []
+
+
+def test_failed_restart_keeps_the_old_version_number_and_settings(tmp_path, monkeypatch):
+    import pytest
+
+    from assistant.updater import UpdateError
+
+    up, exe = _exe_update(tmp_path)
+    up.install(up.check(), say=lambda m: None)
+    assert up.current == "0.7.0"
+
+    def broken(*a, **kw):
+        raise OSError("kein Helfer")
+
+    monkeypatch.setattr("assistant.austausch.start_helper", broken)
+    monkeypatch.setattr("assistant.austausch.replace_by_moving", lambda src, dst: False)
+    with pytest.raises(UpdateError, match="/update"):
+        up.restart_exe(["--app"])
+    assert up.current == "0.6.0" and up.status()["current"] == "0.6.0"
+    assert json.loads(up.state_path.read_text(encoding="utf-8"))["installiert"] == "0.6.0"
+    # /zurueck, das nicht klappt: Automatik nicht pausiert lassen, Hinweis auf /zurueck.
+    backup = up.backups()[0]
+    up.restore(backup.name, say=lambda m: None)
+    up.pending_exe.unlink()
+    with pytest.raises(UpdateError, match="/zurueck"):
+        up.restart_exe(["--app"])
+    assert not up.paused
+
+
+def test_app_opening_the_terminal_is_not_an_unexpected_start(tmp_path, monkeypatch):
+    from assistant import selbststart as s
+
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data/ki.lock").write_text(json.dumps({"pid": 500}))
+    monkeypatch.setenv("KI_NEUSTART_VON", "500")
+    table = {os.getpid(): (400, "KI.exe"), 400: (500, "KI.exe"), 500: (499, "KI-App.exe"),
+             499: (4, "KI-App.exe"), 4: (1, "explorer.exe")}
+    who, unexpected = s.StartGuard(tmp_path, table=table).record_start()
+    assert not unexpected and "KI selbst" in who
+    # Per Shell-Befehl der KI gestartet (cmd.exe dazwischen): weiter als unerwartet melden.
+    table = {os.getpid(): (400, "KI.exe"), 400: (450, "cmd.exe"), 450: (500, "KI-App.exe"),
+             500: (4, "KI-App.exe"), 4: (1, "explorer.exe")}
+    who, unexpected = s.StartGuard(tmp_path, table=table).record_start()
+    assert unexpected and "anderen laufenden KI" in who

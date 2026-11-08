@@ -17,7 +17,9 @@ deine KI erklärt sie dir in eigenen Worten.
   Seitenleiste – und bei der .exe unter Rechtsklick → Eigenschaften → Details.
 - Klappt ein Update einmal nicht (z.B. weil der Virenscanner die neue Datei
   festhält), sagt Nova dir das beim nächsten Start – statt still die alte Version
-  weiterlaufen zu lassen.
+  weiterlaufen zu lassen. Diese Version versucht sie dann nicht immer wieder von
+  selbst, sondern erst, wenn du `/update` eingibst. Die bisherige Version bleibt
+  dabei immer erhalten.
 
 ## 0.6.0 – 2026-11-08
 

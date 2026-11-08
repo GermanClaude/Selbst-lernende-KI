@@ -920,6 +920,11 @@ class CLI:
         info = up.check()
         if info is None:
             return False
+        if up.failed_before(info.new):
+            # Das Einspielen genau dieser Version ging zuletzt schief: nicht von selbst erneut
+            # (sonst endlos Download + Neustart) - nur anzeigen, /update versucht es nochmal.
+            self._pending_update = info
+            return False
         return self._offer_update(info, ask=not up.automatic)
 
     def _start_update_watch(self) -> None:

@@ -83,6 +83,9 @@ def run_helper(argv: list[str]) -> int:
                              "Die bisherige laeuft weiter - versuch es spaeter mit /update noch einmal.")
         if _alive(old_pid):
             return 1  # die alte KI laeuft noch - kein zweites Fenster derselben Version
+        aside = target.with_name(target.name + ".alt")
+        if not target.is_file() and aside.is_file():
+            target = aside  # ging nicht zurueck umzubenennen: after_start holt das beim Start nach
     env = _clean_env()
     env["KI_NEUSTART_VON"] = str(old_pid or os.getpid())
     flags = getattr(subprocess, "CREATE_NEW_CONSOLE", 0)  # KI.exe (Terminal) bekommt ihr Fenster
@@ -135,15 +138,25 @@ def overwrite_in_place(src: Path, dst: Path, attempts: int = 60, delay: float = 
 def replace_by_moving(src: Path, dst: Path, attempts: int = 10, delay: float = 0.5) -> bool:
     """Ausweichweg: die (evtl. noch laufende) .exe beiseite schieben - das erlaubt Windows auch
     bei gesperrten Dateien - und die neue an ihren Platz setzen. Beim naechsten Start raeumt
-    after_start die .alt weg und richtet Verknuepfungen wieder auf die .exe."""
+    after_start die .alt weg und richtet Verknuepfungen wieder auf die .exe.
+    Wichtig: die alte .exe geht dabei nie verloren - sie liegt immer als dst oder als .alt da."""
     aside = dst.with_name(dst.name + ".alt")
     for attempt in range(attempts):
+        if not dst.exists() and aside.exists() and not _move_back(aside, dst, delay):
+            return False  # alte .exe nicht zurueck an ihren Platz: lieber nichts mehr anfassen
+        if not src.is_file():
+            return False  # nichts zum Einsetzen da (z.B. Virenscanner) - die alte bleibt
+        if not dst.exists():
+            try:
+                os.replace(src, dst)  # gar keine alte .exe da: einfach die neue hinstellen
+                return True
+            except OSError:
+                time.sleep(delay)
+                continue
         try:
             if aside.exists():
-                aside.unlink()
+                aside.unlink()  # Rest vom letzten Mal (dst ist ja da)
             os.replace(dst, aside)
-        except FileNotFoundError:
-            return False
         except OSError:
             time.sleep(delay)
             continue
@@ -151,11 +164,23 @@ def replace_by_moving(src: Path, dst: Path, attempts: int = 10, delay: float = 0
             os.replace(src, dst)
             return True
         except OSError:
-            try:
-                os.replace(aside, dst)
-            except OSError:
-                pass
+            if not _move_back(aside, dst, delay):
+                return False
             time.sleep(delay)
+    return False
+
+
+def _move_back(aside: Path, dst: Path, delay: float, attempts: int = 20) -> bool:
+    """Die beiseite geschobene alte .exe wieder an ihren Platz (mit Geduld, z.B. Virenscanner)."""
+    for attempt in range(attempts):
+        try:
+            os.replace(aside, dst)
+            return True
+        except FileNotFoundError:
+            return dst.exists()
+        except OSError:
+            time.sleep(delay)
+    logging.getLogger("ki.update-helfer").warning("Alte Version liegt noch als %s da.", aside)
     return False
 
 
@@ -277,6 +302,17 @@ def after_start(exe: Path, root: Path, version: str, force: bool = False, backgr
     Verknuepfungen reparieren (im Hintergrund, damit der Start nicht wartet).
     True = es wird repariert."""
     exe = Path(exe)
+    if exe.suffix.lower() == ".alt":
+        # Laeuft als "KI-App.exe.alt" (Update-Ausweichweg ging schief): zurueck auf den richtigen
+        # Namen - Windows erlaubt das Umbenennen auch, waehrend die Datei laeuft.
+        proper = exe.with_suffix("")
+        if proper.exists():
+            return False  # die richtige .exe ist da - hier nichts aufraeumen oder umbiegen
+        try:
+            os.replace(exe, proper)
+        except OSError:
+            return False  # Verknuepfungen NICHT auf die .alt richten
+        exe = proper
     leftovers = list(Path(tempfile.gettempdir()).glob(f"{HELPER_PREFIX}*.exe"))
     leftovers.append(exe.with_name(exe.name + ".alt"))  # Ausweichweg beim letzten Update
     for old in leftovers:
