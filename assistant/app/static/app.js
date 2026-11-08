@@ -7603,7 +7603,6 @@
     sbi.checking = true;
     sbi.result = null;
     renderBilder();
-    moodSync();
     const r = await post('/api/bilder/einstellen', body);
     sbi.checking = false;
     if (r.ok) {
@@ -7618,7 +7617,6 @@
       sphere.flicker();
     }
     if (su.data) renderSetup();
-    moodSync();
     if (!r.ok && suVisible()) sbiToken.focus();
   }
 
@@ -7957,7 +7955,6 @@
     });
     fbErr.hidden = true;
     fbSending(true);
-    moodSync();
     const r = await post('/api/feedback', body);
     fbSending(false);
     const res = HL.feedbackErgebnis(r);
