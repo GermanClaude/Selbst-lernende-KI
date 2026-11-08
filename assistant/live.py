@@ -946,6 +946,8 @@ class LiveLoop:
 
     def _on_utterance(self, utt: Utterance) -> None:
         self.hearing = False
+        if self.stop_event.is_set():
+            return  # Jarvis wird gerade beendet - nichts Neues mehr anfangen
         text = utt.text
         if text is None or (self.genau and utt.pcm):
             self._state("recognizing")
@@ -1199,6 +1201,6 @@ class LiveLoop:
                 self.ear.set_nova_speaking(False)
                 self._idle_state()
         if (self.pending is not None and not self.turn_active and not self.speaking and not self.hearing
-                and not self.host.busy()):
+                and not self.stop_event.is_set() and not self.host.busy()):
             text, self.pending = self.pending, None
             self._send(text)

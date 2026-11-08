@@ -4,6 +4,19 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.4.2 – 2026-11-08
+
+- **KI-App.exe startet auch mit anderem Namen.** Lädt man sie zweimal herunter, nennt
+  Windows sie „KI-App (1).exe“ – dann blieb das Fenster aus. Jetzt egal, und auch der
+  Updater findet seine Datei.
+- **Nie mehr still verschwinden:** Kann sich das App-Fenster nicht öffnen, sagt Nova es
+  dir und bietet an, sie im Browser-Fenster zu öffnen. Was schiefging, steht in
+  `logs\ki.log` (harte Abstürze in `logs\absturz.log`).
+- **Feinschliff der App:** Jarvis-Ansicht mit zwei offenen Fenstern (nur eins liest vor),
+  Tour passt sich an große Schrift und schmale Fenster an, Scrollen, Fokus nach dem
+  Speichern, Schlüssel-Fehler werden klarer angezeigt.
+- Jarvis fängt nach „Chat-Modus“ nichts Neues mehr an.
+
 ## 0.4.1 – 2026-11-08
 
 - **KI-App.exe startet wieder.** Sie brach beim Öffnen mit einer Fehlermeldung

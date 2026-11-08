@@ -223,7 +223,8 @@ def test_each_exe_updates_from_its_own_release_file(tmp_path):
     def fetch(url, timeout=15):
         return json.dumps(release).encode() if "releases" in url else b""
 
-    for exe, expected in (("KI.exe", "u-terminal"), ("KI-App.exe", "u-app")):
+    for exe, expected in (("KI.exe", "u-terminal"), ("KI-App.exe", "u-app"),
+                          ("KI-App (1).exe", "u-app"), ("KI (2).exe", "u-terminal")):  # Windows benennt um
         up = Updater(UpdateSettings(), tmp_path, fetch=fetch, current_version="0.4.0", frozen=True,
                      exe_path=tmp_path / exe)
         assert up.check().download_url == expected
@@ -235,8 +236,13 @@ def test_app_exe_starts_in_app_mode(monkeypatch):
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     monkeypatch.setattr(sys, "executable", "C:/KI/KI-App.exe")
     assert run_ki._is_app_exe()
+    monkeypatch.setattr(sys, "executable", "C:/KI/KI-App (1).exe")        # doppelt heruntergeladen
+    assert run_ki._is_app_exe()
     monkeypatch.setattr(sys, "executable", "C:/KI/KI.exe")
+    monkeypatch.setattr(run_ki, "_WINDOWED", False)
     assert not run_ki._is_app_exe()
+    monkeypatch.setattr(run_ki, "_WINDOWED", True)                          # ohne Konsole = immer App
+    assert run_ki._is_app_exe()
 
 
 def test_profile_api_and_memory_management(app, tmp_path):

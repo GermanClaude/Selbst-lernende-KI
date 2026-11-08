@@ -230,20 +230,34 @@ def run_native_window(server, ctl, title: str, storage: Path, on_quit_holder: di
     except Exception as exc:  # noqa: BLE001
         logger.info("pywebview nicht verfuegbar: %s", exc)
         return False
+    shown = threading.Event()
     try:
+        logger.info("App: Programmfenster wird geoeffnet (pywebview %s)", getattr(webview, "__version__", "?"))
         window = webview.create_window(
             title, server.url, width=1200, height=860, min_size=(480, 560),
             background_color="#111318", text_select=True,
         )
+        try:
+            window.events.shown += lambda *a: shown.set()
+        except Exception:  # noqa: BLE001 - aeltere pywebview: dann eben ohne diese Pruefung
+            shown.set()
         on_quit_holder["close"] = window.destroy  # /beenden oder Neustart schliesst das Fenster
-        ctl.startup()
+        if not on_quit_holder.get("started"):
+            on_quit_holder["started"] = True
+            ctl.startup()
         storage.mkdir(parents=True, exist_ok=True)
         webview.start(private_mode=False, storage_path=str(storage))  # laeuft bis das Fenster zu ist
-        return True
     except Exception as exc:  # noqa: BLE001 - z.B. WebView2 fehlt
-        logger.warning("Programmfenster ging nicht: %s", exc)
+        logger.warning("Programmfenster ging nicht: %s", exc, exc_info=True)
         on_quit_holder.pop("close", None)
         return False
+    if not shown.is_set() and not server.hub.ever_connected:
+        # Das Fenster ist nie erschienen (z.B. WebView2 kaputt) - nicht still beenden!
+        logger.warning("App: Programmfenster ist nie erschienen")
+        on_quit_holder.pop("close", None)
+        return False
+    logger.info("App: Programmfenster geschlossen")
+    return True
 
 
 def run_app(config, started_by: str | None = None) -> int:
@@ -282,11 +296,12 @@ def run_app(config, started_by: str | None = None) -> int:
             return result["code"]
         # Ersatz nur nach Rueckfrage - die App soll ein eigenes Programm sein.
         if sys.platform == "win32" and not ask_yes_no(
-            "Das App-Fenster konnte nicht geoeffnet werden (fehlt pywebview oder die Microsoft "
-            "WebView2-Laufzeit?).\n\nStattdessen in einem Browser-Fenster oeffnen?"
+            "Das App-Fenster konnte nicht geoeffnet werden (fehlt die Microsoft WebView2-Laufzeit?).\n\n"
+            "Stattdessen in einem Browser-Fenster oeffnen?\n\n"
+            f"(Einzelheiten stehen in {root / 'logs' / 'ki.log'})"
         ):
             return 0
-        _browser_fallback(server, ctl, root, quit_now)
+        _browser_fallback(server, ctl, root, quit_now, holder)
         return result["code"]
     finally:
         ctl.shutdown()
@@ -298,10 +313,12 @@ def run_app(config, started_by: str | None = None) -> int:
             pass
 
 
-def _browser_fallback(server, ctl, root: Path, quit_now: threading.Event) -> None:
+def _browser_fallback(server, ctl, root: Path, quit_now: threading.Event, holder: dict | None = None) -> None:
     """Ersatz: Edge/Chrome im App-Modus; endet, wenn kein Fenster mehr verbunden ist."""
+    logger.info("App: Ersatz-Fenster im Browser")
     open_window(server.url, root / "data" / "app-fenster")
-    ctl.startup()
+    if holder is None or not holder.get("started"):
+        ctl.startup()
     began = time.monotonic()
     fallback_done = False
     try:

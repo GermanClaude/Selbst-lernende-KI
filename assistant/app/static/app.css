@@ -1569,12 +1569,14 @@ kbd {
   position: absolute; left: 50%; top: 6px; z-index: 3;
   max-width: min(560px, calc(100% - 32px));
   padding: 7px 14px; border-radius: 999px;
-  background: rgba(251, 146, 60, .13); border: 1px solid rgba(251, 146, 60, .36); color: #fed7aa;
+  /* deckend: der Orb und andere Hinweise duerfen nicht durchscheinen */
+  background: #2a1a12; border: 1px solid rgba(251, 146, 60, .42); color: #fed7aa;
+  box-shadow: 0 8px 26px rgba(0, 0, 0, .5);
   font-size: calc(13px * var(--font-scale)); font-weight: 550; text-align: center;
   transform: translateX(-50%);
   animation: jv-note-in .25s ease both;
 }
-.jv-note.soft { background: var(--jv-glass-2); border-color: var(--jv-line); color: var(--jv-text); }
+.jv-note.soft { background: #1b1d28; border-color: rgba(255, 255, 255, .16); color: var(--jv-text); }
 @keyframes jv-note-in { from { opacity: 0; transform: translate(-50%, -6px); } }
 
 .jv-text {
@@ -1666,6 +1668,8 @@ kbd {
   .jv-launch { width: 36px; padding: 0; justify-content: center; }
   .jv-top { padding: 10px 8px 0 14px; min-height: 54px; }
   .jv-setup { position: absolute; left: 50%; top: 58px; transform: translateX(-50%); max-width: calc(100% - 28px); }
+  /* "Live-Mitschrift wird eingerichtet …" steht dann oben in der Mitte: Hinweis darunter */
+  .jv.setup-on .jv-note { top: calc(16px + 30px * var(--font-scale)); }
   .jv-btn { height: 46px; min-width: 0; padding: 0 18px 0 15px; }
   .jv-hint { font-size: calc(12px * var(--font-scale)); }
   .jv-stage { padding: 0 16px; }
@@ -1699,7 +1703,13 @@ kbd {
 @keyframes spot-pulse { from { opacity: .85; transform: scale(1); } to { opacity: 0; transform: scale(1.06); } }
 .tour-card {
   position: absolute; left: 0; top: 0;
-  width: min(400px, calc(100vw - 24px));
+  /* waechst mit der Schrift mit (sonst rutscht "Weiter" bei 140 % in eine eigene Zeile) */
+  width: min(calc(400px * max(1, var(--font-scale))), calc(100vw - 24px));
+  /* nie hoeher als das Fenster: dann scrollt nur der Text, die Knoepfe bleiben sichtbar
+     (tourPlace setzt die Grenze passend zum Platz neben dem Ziel) */
+  max-height: calc(100vh - 20px);
+  display: flex; flex-direction: column;
+  overflow: hidden auto;
   padding: 16px 18px 14px;
   border: 1px solid var(--border); border-radius: calc(var(--radius) * 1.5);
   background: var(--surface); color: var(--text);
@@ -1729,6 +1739,9 @@ kbd {
   transition: transform .4s cubic-bezier(.2, .8, .2, 1);
 }
 .tour-title { margin: 0 0 6px; font-size: calc(18px * var(--font-scale)); font-weight: 700; letter-spacing: -.012em; line-height: 1.3; }
+.tour-card > * { flex: none; }
+.tour-card > .tour-text { flex: 0 1 auto; min-height: 3.2em; overflow-y: auto; overscroll-behavior: contain; }
+.tour-text.more { -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 1.6em), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 1.6em), transparent); }
 .tour-text { margin: 0; font-size: calc(14.5px * var(--font-scale)); line-height: 1.55; color: var(--text-2); overflow-wrap: anywhere; }
 .tour-wait {
   display: flex; align-items: center; gap: 9px;
@@ -1743,7 +1756,7 @@ kbd {
 .tour-gap { flex: 1; }
 .tour-btns .btn .ic { width: 14px; height: 14px; }
 /* waehrend "Zeig es mir": klein und an der Seite, damit man Nova bei der Arbeit sieht */
-.tour-card.demo { width: min(330px, calc(100vw - 24px)); padding: 13px 15px 12px; }
+.tour-card.demo { width: min(calc(330px * max(1, var(--font-scale))), calc(100vw - 24px)); padding: 13px 15px 12px; }
 .tour-card.demo .tour-text, .tour-card.demo .tour-bar { display: none; }
 .tour-card.demo .tour-title { margin: 6px 0 0; font-size: calc(15.5px * var(--font-scale)); }
 .tour-card.demo .tour-wait { margin-top: 10px; }

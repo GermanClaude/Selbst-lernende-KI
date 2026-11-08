@@ -50,7 +50,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Selbst-lernende-KI {__version__}")
         return 0
 
-    setup_logging(PROJECT_ROOT / "logs")
+    log = setup_logging(PROJECT_ROOT / "logs")
+    from . import __version__
+
+    log.info("Start %s: %s %s (%s)", __version__, "App" if app_mode else "Terminal",
+             " ".join(sys.argv[1:]), sys.executable)
     try:
         config = load_config()
     except ConfigError as exc:
@@ -74,13 +78,15 @@ def main(argv: list[str] | None = None) -> int:
     guard = StartGuard(config.project_root)
     started_by, unexpected = guard.record_start()
     other = guard.running_pid() if config.ki.nur_ein_fenster else None
+    if other:
+        log.info("Laeuft schon (PID %s) - dieser Start endet", other)
     if other and app_mode:
         from .app.launcher import message_box, open_existing_window
 
         # Laeuft schon als App: einfach ein Fenster dazu. Laeuft im Terminal: Bescheid sagen.
         if not open_existing_window(config.project_root, other) and not unexpected:
-            message_box("Die KI laeuft schon in einem anderen Fenster (Terminal). "
-                        "Schliesse es zuerst, dann startet die App.")
+            message_box("Die KI laeuft schon (vielleicht unsichtbar im Hintergrund). Schliesse sie zuerst - "
+                        "im Task-Manager unter 'Details' KI.exe bzw. KI-App.exe beenden -, dann startet die App.")
         return SILENT_EXIT_CODE
     if other:
         # Kein zweites Fenster: sonst stapeln sich KI-Fenster, wenn etwas sie

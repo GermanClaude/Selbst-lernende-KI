@@ -31,6 +31,10 @@ def setup_logging(log_dir: str | Path = "logs", level: int = logging.INFO) -> lo
     logger.addHandler(console)
 
     logger.propagate = False
+    # Fehler des App-Fensters (pywebview) mit in die Datei - sonst unsichtbar.
+    webview_log = logging.getLogger("pywebview")
+    webview_log.setLevel(logging.INFO)
+    webview_log.addHandler(file_handler)
     return logger
 
 
