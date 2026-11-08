@@ -4,6 +4,12 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.5.1 – 2026-11-08
+
+- Die Beispiele im Fenster „Über mich“ (Name, Alter, Wohnort …) sind jetzt allgemein
+  und enthalten keine persönlichen Angaben mehr. Deine eigenen Einträge bleiben
+  unverändert.
+
 ## 0.5.0 – 2026-11-08
 
 **Nova hat jetzt ein Gesicht: eine leuchtende Sphäre**

@@ -32,13 +32,13 @@ def test_style_and_about_go_into_the_system_prompt(tmp_path):
     cfg = _cfg(tmp_path)
     profil.set_style(cfg, "anrede", "sie")
     profil.set_style(cfg, "humor", "viel")
-    profil.save_about(cfg, {"name": "Nathanael", "interessen": "SCP, Programmieren", "unbekannt": "x"})
+    profil.save_about(cfg, {"name": "Alex", "interessen": "Musik, Kochen", "unbekannt": "x"})
     cfg = load_config(tmp_path)
-    assert cfg.style.anrede == "Sie" and cfg.about == {"name": "Nathanael", "interessen": "SCP, Programmieren"}
+    assert cfg.style.anrede == "Sie" and cfg.about == {"name": "Alex", "interessen": "Musik, Kochen"}
     mem = Memory(tmp_path / "m.sqlite3")
     prompt = build_system_prompt(cfg, mem)
     assert "mit 'Sie' an" in prompt and "humorvoll" in prompt
-    assert "UEBER DEINEN MENSCHEN" in prompt and "Mein Name: Nathanael" in prompt
+    assert "UEBER DEINEN MENSCHEN" in prompt and "Mein Name: Alex" in prompt
     mem.close()
     with pytest.raises(ValueError):
         profil.set_style(cfg, "laenge", "riesig")
