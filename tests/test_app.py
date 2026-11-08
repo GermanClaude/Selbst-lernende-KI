@@ -888,3 +888,22 @@ def test_writing_before_nova_marks_afk_means_you_stay(app):
     time.sleep(0.4)
     state = _req(server, "/api/state")[1]
     assert state["afk"] is None and not state["afk_pending"]
+
+
+def test_nova_keeps_the_limits_you_chose_with_the_afk_button(app):
+    cmd = f'"{sys.executable}" -c "import time; time.sleep(1.5)"'
+    script = [(anthro_msg([tool_use_block("shell_befehl", "t1", {"befehl": cmd})], stop_reason="tool_use"), []),
+              (anthro_msg([tool_use_block("abwesenheit", "s1", {"aktion": "start", "auftrag": "Notizen"})],
+                          stop_reason="tool_use"), []),
+              (anthro_msg([text_block("Bis spaeter!")]), []),
+              (anthro_msg([tool_use_block("abwesenheit", "f1", {"aktion": "fertig", "text": "ok"})],
+                          stop_reason="tool_use"), []),
+              (anthro_msg([text_block("fertig")]), [])]
+    server = app(script, safe_mode=False, auto_confirm=True)
+    server.controller.config.afk.pause_sekunden = 0
+    _req(server, "/api/send", {"text": "Ich bin gleich weg"})
+    _events_until(server, "tool")
+    _req(server, "/api/afk", {"action": "start", "auftrag": "", "minuten": 10, "budget": 0.2})
+    events = _events_until(server, "afk_report", timeout=15)
+    start = next(e["text"] for e in events if e["type"] == "notice" and "AFK-Modus an" in e["text"])
+    assert "10 Min." in start and "0,20 EUR" in start and "Auftrag: Notizen" in start

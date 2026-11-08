@@ -427,8 +427,17 @@ class CLI:
         print(_c("Wechseln: /gehirn deepseek  bzw.  /gehirn claude. Neuer Schluessel: einfach einfuegen.", GREY))
 
     # -- AFK-Modus: allein weiterarbeiten, waehrend du weg bist (abwesend.py) -------
-    def _afk_request(self, auftrag: str = "", minutes: int | None = None, budget: float | None = None) -> None:
-        self._afk_pending = {"auftrag": auftrag or "", "minutes": minutes, "budget": budget}
+    def _afk_request(self, auftrag: str = "", minutes: int | None = None, budget: float | None = None) -> bool:
+        def number(value, kind):
+            try:
+                result = kind(value) if value not in (None, "") else None
+            except (TypeError, ValueError, OverflowError):
+                return None
+            return result if result is None or abs(float(result)) != float("inf") else None
+
+        self._afk_pending = {"auftrag": str(auftrag or "")[:2000], "minutes": number(minutes, int),
+                             "budget": number(budget, float)}
+        return True
 
     def _afk_command(self, args: list[str]) -> None:
         if not self.config.api_key:
@@ -1235,7 +1244,8 @@ class _TerminalLiveHost:
                 self.cli.brain.respond(model_text, on_text=self._on_text)
             except KeyboardInterrupt:  # angehalten (Dazwischenreden, Stopp)
                 cancelled = True
-                self.cli._afk_pending = None  # doch nicht weg
+                if not (self.loop is not None and self.loop.stop_event.is_set()):
+                    self.cli._afk_pending = None  # doch nicht weg ("Tschuess" = Jarvis endet: bleibt)
                 if not (self.drop and provider.drop_turn(snapshot, model_text)):
                     provider.abort_turn(snapshot, text)
             except Exception as exc:  # noqa: BLE001
@@ -1246,7 +1256,8 @@ class _TerminalLiveHost:
                 self.drop = False
                 print()
                 cancelled = cancelled or provider.cancel_event.is_set() or self.cli.brain.compact_interrupted
-                if cancelled:
+                leaving = self.loop is not None and self.loop.stop_event.is_set()
+                if cancelled and not leaving:
                     self.cli._afk_pending = None  # "Stopp" (auch beim Zusammenfassen) -> doch nicht weg
                 if self.loop is not None:
                     self.loop.on_turn_end(cancelled)
@@ -1263,10 +1274,10 @@ class _TerminalLiveHost:
         loop = self.loop
 
         def wait() -> None:
-            from ..live import hears_you, wait_until_quiet
+            from ..live import wait_until_quiet
 
             quiet = wait_until_quiet(loop, threading.Event())
-            if not quiet or hears_you(loop):
+            if not quiet:
                 self.cli._afk_pending = None
                 print(_c("\n[AFK-Modus nicht gestartet - du bist ja noch da.]", GREY))
             elif self.cli._afk_pending is not None:

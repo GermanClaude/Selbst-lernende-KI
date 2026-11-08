@@ -37,7 +37,9 @@ class AbwesenheitTool(Tool):
             if starter is None:
                 return "Der AFK-Modus geht hier nicht."
             ctx.permissions.require(Risk.SAFE, "AFK-Modus vormerken")
-            starter(auftrag or text, minuten or None)
+            if starter(auftrag or text, minuten or None) is False:
+                return ("Nicht vorgemerkt: Dein Mensch hat inzwischen schon weitergeschrieben - er ist also noch da. "
+                        "Kuemmere dich um seine Nachricht; den AFK-Modus kann er jederzeit neu starten.")
             return ("Vorgemerkt: Nach dieser Antwort beginnt der AFK-Modus. Sag deinem Menschen kurz, woran du "
                     "arbeitest, dass du nichts loeschst, ausfuehrst oder verschickst (das schreibst du als "
                     "Vorschlag auf) und dass er mit einer Nachricht oder 'Ich bin zurueck' wieder uebernimmt.")

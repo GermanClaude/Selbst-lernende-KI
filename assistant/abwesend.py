@@ -193,7 +193,7 @@ def settings_session(settings, auftrag: str = "", minutes: int | None = None, bu
         except (TypeError, ValueError, OverflowError):
             return default
     return AfkSession(
-        auftrag=(auftrag or "").strip()[:2000],
+        auftrag=str(auftrag or "").strip()[:2000],
         max_minutes=clamp(minutes if minutes is not None else settings.max_minuten, 5, 24 * 60, 120),
         max_eur=clamp(budget if budget is not None else settings.max_euro, 0.01, 50.0, 1.0),
         max_rounds=clamp(settings.max_schritte, 1, 200, 12),

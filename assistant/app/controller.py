@@ -27,7 +27,7 @@ from .. import __version__
 from ..anzeige import schoen
 from ..cancel import Abgebrochen
 from ..config import Config, save_setting, toml_string
-from ..live import hears_you, wait_until_quiet
+from ..live import wait_until_quiet
 from ..logging_setup import get_logger
 from ..modelle import kurzbeschreibung
 from ..permissions import Risk
@@ -123,6 +123,8 @@ class AppController(CLI):
         self._queue: list[dict] = []
         self._queue_ids = itertools.count(1)
         self._front = 0              # so viele Eintraege vorne sind "sofort" (Unterbrechen/Rueckkehr)
+        self._last_qid = 0           # zuletzt vergebene Warteschlangen-Nummer
+        self._turn_mark = 0          # ... beim Beginn der laufenden Antwort (spaeter = waehrenddessen getippt)
         self._afk_dropped = False    # vorgemerkter AFK-Modus verworfen -> Hinweis zeigen
         self._closing = False
         # AFK-Modus (abwesend.py): vorgemerkt / laufend / Bericht fuer die Rueckkehr
@@ -279,6 +281,7 @@ class AppController(CLI):
             self.busy = True
             self._live_turn = live
             self._drop_turn = False
+            self._turn_mark = self._last_qid
             self.brain.provider.cancel_event.clear()  # unter der Sperre: ein Stopp gleich danach zaehlt
         threading.Thread(target=self._work, args=(text, None, model_text, shown), name="ki-antwort",
                          daemon=True).start()
@@ -296,7 +299,8 @@ class AppController(CLI):
                 busy = self.busy
                 if busy:
                     sent, shown = _mask_key(text)
-                    item = {"id": next(self._queue_ids), "text": sent, "model_text": None, "shown": shown}
+                    self._last_qid = next(self._queue_ids)
+                    item = {"id": self._last_qid, "text": sent, "model_text": None, "shown": shown}
                     afk = self._afk
                     # Nur die ERSTE Nachricht beendet den AFK-Modus und kommt nach vorn; weitere,
                     # die kommen, waehrend er noch endet, reihen sich normal dahinter ein.
@@ -381,11 +385,13 @@ class AppController(CLI):
         if self._queue:
             self.brain.provider.cancel_event.clear()
             self._front = max(0, self._front - 1)
+            self._turn_mark = self._last_qid
             return {"message": self._queue.pop(0)}
         if self._afk_pending is not None:
             request, self._afk_pending = self._afk_pending, None
-            if hears_you(self._live):
-                self._afk_dropped = True  # im Sprachmodus wird (weiter)gesprochen -> du bist da
+            live = self._live
+            if live is not None and not live.stop_event.is_set() and getattr(live, "pending", None):
+                self._afk_dropped = True  # im Sprachmodus wartet schon dein naechster Satz -> du bist da
                 return None
             try:
                 session = self._new_afk_session_locked(request)
@@ -574,17 +580,29 @@ class AppController(CLI):
             self._state_changed()
 
     # -- AFK-Modus: allein weiterarbeiten, waehrend du weg bist (abwesend.py) -------
-    def _afk_request(self, auftrag: str = "", minutes: int | None = None, budget: float | None = None) -> None:
+    def _afk_request(self, auftrag: str = "", minutes: int | None = None, budget: float | None = None) -> bool:
         """Vormerken (Werkzeug abwesenheit, /afk) - beginnt, sobald die laufende Antwort fertig ist.
-        Wurde waehrend dieser Antwort schon weitergeschrieben, bist du offensichtlich noch da."""
+        Wurde waehrend dieser Antwort schon weitergeschrieben, bist du offensichtlich noch da.
+        Hast du schon den AFK-Knopf gedrueckt, gelten dessen Grenzen (die KI fuellt hoechstens den
+        Auftrag auf). True = vorgemerkt."""
+        auftrag = str(auftrag or "")[:2000]
         with self._lock:
-            if self._afk is None:
-                if self._queue:
-                    self._afk_dropped = True
-                else:
-                    self._afk_pending = {"auftrag": str(auftrag or "")[:2000], "minutes": _int_or_none(minutes),
-                                         "budget": _float_or_none(budget)}
+            if self._afk is not None:
+                return False
+            existing = self._afk_pending
+            if existing is not None:  # Knopf schon gedrueckt: dessen Wahl bleibt
+                if not existing.get("auftrag") and auftrag:
+                    existing["auftrag"] = auftrag
+                kept = True
+            elif any(item["id"] > self._turn_mark for item in self._queue):
+                self._afk_dropped = True  # waehrend dieser Antwort weitergeschrieben -> du bist da
+                kept = False
+            else:
+                self._afk_pending = {"auftrag": auftrag, "minutes": _int_or_none(minutes),
+                                     "budget": _float_or_none(budget)}
+                kept = True
         self._state_changed()
+        return kept
 
     def afk(self, data: dict) -> dict:
         """POST /api/afk: {"action": "start", "auftrag", "minuten", "budget"} | {"action": "stop"}."""
@@ -637,6 +655,11 @@ class AppController(CLI):
                     session.ended = "nicht_gestartet"
                     return
                 live.stop()  # allein arbeiten heisst: nicht mithoeren und nichts vorlesen
+            if live is not None:
+                with self._jarvis_lock:  # Jarvis-Denktiefe nicht in die AFK-Schritte mitnehmen
+                    if self._live is live:
+                        self._live = None
+                        self.brain.provider.effort_override = None
             self.permissions.begin_away()
             task = (f"Auftrag: {session.auftrag}" if session.auftrag
                     else "Ich mache mit dem weiter, woran wir zuletzt gearbeitet haben.")
@@ -689,8 +712,10 @@ class AppController(CLI):
         if not self.config.api_key:
             print("Dafuer brauche ich erst einen Schluessel (Gehirn & Schluessel).")
             return
-        self._afk_request(" ".join(args))
-        print("AFK-Modus vorgemerkt - geht gleich los. Zurueck? Einfach eine Nachricht schreiben.")
+        if self._afk_request(" ".join(args)):
+            print("AFK-Modus vorgemerkt - geht gleich los. Zurueck? Einfach eine Nachricht schreiben.")
+        else:
+            print("AFK-Modus nicht gestartet - du hast ja schon weitergeschrieben.")
 
     # -- Charakter & Profil (Einstellungen-Fenster der App) --------------------------
     def profile(self) -> dict:

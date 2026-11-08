@@ -325,3 +325,53 @@ def test_ki_model_note_only_when_it_matters(tmp_path, monkeypatch):
     assert "KI_MODEL" in waehle(cfg, "claude", model="sonnet")["message"]
     assert "KI_MODEL" not in waehle(cfg, "claude", model="haiku")["message"]
     assert "KI_MODEL" not in waehle(cfg, "deepseek", model="pro")["message"]  # anderes Gehirn
+
+
+def test_tricky_addresses_are_checked_as_they_are_really_sent(monkeypatch):
+    import socket
+
+    from assistant.tools import web
+
+    monkeypatch.setattr(socket, "getaddrinfo", lambda host, *a, **k: [(2, 1, 6, "", ("93.184.216.34", 443))])
+    for url in ("https://localhost\\\\.evil.example/admin", "https://faß.evil.example/", "https://intranet/",
+                "https://fritz.box/", "https://localhost./"):
+        assert web._host_problem(url) is not None, url
+    monkeypatch.setattr(socket, "getaddrinfo", lambda host, *a, **k: [(2, 1, 6, "", ("100.101.102.103", 443))])
+    assert web._host_problem("https://nas.tail1234.ts.net/") is not None  # Tailscale/CGNAT
+
+    def broken(*a, **k):
+        raise socket.gaierror("kaputt")
+
+    monkeypatch.setattr(socket, "getaddrinfo", broken)
+    assert web._host_problem("https://irgendwas.example/") is not None  # im Zweifel gesperrt
+    monkeypatch.setattr(socket, "getaddrinfo", lambda host, *a, **k: [(2, 1, 6, "", ("93.184.216.34", 443))])
+    assert web._host_problem("https://www.example.org/seite") is None
+
+
+def test_waiting_for_jarvis_ignores_a_cough_but_not_a_sentence():
+    import threading
+    import time as _t
+    from types import SimpleNamespace
+
+    from assistant.live import wait_until_quiet
+
+    live = SimpleNamespace(stop_event=threading.Event(), turn=3, turn_active=False, speaking=True,
+                           hearing=True, pending=None, voice_out=SimpleNamespace(idle=lambda: False))
+
+    def cough_then_quiet():
+        _t.sleep(0.3)
+        live.hearing = False  # nur ein Geraeusch
+        _t.sleep(0.2)
+        live.speaking = False
+
+    threading.Thread(target=cough_then_quiet).start()
+    assert wait_until_quiet(live, threading.Event(), timeout=5) is True
+
+    live.speaking, live.hearing = True, True
+
+    def sentence():
+        _t.sleep(0.2)
+        live.pending = "Warte, ich hab noch eine Frage"
+
+    threading.Thread(target=sentence).start()
+    assert wait_until_quiet(live, threading.Event(), timeout=5) is False

@@ -1206,23 +1206,21 @@ class LiveLoop:
             self._send(text)
 
 
-def hears_you(live) -> bool:
-    """Sprichst du im Jarvis-Modus gerade (oder wartet Gesagtes auf eine Antwort)?"""
-    if live is None or live.stop_event.is_set():
-        return False
-    return bool(getattr(live, "pending", None) or getattr(live, "hearing", False)
-                or getattr(live, "state", "") in ("hearing", "recognizing"))
-
-
 def wait_until_quiet(live, stop_event, timeout: float = 60.0) -> bool:
-    """Wartet, bis Nova im Jarvis-Modus ausgeredet hat. False = du sprichst wieder / bist zurueck."""
+    """Wartet, bis Nova im Jarvis-Modus ausgeredet hat. False = du sprichst wieder (ein echter Satz
+    wartet auf Antwort oder eine neue Runde hat begonnen) bzw. du bist zurueck (stop_event).
+    Ein Geraeusch/Husten waehrend des Vorlesens ist noch keine Entscheidung - dann weiter warten."""
+    turn = getattr(live, "turn", None)
     end = time.monotonic() + timeout
     while time.monotonic() < end:
-        if stop_event.is_set() or hears_you(live):
+        if stop_event.is_set():
             return False
         if live.stop_event.is_set():
-            return True
-        if not live.turn_active and not live.speaking and live.voice_out.idle():
+            return True  # "Tschuess"/Fenster zu: Jarvis endet ohnehin
+        if getattr(live, "pending", None) or getattr(live, "turn", None) != turn:
+            return False
+        # Der LiveLoop entscheidet selbst, wann Nova fertig ist (auch ohne Rueckmeldung des Fensters)
+        if not live.turn_active and not live.speaking and not getattr(live, "hearing", False):
             return True
         time.sleep(0.1)
-    return True
+    return not (getattr(live, "pending", None) or getattr(live, "turn", None) != turn)

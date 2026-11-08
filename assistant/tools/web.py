@@ -132,33 +132,43 @@ def _plain_url(url: str) -> str:
     return url.split("#", 1)[0]
 
 
+_HOME_NET = "Solange dein Mensch weg ist, rufe ich nichts im eigenen Netz ab."
+
+
 def _host_problem(url: str) -> str | None:
-    """https, keine Benutzerangaben, kein eigenes Netz - auch nicht ueber den Namen (DNS)."""
+    """https, keine Benutzerangaben, kein eigenes Netz - auch nicht ueber den Namen (DNS).
+    Im Zweifel (Name nicht pruefbar) gesperrt."""
     parts = urlsplit(url)
     host = parts.hostname or ""
     if parts.scheme != "https" or "@" in parts.netloc or not host:
         return "Solange dein Mensch weg ist, rufe ich nur normale https-Adressen ab."
+    if "\\" in parts.netloc or not parts.netloc.isascii():
+        return "Solange dein Mensch weg ist, rufe ich nur einfache Adressen ab (keine Sonderzeichen im Namen)."
     try:
         ipaddress.ip_address(host)
         return "Solange dein Mensch weg ist, rufe ich keine IP-Adressen ab."
     except ValueError:
         pass
-    if host == "localhost" or host.endswith((".local", ".lan", ".internal", ".localhost")):
-        return "Solange dein Mensch weg ist, rufe ich nichts im eigenen Netz ab."
+    if host.rstrip(".") == "localhost" or host.rstrip(".").endswith(
+            (".local", ".lan", ".internal", ".localhost", ".home", ".box")) or "." not in host.rstrip("."):
+        return _HOME_NET
     import socket
 
     try:
         infos = socket.getaddrinfo(host, parts.port or 443, proto=socket.IPPROTO_TCP)
-    except OSError:
-        return None  # nicht aufloesbar -> der Abruf scheitert ohnehin
+    except (OSError, UnicodeError, ValueError):
+        return "Solange dein Mensch weg ist, rufe ich nur Adressen ab, die ich pruefen kann."
+    if not infos:
+        return "Solange dein Mensch weg ist, rufe ich nur Adressen ab, die ich pruefen kann."
     for info in infos:
         try:
-            ip = ipaddress.ip_address(info[4][0].split("%", 1)[0])
+            ip = ipaddress.ip_address(str(info[4][0]).split("%", 1)[0])
         except ValueError:
-            continue
-        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast \
-                or ip.is_unspecified:
-            return "Solange dein Mensch weg ist, rufe ich nichts im eigenen Netz ab."
+            return _HOME_NET
+        if ip.version == 6 and ip.ipv4_mapped:
+            ip = ip.ipv4_mapped
+        if not ip.is_global:  # auch CGNAT/Tailscale (100.64/10), reservierte und Sonderbereiche
+            return _HOME_NET
     return None
 
 
@@ -170,21 +180,32 @@ def _away_url_problem(url: str, allowed: set) -> str | None:
     if _plain_url(url) not in allowed:
         return ("Solange dein Mensch weg ist, rufe ich nur Seiten ab, die ich vorher ueber die Websuche "
                 "gefunden habe (keine selbst gebauten Adressen). Such zuerst mit web_suche.")
-    return _host_problem(url)
+    return None  # Name/Netz prueft _get_checked an der Adresse, die wirklich abgeschickt wird
+
+
+def _prepared(requests, url: str) -> str:
+    """Die Adresse genau so, wie requests sie abschickt (Kodierung, Namen) - die wird geprueft."""
+    try:
+        return requests.Request("GET", url).prepare().url
+    except AttributeError:  # sehr altes/ersetztes requests
+        return url
 
 
 def _get_checked(requests, url: str, hops: int = 5):
-    """Abruf im AFK-Modus: Weiterleitungen selbst verfolgen und jedes Ziel pruefen
-    (eine Seite darf nicht ins eigene Netz oder auf http umleiten)."""
+    """Abruf im AFK-Modus: genau die gepruefte Adresse abrufen, Weiterleitungen selbst
+    verfolgen und jedes Ziel pruefen (nicht ins eigene Netz, nicht auf http)."""
     from urllib.parse import urljoin
 
-    for _ in range(hops + 1):
-        resp = requests.get(url, headers=_HEADERS, timeout=25, allow_redirects=False)
+    for hop in range(hops + 1):
+        sent = _prepared(requests, url)
+        problem = _host_problem(sent)
+        if problem:
+            return problem if hop == 0 else "Die Seite leitet weiter auf eine Adresse, die ich jetzt nicht abrufe. " + problem
+        resp = requests.get(sent, headers=_HEADERS, timeout=25, allow_redirects=False)
         location = resp.headers.get("Location") if getattr(resp, "headers", None) else None
         if not (300 <= int(getattr(resp, "status_code", 200) or 200) < 400 and location):
             return resp
-        url = urljoin(url, location)
-        problem = _host_problem(url)
-        if problem:
-            return "Die Seite leitet weiter auf eine Adresse, die ich jetzt nicht abrufe. " + problem
+        if location != location.strip() or any(c.isspace() or ord(c) < 32 for c in location):
+            return "Die Seite leitet auf eine ungueltige Adresse weiter - abgebrochen."
+        url = urljoin(sent, location)
     return "Zu viele Weiterleitungen - abgebrochen."
