@@ -4,6 +4,12 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.10.1 – 2026-11-08
+
+- **Wichtige Korrektur für Claude:** Seit den neuen Werkzeugen (Bilder erstellen, Live-Sehen)
+  antwortete Claude nur noch mit „Fehler vom Modell … Too many strict tools“. Das ist behoben –
+  Claude antwortet wieder normal. (DeepSeek und Ollama waren nicht betroffen.)
+
 ## 0.10.0 – 2026-11-08
 
 **Dein Handy als Kamera**
