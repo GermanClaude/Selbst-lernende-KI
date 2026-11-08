@@ -1254,6 +1254,7 @@
       b.title = WHEELS_TIP[w] || '';
     }
     if (w) byId('sub-stuetzraeder').textContent = WHEELS_SUB[w];
+    syncWheelsDialog(w);
     const n = kiName();
     byId('sec-wheels-badge').textContent = WHEELS_BADGE[w] || '–';
     byId('sec-wheels-text').textContent = w === 'an'
@@ -1414,7 +1415,11 @@
     local: false,  // Klick auf "Jetzt pruefen": schon "Pruefe …" zeigen, bis der Server es bestaetigt
     manual: false, // vom Nutzer ausgeloest -> Ergebnis als Meldung
     saw: false,    // Server hat "pruefe" gemeldet
+    since: 0,      // Zeitpunkt des Klicks (ms)
+    posted: false, // Server hat den Auftrag angenommen
+    rehello: false, // seit dem Klick neu verbunden (frischer Stand, "pruefe" evtl. verpasst)
     timer: 0,
+    late: 0,
   };
 
   /** Update-Stand vom Server (null = aeltere KI ohne Anzeige). */
@@ -1429,6 +1434,24 @@
       checked: us.checked ? String(us.checked) : '',
       error: us.error ? String(us.error) : '',
     };
+  }
+
+  /** Technischen Fehler der Update-Pruefung in einfache Worte fassen ('' = keiner). */
+  function updErrorText(err) {
+    const e = String(err || '');
+    if (!e) return '';
+    if (/11001|11002|11004|getaddrinfo|name or service|name resolution|resolve host|nodename|no address|10051|10065|unreachable/i.test(e)) {
+      return 'Keine Internetverbindung.';
+    }
+    if (/timed? ?out|10060|zeitüberschreitung/i.test(e)) return 'GitHub hat nicht rechtzeitig geantwortet.';
+    if (/10061|10054|refused|reset by peer|connection (?:aborted|closed)|remote end closed/i.test(e)) {
+      return 'Die Verbindung zu GitHub ist abgebrochen.';
+    }
+    if (/ssl|certificate|zertifikat/i.test(e)) return 'Die sichere Verbindung zu GitHub hat nicht geklappt.';
+    if (/HTTP Error 40[39]|HTTP Error 429|rate limit/i.test(e)) return 'GitHub lässt gerade keine Abfrage zu – versuch es später nochmal.';
+    if (/HTTP Error 404/i.test(e)) return 'Die Update-Quelle wurde nicht gefunden.';
+    if (/HTTP Error 5\d\d/i.test(e)) return 'GitHub hat gerade Probleme – versuch es später nochmal.';
+    return e.length > 160 ? e.slice(0, 157) + ' …' : e; // unbekannt: so, wie er kam (nur als Text)
   }
 
   /** Neuere Version, die installiert werden kann ('' = keine). */
@@ -1500,7 +1523,8 @@
       ic = 'alertCircle';
       title = 'Prüfen hat nicht geklappt';
       sub = 'Version ' + us.current;
-      tip = 'Prüfen hat nicht geklappt: ' + us.error + (whenFull ? '\n' + whenFull : '');
+      const plain = updErrorText(us.error);
+      tip = 'Prüfen hat nicht geklappt: ' + plain + (plain !== us.error ? '\nDetails: ' + us.error : '') + (whenFull ? '\n' + whenFull : '');
     }
     box.dataset.state = st;
     box.classList.toggle('err', failed);
@@ -1522,20 +1546,36 @@
     b.title = btn === 'install' ? 'Update installieren (/update)' : 'Jetzt nach einer neuen Version schauen';
   }
 
+  /** Ist dieser Stand schon das Ergebnis von "Jetzt pruefen"? */
+  function updIsResult(us) {
+    if (upd.saw) return true; // "pruefe" gesehen -> der naechste andere Stand ist das Ergebnis
+    if (!upd.posted) return false;
+    if (upd.rehello) return true; // neu verbunden: der Stand ist frisch, "pruefe" ging verloren
+    const d = parseWhen(us.checked); // erfolgreich geprueft nach dem Klick (Zeit nur auf Sekunden genau)
+    return !!d && d.getTime() >= upd.since - 1500;
+  }
+
   /** Neuer Stand vom Server: Anzeige erneuern; nach "Jetzt pruefen" das Ergebnis melden. */
   function onUpdateState() {
     const us = updStatus();
     if (us && us.state === 'pruefe') {
       upd.saw = true;
       upd.local = false;
-    } else if (us && upd.manual && upd.saw) {
+    } else if (us && upd.manual && updIsResult(us)) {
       upd.manual = false;
       upd.local = false;
-      if (us.error) toast('Prüfen hat nicht geklappt: ' + us.error, 'error', 6500);
+      clearTimeout(upd.timer);
+      clearTimeout(upd.late);
+      if (us.error) toast('Prüfen hat nicht geklappt: ' + updErrorText(us.error), 'error', 6500);
       else if (us.state === 'neu') toast('Update auf ' + (us.latest || newVersion()) + ' verfügbar – „Installieren“ holt es.', 'ok', 5000);
       else toast('Du hast die neueste Version (' + us.current + ').', 'ok');
     }
     renderUpdate();
+  }
+
+  /** Neu verbunden (hello): Stand ist frisch – falls "Jetzt pruefen" laeuft, zaehlt er als Ergebnis. */
+  function updHello() {
+    if (upd.manual) upd.rehello = true;
   }
 
   async function checkUpdateNow() {
@@ -1544,8 +1584,13 @@
     upd.manual = true;
     upd.saw = false;
     upd.local = true;
+    upd.since = Date.now();
+    upd.posted = false;
+    upd.rehello = false;
+    clearTimeout(upd.late);
     renderUpdate();
     const r = await post('/api/update', { action: 'check' });
+    if (!upd.manual) return; // schon erledigt (z.B. beendet)
     if (!r.ok) {
       upd.local = false;
       upd.manual = false;
@@ -1553,6 +1598,10 @@
       toast(r.error || 'Prüfen hat nicht geklappt.', 'error');
       return;
     }
+    upd.posted = true;
+    // Neu verbunden, bevor die Antwort kam: der Stand ist evtl. schon das Ergebnis.
+    // Kurz warten – kommt noch "pruefe", laeuft alles wie gewohnt.
+    if (upd.rehello && !upd.saw) upd.late = setTimeout(() => { if (upd.manual && !upd.saw) onUpdateState(); }, 400);
     // Falls das "pruefe"-Ereignis ausbleibt (Verbindung weg): nicht ewig "Prüfe …" zeigen
     clearTimeout(upd.timer);
     upd.timer = setTimeout(() => {
@@ -3984,10 +4033,15 @@
   // Bestaetigung (eigener Dialog, z.B. "Stuetzraeder abnehmen?")
   // =====================================================================
   let confirmState = null;
+  // So lange nach dem Oeffnen zaehlen Maus-Klicks im Dialog nicht: sonst rutscht der zweite
+  // Klick eines Doppelklicks durch (z.B. "Abnehmen" -> gleich auf "Stuetzraeder abnehmen").
+  const CONFIRM_GUARD_MS = 500;
   function confirmDialog(opts) {
     if (confirmState) closeConfirm(false);
     return new Promise((resolve) => {
-      confirmState = { resolve, back: document.activeElement, raw: !!opts.raw };
+      confirmState = {
+        resolve, back: document.activeElement, raw: !!opts.raw, kind: opts.kind || '', at: performance.now(),
+      };
       byId('cdialog').className = 'dialog cdialog ' + (opts.cls || 'risk-none');
       byId('cd-icon').replaceChildren(icon(opts.icon || 'alert'));
       byId('cd-title').textContent = opts.title || '';
@@ -4008,16 +4062,24 @@
     cmodal.hidden = true;
     updateInert();
     const back = st.back;
+    // Rueckfrage kam, waehrend dieser Dialog offen war: nach ihr nicht auf den (versteckten) Dialog zurueck
+    if (askFocusBack && cmodal.contains(askFocusBack)) askFocusBack = back;
     if (back && back !== document.body && document.contains(back) && !back.closest('[inert]')) back.focus();
+    else if (!modal.hidden) dialog.focus(); // offene Rueckfrage liegt jetzt oben
     else if (jv.open) jvEl.focus();
     else if (!smodal.hidden) sdialog.focus();
     else if (!pmodal.hidden) panel.focus();
     else focusInput();
     st.resolve(st.raw ? result : !!result);
   }
-  byId('cd-ok').addEventListener('click', () => closeConfirm(true));
-  byId('cd-cancel').addEventListener('click', () => closeConfirm(false));
-  cmodal.addEventListener('mousedown', (e) => { if (e.target === cmodal) closeConfirm(false); });
+  /** Maus-Klick zu kurz nach dem Oeffnen oder Teil eines Doppelklicks? (Tastatur zaehlt immer: detail 0) */
+  function confirmTooSoon(e) {
+    if (!confirmState || !e || !e.detail) return false;
+    return e.detail > 1 || performance.now() - confirmState.at < CONFIRM_GUARD_MS;
+  }
+  byId('cd-ok').addEventListener('click', (e) => { if (!confirmTooSoon(e)) closeConfirm(true); });
+  byId('cd-cancel').addEventListener('click', (e) => { if (!confirmTooSoon(e)) closeConfirm(false); });
+  cmodal.addEventListener('mousedown', (e) => { if (e.target === cmodal && !confirmTooSoon(e)) closeConfirm(false); });
   function confirmKey(e) {
     if (e.key === 'Escape') { e.preventDefault(); closeConfirm(false); return; }
     if (e.key === 'F2') { e.preventDefault(); return; }
@@ -4042,17 +4104,18 @@
     body.append(p, caps, note);
     return confirmDialog({
       cls: 'risk-wheels', icon: 'shieldOff', title: 'Stützräder abnehmen?', risk: 'Voller Zugriff auf deinen PC',
-      body, ok: 'Stützräder abnehmen', cancel: 'Abbrechen',
+      body, ok: 'Stützräder abnehmen', cancel: 'Abbrechen', kind: 'wheels-off',
     });
   }
 
-  /** Stuetzraeder "teilweise": was gerade gilt – anlegen, abnehmen oder abbrechen. Ergebnis 'an' | 'aus' | false. */
-  function wheelsChoice() {
+  /** Liste "Gerade gilt" der Auswahl fuellen (nur neu bauen, wenn sich etwas geaendert hat). */
+  function wheelsFacts(facts) {
     const n = kiName();
     const s = state;
-    const body = document.createDocumentFragment();
-    body.append(h('p', null, 'Ein Teil des Schutzes ist an, ein Teil aus. Gerade gilt:'));
-    const facts = h('ul', 'cd-facts');
+    const key = [!!s.auto_confirm, !!s.full_access, !!s.safe_mode, n].join('|');
+    if (facts.dataset.key === key) return;
+    facts.dataset.key = key;
+    facts.replaceChildren();
     for (const [good, ic, k, v] of [
       [!s.auto_confirm, s.auto_confirm ? 'zap' : 'checkCircle', 'Rückfragen', s.auto_confirm ? n + ' fragt nicht nach' : n + ' fragt nach'],
       [!s.full_access, s.full_access ? 'monitor' : 'folder', 'Zugriff', s.full_access ? 'ganzer PC' : 'nur Arbeitsordner'],
@@ -4064,6 +4127,30 @@
       li.append(icon(ic), t);
       facts.append(li);
     }
+  }
+
+  /** Neuer Stand vom Server, waehrend Auswahl oder Warnung offen sind (z.B. im anderen Fenster umgestellt). */
+  function syncWheelsDialog(w) {
+    const kind = confirmState ? confirmState.kind : '';
+    if (kind !== 'wheels-choice' && kind !== 'wheels-off') return;
+    if (kind === 'wheels-choice' && w === 'teilweise') {
+      const facts = byId('cd-text').querySelector('.cd-facts');
+      if (facts) wheelsFacts(facts);
+      return;
+    }
+    // Warnung: gilt weiter, solange noch etwas abzunehmen ist ("an" oder "teilweise")
+    if (kind === 'wheels-off' && (w === 'an' || w === 'teilweise')) return;
+    closeConfirm(false);
+    if (w === 'an') toast('Die Stützräder wurden inzwischen angelegt.', 'info');
+    else if (w === 'aus') toast('Die Stützräder wurden inzwischen abgenommen.', 'info');
+  }
+
+  /** Stuetzraeder "teilweise": was gerade gilt – anlegen, abnehmen oder abbrechen. Ergebnis 'an' | 'aus' | false. */
+  function wheelsChoice() {
+    const body = document.createDocumentFragment();
+    body.append(h('p', null, 'Ein Teil des Schutzes ist an, ein Teil aus. Gerade gilt:'));
+    const facts = h('ul', 'cd-facts');
+    wheelsFacts(facts);
     const ask = h('p', 'cd-ask', 'Was möchtest du?');
     const choices = h('div', 'cd-choices');
     for (const [cls, ic, title, sub, val] of [
@@ -4075,13 +4162,13 @@
       const t = h('span', 'cdc-text');
       t.append(h('span', 'cdc-title', title), h('span', 'cdc-sub', sub));
       b.append(icon(ic, 'cdc-ic'), t, icon('chevronRight', 'cdc-chev'));
-      b.addEventListener('click', () => closeConfirm(val));
+      b.addEventListener('click', (e) => { if (!confirmTooSoon(e)) closeConfirm(val); });
       choices.append(b);
     }
     body.append(facts, ask, choices);
     return confirmDialog({
       cls: 'risk-moderate wheels-choice', icon: 'shield', title: 'Stützräder: teilweise', risk: 'Gemischte Einstellung',
-      body, ok: null, cancel: 'Abbrechen', raw: true,
+      body, ok: null, cancel: 'Abbrechen', raw: true, kind: 'wheels-choice',
     });
   }
 
@@ -5648,9 +5735,14 @@
     input.disabled = true;
     micBtn.disabled = true;
     app.classList.add('ended');
-    for (const el of document.querySelectorAll('.sb-actions, .sb-section, .sb-alerts, .suggestions, .composer-wrap, #tb-jarvis, #tour-offer')) {
+    for (const el of document.querySelectorAll('.sb-actions, .sb-section, .sb-alerts, .suggestions, .composer-wrap, #tb-jarvis, #tour-offer, #sb-upd')) {
       el.inert = true;
     }
+    upd.local = false;
+    upd.manual = false;
+    clearTimeout(upd.timer);
+    clearTimeout(upd.late);
+    renderUpdate(); // Knopf aus
     closeCmdPop();
     setBusy(false);
     updateEmpty();
@@ -5794,6 +5886,7 @@
         if (ev.state && ev.state.busy === false) dropAsks();
         // getrennt gewesen: evtl. "off" verpasst – laeuft Jarvis nicht mehr, nichts mehr ignorieren
         if (jv.left && ev.state && ev.state.jarvis !== true) { jv.left = false; endClosing(); }
+        updHello();
         applyState(ev.state);
         loadHistory();
         if (helloCount++ > 0) loadAppearance(true); // nach dem Neuverbinden: evtl. verpasste Aenderungen
