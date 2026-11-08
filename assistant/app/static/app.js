@@ -1090,7 +1090,7 @@
   const micBtn = byId('mic-btn');
   const composer = byId('composer');
 
-  const PROVIDERS = { deepseek: 'DeepSeek', anthropic: 'Claude (Anthropic)', claude: 'Claude (Anthropic)' };
+  const PROVIDERS = { deepseek: 'DeepSeek', anthropic: 'Claude (Anthropic)', claude: 'Claude (Anthropic)', ollama: 'Ollama (kostenlos)' };
   const fmtInt = (n) => (Number(n) || 0).toLocaleString('de-DE');
   function fmtEur(v) {
     v = Number(v) || 0;
@@ -1194,7 +1194,9 @@
     fitTopbar();
 
     // Kosten
-    byId('sb-eur').textContent = fmtEur(s.eur);
+    // Ollama laeuft auf dem PC: kostet nichts (Kosten von vorher in dieser Sitzung bleiben sichtbar)
+    byId('sb-eur').textContent = s.kostenlos === true && !(Number(s.eur) > 0) ? 'kostenlos' : fmtEur(s.eur);
+    if (s.ollama_pull !== undefined) soStatePull(s.ollama_pull);
     byId('sb-tokens').textContent = fmtInt(s.tokens) + ' Token';
 
     // Schalter (Seitenleiste und Reiter "Sicherheit")
@@ -6709,9 +6711,11 @@
   const SU_FALLBACK = [
     { id: 'deepseek', name: 'DeepSeek', info: 'sehr günstig, gut für jeden Tag', url: 'https://platform.deepseek.com/api_keys' },
     { id: 'claude', name: 'Claude (Anthropic)', info: 'sehr stark, teurer', url: 'https://console.anthropic.com/settings/keys' },
+    { id: 'ollama', name: 'Ollama (kostenlos, auf deinem PC)', info: 'kostenlos, läuft auf deinem PC – ohne Schlüssel, ohne Internet',
+      url: HL.OLLAMA_DOWNLOAD, needsKey: false },
   ];
   const SU_TOPUP = { deepseek: 'https://platform.deepseek.com/top_up', claude: 'https://console.anthropic.com/settings/billing' };
-  const SU_ICON = { deepseek: 'zap', claude: 'sparkles' };
+  const SU_ICON = { deepseek: 'zap', claude: 'sparkles', ollama: 'monitor' };
   const su = {
     where: '',          // '' | 'modal' | 'pane'
     welcome: false, data: null, sel: '', loading: false, gen: 0, reqGen: 0, checking: false, result: null,
@@ -6737,6 +6741,7 @@
         info: str(p.info).trim().slice(0, 120) || (fb ? fb.info : ''),
         url: /^https:\/\/[^\s"'<>\\]+$/.test(url) ? url : fb ? fb.url : '',
         hasKey: p.has_key === true,
+        needsKey: p.needs_key !== false && !(fb && fb.needsKey === false && p.needs_key == null),
         hint: str(p.key_hint).trim().slice(0, 40),
         modelName: str(p.model_name).trim().slice(0, 80),
       };
@@ -6775,10 +6780,12 @@
 
   /** Ohne Antwort vom Server: die beiden bekannten Gehirne (aus dem Zustand). */
   function fallbackSetup() {
-    const cur = String(state.provider || '').toLowerCase() === 'deepseek' ? 'deepseek' : 'claude';
+    const low = String(state.provider || '').toLowerCase();
+    const cur = low === 'deepseek' || low === 'ollama' ? low : 'claude';
     return {
       provider: cur,
-      providers: SU_FALLBACK.map((p) => Object.assign({}, p, { hasKey: p.id === cur && state.api_key_missing === false, hint: '' })),
+      providers: SU_FALLBACK.map((p) => Object.assign({ needsKey: true }, p, {
+        hasKey: p.needsKey === false || (p.id === cur && state.api_key_missing === false), hint: '' })),
       missing: state.api_key_missing === true,
     };
   }
@@ -6788,7 +6795,7 @@
     if (!d) return '';
     const cur = d.providers.find((p) => p.id === d.provider);
     if (cur && cur.hasKey) return cur.id;
-    const withKey = d.providers.find((p) => p.hasKey);
+    const withKey = d.providers.find((p) => p.hasKey && p.needsKey !== false);
     if (withKey) return withKey.id;
     return (d.providers.find((p) => p.id === 'deepseek') || cur || d.providers[0]).id; // empfohlen
   }
@@ -6858,7 +6865,8 @@
     const ae = document.activeElement;
     if (ae && ae !== sdialog && setupEl.contains(ae)) return; // schon drin (z.B. nach dem Sprung)
     const p = suSel();
-    if (su.where === 'modal' && (!p || !p.hasKey || su.welcome)) suInput.focus();
+    if (su.where === 'modal' && p && p.needsKey === false) sdialog.focus();
+    else if (su.where === 'modal' && (!p || !p.hasKey || su.welcome)) suInput.focus();
     else if (su.where === 'modal') sdialog.focus();
   }
 
@@ -6932,7 +6940,8 @@
     byId('su-ic').hidden = su.welcome;
     byId('su-title').textContent = su.welcome ? 'Hallo! Ich bin ' + n + '.' : 'Gehirn & Schlüssel';
     byId('su-sub').textContent = su.welcome
-      ? 'Damit ich denken kann, brauche ich einen Schlüssel für mein Gehirn. Das dauert nur eine Minute.'
+      ? 'Damit ich denken kann, brauche ich einen Schlüssel für mein Gehirn. Das dauert nur eine Minute. ' +
+        'Oder ganz ohne Schlüssel: Ollama – kostenlos auf deinem PC.'
       : 'Womit ' + n + ' denkt – und der passende Schlüssel dafür.';
     byId('su-close').hidden = pane;
     byId('su-later').hidden = pane;
@@ -6948,14 +6957,18 @@
       if (card) card.focus({ preventScroll: true });
     }
     const p = suSel();
+    const keyless = !!(p && p.needsKey === false);
+    setupEl.querySelector('.su-key').hidden = keyless;
+    byId('su-steps').hidden = keyless;
     const where = byId('su-where');
-    where.hidden = !p || !p.url;
+    where.hidden = !p || !p.url || keyless;
     if (p && p.url) {
       where.href = p.url;
       where.title = 'Öffnet die Seite von ' + suShort(p) + ' im Browser';
     }
     suInput.readOnly = su.checking;
     renderModel();
+    renderOllama();
     renderSteps(p);
     renderSuHint();
     renderSuGo();
@@ -6978,6 +6991,7 @@
     const top = h('span', 'sp-top');
     top.append(h('span', 'sp-name', p.name));
     if (p.id === 'deepseek') top.append(h('span', 'sp-badge rec', 'Empfohlen'));
+    if (p.needsKey === false) top.append(h('span', 'sp-badge free', 'kostenlos'));
     if (p.id === d.provider) top.append(h('span', 'sp-badge now', 'aktiv'));
     main.append(top);
     if (p.info) main.append(h('span', 'sp-info', p.info));
@@ -6988,7 +7002,8 @@
       main.append(m);
     }
     const k = h('span', 'sp-key' + (p.hasKey ? ' ok' : ''));
-    k.append(icon(p.hasKey ? 'checkCircle' : 'key'),
+    if (p.needsKey === false) k.append(icon('checkCircle'), h('span', null, 'kein Schlüssel nötig'));
+    else k.append(icon(p.hasKey ? 'checkCircle' : 'key'),
       h('span', null, p.hasKey ? 'Schlüssel gespeichert' : 'noch kein Schlüssel'));
     if (p.hasKey && p.hint) k.append(h('span', 'sp-hint', '(' + p.hint + ')'));
     main.append(k);
@@ -7054,7 +7069,8 @@
     const g = p ? smGroup(p.id) : null;
     sec.hidden = !g;
     byId('su-input-label').textContent = (g && !su.welcome ? '3' : '2') + '. Schlüssel einfügen';
-    byId('su-model-label').textContent = (su.welcome ? '3' : '2') + '. Modell & Denk-Tiefe';
+    byId('su-model-label').textContent = p && p.needsKey === false ? '3. Denk-Tiefe'
+      : (su.welcome ? '3' : '2') + '. Modell & Denk-Tiefe';
     if (!g) return;
     const ae = document.activeElement;
     const focusKey = ae && sec.contains(ae) ? ae.dataset.sm || '' : '';
@@ -7232,6 +7248,13 @@
     if (!su.jump || !suVisible()) return;
     su.jump = '';
     const sec = byId('su-model');
+    const so = byId('su-ollama');
+    if (!so.hidden) { // Ollama: zu "Modelle auf deinem PC"
+      so.scrollIntoView({ block: 'nearest' });
+      const t = so.querySelector('.sm-tile[tabindex="0"]') || byId('so-refresh');
+      t.focus({ preventScroll: true });
+      return;
+    }
     if (sec.hidden) { suFocus(); return; }
     const scroller = su.where === 'pane' ? byId('pn-body') : byId('su-body');
     const box = scroller.getBoundingClientRect();
@@ -7273,6 +7296,7 @@
   function suAction() {
     const p = suSel();
     if (!p || !su.data) return null;
+    if (p.needsKey === false) return p.id !== su.data.provider ? { label: 'Zu ' + suShort(p) + ' wechseln', body: { provider: p.id } } : null;
     const key = suInput.value.trim();
     if (key) return { label: 'Prüfen & speichern', body: { provider: p.id, api_key: key } };
     if (p.hasKey && p.id !== su.data.provider) return { label: 'Zu ' + suShort(p) + ' wechseln', body: { provider: p.id } };
@@ -7337,6 +7361,27 @@
       a.rel = 'noopener';
       btns.append(a);
     }
+    if (!r.ok && (r.kind === 'ollama_offline' || r.kind === 'ollama_missing')) {
+      if (r.kind === 'ollama_missing') {
+        const a = h('a', 'btn small primary');
+        a.append(icon('download'), h('span', null, 'Ollama herunterladen'));
+        a.href = HL.OLLAMA_DOWNLOAD;
+        a.target = '_blank';
+        a.rel = 'noopener';
+        btns.append(a);
+      } else {
+        const st = h('button', 'btn small primary');
+        st.type = 'button';
+        st.append(icon('play'), h('span', null, 'Ollama starten'));
+        st.addEventListener('click', () => soStart());
+        btns.append(st);
+      }
+      const f = h('button', 'btn small secondary', 'Trotzdem wechseln');
+      f.type = 'button';
+      f.title = 'Ollama trotzdem als Gehirn nehmen – du startest es gleich selbst';
+      f.addEventListener('click', () => suSubmit(true));
+      btns.append(f);
+    }
     if (!r.ok && (r.kind === 'network' || r.kind === 'server') && r.withKey) {
       const f = h('button', 'btn small secondary', 'Trotzdem speichern');
       f.type = 'button';
@@ -7373,7 +7418,9 @@
       su.result = { ok: true, text: str(r.message).trim() || 'Gespeichert.' };
       sphere.settle();
       if (!visible) toast(su.result.text, 'ok', 4500);
-      else if (su.where === 'modal') su.closeTimer = setTimeout(closeSetup, su.welcome ? 2800 : 1600);
+      // Ollama: offen lassen (evtl. muss noch ein Modell heruntergeladen werden)
+      else if (su.where === 'modal' && prov !== 'ollama') su.closeTimer = setTimeout(closeSetup, su.welcome ? 2800 : 1600);
+      if (prov === 'ollama') soLoad(true);
     } else {
       su.result = {
         ok: false, kind: str(r.kind), provider: prov, withKey: !!body.api_key,
@@ -7443,6 +7490,351 @@
   byId('sb-brain').addEventListener('click', () => openSetup(false, state.api_key_missing === true ? '' : 'modell'));
   byId('tb-model').addEventListener('click', () => openSetup(false, 'modell'));
   byId('key-bar-btn').addEventListener('click', () => openSetup(true));
+
+  // ---------- Ollama (kostenlos, auf dem PC): Stand, Modelle, Herunterladen ----------
+  //  GET  /api/ollama -> {laeuft, version, installiert, adresse, modelle:[{name, werkzeuge, sieht_bilder, aktiv}],
+  //                       empfohlen:[{id, name, info, groesse, ram, installiert}], laden, fehler}
+  //  POST /api/ollama/laden {model} – Fortschritt als Ereignis "ollama_pull"; /api/ollama/abbrechen
+  //  POST /api/ollama/adresse {adresse}; POST /api/ollama/starten; Modell waehlen: POST /api/modell
+  const so = {
+    data: null, loading: false, gen: 0, loadedAt: 0,
+    pull: null,        // laufendes Herunterladen {model, text, prozent, erledigt, gesamt}
+    picking: '',       // Modell, das gerade gewaehlt wird
+    busy: '',          // 'start' | 'adresse' | 'laden'
+    pollTimer: 0,
+  };
+  const soVisible = () => suVisible() && !!suSel() && suSel().needsKey === false;
+
+  async function soLoad(quiet) {
+    const gen = ++so.gen;
+    so.loading = true;
+    if (!quiet) renderOllama();
+    const d = HL.normOllama(await getJson('/api/ollama'));
+    if (gen !== so.gen) return;
+    so.loading = false;
+    so.loadedAt = performance.now();
+    if (d) {
+      so.data = d;
+      if (d.laden) so.pull = d.laden;
+      else if (so.pull && !so.pull.fertig && !so.busy) so.pull = null;
+    }
+    renderOllama();
+  }
+
+  /** Aus dem Zustand (z.B. neues Fenster): laeuft gerade ein Download? */
+  function soStatePull(raw) {
+    const p = HL.normPull(raw);
+    if (p) { if (!so.pull || so.pull.model !== p.model) { so.pull = p; if (soVisible()) renderOllama(); } }
+    else if (so.pull && !so.busy && raw === null && soVisible()) { so.pull = null; renderOllama(); }
+  }
+
+  /** Ereignis "ollama_pull": Fortschritt (die Zeile wird nur aufgefrischt, nicht neu gebaut). */
+  function soOnPull(ev) {
+    const p = HL.normPull(ev);
+    if (!p) return;
+    if (!p.fertig) {
+      so.pull = p;
+      if (!soVisible()) return;
+      const row = [...byId('so-rec').querySelectorAll('[data-model]')].find((r) => r.dataset.model === p.model);
+      if (row && row.querySelector('.so-bar')) soFillBar(row, p);
+      else renderOllama();
+      return;
+    }
+    so.pull = null;
+    so.busy = so.busy === 'laden' ? '' : so.busy;
+    if (p.ok) toast(p.text || ('„' + p.model + '“ ist heruntergeladen.'), 'ok', 5000);
+    else if (p.abgebrochen) toast('Herunterladen abgebrochen.', 'info', 3500);
+    else toast(p.fehler || 'Das Herunterladen hat nicht geklappt.', 'error', 7000);
+    if (soVisible()) soLoad(true);
+    if (suVisible()) loadSetup();
+  }
+
+  function soFillBar(row, p) {
+    const bar = row.querySelector('.so-bar');
+    const fill = bar.firstElementChild;
+    const pz = p.prozent == null ? null : Math.floor(p.prozent);
+    bar.classList.toggle('busy', pz == null);
+    fill.style.width = pz == null ? '' : pz + '%';
+    if (pz == null) bar.removeAttribute('aria-valuenow');
+    else bar.setAttribute('aria-valuenow', String(pz));
+    row.querySelector('.so-ptext').textContent = HL.pullText(p);
+  }
+
+  function renderOllama() {
+    const sec = byId('su-ollama');
+    const show = !!(su.data && suSel() && suSel().needsKey === false);
+    sec.hidden = !show;
+    if (!show) return;
+    if (!so.data && !so.loading) { soLoad(); return; }
+    if (so.data && !so.loading && performance.now() - so.loadedAt > 15000) soLoad(true); // Stand auffrischen
+    const d = so.data;
+    const ae = document.activeElement;
+    const focusKey = ae && sec.contains(ae) ? ae.dataset.so || '' : '';
+    byId('so-refresh').disabled = so.loading;
+
+    // Stand
+    const st = byId('so-status');
+    st.replaceChildren();
+    const acts = byId('so-actions');
+    acts.replaceChildren();
+    let kind = 'wait';
+    if (!d) st.append(h('span', 'spinner'), h('span', null, 'Ich schaue nach, ob Ollama läuft …'));
+    else if (d.laeuft) {
+      kind = 'ok';
+      st.append(icon('checkCircle'), h('span', null, (d.openai ? 'Der Server läuft' : 'Ollama läuft') +
+        (d.version ? ' (Version ' + d.version + ')' : '') + (d.adresse && !/^http:\/\/localhost:11434$/.test(d.adresse) ? ' – ' + d.adresse : '') + '.'));
+    } else if (d.installiert === false) {
+      kind = 'warn';
+      st.append(icon('alert'), h('span', null, 'Ollama ist noch nicht installiert. Es ist kostenlos – lade es herunter, ' +
+        'installiere es und klicke dann auf „Neu prüfen“.'));
+      const a = h('a', 'btn small primary');
+      a.append(icon('download'), h('span', null, 'Ollama herunterladen'));
+      a.href = HL.OLLAMA_DOWNLOAD;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      a.dataset.so = 'download';
+      acts.append(a);
+    } else {
+      kind = 'warn';
+      st.append(icon('alert'), h('span', null, 'Ollama ist nicht gestartet' + (d.adresse ? ' (' + d.adresse + ')' : '') +
+        '. Starte es – unter Windows im Startmenü „Ollama“ öffnen.'));
+      const b = h('button', 'btn small primary');
+      b.type = 'button';
+      b.dataset.so = 'start';
+      b.disabled = so.busy === 'start';
+      b.append(so.busy === 'start' ? h('span', 'spinner') : icon('play'), h('span', null, 'Ollama starten'));
+      b.addEventListener('click', soStart);
+      const a = h('a', 'btn small ghost');
+      a.append(icon('external'), h('span', null, 'Noch nicht installiert?'));
+      a.href = HL.OLLAMA_DOWNLOAD;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      acts.append(b, a);
+    }
+    st.className = 'so-status ' + kind;
+    acts.hidden = !acts.childElementCount;
+
+    // Modelle auf dem PC (Auswahl)
+    const list = byId('so-models');
+    list.replaceChildren();
+    const models = d && d.laeuft ? d.modelle : [];
+    const curName = so.picking || (models.find((m) => m.aktiv) || {}).name || '';
+    const hasCur = models.some((m) => m.name === curName);
+    models.forEach((m, i) => {
+      const on = m.name === curName;
+      const b = h('button', 'sm-tile so-tile' + (on ? ' selected' : ''));
+      b.type = 'button';
+      b.setAttribute('role', 'radio');
+      b.setAttribute('aria-checked', on ? 'true' : 'false');
+      b.tabIndex = on || (!hasCur && i === 0) ? 0 : -1;
+      b.dataset.id = m.name;
+      b.dataset.so = 'model:' + m.name;
+      b.disabled = !!so.picking && !on;
+      b.append(h('span', 'sm-name', m.anzeige));
+      if (m.anzeige !== m.name) b.append(h('span', 'so-id', m.name));
+      const badges = h('span', 'so-badges');
+      if (m.werkzeuge === true) badges.append(soBadge('wrench', 'Werkzeuge', 'ok'));
+      else if (m.werkzeuge === false) badges.append(soBadge('alert', 'ohne Werkzeuge', 'warn', 'Kann keine Dateien lesen, nicht im Web suchen und nichts am PC tun'));
+      if (m.bilder === true) badges.append(soBadge('image', 'sieht Bilder'));
+      if (m.denkt === true) badges.append(soBadge('brain', 'kann nachdenken'));
+      if (m.groesse) badges.append(h('span', 'so-size', m.groesse));
+      if (badges.childElementCount) b.append(badges);
+      const chk = h('span', 'sp-check');
+      chk.append(icon('check'));
+      b.append(chk);
+      b.addEventListener('click', () => soPick(m.name));
+      list.append(b);
+    });
+    list.hidden = !models.length;
+    byId('so-models-label').hidden = !(d && d.laeuft);
+    byId('so-empty').hidden = !(d && d.laeuft && !models.length);
+
+    // Empfohlen zum Herunterladen
+    const rec = byId('so-rec');
+    rec.replaceChildren();
+    const recs = d ? d.empfohlen.slice() : [];
+    if (so.pull && !recs.some((r) => r.id === so.pull.model)) recs.unshift({ id: so.pull.model, name: so.pull.model, info: '', groesse: '', ram: '' });
+    for (const r of recs) rec.append(soRecRow(r, d));
+    byId('so-rec-label').hidden = !recs.length;
+
+    // Erweitert
+    const adr = byId('so-adresse');
+    if (document.activeElement !== adr && d && !adr.dataset.dirty) adr.value = d.adresse || '';
+    byId('so-adresse-save').disabled = so.busy === 'adresse';
+    byId('so-custom-go').disabled = !!so.pull || !(d && d.laeuft) || d.openai;
+
+    if (focusKey) {
+      const el = [...sec.querySelectorAll('[data-so]')].find((x) => x.dataset.so === focusKey);
+      if (el && !el.disabled) el.focus({ preventScroll: true });
+    }
+  }
+
+  function soBadge(ic, text, kind, title) {
+    const b = h('span', 'so-badge' + (kind ? ' ' + kind : ''));
+    b.append(icon(ic), h('span', null, text));
+    if (title) b.title = title;
+    return b;
+  }
+
+  function soRecRow(r, d) {
+    const li = h('li', 'so-item');
+    li.dataset.model = r.id;
+    const main = h('div', 'so-main');
+    const top = h('div', 'so-top');
+    top.append(h('span', 'sm-name', r.name || r.id));
+    if (r.name && r.name !== r.id) top.append(h('span', 'so-idchip', r.id));
+    main.append(top);
+    if (r.info) main.append(h('span', 'sm-info', r.info));
+    const meta = [r.groesse, r.ram].filter(Boolean).join(' · ');
+    if (meta || r.bilder) {
+      const m = h('span', 'sm-meta', meta);
+      main.append(m);
+    }
+    li.append(main);
+    const pulling = so.pull && so.pull.model === r.id;
+    if (pulling) {
+      const prog = h('div', 'so-progress');
+      const bar = h('div', 'so-bar');
+      bar.setAttribute('role', 'progressbar');
+      bar.setAttribute('aria-label', 'Herunterladen von ' + (r.name || r.id));
+      bar.setAttribute('aria-valuemin', '0');
+      bar.setAttribute('aria-valuemax', '100');
+      bar.append(h('span'));
+      prog.append(bar, h('span', 'so-ptext'));
+      main.append(prog);
+      const stop = h('button', 'btn small ghost so-btn', 'Abbrechen');
+      stop.type = 'button';
+      stop.dataset.so = 'stop:' + r.id;
+      stop.addEventListener('click', soCancel);
+      li.append(stop);
+      soFillBar(li, so.pull);
+    } else if (r.installiert) {
+      const ok = h('span', 'so-have');
+      ok.append(icon('checkCircle'), h('span', null, 'auf deinem PC'));
+      li.append(ok);
+    } else {
+      const b = h('button', 'btn small secondary so-btn');
+      b.type = 'button';
+      b.dataset.so = 'pull:' + r.id;
+      b.disabled = !!so.pull || !(d && d.laeuft) || !!(d && d.openai) || so.busy === 'laden';
+      b.title = d && !d.laeuft ? 'Erst Ollama starten' : '';
+      b.append(icon('download'), h('span', null, 'Herunterladen'));
+      b.addEventListener('click', () => soPull(r.id));
+      li.append(b);
+    }
+    return li;
+  }
+
+  async function soPull(model) {
+    model = HL.ollamaName(model);
+    if (!model || so.pull || so.busy) return;
+    so.busy = 'laden';
+    so.pull = { model, text: 'Starte …', prozent: null, erledigt: 0, gesamt: 0, fertig: false };
+    renderOllama();
+    const r = await post('/api/ollama/laden', { model });
+    if (so.busy === 'laden') so.busy = '';
+    if (!r.ok) {
+      if (so.pull && so.pull.model === model) so.pull = null;
+      toast(str(r.error).trim() || 'Das Herunterladen ließ sich nicht starten.', 'error', 6000);
+    }
+    renderOllama();
+    const row = [...byId('so-rec').querySelectorAll('[data-model]')].find((x) => x.dataset.model === model);
+    const stop = row && row.querySelector('.so-btn');
+    if (stop) stop.focus({ preventScroll: true });
+  }
+
+  async function soCancel() {
+    const r = await post('/api/ollama/abbrechen', {});
+    if (!r.ok) soLoad(true);
+  }
+
+  async function soPick(name) {
+    if (so.picking) return;
+    const cur = so.data && so.data.modelle.find((m) => m.aktiv);
+    if (cur && cur.name === name) return;
+    so.picking = name;
+    renderOllama();
+    const r = await post('/api/modell', { provider: 'ollama', model: name });
+    so.picking = '';
+    if (r.ok) {
+      let msg = str(r.message).trim() || 'Gespeichert.';
+      if (su.data && su.data.provider !== 'ollama') msg += ' Gilt, sobald du Ollama nutzt.';
+      const m = so.data && so.data.modelle.find((x) => x.name === name);
+      if (m && m.werkzeuge === false) msg += ' Achtung: Dieses Modell kann keine Werkzeuge benutzen.';
+      smToast('Eingestellt: ' + msg, 'ok', /Achtung/.test(msg) ? 6500 : 4000);
+      if (so.data) for (const x of so.data.modelle) x.aktiv = x.name === name;
+      const d = normSetup(r.setup);
+      if (d) { su.gen++; su.data = d; su.loading = false; }
+    } else {
+      smToast((str(r.error).trim() || 'Das hat nicht geklappt.') + ' Die Einstellung bleibt, wie sie war.', 'error', 6000);
+    }
+    renderSetup();
+  }
+
+  async function soStart() {
+    if (so.busy) return;
+    so.busy = 'start';
+    renderOllama();
+    const r = await post('/api/ollama/starten', {});
+    toast(str(r.ok ? r.message : r.error).trim() || (r.ok ? 'Ollama wird gestartet …' : 'Das hat nicht geklappt.'),
+      r.ok ? 'info' : 'error', 5000);
+    if (r.ok) { // Ollama braucht ein paar Sekunden – dann nachsehen
+      let tries = 0;
+      clearInterval(so.pollTimer);
+      so.pollTimer = setInterval(async () => {
+        tries += 1;
+        await soLoad(true);
+        if ((so.data && so.data.laeuft) || tries >= 8 || ended) {
+          clearInterval(so.pollTimer);
+          so.busy = '';
+          renderOllama();
+          if (su.result && su.result.kind === 'ollama_offline' && so.data && so.data.laeuft) {
+            su.result = null;
+            renderSetup();
+          }
+        }
+      }, 2000);
+    } else {
+      so.busy = '';
+      renderOllama();
+    }
+  }
+
+  async function soSaveAddress() {
+    if (so.busy) return;
+    const input = byId('so-adresse');
+    so.busy = 'adresse';
+    renderOllama();
+    const r = await post('/api/ollama/adresse', { adresse: input.value.trim() });
+    so.busy = '';
+    if (r.ok) {
+      delete input.dataset.dirty;
+      toast(str(r.message).trim() || 'Gespeichert.', 'ok', 3500);
+      const d = HL.normOllama(r.ollama);
+      if (d) { so.data = d; so.loadedAt = performance.now(); }
+      else soLoad(true);
+    } else toast(str(r.error).trim() || 'Die Adresse ist ungültig.', 'error', 6000);
+    renderOllama();
+  }
+
+  byId('so-refresh').addEventListener('click', () => soLoad());
+  byId('so-models').addEventListener('keydown', (e) => arrowRadio(e, byId('so-models'), (b) => soPick(b.dataset.id)));
+  byId('so-adresse').addEventListener('input', (e) => { e.target.dataset.dirty = '1'; });
+  byId('so-adresse').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); soSaveAddress(); }
+  });
+  byId('so-adresse-save').addEventListener('click', soSaveAddress);
+  function soCustom() {
+    const input = byId('so-custom');
+    const name = HL.ollamaName(input.value);
+    if (!name) { toast('Bitte einen Modellnamen eintragen, z.B. llama3.2:3b.', 'error', 4500); input.focus(); return; }
+    input.value = '';
+    soPull(name);
+  }
+  byId('so-custom-go').addEventListener('click', soCustom);
+  byId('so-custom').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); soCustom(); }
+  });
 
   // ---------- Bilder (optional): welcher Dienst malt Bilder? ----------
   //  /api/setup -> bilder: {anbieter: auto|horde|cloudflare, cloudflare: bool, aktiv: "AI Horde"|"Cloudflare"}
@@ -8578,6 +8970,9 @@
         break;
       case 'appearance':
         loadAppearance(true);
+        break;
+      case 'ollama_pull':
+        soOnPull(ev);
         break;
       default:
         break;

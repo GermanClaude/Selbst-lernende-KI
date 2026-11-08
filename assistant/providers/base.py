@@ -266,6 +266,11 @@ class LLMProvider(ABC):
         """Ungefaehre Groesse des Verlaufs in Zeichen (fuer die Kompaktierung)."""
         return 0
 
+    def verlauf_grenze(self) -> int:
+        """Ab so vielen Zeichen wird der Verlauf zusammengefasst (0 = nie). Ollama: weniger,
+        weil lokale Modelle nur einen kleinen Kontext haben."""
+        return int(self.config.conversation.max_verlauf_zeichen or 0)
+
     @abstractmethod
     def summarize_history(self) -> str: ...
 

@@ -71,7 +71,8 @@ COMMANDS = [
     ("/name", "der KI einen anderen Namen geben"),
     ("/sprache", "Stand der Spracheingabe"),
     ("/sprache einrichten", "Spracheingabe installieren"),
-    ("/gehirn", "DeepSeek oder Claude - Schluessel einfach in den Chat einfuegen"),
+    ("/gehirn", "DeepSeek, Claude oder Ollama - Schluessel einfach in den Chat einfuegen"),
+    ("/ollama", "Ollama: kostenlose KI auf deinem PC (Stand, Modelle laden)"),
     ("/afk", "ich bin weg - die KI arbeitet allein weiter (mit Bericht)"),
     ("/modell", "Modell waehlen - schnell oder besonders stark"),
     ("/denken", "wie gruendlich die KI nachdenkt (schnell ... maximal)"),
@@ -141,6 +142,7 @@ class AppController(CLI):
         self.tool_ctx.extra["afk_start"] = self._afk_request
         self.tool_ctx.extra["afk_update"] = self._state_changed
         self._cloudflare_http = None  # fuer Tests austauschbar (None = echtes Netz)
+        self._ollama_caps: dict[tuple[str, str], list] = {}  # (Adresse, Modell) -> Faehigkeiten
         # Sphaere: reagiert auf deine Stimme beim Mikrofon-Knopf / F2
         self.voice_capture.on_level = lambda value: self._event({"type": "mic", "level": value})
 
@@ -181,8 +183,11 @@ class AppController(CLI):
             "voice_problem": problem,
             "tokens": usage.total_tokens,
             "eur": round(eur, 4),
+            "kostenlos": bool(self.config.kostenlos),
+            "ollama_pull": self.ollama_lader.zustand() if hasattr(self, "ollama_lader") else None,
             "api_key_missing": not self.config.api_key,
-            "provider_name": schoen({"deepseek": "DeepSeek", "claude": "Claude (Anthropic)"}.get(
+            "provider_name": schoen({"deepseek": "DeepSeek", "claude": "Claude (Anthropic)",
+                                     "ollama": "Ollama (kostenlos)"}.get(
                 self.config.active_provider, self.config.active_provider)),
             "update": {"new": self._pending_update.new} if self._pending_update else None,
             "update_status": self._update_status(),
@@ -1038,13 +1043,16 @@ class AppController(CLI):
             return {"ok": False, "kind": "other", "error": f"Unbekanntes Gehirn '{provider}'."}
         raw = str(data.get("api_key") or "").strip()
         key = find_key(raw) or (raw or None)
+        if provider == "ollama":
+            key = None  # Ollama braucht keinen Schluessel (ein Schluessel im Feld geht nirgendwohin)
         with self._lock:
             if self.busy:
                 return {"ok": False, "kind": "busy", "error": "Ich arbeite gerade - gleich nochmal versuchen."}
             self.busy = True
         self._state_changed()  # andere Fenster sehen: die KI prueft gerade
         try:
-            result = setup(self.config, key=key, provider=provider, test=not data.get("force"))
+            extra = {"http": self._ollama_http} if provider == "ollama" else {}
+            result = setup(self.config, key=key, provider=provider, test=not data.get("force"), **extra)
             if not result["ok"]:
                 return {"ok": False, "kind": result["kind"], "error": schoen(result["message"])}
             fresh = self.brain.switch_provider()
@@ -1053,6 +1061,102 @@ class AppController(CLI):
             return {"ok": True, "message": schoen(message), "setup": self.setup_info()}
         finally:
             self._release()
+
+    # -- Ollama (kostenlos, auf dem PC): Stand, Modelle laden, Adresse -------------------
+    def ollama_info(self) -> dict:
+        """GET /api/ollama: laeuft Ollama? welche Modelle (mit Faehigkeiten)? was wird geladen?"""
+        from .. import ollama
+        from ..modelle import kurzbeschreibung
+
+        info = ollama.status(self.config, http=self._ollama_http)
+        dienst = ollama.Dienst(info["adresse"], self._ollama_http)
+        for m in info["modelle"]:
+            caps = self._ollama_caps.get((info["adresse"], m["name"]))
+            if caps is None and info["laeuft"] and not info["openai"]:
+                try:
+                    caps = sorted(dienst.faehigkeiten(m["name"]))
+                except ollama.OllamaFehler:
+                    caps = None
+                if caps is not None:
+                    self._ollama_caps[(info["adresse"], m["name"])] = caps
+            m["werkzeuge"] = None if caps is None else "tools" in caps
+            m["sieht_bilder"] = None if caps is None else "vision" in caps
+            m["denkt"] = None if caps is None else "thinking" in caps
+            m["groesse_text"] = ollama.groesse_text(m["groesse"])
+            m["aktiv"] = ollama.ist_installiert(self.config.ollama.model, [m["name"]])
+            emp = ollama.empfohlen_info(m["name"])
+            m["anzeige"] = emp["name"] if emp else m["name"]
+        info["fehler"] = schoen(info["fehler"])
+        info["empfohlen"] = [{**m, "info": schoen(m["info"])} for m in info["empfohlen"]]
+        info["laden"] = self.ollama_lader.zustand()
+        info["aktiv"] = self.config.active_provider == "ollama"
+        info["model_name"] = schoen(kurzbeschreibung(self.config, "ollama"))
+        info["kontext"] = int(self.config.ollama.kontext)
+        return info
+
+    def ollama_laden(self, data: dict) -> dict:
+        """POST /api/ollama/laden {"model"}: im Hintergrund herunterladen; Fortschritt als Ereignis
+        {"type": "ollama_pull", "model", "text", "prozent", "erledigt", "gesamt", "fertig", "ok", ...}."""
+        from .. import ollama
+
+        modell = str(data.get("model") or "").strip()
+        if not ollama.gueltiger_name(modell):
+            return {"ok": False, "error": "Bitte einen g\u00fcltigen Modellnamen angeben (z.B. qwen3.5:4b)."}
+        dienst = ollama.Dienst(ollama.adresse_aus(self.config), self._ollama_http)
+        ok, message = self.ollama_lader.starten(dienst, modell, self._ollama_melde)
+        if not ok:
+            return {"ok": False, "error": schoen(message)}
+        self._state_changed()
+        return {"ok": True, "message": schoen(message)}
+
+    def _ollama_melde(self, ev: dict) -> None:
+        ev = dict(ev)
+        if ev.get("fertig"):
+            if ev.get("ok"):
+                try:
+                    extra = self._ollama_nach_laden(ev["model"])
+                except Exception as exc:  # noqa: BLE001
+                    logger.info("Nach dem Herunterladen: %s", exc)
+                    extra = ""
+                if extra:
+                    ev["text"] = f"{ev.get('text', '')} {extra}".strip()
+            for k in ("text", "fehler"):
+                if ev.get(k):
+                    ev[k] = schoen(ev[k])
+        self._event({"type": "ollama_pull", **ev})
+        if ev.get("fertig"):
+            self._state_changed()
+
+    def ollama_abbrechen(self) -> dict:
+        return {"ok": self.ollama_lader.abbrechen()}
+
+    def ollama_adresse(self, data: dict) -> dict:
+        """POST /api/ollama/adresse {"adresse"}: nur http(s); leer = Standard."""
+        from .. import ollama
+
+        try:
+            adresse = ollama.pruefe_adresse(data.get("adresse"))
+        except ValueError as exc:
+            return {"ok": False, "error": schoen(str(exc))}
+        try:
+            save_setting(self.config.project_root, "ollama", "adresse", toml_string(adresse))
+        except OSError:
+            return {"ok": False, "error": schoen("Konnte die Einstellung nicht speichern.")}
+        self.config.ollama.adresse = adresse
+        self._ollama_caps.clear()
+        self._model_changed()
+        return {"ok": True, "message": f"Ollama-Adresse: {adresse}", "ollama": self.ollama_info()}
+
+    def ollama_starten(self) -> dict:
+        from .. import ollama
+
+        ok, message = ollama.starten()
+        return {"ok": ok, "message": schoen(message), "error": "" if ok else schoen(message)}
+
+    def _ollama_laden(self, modell: str) -> None:
+        """'/ollama laden <modell>' im Chat der App: im Hintergrund, Fortschritt im Fenster."""
+        result = self.ollama_laden({"model": modell})
+        print(result.get("message") or result.get("error") or "")
 
     # In der App oeffnen /jarvis und /tutorial die Ansichten im Fenster (statt der Terminal-Versionen).
     def _jarvis_terminal(self) -> None:
@@ -1421,6 +1525,13 @@ class AppController(CLI):
         elif self.config.provider_auto_switched:
             self._notice(f"Fuer {self.config.provider_auto_switched} ist kein Schluessel da - ich nutze deshalb "
                          f"{self.config.active_provider}. Wechseln: /gehirn")
+        if self.config.active_provider == "ollama":
+            def ollama_check() -> None:
+                hinweis = self._ollama_starthinweis()
+                if hinweis:
+                    self._notice(hinweis, "warn")
+
+            threading.Thread(target=ollama_check, name="ollama-pruefen", daemon=True).start()
         self._start_update_watch()
         self._start_feedback_watch()  # Nutzungszeit zaehlen, Feedback-Ausgang nachsenden
         try:

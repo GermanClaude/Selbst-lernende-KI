@@ -7,6 +7,7 @@ warten und mehr Kosten. Fuer Alltagsfragen reicht "schnell" oder "ausgewogen".
 Gespeichert wird in config/settings.toml:
   [claude]   model = "claude-opus-5-5"   effort = "medium"   (low|medium|high|xhigh|max)
   [deepseek] model = "deepseek-flash"    denken = "aus"      (aus|low|high|max)
+  [ollama]   model = "qwen3.5:4b"        denken = "aus"      (aus|an)  - jedes Ollama-Modell
 """
 from __future__ import annotations
 
@@ -46,7 +47,19 @@ DEEPSEEK_MODELLE = [
 # DeepSeek-Modell, das Bilder ansieht: beschreibt sie fuer Modelle ohne Augen (V4 Pro).
 DEEPSEEK_SEHMODELL = "deepseek-flash"
 
-MODELLE = {"claude": CLAUDE_MODELLE, "deepseek": DEEPSEEK_MODELLE}
+# Ollama: kostenlos auf deinem PC. Hier nur die Empfehlungen - waehlen laesst sich jedes
+# heruntergeladene Modell (siehe assistant/ollama.py).
+def _ollama_modelle() -> list[dict]:
+    from .ollama import EMPFOHLEN
+
+    return [{"id": m["id"], "name": m["name"], "kurz": m["kurz"], "info": m["info"],
+             "tempo": "je nach PC", "preis": (0.0, 0.0, 0.0), "sieht_bilder": m["sieht_bilder"],
+             "groesse": m["groesse"]} for m in EMPFOHLEN]
+
+
+OLLAMA_MODELLE = _ollama_modelle()
+
+MODELLE = {"claude": CLAUDE_MODELLE, "deepseek": DEEPSEEK_MODELLE, "ollama": OLLAMA_MODELLE}
 
 # Denk-Tiefen: (Wert in settings.toml, Name fuer Menschen, Erklaerung)
 DENKTIEFEN = {
@@ -62,6 +75,10 @@ DENKTIEFEN = {
         ("low", "ausgewogen", "denkt kurz nach"),
         ("high", "gruendlich", "denkt laenger nach - fuer knifflige Aufgaben"),
         ("max", "maximal", "so gruendlich wie moeglich - dauert laenger"),
+    ],
+    "ollama": [
+        ("aus", "schnell", "antwortet sofort, ohne vorher nachzudenken"),
+        ("an", "gruendlich", "denkt vorher nach - nur Modelle, die das koennen; dauert auf dem PC laenger"),
     ],
 }
 
@@ -82,6 +99,8 @@ _WORTE = {  # was Menschen tippen/sagen -> Stufe (je Gehirn passend uebersetzt)
 }
 
 _MODELL_ID = re.compile(r"^[a-z0-9][a-z0-9.\-]{2,60}$")
+# Ollama-Namen duerfen mehr: "qwen3.5:4b", "hf.co/nutzer/modell:Q4_K_M"
+_OLLAMA_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._\-/:]{0,150}$")
 
 
 def modell_info(provider: str, model_id: str) -> dict | None:
@@ -98,7 +117,7 @@ def sieht_bilder(provider: str, model_id: str) -> bool:
     info = modell_info(provider, wanted)
     if info is not None:
         return bool(info.get("sieht_bilder", False))
-    return provider == "claude"
+    return provider == "claude"  # Ollama: fragt der Provider Ollama selbst (Faehigkeiten des Modells)
 
 
 def modell_name(provider: str, model_id: str) -> str:
@@ -112,14 +131,64 @@ def denktiefe_name(provider: str, wert: str) -> str:
 
 def aktuelle_denktiefe(config, provider: str | None = None) -> str:
     provider = provider or config.active_provider
+    if provider == "ollama":
+        return config.ollama.denken
     return config.deepseek.denken if provider == "deepseek" else config.claude.effort
+
+
+def _section(config, provider: str):
+    """(Einstellungs-Abschnitt, Name der Denk-Tiefe darin) eines Gehirns."""
+    if provider == "deepseek":
+        return config.deepseek, "denken"
+    if provider == "ollama":
+        return config.ollama, "denken"
+    return config.claude, "effort"
 
 
 def kurzbeschreibung(config, provider: str | None = None) -> str:
     """z.B. 'Claude Opus 5.5 - ausgewogen' (fuer Anzeige und Banner)."""
     provider = provider or config.active_provider
-    model = config.deepseek.model if provider == "deepseek" else config.claude.model
+    model = _section(config, provider)[0].model
     return f"{modell_name(provider, model)} \u2013 {denktiefe_name(provider, aktuelle_denktiefe(config, provider))}"
+
+
+def normalisiere_ollama(ollama) -> None:
+    """Unsinnige Werte aus [ollama] nicht abstuerzen lassen (Adresse wird beim Benutzen geprueft)."""
+    from .config import DEFAULT_OLLAMA_ADRESSE, DEFAULT_OLLAMA_MODEL
+
+    if not isinstance(ollama.model, str) or not _OLLAMA_ID.match(ollama.model.strip()) or ".." in ollama.model:
+        ollama.model = DEFAULT_OLLAMA_MODEL
+    ollama.model = ollama.model.strip()
+    if not isinstance(ollama.adresse, str) or not ollama.adresse.strip():
+        ollama.adresse = DEFAULT_OLLAMA_ADRESSE
+    ollama.denken = _ollama_stufe(ollama.denken) or "aus"
+    for key, default, low, high in (("kontext", 16384, 2048, 262144), ("max_tokens", 8192, 256, 131072)):
+        try:
+            value = int(getattr(ollama, key))
+        except (TypeError, ValueError):
+            value = default
+        setattr(ollama, key, min(high, max(low, value)))
+
+
+def _ollama_stufe(wert) -> str | None:
+    if wert is True:
+        return "an"
+    if wert is False:
+        return "aus"
+    wert = str(wert or "").strip().lower().replace("\u00fc", "ue")
+    if wert in ("aus", "off", "none", "nein", "false", "schnell", "low", "disabled"):
+        return "aus"
+    if wert in ("an", "ein", "on", "ja", "true", "medium", "high", "xhigh", "max", "gruendlich",
+                "sehr gruendlich", "maximal", "ausgewogen"):
+        return "an"
+    return None
+
+
+def ollama_denken(config, override: str | None = None) -> bool:
+    """Soll das Ollama-Modell jetzt nachdenken? Im Live-Modus zaehlt Tempo ('low' = nein)."""
+    if override:
+        return override not in ("low", "medium") and _ollama_stufe(override) == "an"
+    return (_ollama_stufe(config.ollama.denken) or "aus") == "an"
 
 
 def normalisiere_claude(claude) -> None:
@@ -174,6 +243,8 @@ def preise(provider: str, model_id: str, now: datetime | None = None,
            prompt_tokens: int = 0) -> tuple[float, float, float] | None:
     """(Input, Cache-Treffer, Output) in USD pro 1 Mio. Token - oder None (unbekanntes Modell).
     prompt_tokens: Groesse EINER Anfrage (Haiku kostet bei sehr langen Anfragen mehr)."""
+    if provider == "ollama":
+        return (0.0, 0.0, 0.0)  # laeuft auf deinem PC - kostenlos
     info = modell_info(provider, model_id)
     if not info:
         return None
@@ -191,11 +262,21 @@ def _spitzenzeit(now: datetime | None = None) -> bool:
 
 
 def _finde_modell(provider: str, wanted: str) -> str | None:
+    wanted_raw = wanted
     wanted = (wanted or "").strip().lower()
     if not wanted:
         return None
     if provider == "deepseek" and wanted in ALTE_DEEPSEEK_NAMEN:
         return ALTE_DEEPSEEK_NAMEN[wanted][0]
+    if provider == "ollama":
+        from .ollama import finde_empfohlen
+
+        found = finde_empfohlen(wanted)
+        if found:
+            return found
+        # jedes Ollama-Modell ist erlaubt (Gross-/Kleinschreibung wie eingegeben)
+        raw = (wanted_raw or "").strip()
+        return raw if _OLLAMA_ID.match(raw) and ".." not in raw else None
     for m in MODELLE.get(provider, []):
         names = {m["id"], m["kurz"], m["name"].lower(), m["name"].lower().replace("claude ", "").replace("deepseek ", "")}
         if wanted in names or wanted.replace(" ", "-") in names:
@@ -216,6 +297,8 @@ def finde_denktiefe(provider: str, wanted: str) -> str | None:
         stufe = _deepseek_stufe(raw)
         if stufe:
             return stufe
+    if provider == "ollama":
+        return _ollama_stufe(raw)
     idx = _WORTE.get(raw)
     if idx is None:
         return None
@@ -233,8 +316,7 @@ def waehle(config, provider: str | None = None, model: str | None = None,
     provider = (provider or config.active_provider).strip().lower()
     if provider not in MODELLE:
         return {"ok": False, "message": f"Unbekanntes Gehirn '{provider}'.", "changed": False, "provider": provider}
-    section = config.deepseek if provider == "deepseek" else config.claude
-    level_key = "denken" if provider == "deepseek" else "effort"
+    section, level_key = _section(config, provider)
     new_model, new_level = section.model, getattr(section, level_key)
     if model:
         found = _finde_modell(provider, model) or (model.strip() if model.strip() == section.model else None)
@@ -277,7 +359,13 @@ def beschreibung(config) -> dict:
     """Fuer die Einstellungen in der App: alle Modelle, Denk-Tiefen und was gerade aktiv ist."""
     out = {}
     for provider, models in MODELLE.items():
-        current = config.deepseek.model if provider == "deepseek" else config.claude.model
+        current = _section(config, provider)[0].model
+        if provider == "ollama":
+            # Die Modelle auf dem PC zeigt der eigene Ollama-Bereich (GET /api/ollama).
+            out[provider] = {"model": current, "denken": aktuelle_denktiefe(config, provider), "modelle": [],
+                             "denktiefen": [{"id": w, "name": name, "info": info}
+                                            for w, name, info in DENKTIEFEN[provider]]}
+            continue
         rate = float(getattr(config.prices, "usd_zu_eur", 0.92) or 0.92)
         entries = [{"id": m["id"], "name": m["name"], "info": m["info"], "tempo": m["tempo"],
                     "preis": _preis_text(m, rate), "sieht_bilder": bool(m.get("sieht_bilder"))}

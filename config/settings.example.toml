@@ -5,7 +5,8 @@
 # ============================================================================
 
 [provider]
-# Welches "Gehirn" aktiv ist: "claude" (sehr stark) oder "deepseek" (extrem guenstig).
+# Welches "Gehirn" aktiv ist: "claude" (sehr stark), "deepseek" (extrem guenstig) oder
+# "ollama" (kostenlos, laeuft auf deinem PC - ohne Schluessel).
 aktiv = "claude"
 
 
@@ -44,6 +45,28 @@ base_url = "https://api.deepseek.com"
 # Zu klein = grosse Dateien werden mitten im Schreiben abgeschnitten.
 max_tokens = 8192
 temperature = 0.6
+
+
+# ----------------------------------------------------------------------------
+#  OLLAMA - kostenlos, die Modelle laufen auf deinem PC (kein Schluessel, kein Internet).
+#  Ollama installieren: https://ollama.com/download (oder: winget install Ollama.Ollama)
+#  Modelle herunterladen: in der App unter "Gehirn & Schluessel" oder mit /ollama laden <modell>
+# ----------------------------------------------------------------------------
+[ollama]
+# Adresse von Ollama (nur http/https). Ein OpenAI-kompatibler Server wie LM Studio geht auch:
+# dann z.B. "http://localhost:1234/v1".
+adresse = "http://localhost:11434"
+# Modell (auch mit /modell ollama <name>): "qwen3.5:4b" (Standard, 3,4 GB, sieht Bilder),
+# "qwen3.5:9b" (staerker, 6,6 GB, ab 16 GB RAM), "gemma4:e4b" (6,6 GB), "qwen3:4b" (2,5 GB).
+# Jedes andere Ollama-Modell geht auch - am besten eins mit Werkzeugen ("tools").
+model = "qwen3.5:4b"
+# Nachdenken vor der Antwort: aus = schnell | an = gruendlich (nur Modelle, die das koennen)
+denken = "aus"
+# Wie viel sich das Modell auf einmal merken kann (Token). System-Prompt und Werkzeuge brauchen
+# schon ~7000 - weniger als 16384 ist nicht sinnvoll. Mehr = mehr Arbeitsspeicher.
+kontext = 16384
+# Maximale Laenge EINER Antwort.
+max_tokens = 8192
 
 
 [ki]

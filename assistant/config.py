@@ -1,9 +1,10 @@
 """Konfiguration laden: Provider, Einstellungen, Persona, Werte, Umgebung.
 
 Die .env-Datei wird ohne Zusatzabhaengigkeit (kein python-dotenv noetig) gelesen.
-Es gibt zwei "Gehirne" zur Auswahl:
+Es gibt drei "Gehirne" zur Auswahl:
   * claude   - Anthropic (sehr stark)
   * deepseek - DeepSeek (OpenAI-kompatibel, extrem guenstig)
+  * ollama   - Ollama (kostenlos, die Modelle laufen auf deinem PC, kein Schluessel noetig)
 """
 from __future__ import annotations
 
@@ -21,6 +22,8 @@ except ModuleNotFoundError:  # pragma: no cover - Fallback fuer 3.10
 
 DEFAULT_MODEL = "claude-opus-5-5"
 DEFAULT_DEEPSEEK_MODEL = "deepseek-flash"
+DEFAULT_OLLAMA_MODEL = "qwen3.5:4b"
+DEFAULT_OLLAMA_ADRESSE = "http://localhost:11434"
 
 
 class ConfigError(Exception):
@@ -88,7 +91,7 @@ def _load_env_file(path: Path) -> None:
 
 @dataclass
 class ProviderSettings:
-    # Welches Gehirn aktiv ist: "claude" oder "deepseek".
+    # Welches Gehirn aktiv ist: "claude", "deepseek" oder "ollama".
     aktiv: str = "claude"
 
 
@@ -109,6 +112,20 @@ class DeepSeekSettings:
     base_url: str = "https://api.deepseek.com"
     max_tokens: int = 8192  # kleiner = grosse Dateien brechen beim Schreiben ab
     temperature: float = 0.6
+
+
+@dataclass
+class OllamaSettings:
+    # Ollama: kostenlose Modelle auf deinem PC (https://ollama.com). Kein Schluessel noetig.
+    # Adresse des Ollama-Servers (nur http/https). ".../v1" = OpenAI-kompatibler Server (z.B. LM Studio).
+    adresse: str = DEFAULT_OLLAMA_ADRESSE
+    model: str = DEFAULT_OLLAMA_MODEL
+    # Nachdenken vor der Antwort: aus (schnell) | an (gruendlich, nur Modelle, die das koennen)
+    denken: str = "aus"
+    # Wie viel sich das Modell auf einmal merken kann (Token). System-Prompt und Werkzeuge
+    # brauchen schon ~7000. Mehr = mehr Arbeitsspeicher.
+    kontext: int = 16384
+    max_tokens: int = 8192
 
 
 DEFAULT_NAME = "Nova"
@@ -161,6 +178,8 @@ class PriceSettings:
 
     def for_provider(self, provider: str) -> tuple[float, float, float]:
         """Gibt (input, cache_hit, output) in USD/1M fuer den Provider zurueck."""
+        if provider == "ollama":
+            return (0.0, 0.0, 0.0)  # laeuft auf deinem PC - kostet nichts
         if provider == "deepseek":
             return (self.deepseek_input, self.deepseek_cache_hit, self.deepseek_output)
         return (self.claude_input, self.claude_cache_hit, self.claude_output)
@@ -300,6 +319,7 @@ class Config:
     feedback: FeedbackSettings = field(default_factory=FeedbackSettings)
     cloudflare_api_key: str | None = None  # Bildgenerator (optional, eigener Gratis-Schluessel)
     cloudflare_account_id: str | None = None
+    ollama: OllamaSettings = field(default_factory=OllamaSettings)
 
     # -- Komfort-Eigenschaften ---------------------------------------------
     @property
@@ -308,12 +328,27 @@ class Config:
 
     @property
     def active_model(self) -> str:
-        return self.deepseek.model if self.active_provider == "deepseek" else self.claude.model
+        return self.model_of(self.active_provider)
+
+    def model_of(self, provider: str) -> str:
+        """Das eingestellte Modell eines Gehirns."""
+        if provider == "deepseek":
+            return self.deepseek.model
+        if provider == "ollama":
+            return self.ollama.model
+        return self.claude.model
 
     @property
     def api_key(self) -> str | None:
-        """Der Schluessel des aktiven Providers."""
+        """Der Schluessel des aktiven Providers. Ollama braucht keinen ("ollama" = Platzhalter)."""
+        if self.active_provider == "ollama":
+            return "ollama"
         return self.deepseek_api_key if self.active_provider == "deepseek" else self.anthropic_api_key
+
+    @property
+    def kostenlos(self) -> bool:
+        """Kostet das aktive Gehirn nichts? (Ollama laeuft auf dem eigenen PC.)"""
+        return self.active_provider == "ollama"
 
     @property
     def compact_threshold(self) -> int:
@@ -339,7 +374,7 @@ class Config:
 
         provider = provider or self.active_provider
         if model is None:
-            model = self.deepseek.model if provider == "deepseek" else self.claude.model
+            model = self.model_of(provider)
         size = input_full + cache_hit if per_request else 0
         in_price, hit_price, out_price = (preise(provider, model, prompt_tokens=size)
                                           or self.prices.for_provider(provider))
@@ -498,16 +533,21 @@ def load_config(project_root: Path | None = None) -> Config:
         ki.name = DEFAULT_NAME  # frueherer Standardname -> neuer Name
 
     # Modell per Umgebungsvariable erzwingen (zielt auf den aktiven Provider).
+    ollama = _merge(OllamaSettings(), raw.get("ollama", {}))
     if os.environ.get("KI_MODEL"):
-        if (provider.aktiv or "claude").strip().lower() == "deepseek":
+        wanted = (provider.aktiv or "claude").strip().lower() if isinstance(provider.aktiv, str) else "claude"
+        if wanted == "deepseek":
             deepseek.model = os.environ["KI_MODEL"]
+        elif wanted == "ollama":
+            ollama.model = os.environ["KI_MODEL"]
         else:
             claude.model = os.environ["KI_MODEL"]
     # Abgeschaltete DeepSeek-Namen (deepseek-chat/-reasoner) auf die aktuellen umstellen.
-    from .modelle import normalisiere_claude, normalisiere_deepseek
+    from .modelle import normalisiere_claude, normalisiere_deepseek, normalisiere_ollama
 
     normalisiere_deepseek(deepseek, denken_gesetzt="denken" in raw.get("deepseek", {}))
     normalisiere_claude(claude)
+    normalisiere_ollama(ollama)
 
     cfg = Config(
         provider=provider,
@@ -534,12 +574,14 @@ def load_config(project_root: Path | None = None) -> Config:
         feedback=_merge(FeedbackSettings(), raw.get("feedback", {})),
         cloudflare_api_key=os.environ.get("CLOUDFLARE_AI_API_KEY") or None,
         cloudflare_account_id=os.environ.get("CLOUDFLARE_ACCOUNT_ID") or None,
+        ollama=ollama,
     )
     # Eingestelltes Gehirn ohne Schluessel, das andere hat einen (z.B. nur DEEPSEEK_API_KEY in
     # .env, aber aktiv = "claude"): automatisch das Gehirn nehmen, fuer das es einen Schluessel gibt.
+    # Ollama braucht keinen Schluessel - es wird nur genommen, wenn du es selbst gewaehlt hast.
     keys = {"claude": cfg.anthropic_api_key, "deepseek": cfg.deepseek_api_key}
     active = cfg.active_provider
-    if not keys.get(active):
+    if active != "ollama" and not keys.get(active):
         other = next((name for name, key in keys.items() if key and name != active), None)
         if other:
             cfg.provider.aktiv = other

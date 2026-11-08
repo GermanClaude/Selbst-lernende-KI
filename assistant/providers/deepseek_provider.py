@@ -40,6 +40,7 @@ _INSTALL_HINT = (
 
 class DeepSeekProvider(LLMProvider):
     name = "deepseek"
+    label = "DeepSeek"  # Name in Fehlermeldungen
 
     def __init__(self, *args: Any, **kwargs: Any):
         super().__init__(*args, **kwargs)
@@ -82,9 +83,10 @@ class DeepSeekProvider(LLMProvider):
     ) -> str:
         self.hit_limit = False
         if self.client is None:
+            hint = self._install_hint()
             if on_text:
-                on_text(_INSTALL_HINT)
-            return _INSTALL_HINT
+                on_text(hint)
+            return hint
 
         start = len(self.messages)
         if bilder:
@@ -110,7 +112,7 @@ class DeepSeekProvider(LLMProvider):
                     if on_text:
                         on_text("\n" + BILD_ABGELEHNT)  # sonst sieht man nur den rohen API-Fehler
                     return BILD_ABGELEHNT
-                return "Es gab ein Problem bei der Verbindung zu DeepSeek."
+                return f"Es gab ein Problem bei der Verbindung zu {self.label}."
             if text:
                 final_parts.append(text)
                 self.last_text = text
@@ -178,6 +180,9 @@ class DeepSeekProvider(LLMProvider):
                     on_text(note)
 
         return "\n".join(final_parts).strip() or "(keine Textantwort)"
+
+    def _install_hint(self) -> str:
+        return _INSTALL_HINT
 
     # -- Bilder -------------------------------------------------------------
     def _sees_images(self) -> bool:
@@ -272,10 +277,8 @@ class DeepSeekProvider(LLMProvider):
                 out.append(m)
         return out
 
-    def _one_turn(self, on_text: StreamFn | None, tool_choice: str = "auto", retried: bool = False):
-        """Ein Modell-Durchlauf (gestreamt). Gibt (text, tool_calls, denk_text) zurueck -
-        denk_text ist None, wenn ohne Nachdenken gearbeitet wurde."""
-        level = self._think_level()
+    def _turn_kwargs(self, level: str, tool_choice: str) -> dict[str, Any]:
+        """Die Anfrage fuer einen Modell-Durchlauf (von Ollama ueberschrieben)."""
         thinking = level != "aus"
         kwargs: dict[str, Any] = {
             "model": self.config.deepseek.model,
@@ -291,6 +294,21 @@ class DeepSeekProvider(LLMProvider):
         else:
             kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
             kwargs["temperature"] = self.config.deepseek.temperature
+        return kwargs
+
+    def _retry_after_error(self, exc: Exception) -> bool:
+        """Von Ollama ueberschrieben: True = Fehler behoben, einmal neu versuchen."""
+        return False
+
+    def _error_text(self, exc: Exception, stream: bool = False) -> str:
+        return f"\n[{self.label}-{'Streamfehler' if stream else 'Fehler'}: {exc}]"
+
+    def _one_turn(self, on_text: StreamFn | None, tool_choice: str = "auto", retried: bool = False):
+        """Ein Modell-Durchlauf (gestreamt). Gibt (text, tool_calls, denk_text) zurueck -
+        denk_text ist None, wenn ohne Nachdenken gearbeitet wurde."""
+        level = self._think_level()
+        thinking = level != "aus"
+        kwargs = self._turn_kwargs(level, tool_choice)
         self._error_status = None
         try:
             stream = self.client.chat.completions.create(**kwargs)
@@ -298,7 +316,7 @@ class DeepSeekProvider(LLMProvider):
             self._check_cancel()
             self._error_status = getattr(exc, "status_code", None)
             if thinking and _is_thinking_error(exc):
-                logger.warning("DeepSeek lehnt Nachdenken in diesem Gespraech ab - weiter ohne: %s", exc)
+                logger.warning("%s lehnt Nachdenken in diesem Gespraech ab - weiter ohne: %s", self.label, exc)
                 self._thinking_off = True
                 return self._one_turn(on_text, tool_choice, retried=retried)
             # Kontext voll (sehr viele/grosse Dateien gelesen): alte Werkzeug-Ausgaben
@@ -306,9 +324,11 @@ class DeepSeekProvider(LLMProvider):
             if not retried and _is_context_error(exc) and self._shrink_old_tool_outputs():
                 logger.warning("Kontext voll - aeltere Werkzeug-Ausgaben gekuerzt.")
                 return self._one_turn(on_text, tool_choice, retried=True)
-            logger.error("DeepSeek-Fehler: %s", exc)
+            if not retried and self._retry_after_error(exc):
+                return self._one_turn(on_text, tool_choice, retried=True)
+            logger.error("%s-Fehler: %s", self.label, exc)
             if on_text:
-                on_text(f"\n[DeepSeek-Fehler: {exc}]")
+                on_text(self._error_text(exc))
             return (None, None, None)
 
         text_parts: list[str] = []
@@ -346,9 +366,9 @@ class DeepSeekProvider(LLMProvider):
                             slot["arguments"] += fn.arguments
         except Exception as exc:  # noqa: BLE001
             self._check_cancel()
-            logger.error("DeepSeek-Streamfehler: %s", exc)
+            logger.error("%s-Streamfehler: %s", self.label, exc)
             if on_text:
-                on_text(f"\n[DeepSeek-Streamfehler: {exc}]")
+                on_text(self._error_text(exc, stream=True))
             return (None, None, None)
 
         finally:
@@ -418,43 +438,42 @@ class DeepSeekProvider(LLMProvider):
         if self.client is None:
             return ""
         try:
-            resp = self.client.chat.completions.create(
-                model=self.config.deepseek.model,
-                messages=[
-                    {"role": "system", "content": self._ask_system()},
-                    {"role": "user", "content": prompt},
-                ],
-                max_tokens=max_tokens,
-                stream=False,
-                extra_body={"thinking": {"type": "disabled"}},
-            )
+            resp = self.client.chat.completions.create(**self._simple_kwargs([
+                {"role": "system", "content": self._ask_system()},
+                {"role": "user", "content": prompt},
+            ], max_tokens))
             self._track_usage(getattr(resp, "usage", None))
             return (resp.choices[0].message.content or "").strip()
         except Exception as exc:  # noqa: BLE001
-            logger.warning("DeepSeek-Kurzfrage fehlgeschlagen: %s", exc)
+            logger.warning("%s-Kurzfrage fehlgeschlagen: %s", self.label, exc)
             return ""
+
+    def _simple_kwargs(self, messages: list[dict[str, Any]], max_tokens: int) -> dict[str, Any]:
+        """Anfrage ohne Werkzeuge und ohne Nachdenken (Kurzfrage, Zusammenfassung)."""
+        return {"model": self.config.deepseek.model, "messages": messages, "max_tokens": max_tokens,
+                "stream": False, "extra_body": {"thinking": {"type": "disabled"}}}
+
+    def _summary_limit(self) -> int:
+        """So viele Zeichen Verlauf gehen hoechstens in die Zusammenfassung."""
+        return 60_000
 
     def summarize_history(self) -> str:
         if self.client is None or self.history_length() < 2:
             return ""
         try:
-            resp = self.client.chat.completions.create(
-                model=self.config.deepseek.model,
-                messages=[
-                    {"role": "system", "content": SUMMARY_INSTRUCTION},
-                    {"role": "user", "content": summary_input(_history_as_text(self.messages))},
-                ],
-                max_tokens=4000,
-                stream=False,
-                extra_body={"thinking": {"type": "disabled"}},
-            )
+            limit = self._summary_limit()
+            resp = self.client.chat.completions.create(**self._simple_kwargs([
+                {"role": "system", "content": SUMMARY_INSTRUCTION},
+                {"role": "user", "content": summary_input(_history_as_text(self.messages), limit=limit,
+                                                          head=min(8_000, limit // 4))},
+            ], 4000))
             self._track_usage(getattr(resp, "usage", None))
             if getattr(resp.choices[0], "finish_reason", "stop") == "length":
-                logger.warning("DeepSeek-Zusammenfassung abgeschnitten - Verlauf bleibt.")
+                logger.warning("%s-Zusammenfassung abgeschnitten - Verlauf bleibt.", self.label)
                 return ""
             return (resp.choices[0].message.content or "").strip()
         except Exception as exc:  # noqa: BLE001
-            logger.warning("DeepSeek-Zusammenfassung fehlgeschlagen: %s", exc)
+            logger.warning("%s-Zusammenfassung fehlgeschlagen: %s", self.label, exc)
             return ""
 
     def reset_to_summary(self, summary: str) -> None:

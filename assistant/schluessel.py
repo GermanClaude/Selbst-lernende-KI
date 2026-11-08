@@ -6,6 +6,8 @@ Fuegt dein Mensch einen Schluessel in den Chat ein ("sk-..." fuer DeepSeek,
   2. kurz ausprobiert (stimmt er? ist Guthaben da?),
   3. in .env gespeichert und das passende Gehirn eingeschaltet.
 Ausserdem: verstaendliche Meldungen, wenn ein Schluessel spaeter nicht mehr geht.
+Ollama (kostenlos, auf deinem PC) braucht keinen Schluessel - dort wird nur geprueft, ob
+Ollama laeuft, bevor es eingeschaltet wird.
 """
 from __future__ import annotations
 
@@ -29,6 +31,14 @@ PROVIDERS = {
         "info": "sehr stark, teurer",
         "url": "https://console.anthropic.com/settings/keys",
         "prefix": "sk-ant-",
+    },
+    "ollama": {
+        "name": "Ollama (kostenlos, auf deinem PC)",
+        "env": "",
+        "info": "kostenlos, laeuft auf deinem PC \u2013 ohne Schluessel, ohne Internet",
+        "url": "https://ollama.com/download",
+        "prefix": "",
+        "ohne_schluessel": True,
     },
 }
 
@@ -72,13 +82,27 @@ def mask(key: str) -> str:
 
 
 def key_of(config, provider: str) -> str | None:
+    if provider == "ollama":
+        return None  # kein Schluessel noetig
     return config.deepseek_api_key if provider == "deepseek" else config.anthropic_api_key
+
+
+def braucht_schluessel(provider: str) -> bool:
+    return not PROVIDERS.get(provider, {}).get("ohne_schluessel", False)
+
+
+def bereit(config, provider: str) -> bool:
+    """Kann dieses Gehirn benutzt werden? (Schluessel da - bzw. bei Ollama: immer.)"""
+    return not braucht_schluessel(provider) or bool(key_of(config, provider))
 
 
 def classify(exc: Exception, provider: str) -> tuple[str, str]:
     """Fehler des Anbieters -> (Art, verstaendliche Meldung)."""
     info = PROVIDERS.get(provider, PROVIDERS["deepseek"])
     name = info["name"]
+    art = getattr(exc, "art", None)
+    if provider == "ollama" or art:
+        return _classify_ollama(exc, art)
     status = getattr(exc, "status_code", None) or getattr(getattr(exc, "response", None), "status_code", None)
     text = str(exc).lower()
     kind_name = type(exc).__name__.lower()
@@ -101,6 +125,19 @@ def classify(exc: Exception, provider: str) -> tuple[str, str]:
     if "connection" in kind_name or "timeout" in kind_name or "connect" in text:
         return "network", f"Keine Verbindung zu {name} - bist du mit dem Internet verbunden?"
     return "other", f"{name} meldet: {str(exc)[:240]}"
+
+
+def _classify_ollama(exc: Exception, art: str | None) -> tuple[str, str]:
+    from .ollama import NICHT_ERREICHBAR, STANDARD_ADRESSE
+
+    text = str(exc)
+    if art == "offline" or "connection refused" in text.lower() or "connect" in type(exc).__name__.lower():
+        return "ollama_offline", text if art == "offline" else NICHT_ERREICHBAR.format(adresse=STANDARD_ADRESSE)
+    if art == "modell_fehlt":
+        return "ollama_model", text
+    if art in ("keine_werkzeuge", "kein_denken"):
+        return "ollama_model", text
+    return "other", f"Ollama meldet: {text[:240]}"
 
 
 def friendly_error(exc: Exception, provider: str) -> str | None:
@@ -135,6 +172,8 @@ def test_key(config, provider: str, key: str) -> tuple[bool, str, str]:
 
 def save_key(config, provider: str, key: str) -> Path:
     """Schluessel dauerhaft in .env speichern und sofort benutzen."""
+    if not braucht_schluessel(provider):
+        raise ValueError(f"{PROVIDERS[provider]['name']} braucht keinen Schluessel.")
     env = PROVIDERS[provider]["env"]
     path = save_env_value(config.project_root, env, key)
     os.environ[env] = key
@@ -153,13 +192,15 @@ def set_provider(config, provider: str) -> None:
 
 
 def setup(config, key: str | None = None, provider: str | None = None, test: bool = True,
-          tester=None) -> dict:
+          tester=None, http=None) -> dict:
     """Ein Schritt fuer alles: Schluessel pruefen, speichern, Gehirn umschalten.
 
     Gibt {"ok", "kind", "message", "provider", "changed_provider"} zurueck."""
     provider = provider or (provider_for_key(key) if key else config.active_provider)
     if provider not in PROVIDERS:
         return {"ok": False, "kind": "other", "message": f"Unbekanntes Gehirn '{provider}'.", "provider": provider}
+    if provider == "ollama":
+        return setup_ollama(config, pruefen=test, http=http)
     key = (key or "").strip() or key_of(config, provider)
     name = PROVIDERS[provider]["name"]
     if not key:
@@ -179,6 +220,45 @@ def setup(config, key: str | None = None, provider: str | None = None, test: boo
     return {"ok": True, "kind": kind, "message": done, "provider": provider, "changed_provider": changed}
 
 
+def setup_ollama(config, pruefen: bool = True, http=None) -> dict:
+    """Ollama einschalten. Erst nachsehen, ob es laeuft (pruefen=False: trotzdem einschalten).
+    Ist das eingestellte Modell nicht da, aber ein anderes, wird das andere genommen."""
+    from . import ollama
+    from .modelle import modell_name
+
+    name = PROVIDERS["ollama"]["name"]
+    info = ollama.status(config, http=http)
+    if pruefen and not info["laeuft"]:
+        kind = "ollama_missing" if info.get("installiert") is False else "ollama_offline"
+        message = info["fehler"] or ollama.NICHT_ERREICHBAR.format(adresse=info["adresse"])
+        if kind == "ollama_missing":
+            message = ("Ollama ist auf diesem PC noch nicht installiert. Lade es kostenlos herunter "
+                       f"({ollama.DOWNLOAD_SEITE}), starte es und versuch es dann nochmal.")
+        return {"ok": False, "kind": kind, "message": message, "provider": "ollama"}
+    hinweis = ""
+    namen = [m["name"] for m in info["modelle"]]
+    if info["laeuft"] and not info["modell_da"]:
+        ersatz = next((m["id"] for m in ollama.EMPFOHLEN if ollama.ist_installiert(m["id"], namen)), None)
+        ersatz = ersatz or (namen[0] if namen else None)
+        if ersatz:
+            from .config import save_setting, toml_string
+
+            save_setting(config.project_root, "ollama", "model", toml_string(ersatz))
+            config.ollama.model = ersatz
+            hinweis = f" Ich nutze {modell_name('ollama', ersatz)}, das schon auf deinem PC ist."
+        else:
+            hinweis = (" Es ist aber noch kein Modell heruntergeladen - lade eins in \u201eGehirn & Schluessel\u201c "
+                       f"herunter (empfohlen: {ollama.STANDARD_MODELL}) oder tippe /ollama laden "
+                       f"{ollama.STANDARD_MODELL}.")
+    elif not info["laeuft"]:
+        hinweis = " Ollama laeuft gerade nicht - starte es, bevor du schreibst."
+    changed = config.active_provider != "ollama"
+    if changed:
+        set_provider(config, "ollama")
+    return {"ok": True, "kind": "ok", "provider": "ollama", "changed_provider": changed,
+            "message": f"Gespeichert: {name} ist jetzt mein Gehirn - kostenlos, ohne Schluessel.{hinweis}"}
+
+
 def describe(config) -> dict:
     """Fuer die Einstellungen in der App."""
     from .modelle import beschreibung, kurzbeschreibung
@@ -189,8 +269,9 @@ def describe(config) -> dict:
         "provider": config.active_provider,
         "providers": [
             {"id": pid, "name": info["name"], "info": info["info"], "url": info["url"],
-             "has_key": bool(key_of(config, pid)), "key_hint": mask(key_of(config, pid) or "") if key_of(config, pid)
-             else "", "model": config.deepseek.model if pid == "deepseek" else config.claude.model,
+             "has_key": bereit(config, pid), "needs_key": braucht_schluessel(pid),
+             "key_hint": mask(key_of(config, pid) or "") if key_of(config, pid)
+             else "", "model": config.model_of(pid),
              "model_name": kurzbeschreibung(config, pid)}
             for pid, info in PROVIDERS.items()
         ],

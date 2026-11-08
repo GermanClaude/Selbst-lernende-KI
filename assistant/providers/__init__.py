@@ -1,4 +1,4 @@
-"""Provider: austauschbare "Gehirne" (Claude oder DeepSeek).
+"""Provider: austauschbare "Gehirne" (Claude, DeepSeek oder Ollama).
 
 build_provider() waehlt anhand der Konfiguration das aktive Gehirn.
 """
@@ -18,6 +18,10 @@ def build_provider(
     tool_ctx: ToolContext,
     client: object | None = None,
 ) -> LLMProvider:
+    if config.active_provider == "ollama":
+        from .ollama_provider import OllamaProvider
+
+        return OllamaProvider(config, system_prompt, registry, tool_ctx, client=client)
     if config.active_provider == "deepseek":
         from .deepseek_provider import DeepSeekProvider
 

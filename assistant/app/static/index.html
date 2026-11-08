@@ -727,6 +727,48 @@
         <div class="su-loading" id="su-loading" hidden><span class="spinner" aria-hidden="true"></span><span>Lade …</span></div>
         <div class="su-label" id="su-provs-label">1. Wähle mein Gehirn</div>
         <div class="su-provs" id="su-provs" role="radiogroup" aria-labelledby="su-provs-label"></div>
+
+        <section class="su-ollama" id="su-ollama" aria-labelledby="so-title" hidden>
+          <div class="sm-head">
+            <h3 class="su-label" id="so-title">2. Ollama auf deinem PC</h3>
+            <button class="btn small ghost so-refresh" id="so-refresh" type="button" data-icon="refresh">Neu prüfen</button>
+          </div>
+          <div class="so-status" id="so-status" role="status" aria-live="polite"></div>
+          <div class="so-actions" id="so-actions" hidden></div>
+          <div class="sm-sub" id="so-models-label">Modelle auf deinem PC</div>
+          <div class="sm-models so-models" id="so-models" role="radiogroup" aria-labelledby="so-models-label"></div>
+          <p class="so-empty" id="so-empty" hidden><span data-icon="info"></span><span>Noch kein Modell heruntergeladen – wähle unten eins aus.</span></p>
+          <div class="sm-sub" id="so-rec-label">Empfohlen zum Herunterladen</div>
+          <ul class="so-rec" id="so-rec" aria-labelledby="so-rec-label"></ul>
+          <details class="pn-details so-adv" id="so-adv">
+            <summary>
+              <span data-icon="sliders"></span>
+              <span class="pd-title">Erweitert <span class="sbi-sum-sub">anderes Modell, Adresse</span></span>
+              <span class="pd-chev" data-icon="chevron"></span>
+            </summary>
+            <div class="pd-body so-adv-body">
+              <div class="field">
+                <label class="field-label" for="so-custom">Anderes Modell herunterladen</label>
+                <div class="so-row">
+                  <input class="input" id="so-custom" type="text" maxlength="150" autocomplete="off" spellcheck="false"
+                         autocapitalize="off" autocorrect="off" placeholder="z.B. llama3.2:3b" aria-describedby="so-custom-hint">
+                  <button class="btn small secondary" id="so-custom-go" type="button">Herunterladen</button>
+                </div>
+                <p class="su-hint" id="so-custom-hint">Namen findest du in der <a id="so-library" href="https://ollama.com/search?c=tools" target="_blank" rel="noopener">Modell-Liste von Ollama</a> – am besten eins mit „tools“ (Werkzeuge).</p>
+              </div>
+              <div class="field">
+                <label class="field-label" for="so-adresse">Adresse von Ollama</label>
+                <div class="so-row">
+                  <input class="input" id="so-adresse" type="url" maxlength="200" autocomplete="off" spellcheck="false"
+                         autocapitalize="off" autocorrect="off" placeholder="http://localhost:11434" aria-describedby="so-adresse-hint">
+                  <button class="btn small secondary" id="so-adresse-save" type="button">Speichern</button>
+                </div>
+                <p class="su-hint" id="so-adresse-hint">Normalerweise nicht ändern. Leer = http://localhost:11434. Ein OpenAI-kompatibler Server wie LM Studio geht auch, z.B. http://localhost:1234/v1.</p>
+              </div>
+            </div>
+          </details>
+          <p class="sbi-privacy"><span data-icon="shield"></span><span>Kostenlos und privat: alles bleibt auf deinem PC. Wie schnell und schlau die Antworten sind, hängt von deinem PC ab – Claude und DeepSeek sind meist klüger.</span></p>
+        </section>
         <!-- Modell & Denk-Tiefe des ausgewaehlten Gehirns (speichert sofort) -->
         <section class="su-model" id="su-model" aria-labelledby="su-model-label" hidden>
           <div class="sm-head">
