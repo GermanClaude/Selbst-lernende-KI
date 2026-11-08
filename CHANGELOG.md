@@ -14,6 +14,7 @@ deine KI erklärt sie dir in eigenen Worten.
   - DeepSeek: Flash (schnell, extrem günstig) und V4 Pro (stärker).
   - Denk-Tiefe von „schnell“ bis „maximal“. Denkt dir Claude zu lange nach? Stell
     auf „schnell“ oder „ausgewogen“.
+  - Bei jedem Modell steht, wie schnell es ist und was es ungefähr kostet (in Euro).
 - Du kannst es Nova auch einfach sagen: „Denk schneller“, „Nimm Sonnet“ – oder im
   Chat `/modell` und `/denken` eingeben. Das Gespräch läuft beim Wechsel weiter.
 - DeepSeek hat seine alten Modellnamen abgeschaltet – Nova stellt automatisch auf
@@ -37,6 +38,11 @@ deine KI erklärt sie dir in eigenen Worten.
 
 **Außerdem**
 - Anzeige **„Auf dem neuesten Stand“** in der Seitenleiste – mit „Jetzt prüfen“.
+- Fragt Nova gerade etwas („Darf ich …?“) und du lädst das Fenster neu oder öffnest
+  ein zweites, siehst du die Frage dort wieder.
+- Wird etwas abgebrochen, während Nova auf ein „Ja“ wartet, gilt das immer als „Nein“.
+- Im Sprachmodus versteht Nova Abschiede („Tschüss Nova“, „Danke, ciao“) und erledigt
+  eine gerade gegebene Bitte trotzdem noch.
 - Neuer Schalter **„Gesprochenes sofort senden“**: Nach Mikrofon/F2 geht der Text
   gleich ab, ohne Enter.
 - **Stützräder**: Im Zustand „teilweise“ öffnet ein Klick jetzt eine Auswahl

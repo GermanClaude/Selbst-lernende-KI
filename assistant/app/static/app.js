@@ -2924,6 +2924,7 @@
     // "Los geht's" ginge nicht mehr bzw. wuerde die Wahl des anderen Starts ueberschreiben.
     // (Der eigene Start schliesst ihn selbst: waehrenddessen ist afk.sending gesetzt.)
     if (show && !amodal.hidden && !afk.sending) {
+      afk.back = null; // der Knopf "Ich bin weg" verschwindet gleich – Fokus ins Eingabefeld
       closeAfk();
       toast(pending ? 'Der AFK-Modus startet schon gleich.' : 'Der AFK-Modus läuft schon.', 'info');
     }
@@ -3055,6 +3056,15 @@
   byId('ab-btn').addEventListener('click', () => afkStop());
 
   // ---------- Im Chat: Schritte als Trennzeile, Bericht als Karte ----------
+  /** Anzeige-Text einer AFK-Notiz: "0,50 EUR" -> "0,50 €" (wie in der Bericht-Karte) und in der
+   *  Start-Notiz ein Punkt nach dem Auftrag, wenn der Nutzer keinen gesetzt hat
+   *  ("Auftrag: Flüge nach Rom im Mai Ich lösche …" -> "… im Mai. Ich lösche …"). */
+  function afkNoticeText(t) {
+    let s = t.replace(/\*\*/g, '').replace(/(\d)\s*EUR\b/g, '$1 €');
+    if (/^AFK-Modus an\b/.test(s)) s = s.replace(/(Auftrag: .*?[^\s.!?…:;])( Ich l(?:ö|oe)sche\b)/, '$1.$2');
+    return s;
+  }
+
   function addAfkNotice(text) {
     const t = String(text == null ? '' : text).trim();
     if (!t) return null;
@@ -3063,7 +3073,7 @@
     row.setAttribute('role', 'note');
     row.dataset.text = t;
     const chip = h('span', 'an-chip');
-    chip.append(icon('moon'), h('span', 'an-text', t.replace(/\*\*/g, '')));
+    chip.append(icon('moon'), h('span', 'an-text', afkNoticeText(t)));
     row.append(h('span', 'an-line'), chip, h('span', 'an-line'));
     msgs.append(row);
     added();

@@ -2432,7 +2432,16 @@ kbd {
   color: var(--text-3); font-variant-numeric: tabular-nums;
 }
 .sm-meta > span { display: inline-block; }
-.segctl.sm-depth { display: grid; width: 100%; }
+/* Spalten mindestens so breit wie das laengste Wort (z.B. fettes "ausgewogen"), sonst laeuft es ueber */
+.segctl.sm-depth { display: grid; width: 100%; grid-auto-columns: minmax(min-content, 1fr); }
+/* sehr schmal: passen die Stufen nicht in eine Zeile -> zwei Zeilen (5 Stufen: 3 + 2, 4 Stufen: 2 + 2) */
+@media (max-width: 410px) {
+  .segctl.sm-depth:has(> :nth-child(5)) { grid-auto-flow: row; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 340px) {
+  .segctl.sm-depth { grid-auto-flow: row; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .segctl.sm-depth:has(> :nth-child(5)) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
 .segctl.sm-depth[hidden] { display: none; }
 .segctl .sm-seg { min-width: 0; min-height: 36px; padding: 6px 4px; white-space: normal; line-height: 1.2; text-align: center; }
 .sm-depth-info { margin: 7px 0 0; font-size: calc(13px * var(--font-scale)); line-height: 1.45; color: var(--text-2); }

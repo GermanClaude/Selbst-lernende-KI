@@ -250,6 +250,10 @@ class AppServer:
                     self.end_headers()
                     hello = json.dumps({"type": "hello", "state": server.controller.state()}, ensure_ascii=False)
                     self.wfile.write(f"data: {hello}\n\n".encode("utf-8"))
+                    # Offene Rueckfragen erneut zeigen (neu geladenes oder zweites Fenster) - sonst
+                    # wartet die KI auf eine Antwort, die niemand mehr geben kann.
+                    for ask in server.controller.open_asks():
+                        self.wfile.write(f"data: {json.dumps(ask, ensure_ascii=False)}\n\n".encode("utf-8"))
                     self.wfile.flush()
                     while not server.stopping.is_set():
                         try:

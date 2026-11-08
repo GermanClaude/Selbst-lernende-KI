@@ -230,3 +230,11 @@ def test_nova_can_switch_on_request(tmp_path):
     assert cfg.claude.model == "claude-fable-5-1"
     assert asked or pm.settings.auto_confirm  # teurer: fragt (ausser alles erlaubt)
     assert tool.run(ctx, aktion="setzen", modell="gpt").startswith("Nicht geaendert")
+
+
+def test_custom_model_keeps_working_and_prices_are_in_euro(tmp_path):
+    cfg = _settings(tmp_path, '[claude]\nmodel = "claude-opus-4-7"\n')
+    result = waehle(cfg, "claude", model="claude-opus-4-7", denken="max")
+    assert result["ok"] and cfg.claude.effort == "max" and cfg.claude.model == "claude-opus-4-7"
+    preis = beschreibung(cfg)["claude"]["modelle"][0]["preis"]
+    assert "€" in preis and "$" not in preis

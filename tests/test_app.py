@@ -977,3 +977,23 @@ def test_now_button_and_chat_mode_button_mean_you_stay(app):
     ctl.jarvis("stop")
     assert fake.exit_reason == "chat"
     ctl._live = None
+
+
+def test_a_reloaded_window_sees_the_open_question_again(app):
+    import threading
+
+    server = app([])
+    ctl = server.controller
+    out = {}
+    t = threading.Thread(target=lambda: out.setdefault("v", ctl._ask_yes("Datei anlegen? [j/N]")))
+    t.start()
+    _events_until(server, "ask")
+    req = urllib.request.Request(f"http://127.0.0.1:{server.port}/api/events?t={server.token}")
+    with urllib.request.urlopen(req, timeout=5) as resp:  # wie ein neu geladenes Fenster
+        first = json.loads(resp.readline().decode().removeprefix("data: "))
+        resp.readline()
+        second = json.loads(resp.readline().decode().removeprefix("data: "))
+    assert first["type"] == "hello" and second["type"] == "ask" and "Datei anlegen" in second["text"]
+    assert ctl.answer(second["id"], "ja")
+    t.join(3)
+    assert out["v"] is True

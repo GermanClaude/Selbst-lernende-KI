@@ -102,7 +102,7 @@ def kurzbeschreibung(config, provider: str | None = None) -> str:
     """z.B. 'Claude Opus 5.5 - ausgewogen' (fuer Anzeige und Banner)."""
     provider = provider or config.active_provider
     model = config.deepseek.model if provider == "deepseek" else config.claude.model
-    return f"{modell_name(provider, model)} - {denktiefe_name(provider, aktuelle_denktiefe(config, provider))}"
+    return f"{modell_name(provider, model)} \u2013 {denktiefe_name(provider, aktuelle_denktiefe(config, provider))}"
 
 
 def normalisiere_claude(claude) -> None:
@@ -220,7 +220,7 @@ def waehle(config, provider: str | None = None, model: str | None = None,
     level_key = "denken" if provider == "deepseek" else "effort"
     new_model, new_level = section.model, getattr(section, level_key)
     if model:
-        found = _finde_modell(provider, model)
+        found = _finde_modell(provider, model) or (model.strip() if model.strip() == section.model else None)
         if not found:
             names = ", ".join(m["kurz"] for m in MODELLE[provider])
             return {"ok": False, "changed": False, "provider": provider,
@@ -244,7 +244,7 @@ def waehle(config, provider: str | None = None, model: str | None = None,
         save_setting(root, provider, level_key, toml_string(new_level))
         setattr(section, level_key, new_level)
     changed = model_changed or level_changed
-    message = f"{modell_name(provider, new_model)} - Denk-Tiefe: {denktiefe_name(provider, new_level)}."
+    message = f"{modell_name(provider, new_model)} \u2013 Denk-Tiefe: {denktiefe_name(provider, new_level)}."
     forced = (os.environ.get("KI_MODEL") or "").strip()
     if model_changed and forced and provider == config.active_provider:
         forced_id = _finde_modell(provider, forced) or forced
@@ -261,8 +261,9 @@ def beschreibung(config) -> dict:
     out = {}
     for provider, models in MODELLE.items():
         current = config.deepseek.model if provider == "deepseek" else config.claude.model
+        rate = float(getattr(config.prices, "usd_zu_eur", 0.92) or 0.92)
         entries = [{"id": m["id"], "name": m["name"], "info": m["info"], "tempo": m["tempo"],
-                    "preis": _preis_text(m)} for m in models]
+                    "preis": _preis_text(m, rate)} for m in models]
         if not any(m["id"] == current for m in models) and _MODELL_ID.match(current or ""):
             entries.append({"id": current, "name": current, "info": "eigenes Modell (aus settings.toml)",
                             "tempo": "", "preis": ""})
@@ -275,13 +276,14 @@ def beschreibung(config) -> dict:
     return out
 
 
-def _preis_text(m: dict) -> str:
+def _preis_text(m: dict, rate: float = 0.92) -> str:
+    """In Euro, wie die Kosten-Anzeige: Eingabe / Antwort pro 1 Mio. Token."""
     inp, _hit, out = m["preis"]
-    text = f"{_zahl(inp)} $ / {_zahl(out)} $ pro 1 Mio. Token"
+    text = f"ca. {_zahl(inp * rate)} \u20ac / {_zahl(out * rate)} \u20ac pro 1 Mio. Token"
     if "preis_spitze" in m:
-        text += " (tagsueber doppelt)"
+        text += " (werktags tagsueber doppelt)"
     return text
 
 
 def _zahl(x: float) -> str:
-    return (f"{x:.2f}" if x < 1 else f"{x:g}").replace(".", ",")
+    return (f"{x:.2f}" if x < 10 else f"{x:.0f}").replace(".", ",")

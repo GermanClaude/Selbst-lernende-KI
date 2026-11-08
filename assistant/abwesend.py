@@ -163,7 +163,7 @@ class AfkSession:
             "zeit": "Die eingestellte Zeit ist um.",
             "budget": "Das Kosten-Budget ist aufgebraucht.",
             "schritte": "Die maximale Zahl an Schritten ist erreicht.",
-            "fehler": "Es gab ein Problem - ich habe sicherheitshalber aufgehoert.",
+            "fehler": "Es gab ein Problem \u2013 ich habe sicherheitshalber aufgehoert.",
         }
         cost = f"{self.spent_eur:.2f}".replace(".", ",")
         lines = [f"**Waehrend du weg warst** ({self.minutes} Min., {self.rounds} Schritte, ca. {cost} EUR). "
@@ -171,7 +171,7 @@ class AfkSession:
         if self.done:
             lines.append(f"\n**Ergebnis:** {self.done}")
         for title, items in (("Erledigt / Notizen", self.notes),
-                             ("Vorschlaege - warten auf deine Freigabe", self.proposals),
+                             ("Vorschlaege \u2013 warten auf deine Freigabe", self.proposals),
                              ("Fragen an dich", self.questions)):
             if items:
                 lines.append(f"\n**{title}:**")

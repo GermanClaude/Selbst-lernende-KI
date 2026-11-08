@@ -227,10 +227,12 @@ class AppController(CLI):
             self._writer.flush_notice()  # erst zeigen, was vor der Frage ausgegeben wurde
         ask_id = f"q{next(self._ask_ids)}"
         waiter = {"event": threading.Event(), "value": default, "options": [v for v, _ in options]}
-        self._asks[ask_id] = waiter
         clean = _ANSI.sub("", text).strip()
-        self._event({"type": "ask", "id": ask_id, "kind": kind, "risk": risk, "text": clean,
-                     "options": [{"value": v, "label": label} for v, label in options]})
+        event = {"type": "ask", "id": ask_id, "kind": kind, "risk": risk, "text": clean,
+                 "options": [{"value": v, "label": label} for v, label in options]}
+        waiter["ask"] = event  # fuer neu verbundene Fenster (open_asks)
+        self._asks[ask_id] = waiter
+        self._event(event)
         self._live_hook("ask", clean)
         cancel = self.brain.provider.cancel_event
         try:
@@ -242,6 +244,10 @@ class AppController(CLI):
             self._asks.pop(ask_id, None)
             self._event({"type": "ask_done", "id": ask_id})
         return waiter["value"]
+
+    def open_asks(self) -> list[dict]:
+        """Rueckfragen, die gerade auf eine Antwort warten (fuer ein neu verbundenes Fenster)."""
+        return [dict(w["ask"]) for w in list(self._asks.values()) if "ask" in w]
 
     def answer(self, ask_id: str, value: str) -> bool:
         waiter = self._asks.get(ask_id)
@@ -322,7 +328,7 @@ class AppController(CLI):
                 if back or interrupt:
                     self._cancel_rest()
                 if dropped:
-                    self._notice("AFK-Modus nicht gestartet - du bist ja noch da.", "afk")
+                    self._notice("AFK-Modus nicht gestartet \u2013 du bist ja noch da.", "afk")
                 self._state_changed()
                 return {"ok": True, "queued": True, "id": item["id"], "interrupt": bool(back or interrupt),
                         "afk_ended": back}
@@ -411,7 +417,7 @@ class AppController(CLI):
         if reason == "fehler":
             self._notice("Der AFK-Modus ging nicht (interner Fehler) - ich bin weiter normal fuer dich da.", "afk")
         elif reason:
-            self._notice("AFK-Modus nicht gestartet - du bist ja noch da.", "afk")
+            self._notice("AFK-Modus nicht gestartet \u2013 du bist ja noch da.", "afk")
 
     def _new_afk_session_locked(self, request: dict):
         """AFK-Sitzung sofort sichtbar machen (unter self._lock): eine Nachricht, die jetzt kommt,
@@ -618,7 +624,7 @@ class AppController(CLI):
             self._state_changed()
             return {"ok": True}
         if action != "start":
-            return {"ok": False, "error": f"Unbekannte Aktion '{action}'."}
+            return {"ok": False, "error": schoen(f"Unbekannte Aktion '{action}'.")}
         if not self.config.api_key:
             return {"ok": False, "error": schoen("Dafuer brauche ich erst einen Schluessel (Gehirn & Schluessel).")}
         request = {"auftrag": str(data.get("auftrag") or "")[:2000],
@@ -626,7 +632,7 @@ class AppController(CLI):
                    "budget": _float_or_none(data.get("budget"))}
         with self._lock:
             if self._afk is not None:
-                return {"ok": False, "error": "Der AFK-Modus laeuft schon."}
+                return {"ok": False, "error": schoen("Der AFK-Modus laeuft schon.")}
             if self.busy:
                 self._afk_pending = request  # nach der laufenden Antwort
                 job = None
@@ -664,8 +670,8 @@ class AppController(CLI):
             task = (f"Auftrag: {session.auftrag}" if session.auftrag
                     else "Ich mache mit dem weiter, woran wir zuletzt gearbeitet haben.")
             cost = f"{session.max_eur:.2f}".replace(".", ",")
-            self._notice(f"AFK-Modus an - ich arbeite allein weiter (hoechstens {session.max_minutes} Min., ca. "
-                         f"{cost} EUR). {task} Ich loesche, ueberschreibe, verschicke und starte dabei nichts - "
+            self._notice(f"AFK-Modus an \u2013 ich arbeite allein weiter (hoechstens {session.max_minutes} Min., ca. "
+                         f"{cost} EUR). {task} Ich loesche, ueberschreibe, verschicke und starte dabei nichts \u2013 "
                          "das schreibe ich dir als Vorschlag auf. Zurueck? Einfach eine Nachricht schreiben.", "afk")
             self._state_changed()
 
@@ -684,7 +690,7 @@ class AppController(CLI):
             if session.ended == "nicht_gestartet":
                 with self._lock:
                     self._afk = None
-                self._notice("AFK-Modus nicht gestartet - du bist ja noch da.", "afk")
+                self._notice("AFK-Modus nicht gestartet \u2013 du bist ja noch da.", "afk")
                 self._state_changed()
                 return
             if not session.ended:
