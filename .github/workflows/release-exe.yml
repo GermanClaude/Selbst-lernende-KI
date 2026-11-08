@@ -48,6 +48,24 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt pyinstaller==6.22.3 pyinstaller-hooks-contrib==2026.9 pywebview==6.2.1 pythonnet==3.2.1 clr_loader==0.3.1 sounddevice SpeechRecognition pyttsx3 pyautogui pillow
 
+      - name: Live-Sehen (Bildschirm, Texterkennung) dazu
+        if: steps.version.outputs.neu == 'true'
+        continue-on-error: true
+        shell: bash
+        run: |
+          # Einzeln installieren: faellt ein Paket aus, fehlt nur dieser Teil - und es steht laut im Protokoll.
+          fehlt=""
+          for paket in numpy==2.5.4 comtypes==1.4.17 mss==10.2.0 dxcam==0.3.0 winrt-runtime==4.1.0 \
+              "winrt-Windows.Foundation==4!10.0.28000.2957" "winrt-Windows.Foundation.Collections==4!10.0.28000.2957" \
+              "winrt-Windows.Globalization==4!10.0.28000.2957" "winrt-Windows.Graphics.Imaging==4!10.0.28000.2957" \
+              "winrt-Windows.Storage.Streams==4!10.0.28000.2957" "winrt-Windows.Media.Ocr==4!10.0.28000.2957"; do
+            pip install "$paket" || { echo "::warning::Live-Sehen: $paket liess sich nicht installieren"; fehlt="$fehlt $paket"; }
+          done
+          python -c "import comtypes.client as c; c.GetModule('UIAutomationCore.dll'); print('UIA-Wrapper erzeugt')" \
+            || echo "::warning::Live-Sehen: UIA-Huelle nicht erzeugt (Passwortschutz fehlt in der exe)"
+          python -c "from assistant.sehen import fehlende_pakete as f; print('Live-Sehen fehlt:', f() or 'nichts')"
+          if [ -n "$fehlt" ]; then echo "::warning::Live-Sehen unvollstaendig:$fehlt"; fi
+
       - name: Live-Mitschrift (vosk) dazu
         if: steps.version.outputs.neu == 'true'
         continue-on-error: true

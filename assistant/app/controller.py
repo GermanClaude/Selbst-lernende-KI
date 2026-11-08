@@ -34,6 +34,7 @@ from ..logging_setup import get_logger
 from ..modelle import kurzbeschreibung
 from ..permissions import Risk
 from ..ui.cli import BILD_HINWEIS, CLI, JARVIS_HINT, KEY_HINT, _is_exit_phrase, upload_kante, vorlesetext
+from ..sehen.dienst import ist_still
 from ..voice import VoiceOutput
 
 logger = get_logger()
@@ -74,6 +75,7 @@ COMMANDS = [
     ("/gehirn", "DeepSeek, Claude oder Ollama - Schluessel einfach in den Chat einfuegen"),
     ("/ollama", "Ollama: kostenlose KI auf deinem PC (Stand, Modelle laden)"),
     ("/afk", "ich bin weg - die KI arbeitet allein weiter (mit Bericht)"),
+    ("/sehen", "Live-Sehen: Nova schaut auf Bildschirm/Webcam (an, aus, pause, status)"),
     ("/modell", "Modell waehlen - schnell oder besonders stark"),
     ("/denken", "wie gruendlich die KI nachdenkt (schnell ... maximal)"),
     ("/feedback", "Feedback & Bewertung an den Entwickler schicken"),
@@ -143,6 +145,9 @@ class AppController(CLI):
         self.tool_ctx.extra["afk_update"] = self._state_changed
         self._cloudflare_http = None  # fuer Tests austauschbar (None = echtes Netz)
         self._ollama_caps: dict[tuple[str, str], list] = {}  # (Adresse, Modell) -> Faehigkeiten
+        # Live-Sehen: wartende Wortmeldung (nur die neueste) und ob gerade eine laeuft
+        self._sehen_pending = None
+        self._sehen_turn = False
         # Sphaere: reagiert auf deine Stimme beim Mikrofon-Knopf / F2
         self.voice_capture.on_level = lambda value: self._event({"type": "mic", "level": value})
 
@@ -177,6 +182,7 @@ class AppController(CLI):
                        "images": list(item.get("images") or [])} for item in list(self._queue)],
             "afk": self._afk.status() if self._afk is not None else None,
             "afk_pending": self._afk_pending is not None,
+            "sehen": self.sehen.status(),
             "auto_confirm": bool(self.permissions.settings.auto_confirm),
             "safe_mode": bool(self.permissions.settings.safe_mode),
             "speak": bool(self.voice_out.enabled),
@@ -339,6 +345,7 @@ class AppController(CLI):
             bilder, anzeigen = self._bilder_annehmen(images)
         except BildFehler as exc:
             return {"ok": False, "error": str(exc)}
+        self.sehen.nutzer_aktiv(text)  # du schreibst: Live-Sehen haelt sich kurz zurueck
         for _attempt in range(3):
             with self._lock:
                 busy = self.busy
@@ -351,6 +358,12 @@ class AppController(CLI):
                     # Nur die ERSTE Nachricht beendet den AFK-Modus und kommt nach vorn; weitere,
                     # die kommen, waehrend er noch endet, reihen sich normal dahinter ein.
                     back = afk is not None and not afk.ended and not afk.stop_event.is_set()
+                    self._sehen_pending = None  # du bist dran - eine wartende Wortmeldung ist ueberholt
+                    if self._sehen_turn and not back:
+                        # Nova meldet sich gerade von selbst: deine Nachricht geht vor, die Wortmeldung
+                        # wird ganz zurueckgenommen (kein "abgebrochen" im Verlauf)
+                        interrupt = True
+                        self._drop_turn = True
                     if back or interrupt:
                         self._queue.insert(self._front, item)
                         self._front += 1
@@ -485,6 +498,7 @@ class AppController(CLI):
             return None
         if self._queue:
             self.brain.provider.cancel_event.clear()
+            self._drop_turn = False  # galt der vorigen Antwort (z.B. einer Wortmeldung von Live-Sehen)
             self._front = max(0, self._front - 1)
             self._turn_mark = self._last_qid
             return {"message": self._queue.pop(0)}
@@ -502,6 +516,15 @@ class AppController(CLI):
                 return None
             self.brain.provider.cancel_event.clear()
             return {"afk": session}
+        if self._sehen_pending is not None:
+            from ..live import SEEN_HOLD
+
+            paket, self._sehen_pending = self._sehen_pending, None
+            if time.monotonic() - paket.zeit <= SEEN_HOLD and self.sehen.darf_melden() and self._afk is None:
+                self.brain.provider.cancel_event.clear()
+                self._drop_turn = False
+                self._sehen_turn = True  # schon jetzt: eine Nachricht von dir unterbricht sie sicher
+                return {"sehen": paket}
         return None
 
     def _afk_dropped_notice(self) -> None:
@@ -538,6 +561,8 @@ class AppController(CLI):
         kwargs: dict = {}
         if "afk" in job:
             target, args = self._work, (None, lambda: self._run_afk(job["afk"]))
+        elif "sehen" in job:
+            target, args = self._work, (None, lambda: self._run_sehen(job["sehen"]))
         else:
             item = job["message"]
             target, args = self._work, (item["text"], None, item["model_text"], item["shown"])
@@ -623,28 +648,44 @@ class AppController(CLI):
 
     def _answer(self, text: str, model_text: str | None = None, as_notice: bool = False,
                 max_tool_rounds: int | None = None, bilder: list | None = None, images: list | None = None,
-                client_id: str | None = None) -> None:
+                client_id: str | None = None, notice_level: str = "afk", sehen: bool = False) -> None:
+        """sehen=True: Wortmeldung von Live-Sehen - "[still]" (nichts zu sagen) wird ganz
+        zurueckgenommen, angehalten heisst immer zuruecknehmen (kein "abgebrochen")."""
+        from ..sehen.dienst import StillFilter
+
         entry: dict = {"role": "user", "text": text}
-        if as_notice:  # AFK-Schritt: keine Sprechblase "von dir"
-            self._notice(text, "afk")
+        if as_notice:  # AFK-Schritt / Live-Sehen: keine Sprechblase "von dir"
+            self._notice(text, notice_level)
+            if sehen and self.history:
+                entry = self.history[-1]  # bei "[still]" verschwindet der Hinweis wieder
         else:
             entry = self._user_message(text, images, client_id)
             model_text = self._with_afk_hints(text, model_text)
         self._event({"type": "start"})
         self._answer_parts: list[str] = []
         snapshot = self.brain.provider.history_snapshot()
+        filter_ = StillFilter(self._emit) if sehen else None
+        mit_bildern = {"bilder": list(bilder)} if bilder else {}
         try:
-            if as_notice:  # AFK-Schritt: begrenzt, kein automatisches Weiterarbeiten
+            if sehen:  # Live-Sehen: eigene Runde - kein Weiterarbeiten, nie ins Gedaechtnis
+                answer = self.brain.wortmeldung(model_text or text, on_text=filter_, bilder=bilder)
+            elif as_notice:  # AFK-Schritt: begrenzt, kein automatisches Weiterarbeiten
                 answer = self.brain.respond(model_text or text, on_text=self._emit,
-                                            max_tool_rounds=max_tool_rounds, auto_continue=0)
+                                            max_tool_rounds=max_tool_rounds, auto_continue=0, **mit_bildern)
             else:
-                mit_bildern = {"bilder": list(bilder)} if bilder else {}
                 answer = self.brain.respond(model_text or text, on_text=self._emit, **mit_bildern)
         except KeyboardInterrupt:  # Stopp-Knopf (Abgebrochen) - oder Strg+C im Hintergrund
             # (Ein vorgemerkter AFK-Modus wird beim Anhalten dort verworfen, wo angehalten wird:
             # Stopp/Unterbrechen/Rueckkehr im Fenster, Stopp/Nachtrag/Chat-Modus im Sprachmodus.
             # Hier nicht - sonst traefe es auch einen AFK-Knopf, der NACH dem Stopp gedrueckt wurde.)
             drop, self._drop_turn = self._drop_turn, False
+            if sehen:
+                if not self.brain.provider.drop_turn(snapshot, model_text or text):
+                    self.brain.provider.abort_turn(snapshot, text)
+                    self.brain.provider.als_wortmeldung(snapshot)
+                self._event({"type": "thinking", "on": False})
+                self._event({"type": "sehen_still", "chip": False})
+                return
             if drop and self.brain.provider.drop_turn(snapshot, model_text or text):
                 # Sprachmodus: "Wie wird das Wetter?" ... "in Berlin" -> eine Frage
                 if entry in self.history:
@@ -659,12 +700,26 @@ class AppController(CLI):
             return
         except Exception:
             self.brain.provider.abort_turn(snapshot, text)
+            if sehen:
+                self.brain.provider.als_wortmeldung(snapshot)
             raise
+        if filter_ is not None and (filter_.ende() or ist_still(answer)):
+            # Nichts zu sagen: Wortmeldung ganz zuruecknehmen (spart Verlauf) und nichts zeigen
+            if not self.brain.provider.drop_turn(snapshot, model_text or text):
+                self.brain.provider.als_wortmeldung(snapshot)  # mit Werkzeug: bleibt, aber gekennzeichnet
+            if entry in self.history:
+                self.history.remove(entry)
+            self._event({"type": "thinking", "on": False})
+            self._event({"type": "sehen_still", "chip": True})
+            return
+        if sehen:
+            self.brain.provider.als_wortmeldung(snapshot)  # zaehlt nicht als deine Nachricht, nie ins Gedaechtnis
         self.history.append({"role": "assistant", "text": "".join(self._answer_parts) or answer})
         self._event({"type": "thinking", "on": False})
         self._event({"type": "done"})
         self._last_answer = "".join(self._answer_parts) or answer
-        if self.voice_out.enabled and not self._jarvis_active() and not as_notice:
+        speak = not as_notice or (sehen and self.sehen.regeln.sprechen)
+        if self.voice_out.enabled and not self._jarvis_active() and speak:
             threading.Thread(target=self._speak_aloud, args=(answer,), daemon=True).start()
 
     def _speak_aloud(self, answer: str) -> None:
@@ -777,6 +832,7 @@ class AppController(CLI):
                         self._live = None
                         self.brain.provider.effort_override = None
             self.permissions.begin_away()
+            self.sehen.setze_abwesend(True)
             task = (f"Auftrag: {session.auftrag}" if session.auftrag
                     else "Ich mache mit dem weiter, woran wir zuletzt gearbeitet haben.")
             cost = f"{session.max_eur:.2f}".replace(".", ",")
@@ -789,13 +845,15 @@ class AppController(CLI):
                 self.brain.provider.cancel_event.clear()  # erst zuruecksetzen, dann pruefen (kein Rennen)
                 if session.stop_event.is_set():
                     return
-                self._answer(f"AFK \u2013 Schritt {session.rounds}", model_text=prompt, as_notice=True,
+                gesehen = self.sehen.afk_zeilen_nehmen()  # nur mit [sehen] bei_abwesenheit
+                self._answer(f"AFK \u2013 Schritt {session.rounds}", model_text=gesehen + prompt, as_notice=True,
                              max_tool_rounds=session.max_tool_rounds)
 
             run_session(session, one_round, cost_eur=self.brain.cost_now_eur, on_update=self._state_changed,
                         cancel=self.brain.provider.cancel)
         finally:
             self.permissions.end_away()
+            self.sehen.setze_abwesend(False)
             self.tool_ctx.extra.pop("afk_session", None)
             if session.ended == "nicht_gestartet":
                 with self._lock:
@@ -835,6 +893,181 @@ class AppController(CLI):
             print("AFK-Modus vorgemerkt - geht gleich los. Zurueck? Einfach eine Nachricht schreiben.")
         else:
             print("AFK-Modus nicht gestartet - du hast ja schon weitergeschrieben.")
+
+    # -- Live-Sehen (assistant/sehen) -------------------------------------------------
+    def _sehen_notiz(self, text: str) -> None:
+        self._notice(text, "sehen")
+
+    def _sehen_status(self) -> None:
+        # klein (hoechstens einmal pro Sekunde): nur der Stand von Live-Sehen, nicht der ganze Zustand
+        self._event({"type": "sehen", "sehen": self.sehen.status()})
+
+    def _sehen_wecken(self, paket) -> None:
+        """Live-Sehen hat etwas bemerkt: als niedrigste Aufgabe einreihen - nie mitten in eine
+        laufende Antwort, nur die neueste wartet (hoechstens 20 s). Im Jarvis-Modus entscheidet
+        der Sprachmodus, wann Nova ausgeredet hat und du nicht sprichst."""
+        if paket.abwesend or not self.config.api_key or not self.sehen.darf_melden():
+            return
+        live = self._live
+        if live is not None and not live.stop_event.is_set():
+            live.seen_event(paket)
+            return
+        with self._lock:
+            if self._closing or self._afk is not None or self._afk_pending is not None:
+                return
+            if self.busy:
+                self._sehen_pending = paket
+                return
+            self.busy = True
+            self._sehen_turn = True  # unter der Sperre: eine Nachricht ab jetzt unterbricht sie
+            self._live_turn = None
+            self._drop_turn = False
+            self.brain.provider.cancel_event.clear()
+        self._start_job({"sehen": paket})
+
+    def _sehen_starten(self, paket, live) -> bool:
+        """Jarvis-Modus: Wortmeldung als Runde dieses Sprachmodus (er spricht sie)."""
+        if not self.config.api_key or not self.sehen.darf_melden():
+            return False
+        with self._lock:
+            if self.busy or self._closing:
+                return False
+            self.busy = True
+            self._sehen_turn = True
+            self._live_turn = live
+            self._drop_turn = False
+            self.brain.provider.cancel_event.clear()
+        threading.Thread(target=self._work, args=(None, lambda: self._run_sehen(paket, jarvis=True)),
+                         name="ki-sehen", daemon=True).start()
+        return True
+
+    def _run_sehen(self, paket, jarvis: bool = False) -> None:
+        """Eine Wortmeldung: nur lesende Werkzeuge (wie im AFK-Modus), hoechstens ein Werkzeug-Schritt,
+        Euro-Grenze pro Stunde mit Waechter."""
+        from ..sehen.dienst import WORTMELDUNG_WERKZEUGE, euro_waechter
+
+        self._sehen_turn = True
+        if not self.sehen.darf_melden():  # inzwischen Pause/aus/anderes Gehirn
+            self._sehen_turn = False
+            return
+        away = self.permissions.away
+        if not away:
+            self.permissions.begin_away()
+        self.tool_ctx.extra["nur_diese_werkzeuge"] = WORTMELDUNG_WERKZEUGE
+        start = self.brain.cost_now_eur()
+        fertig = euro_waechter(self.brain.cost_now_eur, self.brain.provider.cancel,
+                               None if self.config.kostenlos else self.sehen.euro_rest())
+        try:
+            self._answer(paket.anzeige, model_text=paket.text + (JARVIS_HINT if jarvis else ""), as_notice=True,
+                         notice_level="sehen", bilder=paket.bilder, sehen=True)
+        finally:
+            fertig.set()
+            self.tool_ctx.extra.pop("nur_diese_werkzeuge", None)
+            if not away:
+                self.permissions.end_away()
+            self._sehen_turn = False
+            try:
+                self.sehen.gebucht(max(0.0, self.brain.cost_now_eur() - start))
+            except Exception:  # noqa: BLE001
+                pass
+
+    def _sehen_halt(self) -> None:
+        """Pause/Aus/Pause-Taste/AFK: schon geplante Wortmeldungen verwerfen, eine laufende anhalten."""
+        with self._lock:
+            self._sehen_pending = None
+            laufend = self._sehen_turn
+            if laufend:
+                self._drop_turn = True
+                self.brain.provider.cancel()
+        live = self._live
+        if live is not None:
+            live.seen = None
+            if laufend:
+                live.hush()
+        if laufend:
+            self.voice_out.stop()
+
+    def sehen_fenster_schuetzen(self) -> None:
+        """Programmfenster ist jetzt da (Live-Sehen lief evtl. schon vor dem Fenster an): eigenes Fenster
+        aus der Aufnahme nehmen."""
+        if self.sehen.aktiv and "bildschirm" in self.sehen.quellen:
+            hinweis = self._fenster_schutz(True)
+            self.sehen.eigenes_fenster_neu()
+            if hinweis:
+                self._notice(hinweis, "sehen")
+
+    def sehen_api(self, data: dict) -> dict:
+        """POST /api/sehen: {"aktion": "an"|"aus"|"pause"|"weiter"|"quelle"|"kamera"|"status", ...}."""
+        from ..sehen.einstellungen import QUELLEN
+
+        aktion = str(data.get("aktion") or "status")
+        dienst = self.sehen
+        ergebnis: dict = {"ok": True}
+        if aktion == "an":
+            if data.get("einverstanden") is True and dienst.braucht_zustimmung():
+                dienst.zustimmen()
+            if dienst.braucht_zustimmung():
+                return {"ok": False, "zustimmung": True, "warnung": schoen(dienst.warnung()),
+                        "error": schoen("Bitte erst zustimmen."), "sehen": dienst.status()}
+            quelle = str(data.get("quelle") or "").lower() or None
+            if quelle is not None and quelle not in QUELLEN:
+                return {"ok": False, "error": schoen(f"Unbekannte Quelle '{quelle}'.")}
+            if quelle:
+                self._sehen_quelle_speichern(quelle)
+            ok, text = dienst.an(quelle)
+            ergebnis = {"ok": ok, "message": schoen(text), "error": "" if ok else schoen(text)}
+            if ok:
+                self._notice(text, "sehen")
+        elif aktion == "aus":
+            self._notice(dienst.aus(), "sehen")
+        elif aktion == "pause":
+            ergebnis["message"] = schoen(dienst.pause())
+        elif aktion == "weiter":
+            ergebnis["message"] = schoen(dienst.weiter())
+        elif aktion == "quelle":
+            quelle = str(data.get("quelle") or "").lower()
+            if quelle not in QUELLEN:
+                return {"ok": False, "error": schoen(f"Unbekannte Quelle '{quelle}'.")}
+            self._sehen_quelle_speichern(quelle)
+            if dienst.aktiv:
+                ok, text = dienst.an(quelle)
+                ergebnis = {"ok": ok, "message": schoen(text), "error": "" if ok else schoen(text)}
+                self._notice(text, "sehen")
+        elif aktion == "kamera":
+            vorhanden = data.get("vorhanden")
+            dienst.kamera_meldung(vorhanden=None if vorhanden is None else bool(vorhanden),
+                                  fehler=" ".join(str(data.get("fehler") or "").split())[:300])
+        elif aktion != "status":
+            return {"ok": False, "error": schoen(f"Unbekannte Aktion '{aktion}'.")}
+        self._state_changed()
+        ergebnis["sehen"] = dienst.status()
+        return ergebnis
+
+    def _sehen_quelle_speichern(self, quelle: str) -> None:
+        try:
+            save_setting(self.config.project_root, "sehen", "quelle", toml_string(quelle))
+        except Exception as exc:  # noqa: BLE001
+            logger.info("Quelle nicht gespeichert: %s", type(exc).__name__)
+        self.config.sehen.quelle = quelle
+
+    def kamera_bild(self, data: bytes) -> dict:
+        """POST /api/kamera/bild (JPEG/PNG/WebP, schon am Server geprueft) - nur im Speicher."""
+        ok, fehler = self.sehen.kamera_bild(data)
+        return {"ok": ok, "error": schoen(fehler) if fehler else "", "weiter": ok}
+
+    def kamera_erlaubt(self) -> bool:
+        """Fuer das Programmfenster (WebView2): darf die Seite gerade die Kamera nutzen?"""
+        return self.sehen.kamera_erlaubt()
+
+    def _sehen_beim_start(self) -> None:
+        if not self.config.sehen.aktiv:
+            return
+        if self.sehen.braucht_zustimmung():
+            self._notice("Live-Sehen ist in den Einstellungen an, aber du hast noch nicht zugestimmt \u2013 "
+                         "schalte es im Reiter \u201eSicherheit\u201c ein.", "sehen")
+            return
+        ok, text = self.sehen.an()
+        self._notice(text, "sehen" if ok else "warn")
 
     # -- Charakter & Profil (Einstellungen-Fenster der App) --------------------------
     def profile(self) -> dict:
@@ -911,6 +1144,7 @@ class AppController(CLI):
         self._state_changed()
 
     def _after_provider_change(self) -> None:
+        super()._after_provider_change()  # Live-Sehen: Zustimmung galt dem alten Gehirn
         self._state_changed()
 
     def _open_terminal(self) -> int | None:
@@ -1016,6 +1250,7 @@ class AppController(CLI):
 
     def _model_changed(self) -> None:
         self.brain.model_changed()
+        self.sehen.gehirn_gewechselt()
         self._state_changed()
 
     def choose_model(self, data: dict) -> dict:
@@ -1061,6 +1296,7 @@ class AppController(CLI):
             fresh = self.brain.switch_provider()
             message = result["message"] + (" Wir beginnen ein neues Gespraech." if fresh else "")
             self._notice(message)
+            self.sehen.gehirn_gewechselt()
             return {"ok": True, "message": schoen(message), "setup": self.setup_info()}
         finally:
             self._release()
@@ -1538,6 +1774,10 @@ class AppController(CLI):
         self._start_update_watch()
         self._start_feedback_watch()  # Nutzungszeit zaehlen, Feedback-Ausgang nachsenden
         try:
+            self._sehen_beim_start()
+        except Exception as exc:  # noqa: BLE001
+            logger.info("Live-Sehen beim Start: %s", type(exc).__name__)
+        try:
             alte_uploads_loeschen(self.upload_dir())
         except Exception as exc:  # noqa: BLE001
             logger.info("Alte Bilder nicht aufgeraeumt: %s", type(exc).__name__)
@@ -1577,6 +1817,10 @@ class AppController(CLI):
 
     def shutdown(self) -> None:
         self._closing = True
+        try:
+            self.sehen.aus()  # Fenster zu: sofort wegschauen
+        except Exception:  # noqa: BLE001
+            pass
         if self._live is not None:
             self._live.stop()
         self._stop_watch.set()
@@ -1680,8 +1924,18 @@ class _LiveHost:
         return bool(self.ctl.busy)
 
     def start_turn(self, text: str) -> bool:
+        self.ctl.sehen.nutzer_aktiv(text)  # du sprichst: Live-Sehen haelt sich kurz zurueck
         ok, _err = self.ctl.send(text, model_text=text + JARVIS_HINT, live=self.loop)
         return ok
+
+    def start_seen_turn(self, paket) -> bool:
+        return self.ctl._sehen_starten(paket, self.loop)
+
+    def seen_pause(self) -> None:
+        self.ctl.sehen.pause()
+
+    def seen_ok(self) -> bool:
+        return self.ctl.sehen.darf_melden()
 
     def cancel_turn(self, drop: bool) -> None:
         if self.ctl._live_turn is not self.loop:

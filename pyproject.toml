@@ -21,6 +21,18 @@ dependencies = [
 [project.optional-dependencies]
 voice = ["SpeechRecognition>=3.10", "pyttsx3>=2.90", "sounddevice>=0.4"]
 pc = ["pyautogui>=0.9.54"]
+sehen = [
+  "numpy>=2.0", "mss>=9.0", "pillow>=10",
+  "dxcam==0.3.0 ; sys_platform == 'win32' and platform_machine == 'AMD64'",
+  "comtypes>=1.4 ; sys_platform == 'win32'",
+  "winrt-runtime>=4.1 ; sys_platform == 'win32'",
+  "winrt-Windows.Media.Ocr ; sys_platform == 'win32'",
+  "winrt-Windows.Globalization ; sys_platform == 'win32'",
+  "winrt-Windows.Graphics.Imaging ; sys_platform == 'win32'",
+  "winrt-Windows.Storage.Streams ; sys_platform == 'win32'",
+  "winrt-Windows.Foundation ; sys_platform == 'win32'",
+  "winrt-Windows.Foundation.Collections ; sys_platform == 'win32'",
+]
 build = ["pyinstaller>=6.0"]
 dev = ["pytest>=7.4"]
 

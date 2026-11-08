@@ -333,6 +333,22 @@ Lokale Modelle sind schwächer als Claude/DeepSeek und brauchen einen ordentlich
 (mindestens 8 GB Arbeitsspeicher; mit Grafikkarte deutlich schneller). Einstellungen stehen
 unter `[ollama]` in `config/settings.toml` (Adresse, Modell, Kontextgröße).
 
+## Live-Sehen: Nova sieht mit (Windows)
+
+Auf Wunsch schaut Nova auf deinen Bildschirm und – in der App – durch deine Webcam.
+Ein schnelles „Auge“ auf deinem PC erkennt Änderungen (Fehlermeldungen, neue Fenster,
+neuer Text) und weckt Nova nur, wenn es wichtig ist.
+
+- Ein/aus: Schalter in der Seitenleiste oder `/sehen an` / `/sehen aus`; Pause mit F4 (App)
+  oder **Strg+Alt+Umschalt+S**; Quelle mit `/sehen bildschirm|webcam|beides`.
+- Immer sichtbar: das Band „Nova sieht zu“. Beim ersten Mal (und nach einem Gehirnwechsel)
+  fragt Nova um Erlaubnis.
+- Nicht gesehen werden: Passwortfelder, Passwort-Manager, private Browserfenster, Novas
+  eigenes Fenster und alles unter `[sehen] ausnahmen`. Nichts wird gespeichert.
+- Grenzen (einstellbar unter `[sehen]`): höchstens 20 Weckungen und 0,30 € pro Stunde.
+  Was Nova sieht, geht an das gewählte Gehirn – mit Ollama bleibt alles auf deinem PC.
+- Source-Nutzer: einmal `/sehen einrichten` (installiert die nötigen Pakete).
+
 ## Bilder: zeigen und erstellen lassen
 
 - **Bilder zeigen:** In der App mit **Strg+V** einfügen, ins Fenster ziehen oder über die
@@ -436,6 +452,7 @@ stoppt die Steuerung sofort.
 | `/jarvis` | Jarvis-Modus: einfach reden, live (zurück: „Chat-Modus“ sagen) |
 | `/afk [Betrag] [Auftrag]` | AFK-Modus: Nova arbeitet allein weiter, z. B. `/afk 0,30€ …` (zurück: Nachricht bzw. Strg+C) |
 | `/modell [name]` | Modell zeigen bzw. wählen (z.B. `/modell sonnet`, `/modell deepseek pro`) |
+| `/sehen [an\|aus\|pause\|status]` | Live-Sehen: Nova schaut auf Bildschirm/Webcam |
 | `/bild <Pfad> [Frage]` | Bild anhängen (ohne Pfad: aus der Zwischenablage) |
 | `/feedback` | Feedback & Bewertung an den Entwickler schicken |
 | `/denken [stufe]` | Denk-Tiefe: schnell, ausgewogen, gründlich, sehr gründlich, maximal |

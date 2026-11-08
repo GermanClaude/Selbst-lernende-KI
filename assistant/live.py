@@ -745,6 +745,21 @@ def _words(text: str) -> list[str]:
     return re.findall(r"[a-z\u00e4\u00f6\u00fc\u00df0-9]+", (text or "").lower())
 
 
+_WEGSCHAUEN = re.compile(
+    r"\b(schau|guck|sieh|seh)\w*\s+(mal\s+)?weg\b|\bnicht\s+(mehr\s+)?hin(schauen|sehen|gucken)\b|"
+    r"\b(live-?\s?)?sehen\s+(aus|pause|stopp)\b|\bpause\s+(beim\s+)?sehen\b",
+    re.IGNORECASE,
+)
+
+
+def is_look_away(text: str) -> bool:
+    """'Schau weg', 'Nicht hinschauen', 'Sehen aus' - Live-Sehen sofort pausieren (ohne KI)."""
+    return len(_words(text)) <= 6 and bool(_WEGSCHAUEN.search(text or ""))
+
+
+SEEN_HOLD = 20.0  # so lange wartet eine Wortmeldung von Live-Sehen hoechstens, bis du fertig bist
+
+
 def is_stop(text: str) -> bool:
     """Nur ein kurzes "Stopp!", "Hoer auf", "Halt" - nicht "Wo ist die Haltestelle?"."""
     words = _words(text)
@@ -829,6 +844,8 @@ class LiveLoop:
         self.quiet_at = 0.0           # seit wann Nova still ist
         self.ask_text: str | None = None
         self.ask_said_at: float | None = None
+        self.seen = None              # wartende Wortmeldung von Live-Sehen (nur die neueste)
+        self.seen_at = 0.0
         self._reset_turn("")
 
     def _reset_turn(self, text: str) -> None:
@@ -845,6 +862,7 @@ class LiveLoop:
         self.barged = False                      # still wegen Dazwischenreden - Entscheidung offen
         self.resume_after: int | None = None     # bis hierhin war schon vorgelesen
         self.cancelled = False
+        self.proactive = False                   # diese Runde ist eine Wortmeldung von Live-Sehen
 
     # -- von aussen (beliebige Threads) ------------------------------------
     def post(self, kind: str, data=None) -> None:
@@ -861,6 +879,10 @@ class LiveLoop:
 
     def on_ask(self, text: str) -> None:
         self.post("ask", text)
+
+    def seen_event(self, paket) -> None:
+        """Live-Sehen hat etwas bemerkt (assistant.sehen.dienst.Weckpaket)."""
+        self.post("seen", paket)
 
     def spoken(self, turn: int | None = None, seq: int | None = None) -> None:
         self.post("spoken", (turn, seq))
@@ -984,6 +1006,30 @@ class LiveLoop:
             self._carry_on()
             self._idle_state()
             return
+        pause = getattr(self.host, "seen_pause", None)
+        if callable(pause) and is_look_away(text):
+            # "Schau weg" wirkt sofort und ohne KI - auch mitten in einer Antwort
+            self.spoke += 1
+            self.seen = None
+            pause()
+            if self.turn_active and self.proactive:
+                if self.speaking:
+                    self._hush()
+                if not self.cancelled:
+                    self._cancel(drop=True)  # die Wortmeldung ganz zuruecknehmen
+                self._state("listening")
+                return
+            if self.turn_active:
+                self._carry_on()  # deine Bitte laeuft weiter - Nova schaut nur nicht mehr hin
+                self._idle_state()
+                return
+            if self.speaking:
+                self._hush()
+            self.held, self.barged = [], False
+            self._queue("Okay, ich schaue weg.")
+            self._close_speech()
+            self._idle_state()
+            return
         at, said = self.last_said
         asked = said.rstrip().endswith("?") and time.monotonic() - at < 60
         goodbye = is_goodbye(text, after_question=asked)
@@ -1023,6 +1069,15 @@ class LiveLoop:
                 self._queue(schoen("Sag bitte ja, immer oder nein."))
                 self._close_speech()
             self._idle_state()
+            return
+        if self.turn_active and self.proactive and not is_stop(text):
+            # Nova hat sich von selbst gemeldet - dein Satz ersetzt das (nicht zusammenfassen)
+            if self.speaking:
+                self._hush()
+            self.pending = text if self.pending is None else f"{self.pending} {text}"
+            if not self.cancelled:
+                self._cancel(drop=True)
+            self._state("thinking", text=self.pending)
             return
         if self.turn_active:
             if is_stop(text):
@@ -1068,6 +1123,7 @@ class LiveLoop:
             self.pending = f"{self.pending} {text}"
             self._state("thinking", text=self.pending)
             return
+        self.seen = None  # du redest: eine wartende Wortmeldung ist ueberholt
         self._send(text)
 
     def _is_echo(self, text: str) -> bool:
@@ -1087,7 +1143,7 @@ class LiveLoop:
     def _cancel(self, drop: bool) -> None:
         self.cancelled = True  # was noch von der alten Antwort kommt, nicht mehr vorlesen
         self.held, self.barged = [], False
-        self.host.cancel_turn(drop)
+        self.host.cancel_turn(drop or self.proactive)
 
     def _carry_on(self, resume: bool = True) -> None:
         """Nach Geraeusch oder beantworteter Rueckfrage: weitersprechen."""
@@ -1181,6 +1237,33 @@ class LiveLoop:
         self.turn_active = True
         self._state("thinking", text=text)
 
+    def _seen_ok(self) -> bool:
+        ok = getattr(self.host, "seen_ok", None)
+        try:
+            return bool(ok()) if callable(ok) else True
+        except Exception:  # noqa: BLE001
+            return False
+
+    def _on_seen(self, paket) -> None:
+        if not self._seen_ok():
+            return
+        self.seen = paket
+        self.seen_at = time.monotonic()
+
+    def _send_seen(self, paket) -> None:
+        """Wortmeldung von Live-Sehen: wie eine eigene Runde, nur dass dein naechster Satz sie ersetzt."""
+        start = getattr(self.host, "start_seen_turn", None)
+        if start is None:
+            return
+        self.turn += 1
+        self.voice_out.begin(self.turn)
+        self._reset_turn("")
+        if not start(paket):
+            return
+        self.proactive = True
+        self.turn_active = True
+        self._state("thinking")
+
     def _queue(self, sentence: str) -> None:
         """Satz sagen - oder zurueckhalten, solange du sprichst bzw. unterbrochen hast."""
         if not sentence or self.cancelled:
@@ -1239,6 +1322,14 @@ class LiveLoop:
                 and not self.stop_event.is_set() and not self.host.busy()):
             text, self.pending = self.pending, None
             self._send(text)
+        if self.seen is not None:
+            if time.monotonic() - self.seen_at > SEEN_HOLD or not self._seen_ok():
+                self.seen = None  # zu alt - oder inzwischen Pause/aus
+            elif (self.pending is None and not self.turn_active and not self.speaking and not self.hearing
+                  and not self.recognizing and self.ask_text is None and not self.stop_event.is_set()
+                  and not self.host.busy()):
+                paket, self.seen = self.seen, None
+                self._send_seen(paket)
 
 
 _GOODBYES = (("tschuess",), ("tschüss",), ("tschüs",), ("tschues",), ("tschau",), ("ciao",), ("bye",),

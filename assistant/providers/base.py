@@ -45,7 +45,9 @@ SUMMARY_INSTRUCTION = (
     "kann. Beginne mit der aktuellen Aufgabe und ihrem Ziel und damit, was als Naechstes "
     "zu tun ist. Behalte ausserdem: Namen, Vorlieben, Entscheidungen; was bereits erledigt "
     "ist (welche Dateien gelesen, angelegt oder geaendert wurden, mit Pfad und dem "
-    "Wichtigsten zum Inhalt); offene Probleme."
+    "Wichtigsten zum Inhalt); offene Probleme. Was die KI nebenbei per Live-Sehen auf dem Bildschirm "
+    "oder der Webcam bemerkt hat, gehoert NICHT in die Zusammenfassung (ausser der Mensch hat danach "
+    "ausdruecklich gefragt)."
 )
 
 
@@ -72,6 +74,17 @@ class BildTeil(dict):
     def __init__(self, *args: Any, bild_name: str = "", **kwargs: Any):
         super().__init__(*args, **kwargs)
         self.bild_name = bild_name
+
+
+class Wortmeldung(dict):
+    """Nachricht aus einer Wortmeldung von Live-Sehen (Nova hat sich von selbst gemeldet).
+    Fuer die API ein ganz normales dict mit unveraendertem Inhalt (append-only bleibt gewahrt);
+    zaehlt aber nicht als Nachricht vom Menschen und kommt nie in eine Zusammenfassung
+    (Bildschirminhalt gehoert nicht ins Gedaechtnis)."""
+
+
+def ist_wortmeldung(message: Any) -> bool:
+    return isinstance(message, Wortmeldung)
 
 
 def bild_platzhalter(block: Any) -> str:
@@ -195,6 +208,21 @@ class LLMProvider(ABC):
         if messages[-1].get("role") != "assistant":
             messages.append({"role": "assistant", "content": ABORT_NOTE})
         self.hit_limit = False
+
+    def als_wortmeldung(self, snapshot: int | None) -> int:
+        """Alle Nachrichten ab `snapshot` als Wortmeldung von Live-Sehen kennzeichnen (gleicher Inhalt,
+        nur ein anderer dict-Typ - die Anfrage an die API bleibt byte-gleich). -> Anzahl."""
+        messages = getattr(self, "messages", None)
+        if messages is None or snapshot is None or snapshot < 0:
+            return 0
+        anzahl = 0
+        for i in range(snapshot, len(messages)):
+            m = messages[i]
+            if isinstance(m, dict) and not isinstance(m, Wortmeldung) and m.get("role") != "system":
+                messages[i] = Wortmeldung(m)
+                anzahl += 1
+        self._bild_turn = None
+        return anzahl
 
     def drop_turn(self, snapshot: int | None, user_text: str) -> bool:
         """Nimmt eine gerade angefangene Runde ganz zurueck - nur, wenn darin noch

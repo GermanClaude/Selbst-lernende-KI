@@ -64,7 +64,7 @@ def test_alle_symbole_gibt_es():
 
 def test_helfer_wird_vor_app_geladen():
     scripts = re.findall(r'<script src="([^"]+)"></script>', HTML)
-    assert scripts == ["/static/helfer.js", "/static/app.js"]
+    assert scripts == ["/static/helfer.js", "/static/app.js", "/static/sehen.js"]  # sehen.js: Live-Sehen
 
 
 def test_dialoge_sind_zugaenglich():
@@ -161,7 +161,7 @@ def test_leiste_baut_vorhandene_miniaturen_nicht_neu():
 # ---------------------------------------------------------------------------
 # Datenschutz & Sicherheit
 # ---------------------------------------------------------------------------
-@pytest.mark.parametrize("name", ["app.js", "helfer.js", "index.html", "app.css"])
+@pytest.mark.parametrize("name", ["app.js", "helfer.js", "sehen.js", "index.html", "app.css"])
 def test_keine_email_adresse_und_keine_fremden_abrufe(name):
     text = (STATIC / name).read_text(encoding="utf-8")
     assert not re.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+\.[A-Za-z]{2,}", text)
@@ -209,7 +209,7 @@ def test_sichtbare_texte_mit_umlauten():
 # JavaScript: Syntax und die reinen Hilfen (Node)
 # ---------------------------------------------------------------------------
 @needs_node
-@pytest.mark.parametrize("name", ["app.js", "helfer.js"])
+@pytest.mark.parametrize("name", ["app.js", "helfer.js", "sehen.js"])
 def test_javascript_syntax(name):
     r = subprocess.run([NODE, "--check", str(STATIC / name)], capture_output=True, text=True, timeout=60)
     assert r.returncode == 0, r.stderr

@@ -1152,7 +1152,7 @@
     state = s;
     const name = kiName();
     const letter = initial();
-    document.title = name;
+    sehenTitel();
     byId('sb-name').textContent = name;
     byId('tb-name').textContent = name;
     renderGreeting();
@@ -1250,6 +1250,7 @@
       renderLive();
     } else if (s.jarvis === false && jv.open && !jv.starting && performance.now() - jv.openedAt > 2500) closeJarvisView();
     fpCheck(); // Nachfrage "Wie gefaellt dir Nova?" (nur, wenn faellig und Nova frei ist)
+    if (window.NovaSehen) window.NovaSehen.zustand(s); // Live-Sehen: Band, Schalter, Webcam (sehen.js)
   }
 
   const WHEELS_SUB = {
@@ -3789,6 +3790,44 @@
     let s = t.replace(/\*\*/g, '').replace(/(\d)\s*EUR\b/g, '$1 €');
     if (/^AFK-Modus an\b/.test(s)) s = s.replace(/(Auftrag: .*?[^\s.!?…:;])( Ich l(?:ö|oe)sche\b)/, '$1.$2');
     return s;
+  }
+
+  /** Fenstertitel: solange Nova zusieht, steht es auch in der Taskleiste ("Nova (sieht zu)"). */
+  function sehenTitel() {
+    const sz = state && state.sehen;
+    const sieht = !!(sz && sz.aktiv && !sz.pausiert);
+    document.title = sieht ? kiName() + ' (sieht zu)' : kiName();
+  }
+
+  /** Live-Sehen: dezente Trennzeile mit Auge ("Nova hat etwas bemerkt: ..."). */
+  function addSehenNotice(text) {
+    const t = String(text == null ? '' : text).trim();
+    if (!t) return null;
+    const row = h('div', 'afk-note sehen-note' + (t.length > 70 ? ' long' : ''));
+    row.setAttribute('role', 'note');
+    row.dataset.text = t;
+    const chip = h('span', 'an-chip');
+    chip.append(icon('eye'), h('span', 'an-text', t));
+    row.append(h('span', 'an-line'), chip, h('span', 'an-line'));
+    msgs.append(row);
+    added();
+    return row;
+  }
+
+  /** Ereignis "sehen_still": Nova hatte zu dem, was sie gesehen hat, nichts zu sagen (chip=true)
+   *  oder du hast sie unterbrochen – die angefangene Antwort verschwindet (und ggf. die Trennzeile). */
+  function onSehenStill(ev) {
+    if (reply) {
+      reply.dispose();
+      reply.row.remove();
+      reply = null;
+    }
+    if (ev && ev.chip === true) {
+      const notes = msgs.querySelectorAll('.sehen-note');
+      if (notes.length) notes[notes.length - 1].remove();
+    }
+    updateEmpty();
+    moodSync();
   }
 
   function addAfkNotice(text) {
@@ -8600,7 +8639,7 @@
   let resyncCount = 0;
   let helloCount = 0;
   const FLOW = new Set(['user', 'start', 'thinking', 'chunk', 'tool', 'agent', 'info', 'done', 'stopped', 'error',
-    'notice', 'reset', 'retract', 'afk_report', 'image', 'image_progress']);
+    'notice', 'reset', 'retract', 'afk_report', 'image', 'image_progress', 'sehen_still']);
 
   function setConnected(ok) {
     connected = ok;
@@ -8739,6 +8778,7 @@
       if (text.trim()) rememberOwn(text.trim());
     } else if (m.role === 'notice') {
       if (m.level === 'afk') addAfkNotice(text); // AFK-Schritt (Trennzeile) oder Bericht (Karte)
+      else if (m.level === 'sehen') addSehenNotice(text);
       else addCard(m.level, text);
     } else if (m.role === 'error') addError(text);
   }
@@ -8844,6 +8884,13 @@
     setTimeout(() => loadHistory(true), 0);
   }
 
+  // Fuer sehen.js (Live-Sehen): Hinweise und Name - sonst nichts von innen
+  window.NovaApp = Object.freeze({
+    toast: (text, kind, ms) => toast(text, kind, ms),
+    name: () => kiName(),
+    providerName: () => String(state.provider_name || state.provider || ''),
+  });
+
   function handleEvent(ev) {
     if (loadingHistory && FLOW.has(ev.type)) { buffered.push(ev); return; }
     switch (ev.type) {
@@ -8926,6 +8973,7 @@
       case 'notice':
         if (/Live-Mitschrift/i.test(String(ev.text || '')) && jv.live === false) jvSetupInfo(String(ev.text), ev.level);
         if (ev.level === 'afk') addAfkNotice(String(ev.text || ''));
+        else if (ev.level === 'sehen') addSehenNotice(String(ev.text || ''));
         else addCard(ev.level, String(ev.text || ''));
         break;
       case 'afk_report':
@@ -8933,6 +8981,16 @@
         break;
       case 'retract':
         onRetract();
+        break;
+      case 'sehen_still':
+        onSehenStill(ev);
+        break;
+      case 'sehen': // kleiner Zwischenstand von Live-Sehen (hoechstens einmal pro Sekunde)
+        if (ev.sehen && typeof ev.sehen === 'object' && state && typeof state === 'object') {
+          state.sehen = ev.sehen;
+          sehenTitel();
+          if (window.NovaSehen) window.NovaSehen.zustand(state);
+        }
         break;
       case 'queue_returned':
         onQueueReturned(ev);

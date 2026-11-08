@@ -259,6 +259,75 @@ def _watch_dotnet_crash(root: Path) -> None:
     AppDomain.CurrentDomain.UnhandledException += UnhandledExceptionEventHandler(on_crash)
 
 
+def kamera_herkunft_ok(uri: str, port: int) -> bool:
+    """Nur unsere eigene Seite (http://127.0.0.1:<port>/...) darf die Kamera bekommen."""
+    from urllib.parse import urlsplit
+
+    try:
+        teile = urlsplit(str(uri or ""))
+        return (teile.scheme == "http" and teile.hostname in ("127.0.0.1", "localhost")
+                and teile.port == int(port) and not teile.username and not teile.password)
+    except (ValueError, TypeError):
+        return False
+
+
+def kamera_entscheidung(art: str, uri: str, port: int, erlaubt: bool) -> str | None:
+    """Was das Fenster bei einer Berechtigungsanfrage tun soll: "erlauben", "ablehnen" oder None
+    (= Standard von WebView2, nichts anfassen). Nur die Kamera wird je von uns entschieden."""
+    if art != "Camera":
+        return None
+    if erlaubt and kamera_herkunft_ok(uri, port):
+        return "erlauben"
+    return "ablehnen"  # ohne deine Zustimmung zu Live-Sehen nie die Kamera
+
+
+def _kamera_erlaubnis_einrichten(window, ctl, port: int, holder: dict) -> None:
+    """WebView2 (Windows): Kamera-Anfragen unserer Seite erlauben - aber nur, solange du Live-Sehen
+    mit Webcam zugestimmt und eingeschaltet hast; nie dauerhaft im Profil gespeichert. Alles andere
+    (Mikrofon, Standort ...) bleibt beim Standard. Geht es nicht (aeltere pywebview, anderes System),
+    fragt das Fenster eben selbst nach."""
+    if sys.platform != "win32" or holder.get("kamera_handler"):
+        return
+    try:
+        form = window.native
+        from Microsoft.Web.WebView2.Core import CoreWebView2PermissionState  # type: ignore
+        from System import Action  # type: ignore
+    except Exception as exc:  # noqa: BLE001
+        logger.info("Kamera-Erlaubnis im Fenster nicht eingerichtet: %s", exc)
+        return
+
+    def anfrage(_sender, args) -> None:
+        try:
+            art = str(args.PermissionKind).rsplit(".", 1)[-1]
+            entscheidung = kamera_entscheidung(art, str(args.Uri), port, bool(ctl.kamera_erlaubt()))
+            if entscheidung is None:
+                return
+            try:
+                args.SavesInProfile = False  # nie fuer spaeter merken
+            except Exception:  # noqa: BLE001 - aeltere WebView2
+                pass
+            args.State = (CoreWebView2PermissionState.Allow if entscheidung == "erlauben"
+                          else CoreWebView2PermissionState.Deny)
+            logger.info("Kamera-Anfrage im Fenster: %s", entscheidung)
+        except Exception as exc:  # noqa: BLE001
+            logger.info("Kamera-Anfrage: %s", exc)
+
+    def einrichten() -> None:
+        try:
+            core = form.browser.webview.CoreWebView2  # nur im Fenster-Thread erlaubt
+            if core is None:
+                return
+            core.PermissionRequested += anfrage
+            holder["kamera_handler"] = anfrage  # Verweis behalten
+        except Exception as exc:  # noqa: BLE001
+            logger.info("Kamera-Erlaubnis im Fenster nicht eingerichtet: %s", exc)
+
+    try:
+        form.Invoke(Action(einrichten))  # WebView2 nur aus dem Fenster-Thread anfassen
+    except Exception as exc:  # noqa: BLE001
+        logger.info("Kamera-Erlaubnis im Fenster nicht eingerichtet: %s", exc)
+
+
 def run_native_window(server, ctl, title: str, storage: Path, on_quit_holder: dict) -> bool:
     """Zeigt die App in einem echten Programmfenster. Blockiert, bis es zu ist.
 
@@ -291,6 +360,14 @@ def run_native_window(server, ctl, title: str, storage: Path, on_quit_holder: di
             window.events.shown += lambda *a: shown.set()
         except Exception:  # noqa: BLE001 - aeltere pywebview: dann eben ohne diese Pruefung
             shown.set()
+        try:  # Live-Sehen lief evtl. schon vor dem Fenster an: eigenes Fenster jetzt aus der Aufnahme nehmen
+            window.events.shown += lambda *a: getattr(ctl, "sehen_fenster_schuetzen", lambda: None)()
+        except Exception:  # noqa: BLE001 - aeltere pywebview
+            pass
+        try:  # Live-Sehen mit Webcam: Kamera nur fuer unsere Seite und nur mit Zustimmung
+            window.events.loaded += lambda *a: _kamera_erlaubnis_einrichten(window, ctl, server.port, on_quit_holder)
+        except Exception:  # noqa: BLE001 - aeltere pywebview
+            pass
         on_quit_holder["close"] = window.destroy  # /beenden oder Neustart schliesst das Fenster
         if not on_quit_holder.get("started"):
             on_quit_holder["started"] = True

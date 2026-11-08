@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; media-src 'self' blob: mediastream:; connect-src 'self' https://ntfy.sh; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark light">
+  <meta name="theme-color" content="#0f172a">
+  <meta name="robots" content="noindex">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Nova-Kamera">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Nova-Kamera</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="kamera.css">
+  <script src="signal.js" defer></script>
+  <script src="kamera.js" defer></script>
+</head>
+<body>
+  <main id="app" class="app">
+    <header class="kopf">
+      <img src="icons/icon.svg" alt="" class="logo" width="40" height="40">
+      <h1>Nova-Kamera</h1>
+      <span id="badge" class="badge" hidden>● Nova sieht zu</span>
+    </header>
+
+    <noscript><p class="hinweis fehler">Diese Seite braucht JavaScript.</p></noscript>
+
+    <!-- 1) Ohne Kopplung: QR-Code in Nova scannen -->
+    <section id="ohne-kopplung" class="karte" hidden>
+      <h2>Mit Nova koppeln</h2>
+      <p>Lass dir in Nova am PC den QR-Code für die Handy-Kamera anzeigen und scanne ihn mit der Kamera-App deines Handys.</p>
+      <p>Hast du diese Seite schon als App auf dem Home-Bildschirm? Dann scanne den QR-Code hier:</p>
+      <div class="knoepfe">
+        <button id="btn-scannen" type="button" class="knopf haupt">QR-Code scannen</button>
+      </div>
+      <details id="code-bereich" class="code-bereich">
+        <summary>Oder den 8-stelligen Code eingeben</summary>
+        <div class="code-zeile">
+          <label for="code-eingabe" class="unsichtbar">Code aus Nova</label>
+          <input id="code-eingabe" type="text" inputmode="text" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="12" placeholder="z. B. 7KQ2-M9XD">
+          <button id="btn-code" type="button" class="knopf">Verbinden</button>
+        </div>
+      </details>
+    </section>
+
+    <!-- 2) QR-Scanner -->
+    <section id="scanner" class="karte" hidden>
+      <h2>QR-Code scannen</h2>
+      <div class="vorschau">
+        <video id="scan-video" muted playsinline autoplay></video>
+        <div class="scan-rahmen" aria-hidden="true"></div>
+      </div>
+      <p class="klein">Halte das Handy auf den QR-Code in Nova.</p>
+      <div class="knoepfe">
+        <button id="btn-scan-abbrechen" type="button" class="knopf">Abbrechen</button>
+      </div>
+    </section>
+
+    <!-- 3) Gekoppelt: Kamera starten / Live -->
+    <section id="gekoppelt" class="karte" hidden>
+      <div class="vorschau" id="vorschau" hidden>
+        <video id="video" muted playsinline autoplay></video>
+      </div>
+      <div class="knoepfe">
+        <button id="btn-start" type="button" class="knopf haupt">Kamera starten</button>
+        <button id="btn-wechseln" type="button" class="knopf" hidden>Kamera wechseln</button>
+        <button id="btn-stopp" type="button" class="knopf stopp" hidden>Stopp</button>
+      </div>
+      <p class="hinweis">🔌 Handy ans Ladekabel, Bildschirm an lassen. Handy und PC müssen im selben WLAN sein.</p>
+    </section>
+
+    <p id="status" class="status" role="status" aria-live="polite"></p>
+
+    <footer class="fuss">
+      <p>Das Bild geht direkt über dein WLAN an deinen PC. Es wird nichts aufgezeichnet, es gibt keine Werbung und keine Statistik.
+        Der Vermittler ntfy.sh sieht nur verschlüsselte Verbindungsdaten.</p>
+    </footer>
+  </main>
+</body>
+</html>

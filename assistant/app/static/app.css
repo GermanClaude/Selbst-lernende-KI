@@ -45,6 +45,8 @@
   /* AFK-Modus: ruhiges Nachtblau */
   --afk: #4a5bc4;     --afk-soft: #eef0fb;    --afk-border: #cdd3f2;  --afk-text: #34419a;
   --afk-btn: #4553b8; --afk-btn-hover: #3a479f;
+  /* Live-Sehen: wachsames Petrol */
+  --sehen: #0f766e;   --sehen-soft: #e9f7f5;  --sehen-border: #b4e2db; --sehen-text: #115e57; --sehen-on: #ffffff;
 
   --code-bg: #f6f7f9;
   --code-head: #eceef3;
@@ -86,6 +88,7 @@
     --info: #7cb0ff;    --info-soft: rgba(59, 130, 246, .12);  --info-border: rgba(59, 130, 246, .34);
     --afk: #93a3f6;     --afk-soft: rgba(104, 122, 230, .12); --afk-border: rgba(124, 142, 240, .32); --afk-text: #b9c3fb;
     --afk-btn: #5162cf; --afk-btn-hover: #5e6fdc;
+    --sehen: #5eead4;   --sehen-soft: rgba(45, 212, 191, .10); --sehen-border: rgba(45, 212, 191, .32); --sehen-text: #99f6e4; --sehen-on: #042f2a;
     --code-bg: #0e1014;
     --code-head: #161920;
     --code-inline: #2a2f39;
@@ -123,6 +126,7 @@
   --info: #7cb0ff;    --info-soft: rgba(59, 130, 246, .12);  --info-border: rgba(59, 130, 246, .34);
   --afk: #93a3f6;     --afk-soft: rgba(104, 122, 230, .12); --afk-border: rgba(124, 142, 240, .32); --afk-text: #b9c3fb;
   --afk-btn: #5162cf; --afk-btn-hover: #5e6fdc;
+  --sehen: #5eead4;   --sehen-soft: rgba(45, 212, 191, .10); --sehen-border: rgba(45, 212, 191, .32); --sehen-text: #99f6e4; --sehen-on: #042f2a;
   --code-bg: #0e1014;
   --code-head: #161920;
   --code-inline: #2a2f39;
@@ -3190,3 +3194,55 @@ button.att-thumb:hover { border-color: var(--accent); box-shadow: var(--shadow-s
   .so-item { flex-wrap: wrap; }
   .so-item .so-btn, .so-item .so-have { margin-left: auto; }
 }
+
+
+/* =====================================================================
+   Live-Sehen: Band "Nova sieht zu", Hinweise im Chat, Zustimmung, Einstellungen
+   ===================================================================== */
+.sehen-band {
+  flex: none;
+  padding: calc(7px * var(--density)) 24px;
+  background: var(--sehen-soft);
+  border-bottom: 1px solid var(--sehen-border);
+  animation: fade .2s ease both;
+}
+.sehen-eye {
+  display: grid; place-items: center; flex: none; width: 32px; height: 32px; border-radius: 50%;
+  background: color-mix(in srgb, var(--sehen) 16%, var(--surface)); color: var(--sehen);
+}
+.sehen-eye .ic { width: 18px; height: 18px; }
+.sehen-band[data-mode="an"] .sehen-eye { animation: sehen-wach 3.2s ease-in-out infinite; }
+.sehen-band[data-mode="pause"], .sehen-band[data-mode="privat"] { background: var(--surface-2); border-bottom-color: var(--border); }
+.sehen-band[data-mode="pause"] .sehen-eye, .sehen-band[data-mode="privat"] .sehen-eye { color: var(--text-3); background: var(--surface-3); }
+.sehen-title { color: var(--sehen-text); }
+.sehen-band[data-mode="pause"] .sehen-title, .sehen-band[data-mode="privat"] .sehen-title { color: var(--text-2); }
+.sehen-btns { display: flex; flex: none; gap: 8px; margin-left: auto; }
+.sehen-stop { background: var(--sehen); color: var(--sehen-on); border-color: transparent; }
+.sehen-stop:hover:not(:disabled) { background: color-mix(in srgb, var(--sehen) 85%, #000); }
+@keyframes sehen-wach {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--sehen) 0%, transparent); }
+  50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--sehen) 18%, transparent); }
+}
+@media (prefers-reduced-motion: reduce) { .sehen-band[data-mode="an"] .sehen-eye { animation: none; } }
+
+.afk-note.sehen-note { color: var(--sehen-text); }
+.sehen-note .an-line { background: linear-gradient(to right, transparent, var(--sehen-border)); }
+.sehen-note .an-line:last-child { background: linear-gradient(to left, transparent, var(--sehen-border)); }
+.sehen-note .an-chip { border-color: var(--sehen-border); background: var(--sehen-soft); }
+.sehen-note .an-chip .ic { color: var(--sehen); }
+
+.sehen-row .switch-title .ic { width: 14px; height: 14px; margin-right: 5px; vertical-align: -2px; color: var(--sehen); }
+.sec-card.sehen-card .sec-ic { background: var(--sehen-soft); color: var(--sehen); }
+.sec-card.sehen-card[data-state="aus"] .sec-badge { border-color: var(--border); background: var(--surface-2); color: var(--text-2); }
+.sec-card.sehen-card[data-state="an"] .sec-badge { border-color: var(--sehen-border); background: var(--sehen-soft); color: var(--sehen-text); }
+.sehen-seg { margin-top: 10px; }
+.sehen-seg .segctl-btn { padding: 6px 8px; min-width: 0; }
+.sehen-seg .segctl-btn:disabled { opacity: .45; cursor: not-allowed; }
+.sehen-hint { color: var(--warn); }
+
+.sehen-modal { z-index: 140; }
+.sehen-dialog { width: min(560px, 100%); }
+.sehen-body p { margin: 0 0 10px; font-size: calc(14px * var(--font-scale)); color: var(--text); }
+.sehen-list { margin: 0; padding-left: 20px; font-size: calc(13.5px * var(--font-scale)); color: var(--text-2); }
+.sehen-list li + li { margin-top: 5px; }
+.sehen-list b { color: var(--text); }

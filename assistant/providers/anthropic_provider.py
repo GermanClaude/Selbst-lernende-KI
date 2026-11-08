@@ -15,6 +15,7 @@ from .base import (
     TRUNCATED_TOOL_ERROR,
     BildTeil,
     LLMProvider,
+    Wortmeldung,
     StreamFn,
     aufteilen,
     bild_gewicht,
@@ -261,7 +262,8 @@ class AnthropicProvider(LLMProvider):
 
     def user_turns(self) -> int:
         # Nachrichten vom Menschen: Text oder Bilder+Text - nicht die Werkzeug-Ergebnisse.
-        return sum(1 for m in self.messages if m["role"] == "user" and _is_human_turn(m["content"]))
+        return sum(1 for m in self.messages if m["role"] == "user" and _is_human_turn(m["content"])
+                   and not isinstance(m, Wortmeldung))  # Live-Sehen: Nova hat sich selbst gemeldet
 
     def history_chars(self) -> int:
         return sum(_content_chars(m["content"]) for m in self.messages)
@@ -364,6 +366,8 @@ def _content_chars(content: Any) -> int:
 def _history_as_text(messages: list[dict[str, Any]]) -> str:
     lines: list[str] = []
     for msg in messages:
+        if isinstance(msg, Wortmeldung):
+            continue  # Live-Sehen: Bildschirminhalt nie in die Zusammenfassung (-> Gedaechtnis)
         role, content = msg["role"], msg["content"]
         if isinstance(content, str):
             lines.append(f"{role}: {content}")

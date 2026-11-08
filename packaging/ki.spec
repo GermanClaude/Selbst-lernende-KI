@@ -39,6 +39,32 @@ try:
 except Exception:  # noqa: BLE001 - ohne vosk: Jarvis-Modus ohne Live-Mitschrift
     pass
 
+# Live-Sehen (Bildschirm, Texterkennung): nur, wenn die Pakete beim Bauen installiert sind.
+# Die Pakete werden erst zur Laufzeit geladen - deshalb hier ausdruecklich. Kein OpenCV.
+sehen_imports = []
+try:
+    from PyInstaller.utils.hooks import collect_submodules
+
+    import numpy  # noqa: F401
+    sehen_imports += ["numpy", "mss", "mss.windows"]
+    try:
+        import dxcam  # noqa: F401
+        sehen_imports += collect_submodules("dxcam")
+    except Exception:  # noqa: BLE001 - z.B. ARM-PC: dann mss
+        pass
+    try:
+        import comtypes.client  # noqa: F401
+        comtypes.client.GetModule("UIAutomationCore.dll")  # UIA-Huelle schon beim Bauen erzeugen
+        sehen_imports += ["comtypes", "comtypes.client"] + collect_submodules("comtypes.gen")
+    except Exception:  # noqa: BLE001
+        pass
+    # winrt bringt einen eigenen PyInstaller-Hook mit
+    sehen_imports += ["winrt.windows.media.ocr", "winrt.windows.globalization", "winrt.windows.graphics.imaging",
+                      "winrt.windows.storage.streams", "winrt.windows.foundation",
+                      "winrt.windows.foundation.collections"]
+except Exception:  # noqa: BLE001 - ohne numpy: Live-Sehen nur mit Webcam
+    sehen_imports = []
+
 a = Analysis(
     [str(project_root / "run_ki.py")],
     pathex=[str(project_root)],
@@ -47,10 +73,10 @@ a = Analysis(
     # Optionale Extras werden nur eingebunden, wenn sie installiert sind.
     # PIL: Bilder verkleinern/pruefen (nur bei Bedarf importiert, deshalb hier ausdruecklich).
     hiddenimports=["anthropic", "openai", "requests", "bs4", "webview", "PIL", "PIL.Image", "PIL.ImageOps",
-                   "PIL.ImageGrab"],
+                   "PIL.ImageGrab"] + sehen_imports,
     hookspath=[],
     runtime_hooks=[],
-    excludes=[],
+    excludes=["cv2"],  # OpenCV nie mitnehmen (dxcam braucht es mit processor_backend="numpy" nicht)
     cipher=block_cipher,
     noarchive=False,
 )

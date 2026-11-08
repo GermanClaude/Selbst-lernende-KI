@@ -151,6 +151,35 @@ erste_nachfrage_minuten = 60
 nachfrage_alle_tage = 12
 
 
+
+# ----------------------------------------------------------------------------
+#  LIVE-SEHEN - Nova schaut auf deinen Bildschirm (Windows) und/oder durch die Webcam (App)
+#  und meldet sich von selbst, wenn etwas Wichtiges passiert (z.B. ein Fehlerfenster).
+#  Nur, wenn du es einschaltest (/sehen an oder Schalter in der App) - beim ersten Mal fragt
+#  Nova um Erlaubnis. Was sie sieht, geht an dein KI-Gehirn (Claude/DeepSeek); mit Ollama
+#  bleibt alles auf deinem PC. Bilder werden nie gespeichert.
+# ----------------------------------------------------------------------------
+[sehen]
+aktiv = false                    # true = beim Start gleich zusehen (nur nach deiner Zustimmung)
+quelle = "auto"                  # auto (Webcam, wenn da und sinnvoll, sonst Bildschirm) | bildschirm | webcam | beides
+aufnahme = "auto"                # Bildschirm-Technik: auto (dxcam, sonst mss) | dxcam | mss
+fps = 15                         # Bilder pro Sekunde fuer die Aenderungserkennung (mehr = mehr Rechenleistung)
+aufmerksamkeit = "normal"        # niedrig | normal | hoch - wie leicht sich Nova von selbst meldet
+min_abstand_sekunden = 20        # so lange mindestens zwischen zwei Wortmeldungen
+max_weckungen_pro_stunde = 20    # hoechstens so viele Wortmeldungen pro Stunde
+max_euro_pro_stunde = 0.30       # hoechstens so viel Kosten pro Stunde (Ollama: kostenlos)
+max_stunden = 3                  # danach schaltet sich Live-Sehen von selbst aus
+bilder_an_ki = true              # Modelle mit Augen bekommen einen verkleinerten Ausschnitt
+max_kante = 1280                 # so gross hoechstens (laengste Seite in Pixeln, kleiner = guenstiger)
+ocr = true                       # Text in geaenderten Bereichen lesen (Windows-Texterkennung)
+ocr_sprache = "de-DE"
+sprechen = true                  # Wortmeldungen vorlesen (wenn Vorlesen oder Jarvis an ist)
+bei_abwesenheit = false          # auch im AFK-Modus zusehen (dann nur Text, nie Bilder)
+hotkey_pause = "Strg+Alt+Umschalt+S"   # sofort wegschauen / wieder hinschauen (ueberall in Windows)
+# Hier schaut Nova nie hin (zusaetzlich zu Passwort-Managern, Anmeldefenstern und privaten
+# Browserfenstern): Programmnamen ("meinebank.exe") oder Teile von Fenstertiteln ("Online-Banking").
+ausnahmen = []
+
 [memory]
 db_path = "data/memory.sqlite3"
 max_facts_in_context = 60
