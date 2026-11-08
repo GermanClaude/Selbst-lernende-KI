@@ -15,6 +15,9 @@ deine KI erklärt sie dir in eigenen Worten.
   stattdessen die aktuelle.
 - **Versionsnummer überall sichtbar:** im Fenstertitel, oben im Terminal, in der
   Seitenleiste – und bei der .exe unter Rechtsklick → Eigenschaften → Details.
+- Klappt ein Update einmal nicht (z.B. weil der Virenscanner die neue Datei
+  festhält), sagt Nova dir das beim nächsten Start – statt still die alte Version
+  weiterlaufen zu lassen.
 
 ## 0.6.0 – 2026-11-08
 
