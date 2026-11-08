@@ -266,3 +266,62 @@ def test_choosing_a_depth_does_not_store_a_forced_model(tmp_path, monkeypatch):
     waehle(cfg, "claude", denken="gruendlich")
     text = (tmp_path / "config" / "settings.toml").read_text(encoding="utf-8")
     assert 'model = "claude-haiku-5-5"' not in text and 'effort = "high"' in text
+
+
+def test_fetching_while_away_cannot_smuggle_data_or_reach_the_home_network(tmp_path, monkeypatch):
+    import socket
+    import types
+
+    from assistant.tools import web
+
+    cfg = load_config(tmp_path)
+    pm = PermissionManager(cfg.permissions, tmp_path)
+    ctx = ToolContext(permissions=pm)
+    fetch = build_registry().get("web_abrufen")
+    pm.begin_away()
+    pm.away_urls.add("https://seite.example/artikel")
+    # angehaengte Leer-/Steuerzeichen wuerden beim Abruf mitgeschickt
+    for tail in ("  ", " \t", "\x00"):
+        assert fetch.run(ctx, url="https://seite.example/artikel" + tail).startswith("Solange")
+    # der Name zeigt ins eigene Netz
+    monkeypatch.setattr(socket, "getaddrinfo", lambda *a, **k: [(2, 1, 6, "", ("192.168.1.1", 443))])
+    assert "eigenen Netz" in fetch.run(ctx, url="https://seite.example/artikel")
+    # Weiterleitung ins eigene Netz wird nicht verfolgt
+    monkeypatch.setattr(socket, "getaddrinfo", lambda host, *a, **k: [
+        (2, 1, 6, "", ("127.0.0.1" if host == "router.example" else "93.184.216.34", 443))])
+    calls = []
+
+    def get(url, **kw):
+        calls.append(url)
+        assert kw.get("allow_redirects") is False
+        return types.SimpleNamespace(status_code=302, headers={"Location": "https://router.example/admin"},
+                                     text="", raise_for_status=lambda: None)
+
+    monkeypatch.setitem(__import__("sys").modules, "requests", types.SimpleNamespace(get=get))
+    out = fetch.run(ctx, url="https://seite.example/artikel")
+    assert "leitet weiter" in out and calls == ["https://seite.example/artikel"]
+    assert web._host_problem("http://seite.example/") is not None
+
+
+def test_own_workspace_inside_the_ki_folder_stays_usable_while_away(tmp_path):
+    cfg = load_config(tmp_path)
+    app = tmp_path / "KI"
+    work = app / "meine-dateien"
+    work.mkdir(parents=True)
+    (work / "notiz.txt").write_text("x", encoding="utf-8")
+    pm = PermissionManager(cfg.permissions, work, app_root=app)
+    pm.begin_away()
+    assert pm.resolve_path("notiz.txt", must_exist=True)
+    assert pm.check_path_write(work / "neu.txt").allowed
+    with pytest.raises(PermissionError_):
+        pm.resolve_path(str(app / ".env"))
+
+
+def test_ki_model_note_only_when_it_matters(tmp_path, monkeypatch):
+    from assistant.modelle import waehle
+
+    monkeypatch.setenv("KI_MODEL", "haiku")
+    cfg = load_config(tmp_path)
+    assert "KI_MODEL" in waehle(cfg, "claude", model="sonnet")["message"]
+    assert "KI_MODEL" not in waehle(cfg, "claude", model="haiku")["message"]
+    assert "KI_MODEL" not in waehle(cfg, "deepseek", model="pro")["message"]  # anderes Gehirn

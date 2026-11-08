@@ -96,7 +96,10 @@ class PermissionManager:
         if not self.app_root:
             return False
         app = Path(self.app_root).resolve()
-        return self._is_within(resolved, app) and not self._is_within(resolved, app / "workspace")
+        work = self.workspace_root
+        # Liegt der eingestellte Arbeitsordner ECHT im KI-Ordner, ist er die Ausnahme - sonst "workspace".
+        own = work if work != app and self._is_within(work, app) else app / "workspace"
+        return self._is_within(resolved, app) and not self._is_within(resolved, own)
 
     # -- Aktionsfreigabe ----------------------------------------------------
     def check(self, risk: Risk, description: str) -> Decision:

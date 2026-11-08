@@ -859,3 +859,32 @@ def test_stopped_answer_drops_a_pending_afk(app):
     time.sleep(0.5)
     state = _req(server, "/api/state")[1]
     assert state["afk"] is None and not state["afk_pending"]
+
+
+def test_stop_resets_the_front_of_the_queue(app):
+    server = app(_slow_script(5), safe_mode=False, auto_confirm=True)
+    ctl = server.controller
+    _req(server, "/api/send", {"text": "eins"})
+    _events_until(server, "tool")
+    with ctl._lock:  # Antwort laeuft noch weiter - Unterbrechung und Stopp kurz nacheinander
+        ctl._queue.insert(0, {"id": 99, "text": "sofort", "model_text": None, "shown": None})
+        ctl._front = 1
+    _req(server, "/api/stop", {})
+    assert ctl._front == 0 and ctl._queue == []
+
+
+def test_writing_before_nova_marks_afk_means_you_stay(app):
+    cmd = f'"{sys.executable}" -c "import time; time.sleep(2)"'
+    script = [(anthro_msg([tool_use_block("shell_befehl", "t1", {"befehl": cmd})], stop_reason="tool_use"), []),
+              (anthro_msg([tool_use_block("abwesenheit", "s1", {"aktion": "start"})], stop_reason="tool_use"), []),
+              (anthro_msg([text_block("Bis spaeter!")]), []), (anthro_msg([text_block("ok")]), [])]
+    server = app(script, safe_mode=False, auto_confirm=True)
+    _req(server, "/api/send", {"text": "Ich bin gleich weg"})
+    _events_until(server, "tool")
+    _req(server, "/api/send", {"text": "Warte, lass das"})
+    events = _events_until(server, "done")
+    events += _events_until(server, "done")
+    assert any(e["type"] == "notice" and "nicht gestartet" in e["text"] for e in events)
+    time.sleep(0.4)
+    state = _req(server, "/api/state")[1]
+    assert state["afk"] is None and not state["afk_pending"]

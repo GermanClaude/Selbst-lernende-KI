@@ -377,6 +377,7 @@ class CLI:
             host.wait()
             host.uninstall()
             speaker.stop()
+            self.brain.provider.cancel_event.clear()  # angehaltene Antwort nicht weitertragen
         if self._afk_pending is not None:  # "Ich bin jetzt weg" im Sprachmodus
             pending, self._afk_pending = self._afk_pending, None
             print(_c("\n[Jarvis-Modus beendet - der AFK-Modus beginnt]", GREY))
@@ -683,6 +684,8 @@ class CLI:
                 continue
             finally:
                 self.thinking.stop()
+            if self.brain.compact_interrupted:  # Strg+C beim Zusammenfassen -> doch nicht weg
+                self._afk_pending = None
             try:
                 print()
                 if self.config.economy.aktiv:
@@ -1242,17 +1245,34 @@ class _TerminalLiveHost:
             finally:
                 self.drop = False
                 print()
+                cancelled = cancelled or provider.cancel_event.is_set() or self.cli.brain.compact_interrupted
+                if cancelled:
+                    self.cli._afk_pending = None  # "Stopp" (auch beim Zusammenfassen) -> doch nicht weg
                 if self.loop is not None:
                     self.loop.on_turn_end(cancelled)
-                    if self.cli._afk_pending is not None and not cancelled:
-                        if getattr(self.loop, "pending", None):  # schon weitergesprochen -> du bist da
-                            self.cli._afk_pending = None
-                        else:
-                            self.loop.stop()  # Jarvis endet, danach beginnt der AFK-Modus
+                    if self.cli._afk_pending is not None:
+                        self._leave_for_afk()
 
         self.worker = threading.Thread(target=work, name="jarvis-antwort", daemon=True)
         self.worker.start()
         return True
+
+    def _leave_for_afk(self) -> None:
+        """Nach 'Ich bin weg': erst fertig sprechen lassen, dann Jarvis beenden (der AFK-Modus
+        beginnt danach). Sprichst du dabei wieder, bleibt Jarvis an und es gibt keinen AFK-Modus."""
+        loop = self.loop
+
+        def wait() -> None:
+            from ..live import hears_you, wait_until_quiet
+
+            quiet = wait_until_quiet(loop, threading.Event())
+            if not quiet or hears_you(loop):
+                self.cli._afk_pending = None
+                print(_c("\n[AFK-Modus nicht gestartet - du bist ja noch da.]", GREY))
+            elif self.cli._afk_pending is not None:
+                loop.stop()
+
+        threading.Thread(target=wait, name="jarvis-afk", daemon=True).start()
 
     def _on_text(self, chunk: str) -> None:
         from ..live import split_tool_lines

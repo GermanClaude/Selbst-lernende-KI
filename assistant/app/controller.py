@@ -27,6 +27,7 @@ from .. import __version__
 from ..anzeige import schoen
 from ..cancel import Abgebrochen
 from ..config import Config, save_setting, toml_string
+from ..live import hears_you, wait_until_quiet
 from ..logging_setup import get_logger
 from ..modelle import kurzbeschreibung
 from ..permissions import Risk
@@ -383,23 +384,24 @@ class AppController(CLI):
             return {"message": self._queue.pop(0)}
         if self._afk_pending is not None:
             request, self._afk_pending = self._afk_pending, None
-            live = self._live
-            if live is not None and getattr(live, "pending", None):
-                self._afk_dropped = True  # im Sprachmodus wurde weitergesprochen -> du bist da
+            if hears_you(self._live):
+                self._afk_dropped = True  # im Sprachmodus wird (weiter)gesprochen -> du bist da
                 return None
             try:
                 session = self._new_afk_session_locked(request)
             except Exception:  # noqa: BLE001 - nie mit busy=True haengen bleiben
                 logger.exception("AFK-Modus konnte nicht beginnen")
-                self._afk_dropped = True
+                self._afk_dropped = "fehler"
                 return None
             self.brain.provider.cancel_event.clear()
             return {"afk": session}
         return None
 
     def _afk_dropped_notice(self) -> None:
-        if self._afk_dropped:
-            self._afk_dropped = False
+        reason, self._afk_dropped = self._afk_dropped, False
+        if reason == "fehler":
+            self._notice("Der AFK-Modus ging nicht (interner Fehler) - ich bin weiter normal fuer dich da.", "afk")
+        elif reason:
             self._notice("AFK-Modus nicht gestartet - du bist ja noch da.", "afk")
 
     def _new_afk_session_locked(self, request: dict):
@@ -517,7 +519,8 @@ class AppController(CLI):
             else:
                 answer = self.brain.respond(model_text or text, on_text=self._emit)
         except KeyboardInterrupt:  # Stopp-Knopf (Abgebrochen) - oder Strg+C im Hintergrund
-            if not as_notice:
+            leaving = self._live_turn is not None and self._live_turn.stop_event.is_set()
+            if not as_notice and not leaving:  # Jarvis beendet ("Tschuess") heisst nicht "doch da"
                 with self._lock:  # angehalten (auch per Stimme) -> doch nicht weg
                     if self._afk_pending is not None:
                         self._afk_pending = None
@@ -558,6 +561,7 @@ class AppController(CLI):
         einfach abgeschickt, sondern kommen zurueck ins Eingabefeld (nichts geht verloren)."""
         with self._lock:
             waiting, self._queue = self._queue, []
+            self._front = 0
             self._afk_pending = None
             if self._afk is not None:
                 self._afk.stop_event.set()
@@ -571,10 +575,15 @@ class AppController(CLI):
 
     # -- AFK-Modus: allein weiterarbeiten, waehrend du weg bist (abwesend.py) -------
     def _afk_request(self, auftrag: str = "", minutes: int | None = None, budget: float | None = None) -> None:
-        """Vormerken - beginnt, sobald die laufende Antwort fertig ist."""
+        """Vormerken (Werkzeug abwesenheit, /afk) - beginnt, sobald die laufende Antwort fertig ist.
+        Wurde waehrend dieser Antwort schon weitergeschrieben, bist du offensichtlich noch da."""
         with self._lock:
             if self._afk is None:
-                self._afk_pending = {"auftrag": auftrag or "", "minutes": minutes, "budget": budget}
+                if self._queue:
+                    self._afk_dropped = True
+                else:
+                    self._afk_pending = {"auftrag": str(auftrag or "")[:2000], "minutes": _int_or_none(minutes),
+                                         "budget": _float_or_none(budget)}
         self._state_changed()
 
     def afk(self, data: dict) -> dict:
@@ -621,8 +630,13 @@ class AppController(CLI):
         from ..abwesend import run_session
 
         try:
-            if self._jarvis_active():
-                self._live.stop()  # allein arbeiten heisst: nicht mithoeren und nichts vorlesen
+            live = self._live
+            if live is not None and not live.stop_event.is_set():
+                # Erst die Bestaetigung zu Ende sprechen lassen; sprichst du dabei wieder, bist du da.
+                if not wait_until_quiet(live, session.stop_event):
+                    session.ended = "nicht_gestartet"
+                    return
+                live.stop()  # allein arbeiten heisst: nicht mithoeren und nichts vorlesen
             self.permissions.begin_away()
             task = (f"Auftrag: {session.auftrag}" if session.auftrag
                     else "Ich mache mit dem weiter, woran wir zuletzt gearbeitet haben.")
@@ -644,6 +658,12 @@ class AppController(CLI):
         finally:
             self.permissions.end_away()
             self.tool_ctx.extra.pop("afk_session", None)
+            if session.ended == "nicht_gestartet":
+                with self._lock:
+                    self._afk = None
+                self._notice("AFK-Modus nicht gestartet - du bist ja noch da.", "afk")
+                self._state_changed()
+                return
             if not session.ended:
                 session.ended = "fehler"
             report = session.report()
@@ -873,6 +893,8 @@ class AppController(CLI):
             if self._jarvis_active():
                 return {"ok": True, "live": self._live.ear.live}
             with self._lock:  # Jarvis oeffnen heisst: du bist zurueck
+                if self._afk_pending is not None:
+                    self._afk_dropped = True
                 afk, self._afk_pending = self._afk, None
                 back = afk is not None and not afk.ended
                 if back:
@@ -880,6 +902,7 @@ class AppController(CLI):
                     self.brain.provider.cancel()
             if back:
                 self._cancel_rest()
+            self._afk_dropped_notice()
             problem = self.voice_capture.problem()
             if problem:
                 return {"ok": False, "error": schoen(problem), "setup": not getattr(sys, "frozen", False)}

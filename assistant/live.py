@@ -1204,3 +1204,25 @@ class LiveLoop:
                 and not self.stop_event.is_set() and not self.host.busy()):
             text, self.pending = self.pending, None
             self._send(text)
+
+
+def hears_you(live) -> bool:
+    """Sprichst du im Jarvis-Modus gerade (oder wartet Gesagtes auf eine Antwort)?"""
+    if live is None or live.stop_event.is_set():
+        return False
+    return bool(getattr(live, "pending", None) or getattr(live, "hearing", False)
+                or getattr(live, "state", "") in ("hearing", "recognizing"))
+
+
+def wait_until_quiet(live, stop_event, timeout: float = 60.0) -> bool:
+    """Wartet, bis Nova im Jarvis-Modus ausgeredet hat. False = du sprichst wieder / bist zurueck."""
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        if stop_event.is_set() or hears_you(live):
+            return False
+        if live.stop_event.is_set():
+            return True
+        if not live.turn_active and not live.speaking and live.voice_out.idle():
+            return True
+        time.sleep(0.1)
+    return True

@@ -245,8 +245,12 @@ def waehle(config, provider: str | None = None, model: str | None = None,
         setattr(section, level_key, new_level)
     changed = model_changed or level_changed
     message = f"{modell_name(provider, new_model)} - Denk-Tiefe: {denktiefe_name(provider, new_level)}."
-    if model_changed and os.environ.get("KI_MODEL"):
-        message += " Hinweis: KI_MODEL (in .env) legt beim naechsten Start wieder ein anderes Modell fest."
+    forced = (os.environ.get("KI_MODEL") or "").strip()
+    if model_changed and forced and provider == config.active_provider:
+        forced_id = _finde_modell(provider, forced) or forced
+        if forced_id != new_model:
+            message += (f" Hinweis: KI_MODEL (in .env oder den Umgebungsvariablen) legt beim naechsten Start "
+                        f"wieder {modell_name(provider, forced_id)} fest.")
     if provider == "claude" and new_model == "claude-fable-5-1" and new_level in ("xhigh", "max"):
         message += " Achtung: Fable denkt so sehr lange und ist teuer."
     return {"ok": True, "message": message, "changed": changed, "provider": provider}

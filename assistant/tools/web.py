@@ -68,7 +68,7 @@ class WebSearchTool(Tool):
             snippet = snippets[i].get_text(strip=True) if i < len(snippets) else ""
             results.append(f"{i + 1}. {title}\n   {snippet}\n   {href}")
             if getattr(ctx.permissions, "away", False) and href:
-                ctx.permissions.away_urls.add(_plain_url(href))
+                ctx.permissions.away_urls.add(_plain_url(href.strip()))
         if not results:
             return f"Keine Treffer fuer '{anfrage}'."
         return f"Suchergebnisse fuer '{anfrage}':\n\n" + "\n\n".join(results)
@@ -87,17 +87,24 @@ class WebFetchTool(Tool):
         ctx.permissions.require(Risk.SAFE, f"Seite abrufen: {url}")
         if not url.startswith(("http://", "https://")):
             return "Bitte eine vollstaendige URL mit http(s):// angeben."
-        if getattr(ctx.permissions, "away", False):
+        away = getattr(ctx.permissions, "away", False)
+        if away:
             # Niemand schaut zu: keine Daten in Adressen "verschicken" (eingeschleuste Anweisungen)
             problem = _away_url_problem(url, getattr(ctx.permissions, "away_urls", set()))
             if problem:
                 return problem
+            url = _plain_url(url)  # genau den gespeicherten Treffer abrufen
         try:
             import requests
         except ImportError:
             return "Das Paket 'requests' fehlt. Installiere es mit: pip install requests"
         try:
-            resp = requests.get(url, headers=_HEADERS, timeout=25)
+            if away:
+                resp = _get_checked(requests, url)
+                if isinstance(resp, str):
+                    return resp
+            else:
+                resp = requests.get(url, headers=_HEADERS, timeout=25)
             resp.raise_for_status()
         except Exception as exc:  # noqa: BLE001
             return f"Abruf fehlgeschlagen: {exc}"
@@ -122,11 +129,11 @@ def register(registry) -> None:
 
 
 def _plain_url(url: str) -> str:
-    return url.split("#", 1)[0].strip()
+    return url.split("#", 1)[0]
 
 
-def _away_url_problem(url: str, allowed: set) -> str | None:
-    """Im AFK-Modus: nur https-Links, die die Websuche in dieser Abwesenheit geliefert hat."""
+def _host_problem(url: str) -> str | None:
+    """https, keine Benutzerangaben, kein eigenes Netz - auch nicht ueber den Namen (DNS)."""
     parts = urlsplit(url)
     host = parts.hostname or ""
     if parts.scheme != "https" or "@" in parts.netloc or not host:
@@ -136,9 +143,48 @@ def _away_url_problem(url: str, allowed: set) -> str | None:
         return "Solange dein Mensch weg ist, rufe ich keine IP-Adressen ab."
     except ValueError:
         pass
-    if host == "localhost" or host.endswith((".local", ".lan", ".internal")):
+    if host == "localhost" or host.endswith((".local", ".lan", ".internal", ".localhost")):
         return "Solange dein Mensch weg ist, rufe ich nichts im eigenen Netz ab."
+    import socket
+
+    try:
+        infos = socket.getaddrinfo(host, parts.port or 443, proto=socket.IPPROTO_TCP)
+    except OSError:
+        return None  # nicht aufloesbar -> der Abruf scheitert ohnehin
+    for info in infos:
+        try:
+            ip = ipaddress.ip_address(info[4][0].split("%", 1)[0])
+        except ValueError:
+            continue
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast \
+                or ip.is_unspecified:
+            return "Solange dein Mensch weg ist, rufe ich nichts im eigenen Netz ab."
+    return None
+
+
+def _away_url_problem(url: str, allowed: set) -> str | None:
+    """Im AFK-Modus: nur https-Links, die die Websuche in dieser Abwesenheit geliefert hat -
+    exakt so (keine angehaengten Leer-/Steuerzeichen, die beim Abruf mitgeschickt wuerden)."""
+    if url != url.strip() or any(c.isspace() or ord(c) < 32 or ord(c) == 127 for c in url):
+        return "Solange dein Mensch weg ist, rufe ich nur Adressen ohne Leer- oder Steuerzeichen ab."
     if _plain_url(url) not in allowed:
         return ("Solange dein Mensch weg ist, rufe ich nur Seiten ab, die ich vorher ueber die Websuche "
                 "gefunden habe (keine selbst gebauten Adressen). Such zuerst mit web_suche.")
-    return None
+    return _host_problem(url)
+
+
+def _get_checked(requests, url: str, hops: int = 5):
+    """Abruf im AFK-Modus: Weiterleitungen selbst verfolgen und jedes Ziel pruefen
+    (eine Seite darf nicht ins eigene Netz oder auf http umleiten)."""
+    from urllib.parse import urljoin
+
+    for _ in range(hops + 1):
+        resp = requests.get(url, headers=_HEADERS, timeout=25, allow_redirects=False)
+        location = resp.headers.get("Location") if getattr(resp, "headers", None) else None
+        if not (300 <= int(getattr(resp, "status_code", 200) or 200) < 400 and location):
+            return resp
+        url = urljoin(url, location)
+        problem = _host_problem(url)
+        if problem:
+            return "Die Seite leitet weiter auf eine Adresse, die ich jetzt nicht abrufe. " + problem
+    return "Zu viele Weiterleitungen - abgebrochen."
