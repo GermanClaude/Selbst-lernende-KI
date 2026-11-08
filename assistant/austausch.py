@@ -80,12 +80,13 @@ def run_helper(argv: list[str]) -> int:
     else:
         log.warning("Update NICHT eingespielt - die bisherige Version bleibt: %s", target)
         record_failure(root, "Die neue Version konnte nicht eingesetzt werden (Datei gesperrt?). "
-                             "Die bisherige laeuft weiter - versuch es spaeter mit /update noch einmal.")
+                             "Die bisherige laeuft weiter - versuch es spaeter mit /update noch einmal.",
+                       exe_name=target.name)
         if _alive(old_pid):
             return 1  # die alte KI laeuft noch - kein zweites Fenster derselben Version
         aside = target.with_name(target.name + ".alt")
-        if not target.is_file() and aside.is_file():
-            target = aside  # ging nicht zurueck umzubenennen: after_start holt das beim Start nach
+        if not target.is_file() and aside.is_file() and not _move_back(aside, target, delay=1.0, attempts=60):
+            target = aside  # Notloesung: die alte laeuft als .alt - after_start legt die .exe wieder an
     env = _clean_env()
     env["KI_NEUSTART_VON"] = str(old_pid or os.getpid())
     flags = getattr(subprocess, "CREATE_NEW_CONSOLE", 0)  # KI.exe (Terminal) bekommt ihr Fenster
@@ -184,14 +185,18 @@ def _move_back(aside: Path, dst: Path, delay: float, attempts: int = 20) -> bool
     return False
 
 
-def record_failure(root: Path, message: str) -> None:
+def record_failure(root: Path, message: str, exe_name: str | None = None) -> None:
     """Merkt sich fuer die naechste KI, dass das Einspielen nicht geklappt hat (sie sagt es dir)."""
     path = Path(root) / "data" / "update.json"
     try:
         state = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         state = {}
+    if not isinstance(state, dict):
+        state = {}
     state["einspielen_fehlgeschlagen"] = message
+    if exe_name:
+        state["fehlgeschlagen_exe"] = exe_name  # KI.exe und KI-App.exe werden getrennt aktualisiert
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(state, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -303,16 +308,17 @@ def after_start(exe: Path, root: Path, version: str, force: bool = False, backgr
     True = es wird repariert."""
     exe = Path(exe)
     if exe.suffix.lower() == ".alt":
-        # Laeuft als "KI-App.exe.alt" (Update-Ausweichweg ging schief): zurueck auf den richtigen
-        # Namen - Windows erlaubt das Umbenennen auch, waehrend die Datei laeuft.
+        # Laeuft als "KI-App.exe.alt" (Update-Ausweichweg ging schief). NICHT umbenennen: die
+        # .exe liest beim Laufen noch Programmteile aus ihrer Datei. Stattdessen die richtige
+        # .exe als Kopie wieder anlegen (Verknuepfungen zeigen auf ihren Pfad); beim naechsten
+        # Start von dort raeumt after_start die .alt weg. Nichts auf die .alt umbiegen.
         proper = exe.with_suffix("")
-        if proper.exists():
-            return False  # die richtige .exe ist da - hier nichts aufraeumen oder umbiegen
-        try:
-            os.replace(exe, proper)
-        except OSError:
-            return False  # Verknuepfungen NICHT auf die .alt richten
-        exe = proper
+        if not proper.exists():
+            try:
+                shutil.copy2(exe, proper)
+            except OSError:
+                pass
+        return False
     leftovers = list(Path(tempfile.gettempdir()).glob(f"{HELPER_PREFIX}*.exe"))
     leftovers.append(exe.with_name(exe.name + ".alt"))  # Ausweichweg beim letzten Update
     for old in leftovers:

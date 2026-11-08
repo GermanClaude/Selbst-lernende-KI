@@ -176,14 +176,17 @@ class Updater:
         self.current = current_version
         self.frozen = getattr(sys, "frozen", False) if frozen is None else frozen
         self.exe_path = Path(exe_path or sys.executable)
-        if self.exe_path.suffix.lower() == ".alt" and not self.exe_path.exists():
-            self.exe_path = self.exe_path.with_suffix("")  # beim Start zurueckbenannt (austausch.py)
+        if self.exe_path.suffix.lower() == ".alt":
+            proper = self.exe_path.with_suffix("")  # laeuft als .alt: Updates gehen an die .exe
+            if proper.is_file() or not self.exe_path.exists():
+                self.exe_path = proper
         # Windows: neue .exe beim Neustart IN die bestehende Datei schreiben (Verknuepfungen
         # bleiben gueltig, siehe austausch.py). Sonst (Tests, andere Systeme): gleich ersetzen.
         self.inplace = sys.platform == "win32" if inplace is None else bool(inplace)
         self.pending_exe: Path | None = None
         self.current_before_install = current_version
         self._paused_before = False  # Stand von automatik_pausiert vor install()/restore()
+        self._target_version: str | None = None  # welche neue Version gerade eingesetzt wird
         self._retry_hint = "/update"  # womit man es nach einem Fehlschlag nochmal versucht
         self.run = run
         self.now = now
@@ -325,6 +328,7 @@ class Updater:
         self.current_before_install = self.current
         self._paused_before = self.paused
         self._retry_hint = "/update"
+        self._target_version = info.new
         if info.kind == "exe":
             message = self._install_exe(info, say)
         else:
@@ -416,11 +420,19 @@ class Updater:
         Endlosschleife aus Download, Neustart, Fehlschlag) - /update versucht es erneut."""
         state = self._state()
         message = state.pop("einspielen_fehlgeschlagen", None)
+        failed_exe = state.pop("fehlgeschlagen_exe", None)
         if message:
             tried = state.get("installiert")
-            if tried and is_newer(str(tried), self.current):
+            ours = not failed_exe or str(failed_exe).lower() == self.exe_path.name.lower()
+            if ours and tried and is_newer(str(tried), self.current):
                 state["fehlgeschlagen_version"] = str(tried)
-            state["installiert"] = self.current
+            elif ours and tried and is_newer(self.current, str(tried)):
+                # /zurueck auf eine aeltere Version ging schief: du hast weiter die neuere - die
+                # Automatik nicht still pausiert lassen.
+                state["automatik_pausiert"] = False
+                message = str(message).replace("/update", "/zurueck")
+            if ours:
+                state["installiert"] = self.current
             self.state_path.write_text(json.dumps(state, indent=2, ensure_ascii=False), encoding="utf-8")
         return message or None
 
@@ -430,9 +442,13 @@ class Updater:
         return bool(failed) and str(failed) == str(version)
 
     def _undo_install(self) -> None:
-        """Die neue Version kam doch nicht zum Einsatz: wieder die bisherige Nummer/Einstellung."""
+        """Die neue Version kam doch nicht zum Einsatz: wieder die bisherige Nummer/Einstellung.
+        Die gescheiterte Version wird gemerkt - nicht taeglich neu laden (nur /update)."""
         self.current = self.current_before_install
-        self._save_state(installiert=self.current, automatik_pausiert=bool(self._paused_before))
+        changes = {"installiert": self.current, "automatik_pausiert": bool(self._paused_before)}
+        if self._target_version and is_newer(self._target_version, self.current):
+            changes["fehlgeschlagen_version"] = self._target_version
+        self._save_state(**changes)
 
     def _new_backup_dir(self, version: str) -> Path:
         stamp = self.now().strftime("%Y-%m-%d_%H%M%S")
@@ -531,6 +547,7 @@ class Updater:
         self.current_before_install = self.current
         self._paused_before = self.paused
         self._retry_hint = "/zurueck"
+        self._target_version = None
         if self.frozen:
             old_exe = chosen.path / self.exe_path.name
             if not old_exe.is_file():

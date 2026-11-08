@@ -299,21 +299,68 @@ def test_moving_keeps_the_old_exe_when_it_cannot_be_put_back(tmp_path, monkeypat
     assert aside.read_bytes() == b"MZ-alt"  # nicht geloescht - after_start holt sie zurueck
 
 
-def test_exe_left_as_alt_renames_itself_back_and_repairs_nothing_wrong(tmp_path, monkeypatch):
+def test_exe_left_as_alt_never_renames_itself_but_restores_the_exe(tmp_path, monkeypatch):
     calls = []
     monkeypatch.setattr(austausch, "repair_shortcuts", lambda exe, root: calls.append(exe) or 1)
     monkeypatch.setattr(austausch.tempfile, "gettempdir", lambda: str(tmp_path))
     alt = tmp_path / "KI-App.exe.alt"
     alt.write_bytes(b"MZ-alt")
-    assert austausch.after_start(alt, tmp_path, "0.6.1", background=False)
-    assert (tmp_path / "KI-App.exe").read_bytes() == b"MZ-alt" and not alt.exists()
-    assert calls == [tmp_path / "KI-App.exe"]  # Verknuepfungen auf die .exe, nie auf die .alt
+    # Die laufende Datei darf nicht umbenannt werden (PyInstaller liest noch aus ihr).
+    assert austausch.after_start(alt, tmp_path, "0.6.1", background=False) is False
+    assert alt.read_bytes() == b"MZ-alt" and (tmp_path / "KI-App.exe").read_bytes() == b"MZ-alt"
+    assert calls == []  # nie Verknuepfungen auf die .alt richten
     up = Updater(UpdateSettings(), tmp_path, frozen=True, exe_path=alt, inplace=True)
-    assert up.exe_path == tmp_path / "KI-App.exe"
-    # Liegt die richtige .exe schon da, wird von der .alt aus nichts umgebogen.
-    alt.write_bytes(b"MZ-alt")
-    calls.clear()
-    assert austausch.after_start(alt, tmp_path, "0.6.2", background=False) is False and calls == []
+    assert up.exe_path == tmp_path / "KI-App.exe"  # Updates gehen an die richtige .exe
+    # Naechster Start ueber die .exe: die .alt wird weggeraeumt.
+    assert austausch.after_start(tmp_path / "KI-App.exe", tmp_path, "0.6.1", background=False)
+    assert not alt.exists() and calls == [tmp_path / "KI-App.exe"]
+
+
+def test_helper_puts_the_old_exe_back_before_restarting_it(tmp_path, monkeypatch):
+    target = tmp_path / "KI-App.exe"
+    (tmp_path / "KI-App.exe.alt").write_bytes(b"MZ-alt")  # Zurueckschieben ging vorher schief
+    new = tmp_path / "KI-App.exe.neu"
+    new.write_bytes(b"MZ-neu")
+    started = []
+    monkeypatch.setattr(austausch, "overwrite_in_place", lambda src, dst: False)
+    monkeypatch.setattr(austausch, "replace_by_moving", lambda src, dst: False)
+    monkeypatch.setattr(austausch, "wait_for_exit", lambda pid, timeout=0: None)
+    monkeypatch.setattr(austausch, "_alive", lambda pid: False)
+    monkeypatch.setattr(austausch.subprocess, "Popen", lambda cmd, **kw: started.append(cmd))
+    monkeypatch.setenv("KI_UPDATE_ORDNER", str(tmp_path))
+    assert austausch.run_helper([str(new), str(target), "4242"]) == 1
+    assert target.read_bytes() == b"MZ-alt" and started == [[str(target)]]
+
+
+def test_failed_restore_via_helper_does_not_leave_updates_paused(tmp_path):
+    up, exe = _exe_update(tmp_path)
+    up.current = "0.7.0"
+    up._save_state(automatik_pausiert=True, installiert="0.6.0")  # /zurueck auf 0.6.0 begonnen
+    austausch.record_failure(up.root, "Nicht eingesetzt - versuch es spaeter mit /update noch einmal.",
+                             exe_name="KI-App.exe")
+    message = up.take_install_failure()
+    assert "/zurueck" in message and not up.paused and not up.failed_before("0.6.0")
+
+
+def test_failure_of_the_other_exe_does_not_block_this_one(tmp_path):
+    up, exe = _exe_update(tmp_path)  # KI-App.exe, Version 0.6.0
+    up._save_state(installiert="0.7.0")
+    austausch.record_failure(up.root, "Nicht eingesetzt.", exe_name="KI.exe")
+    assert up.take_install_failure() == "Nicht eingesetzt."  # Hinweis ja ...
+    assert not up.failed_before("0.7.0")  # ... aber KI-App.exe darf sich normal aktualisieren
+
+
+def test_vanished_new_version_is_remembered_as_failed(tmp_path):
+    import pytest
+
+    from assistant.updater import UpdateError
+
+    up, exe = _exe_update(tmp_path)
+    up.install(up.check(), say=lambda m: None)
+    up.pending_exe.unlink()
+    with pytest.raises(UpdateError):
+        up.restart_exe(["--app"])
+    assert up.failed_before("0.7.0")  # nicht jeden Tag neu laden und erklaeren lassen
 
 
 def test_failed_restart_keeps_the_old_version_number_and_settings(tmp_path, monkeypatch):
