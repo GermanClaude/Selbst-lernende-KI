@@ -1,0 +1,8 @@
+jsQR.js – QR-Code-Leser für den Browser (nur geladen, wenn "QR-Code scannen" ohne BarcodeDetector läuft)
+
+Paket:     jsqr 1.4.0 (npm), Datei dist/jsQR.js unverändert
+Quelle:    https://github.com/cozmo/jsQR  /  https://registry.npmjs.org/jsqr/-/jsqr-1.4.0.tgz
+npm-Integrität (Tarball): sha512-dxLob7q65Xg2DvstYkRpkYtmKm2sPJ9oFhrhmudT1dZvNFFTlroai3AWSpLey/w5vMcLBXRgOJsbXpdN9HzU/A==
+SHA-256 (jsQR.js):        bc40c8a15196236b2314db0856f72ca0b49980cd5413b8c852a7349f5fee0859
+Lizenz:    Apache License 2.0 (siehe jsQR-LICENSE.txt)
+Kein eval/new Function – passt zur strengen CSP (script-src 'self').

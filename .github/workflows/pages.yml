@@ -1,0 +1,45 @@
+# Veroeffentlicht den Ordner web/ auf GitHub Pages:
+#   https://germanclaude.github.io/Selbst-lernende-KI/kamera/v1/  (Handy-Kamera fuer Nova)
+# Einmalig im Repo: Settings -> Pages -> Source = "GitHub Actions".
+name: Webseite (GitHub Pages)
+
+on:
+  push:
+    branches: [ccr-cfa1ff8c-wgsyxb]
+    paths:
+      - "web/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Immer nur eine Veroeffentlichung gleichzeitig; eine laufende wird nicht abgebrochen.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pruefen (JavaScript-Syntax, Manifest)
+        run: |
+          for f in web/kamera/v1/*.js; do node --check "$f"; done
+          python3 -c "import json; json.load(open('web/kamera/v1/manifest.webmanifest', encoding='utf-8'))"
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web
+
+      - id: deployment
+        uses: actions/deploy-pages@v4
