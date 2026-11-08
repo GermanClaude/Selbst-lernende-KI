@@ -409,8 +409,11 @@ def run_app(config, started_by: str | None = None, browser: bool = False) -> int
     except OSError as exc:
         logger.info("app.json nicht schreibbar: %s", exc)
 
+    from .. import __version__
+
     meaning = config.ki.bedeutung.strip()
     title = f"{config.ki.name} - {meaning}" if meaning else f"{config.ki.name} - Selbst-lernende KI"
+    title += f"  \u00b7  Version {__version__}"  # Versionsnummer gleich im Fenstertitel
     try:
         if browser:
             logger.info("App: im Browser-Fenster (gewuenscht)")

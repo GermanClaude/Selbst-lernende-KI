@@ -96,9 +96,61 @@ def _crash_log() -> None:
         pass
 
 
+def _from_backup() -> bool:
+    """Eine gesicherte alte Version aus versionen/ wurde gestartet (z.B. ueber eine alte
+    Verknuepfung): die aktuelle starten und Bescheid geben. True = diese hier beendet sich."""
+    if not getattr(sys, "frozen", False):
+        return False
+    from assistant.austausch import running_from_backup
+
+    current = running_from_backup(Path(sys.executable))
+    if current is None:
+        return False
+    import subprocess
+
+    env = {k: v for k, v in os.environ.items() if not k.startswith("_PYI_")}
+    env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+    env["KI_VERKNUEPFUNGEN_PRUEFEN"] = "1"
+    try:
+        subprocess.Popen([str(current), *sys.argv[1:]], cwd=str(current.parent), env=env,
+                         creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0))
+    except OSError:
+        return False
+    try:
+        from assistant.app.launcher import message_box
+
+        message_box("Das war eine gesicherte alte Version aus dem Ordner 'versionen'. Ich starte die "
+                    "aktuelle Version - und richte deine Verknuepfung wieder richtig ein.")
+    except Exception:  # noqa: BLE001
+        pass
+    return True
+
+
+def _after_start() -> None:
+    """Nach einem Update: alte Helfer wegraeumen, Verknuepfungen reparieren (im Hintergrund)."""
+    if not getattr(sys, "frozen", False):
+        return
+    try:
+        from assistant import __version__
+        from assistant.austausch import after_start
+        from assistant.config import PROJECT_ROOT
+
+        after_start(Path(sys.executable), PROJECT_ROOT, __version__,
+                    force=os.environ.get("KI_VERKNUEPFUNGEN_PRUEFEN") == "1")
+    except Exception:  # noqa: BLE001 - nie den Start stoeren
+        pass
+
+
 def main() -> int:
     # Projektpfad in sys.path aufnehmen (fuer den Start aus dem Quellordner).
     sys.path.insert(0, str(Path(__file__).resolve().parent))
+    if len(sys.argv) > 1 and sys.argv[1] == "--update-einspielen":
+        # Update-Helfer (Kopie im Temp-Ordner): neue Version in die bestehende Datei schreiben
+        from assistant.austausch import run_helper
+
+        return run_helper(sys.argv[2:])
+    if _from_backup():
+        return 0
     if _is_app_exe() and "--terminal" in sys.argv:
         _open_console()  # aus der App heraus: Terminal-Version im eigenen Fenster
     elif _is_app_exe() and "--app" not in sys.argv:
@@ -109,6 +161,7 @@ def main() -> int:
     _crash_log()
     try:
         _ensure_runtime_dir()
+        _after_start()
         from assistant.__main__ import main as app_main
 
         code = app_main()

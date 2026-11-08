@@ -168,6 +168,7 @@ class Updater:
         exe_path: Path | None = None,
         run: Callable[..., subprocess.CompletedProcess] = subprocess.run,
         now: Callable[[], datetime] = datetime.now,
+        inplace: bool | None = None,
     ):
         self.settings = settings
         self.root = Path(root)
@@ -175,6 +176,10 @@ class Updater:
         self.current = current_version
         self.frozen = getattr(sys, "frozen", False) if frozen is None else frozen
         self.exe_path = Path(exe_path or sys.executable)
+        # Windows: neue .exe beim Neustart IN die bestehende Datei schreiben (Verknuepfungen
+        # bleiben gueltig, siehe austausch.py). Sonst (Tests, andere Systeme): gleich ersetzen.
+        self.inplace = sys.platform == "win32" if inplace is None else bool(inplace)
+        self.pending_exe: Path | None = None
         self.run = run
         self.now = now
         self.state_path = self.root / "data" / "update.json"
@@ -353,25 +358,49 @@ class Updater:
         new_exe.write_bytes(data)
         backup = self._swap_exe(new_exe)
         say(f"Alte Version {self.current} gesichert in {backup.relative_to(self.root).as_posix()}/")
+        if self.pending_exe is not None:
+            return f"{exe.name} {info.new} ist bereit - sie wird beim Neustart eingesetzt."
         return f"KI.exe {info.new} ist installiert."
 
     def _swap_exe(self, new_exe: Path) -> Path:
-        """Laufende KI.exe in die Sicherung verschieben und die neue einsetzen.
+        """Die laufende .exe als KOPIE sichern und die neue einsetzen.
 
-        Eine laufende .exe darf unter Windows umbenannt, aber nicht ueberschrieben
-        werden. Klappt das Einsetzen nicht (Virenscanner prueft die neue Datei noch),
-        kommt die alte KI.exe sofort zurueck.
+        Windows: Eine laufende .exe darf man nicht ueberschreiben. Die neue Version wird
+        deshalb erst beim Neustart von einem Helfer IN dieselbe Datei geschrieben
+        (austausch.py) - so bleibt sie fuer Windows dieselbe Datei und Verknuepfungen auf dem
+        Desktop oder in der Taskleiste zeigen weiter auf die richtige Version (frueher wanderten
+        sie mit der alten Datei in den Sicherungsordner). Anderswo: gleich ersetzen.
         """
         exe = self.exe_path
         backup = self._new_backup_dir(self.current)
-        _retry(lambda: os.replace(exe, backup / exe.name))
+        try:
+            shutil.copy2(exe, backup / exe.name)
+        except OSError as exc:
+            shutil.rmtree(backup, ignore_errors=True)
+            raise UpdateError(f"Die alte Version liess sich nicht sichern ({exc}) - nichts geaendert.") from exc
+        if self.inplace:
+            self.pending_exe = new_exe
+            return backup
         try:
             _retry(lambda: os.replace(new_exe, exe))
         except OSError as exc:
-            os.replace(backup / exe.name, exe)
             shutil.rmtree(backup, ignore_errors=True)
             raise UpdateError(f"Die neue KI.exe konnte nicht eingesetzt werden ({exc}) - alte Version bleibt.") from exc
         return backup
+
+    def _swap_now_by_moving(self, new_exe: Path) -> None:
+        """Notfall, wenn der Helfer nicht startet: wie frueher - die laufende .exe beiseite
+        schieben (darf man unter Windows) und die neue an ihren Platz setzen."""
+        exe = self.exe_path
+        aside = exe.with_name(exe.name + ".alt")
+        if aside.exists():
+            aside.unlink()
+        _retry(lambda: os.replace(exe, aside))
+        try:
+            _retry(lambda: os.replace(new_exe, exe))
+        except OSError:
+            os.replace(aside, exe)
+            raise
 
     def _new_backup_dir(self, version: str) -> Path:
         stamp = self.now().strftime("%Y-%m-%d_%H%M%S")
@@ -492,7 +521,19 @@ class Updater:
 
     # -- Neustart -----------------------------------------------------------
     def restart_exe(self, extra_args: list[str] | None = None) -> None:
-        """Startet die (neue) KI.exe in einem neuen Fenster (z.B. mit --app)."""
+        """Startet die (neue) KI.exe in einem neuen Fenster (z.B. mit --app). Wartet eine neue
+        Version aufs Einsetzen, macht das ein Helfer, sobald diese KI beendet ist."""
+        if self.pending_exe is not None and self.pending_exe.is_file():
+            from .austausch import start_helper
+
+            try:
+                start_helper(self.exe_path, self.pending_exe, extra_args)
+                self.pending_exe = None
+                return
+            except OSError as exc:
+                logger.warning("Update-Helfer startet nicht (%s) - setze die neue Version direkt ein.", exc)
+                self._swap_now_by_moving(self.pending_exe)
+                self.pending_exe = None
         flags = getattr(subprocess, "CREATE_NEW_CONSOLE", 0)
         # Ohne das haelt PyInstaller (>= 6.9) den neuen Prozess fuer einen Helfer der
         # alten KI.exe und nutzt deren entpackte Dateien - die gleich geloescht werden.

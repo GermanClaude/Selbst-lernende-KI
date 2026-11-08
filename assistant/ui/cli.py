@@ -1095,7 +1095,8 @@ class CLI:
 
         name = self.config.ki.name
         meaning = self.config.ki.bedeutung.strip()
-        print(_c(f"\n=== {name}{' - ' + meaning if meaning else ' - deine lernfaehige KI'} ===", BOLD))
+        print(_c(f"\n=== {name}{' - ' + meaning if meaning else ' - deine lernfaehige KI'} "
+                 f"(Version {__version__}) ===", BOLD))
         print(
             _c(
                 f"Gehirn: {self.config.active_provider} ({kurzbeschreibung(self.config)})"

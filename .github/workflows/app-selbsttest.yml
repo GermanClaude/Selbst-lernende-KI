@@ -73,3 +73,51 @@ jobs:
             }
           }
           if ($failed) { exit 1 }
+
+      - name: Update ohne kaputte Verknuepfungen (Helfer) und Reparatur alter Verknuepfungen
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $s = New-Object -ComObject WScript.Shell
+          # 1) Update-Helfer: schreibt die neue Version IN dieselbe Datei (Datei-ID bleibt gleich)
+          $dir = Join-Path $env:RUNNER_TEMP 'update-test'
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          $target = Join-Path $dir 'KI-App.exe'
+          $neu = Join-Path $dir 'KI-App.exe.neu'
+          Copy-Item dist/KI-App.exe $target
+          Copy-Item dist/KI.exe $neu
+          $lnkPath = Join-Path $dir 'Nova.lnk'
+          $l = $s.CreateShortcut($lnkPath); $l.TargetPath = $target; $l.Save()
+          $before = (fsutil file queryfileid $target)
+          $helper = Join-Path $env:TEMP 'ki-update-selbsttest.exe'
+          Copy-Item dist/KI-App.exe $helper
+          $p = Start-Process -FilePath $helper -ArgumentList @('--update-einspielen', "`"$neu`"", "`"$target`"", '1', '--version') -PassThru
+          if (-not $p.WaitForExit(120000)) { Stop-Process -Id $p.Id -Force; throw 'Update-Helfer haengt' }
+          Start-Sleep -Seconds 5
+          $after = (fsutil file queryfileid $target)
+          $same = (Get-FileHash $target).Hash -eq (Get-FileHash dist/KI.exe).Hash
+          Write-Host "Helfer-Exitcode $($p.ExitCode) | neuer Inhalt: $same"
+          Write-Host "Datei-ID vorher: $before"
+          Write-Host "Datei-ID nachher: $after"
+          $log = Join-Path $dir 'logs/update.log'
+          if (Test-Path $log) { Get-Content $log }
+          if (-not $same) { throw 'Die neue Version wurde nicht eingespielt' }
+          if ("$before" -ne "$after") { throw 'Datei-ID hat sich geaendert - Verknuepfungen wuerden wandern' }
+          if (Test-Path $neu) { throw 'Die .neu-Datei wurde nicht aufgeraeumt' }
+          if ($s.CreateShortcut($lnkPath).TargetPath -ne $target) { throw 'Verknuepfung zeigt woanders hin' }
+          # 2) Reparatur: Verknuepfung, die (alte Updates) in den Sicherungsordner zeigt
+          $root = Join-Path $env:RUNNER_TEMP 'reparatur-test'
+          $old = Join-Path $root 'versionen\0.5.0_2026-11-08_010000'
+          New-Item -ItemType Directory -Force -Path $old | Out-Null
+          Copy-Item dist/KI-App.exe (Join-Path $old 'KI-App.exe')
+          $exe = Join-Path $root 'KI-App.exe'
+          Copy-Item dist/KI-App.exe $exe
+          $desk = [Environment]::GetFolderPath('Desktop')
+          New-Item -ItemType Directory -Force -Path $desk | Out-Null
+          $lnk = Join-Path $desk 'Nova-Selbsttest.lnk'
+          $l = $s.CreateShortcut($lnk); $l.TargetPath = (Join-Path $old 'KI-App.exe'); $l.Save()
+          python -c "import sys; from pathlib import Path; from assistant.austausch import repair_shortcuts; n = repair_shortcuts(Path(sys.argv[1]), Path(sys.argv[2])); print('repariert:', n); sys.exit(0 if n >= 1 else 1)" $exe $root
+          $t = $s.CreateShortcut($lnk).TargetPath
+          Remove-Item $lnk
+          Write-Host "Verknuepfung zeigt jetzt auf: $t"
+          if ($t -ne $exe) { throw "Verknuepfung wurde nicht repariert: $t" }
