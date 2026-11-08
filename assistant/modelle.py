@@ -20,27 +20,31 @@ from .config import save_setting, toml_string
 CLAUDE_MODELLE = [
     {"id": "claude-opus-5-5", "name": "Claude Opus 5.5", "kurz": "opus",
      "info": "sehr stark und gruendlich - der Standard", "tempo": "mittel",
-     "preis": (4.0, 0.2, 20.0)},
+     "preis": (4.0, 0.2, 20.0), "sieht_bilder": True},
     {"id": "claude-sonnet-5-5", "name": "Claude Sonnet 5.5", "kurz": "sonnet",
      "info": "schnell und stark - gut fuer jeden Tag", "tempo": "schnell",
-     "preis": (2.0, 0.2, 10.0)},
+     "preis": (2.0, 0.2, 10.0), "sieht_bilder": True},
     {"id": "claude-haiku-5-5", "name": "Claude Haiku 5.5", "kurz": "haiku",
      "info": "blitzschnell und sehr guenstig - fuer einfache Sachen", "tempo": "sehr schnell",
-     "preis": (0.1, 0.01, 0.5), "preis_lang": (0.5, 0.05, 2.5), "lang_ab": 100_000},
+     "preis": (0.1, 0.01, 0.5), "preis_lang": (0.5, 0.05, 2.5), "lang_ab": 100_000,
+     "sieht_bilder": True},
     {"id": "claude-fable-5-1", "name": "Claude Fable 5.1", "kurz": "fable",
      "info": "das staerkste Claude - fuer sehr schwere Aufgaben, langsamer und teurer",
-     "tempo": "langsam", "preis": (10.0, 0.25, 50.0)},
+     "tempo": "langsam", "preis": (10.0, 0.25, 50.0), "sieht_bilder": True},
 ]
 
 # DeepSeek: tagsueber (Spitzenzeit) doppelt so teuer wie sonst.
 DEEPSEEK_MODELLE = [
     {"id": "deepseek-flash", "name": "DeepSeek Flash", "kurz": "flash",
      "info": "schnell und extrem guenstig - der Standard", "tempo": "schnell",
-     "preis": (0.15, 0.003, 0.6), "preis_spitze": (0.3, 0.006, 1.2)},
+     "preis": (0.15, 0.003, 0.6), "preis_spitze": (0.3, 0.006, 1.2), "sieht_bilder": True},
     {"id": "deepseek-v4-pro", "name": "DeepSeek V4 Pro", "kurz": "pro",
      "info": "staerker bei schweren Aufgaben, etwas langsamer und teurer", "tempo": "mittel",
-     "preis": (0.66, 0.022, 1.98), "preis_spitze": (1.32, 0.044, 3.96)},
+     "preis": (0.66, 0.022, 1.98), "preis_spitze": (1.32, 0.044, 3.96), "sieht_bilder": False},
 ]
+
+# DeepSeek-Modell, das Bilder ansieht: beschreibt sie fuer Modelle ohne Augen (V4 Pro).
+DEEPSEEK_SEHMODELL = "deepseek-flash"
 
 MODELLE = {"claude": CLAUDE_MODELLE, "deepseek": DEEPSEEK_MODELLE}
 
@@ -82,6 +86,19 @@ _MODELL_ID = re.compile(r"^[a-z0-9][a-z0-9.\-]{2,60}$")
 
 def modell_info(provider: str, model_id: str) -> dict | None:
     return next((m for m in MODELLE.get(provider, []) if m["id"] == model_id), None)
+
+
+def sieht_bilder(provider: str, model_id: str) -> bool:
+    """Kann dieses Modell Bilder ansehen? Unbekannte Claude-Modelle: ja (alle aktuellen
+    koennen es), unbekannte DeepSeek-Modelle: nein (dann beschreibt DeepSeek Flash das Bild)."""
+    provider = (provider or "").strip().lower()
+    wanted = (model_id or "").strip().lower()
+    if provider == "deepseek" and wanted in ALTE_DEEPSEEK_NAMEN:
+        wanted = ALTE_DEEPSEEK_NAMEN[wanted][0]  # alte Namen laufen auf dem neuen Modell
+    info = modell_info(provider, wanted)
+    if info is not None:
+        return bool(info.get("sieht_bilder", False))
+    return provider == "claude"
 
 
 def modell_name(provider: str, model_id: str) -> str:
@@ -263,10 +280,11 @@ def beschreibung(config) -> dict:
         current = config.deepseek.model if provider == "deepseek" else config.claude.model
         rate = float(getattr(config.prices, "usd_zu_eur", 0.92) or 0.92)
         entries = [{"id": m["id"], "name": m["name"], "info": m["info"], "tempo": m["tempo"],
-                    "preis": _preis_text(m, rate)} for m in models]
+                    "preis": _preis_text(m, rate), "sieht_bilder": bool(m.get("sieht_bilder"))}
+                   for m in models]
         if not any(m["id"] == current for m in models) and _MODELL_ID.match(current or ""):
             entries.append({"id": current, "name": current, "info": "eigenes Modell (aus settings.toml)",
-                            "tempo": "", "preis": ""})
+                            "tempo": "", "preis": "", "sieht_bilder": sieht_bilder(provider, current)})
         out[provider] = {
             "model": current,
             "denken": aktuelle_denktiefe(config, provider),

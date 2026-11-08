@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
+from .bilder import Bild
 from .config import Config
 from .logging_setup import get_logger
 from .memory import Memory
@@ -79,10 +80,13 @@ class Brain:
         return total
 
     def respond(self, user_text: str, on_text: StreamFn | None = None, max_tool_rounds: int | None = None,
-                auto_continue: int | None = None) -> str:
+                auto_continue: int | None = None, bilder: list[Bild] | None = None) -> str:
         """Antwortet; erreicht die KI ihr Schritt-Limit, arbeitet sie (bis zu
         'automatisch_weiter' mal) von selbst weiter, statt anzuhalten. Der AFK-Modus begrenzt
-        beides (max_tool_rounds, auto_continue), damit ein Schritt nicht ausufert."""
+        beides (max_tool_rounds, auto_continue), damit ein Schritt nicht ausufert.
+
+        `bilder`: Bilder zu dieser Nachricht (schon mit assistant.bilder vorbereitet). Sie gehen
+        nur mit dem ersten Teil an das Modell, das "automatisch weiter" kommt ohne."""
         self._on_text = on_text
         self.compact_interrupted = False
         conv = self.config.conversation
@@ -91,11 +95,14 @@ class Brain:
         parts: list[str] = []
         text = user_text
         for part in range(extra + 1):
+            # Ohne Bilder genau der Aufruf wie bisher (gleiche Anfragen -> Prompt-Cache).
+            mit_bildern = {"bilder": list(bilder)} if bilder and part == 0 else {}
             answer = self.provider.respond(
                 text,
                 on_text=on_text,
                 max_tool_rounds=rounds_limit,
                 announce_limit=(part == extra),
+                **mit_bildern,
             )
             parts.append(answer)
             if not getattr(self.provider, "hit_limit", False) or part == extra:

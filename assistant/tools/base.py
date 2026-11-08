@@ -11,6 +11,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
+from ..bilder import Bild, platzhalter_text
 from ..permissions import PermissionManager
 
 
@@ -23,6 +24,24 @@ class ToolContext:
     extra: dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass
+class ToolOutput:
+    """Werkzeug-Ergebnis mit Bildern (z.B. Bildschirmfoto), damit die KI sie wirklich sieht.
+
+    Die Provider machen daraus ihr eigenes Format (Claude: Bild-Bloecke im tool_result,
+    DeepSeek: Text + Bilder in einer Nachricht danach). Gekuerzt wird nur `text` - nie die
+    Bilddaten. Werkzeuge ohne Bilder geben weiter einfach einen String zurueck.
+    """
+
+    text: str
+    bilder: list[Bild] = field(default_factory=list)
+
+    def __str__(self) -> str:
+        # Fuer alle, die nur Text verstehen (Logs, Anzeige): Text + "[Bild: name]".
+        hinweis = platzhalter_text(self.bilder)
+        return f"{self.text} {hinweis}".strip() if hinweis else self.text
+
+
 class Tool:
     """Oberklasse fuer alle Werkzeuge."""
 
@@ -30,7 +49,7 @@ class Tool:
     description: str = ""
     input_schema: dict[str, Any] = {"type": "object", "properties": {}}
 
-    def run(self, ctx: ToolContext, **kwargs: Any) -> str:  # pragma: no cover - abstrakt
+    def run(self, ctx: ToolContext, **kwargs: Any) -> str | ToolOutput:  # pragma: no cover - abstrakt
         raise NotImplementedError
 
     def spec(self) -> dict[str, Any]:
@@ -83,8 +102,9 @@ class ToolRegistry:
     def names(self) -> list[str]:
         return sorted(self._tools)
 
-    def execute(self, ctx: ToolContext, name: str, raw_input: Any) -> tuple[str, bool]:
-        """Fuehrt ein Werkzeug aus. Gibt (ergebnis_text, is_error) zurueck."""
+    def execute(self, ctx: ToolContext, name: str, raw_input: Any) -> tuple[str | ToolOutput, bool]:
+        """Fuehrt ein Werkzeug aus. Gibt (ergebnis, is_error) zurueck - ergebnis ist ein Text
+        oder (bei Werkzeugen mit Bildern) ein ToolOutput, der unveraendert durchgereicht wird."""
         tool = self.get(name)
         if tool is None:
             return (f"Unbekanntes Werkzeug: {name}", True)
@@ -98,6 +118,8 @@ class ToolRegistry:
             return ("Werkzeug-Eingabe muss ein Objekt sein.", True)
         try:
             result = tool.run(ctx, **raw_input)
+            if isinstance(result, ToolOutput):
+                return (result, False)
             return (str(result), False)
         except TypeError as exc:
             return (f"Falsche Argumente fuer '{name}': {exc}", True)
