@@ -246,6 +246,9 @@ def run_native_window(server, ctl, title: str, storage: Path, on_quit_holder: di
             on_quit_holder["started"] = True
             ctl.startup()
         storage.mkdir(parents=True, exist_ok=True)
+        if os.environ.get("KI_SELBSTTEST"):
+            threading.Thread(target=_selftest, args=(webview, window, shown, server, on_quit_holder),
+                             daemon=True).start()
         webview.start(private_mode=False, storage_path=str(storage))  # laeuft bis das Fenster zu ist
     except Exception as exc:  # noqa: BLE001 - z.B. WebView2 fehlt
         logger.warning("Programmfenster ging nicht: %s", exc, exc_info=True)
@@ -258,6 +261,23 @@ def run_native_window(server, ctl, title: str, storage: Path, on_quit_holder: di
         return False
     logger.info("App: Programmfenster geschlossen")
     return True
+
+
+def _selftest(webview, window, shown: threading.Event, server, holder: dict) -> None:
+    """KI_SELBSTTEST=1 (Pruefung auf GitHub): erscheint das Fenster, laedt die Seite? Dann zu."""
+    ok_shown = shown.wait(90)
+    logger.info("Selbsttest: Fenster gezeigt=%s, Darstellung=%s", ok_shown, getattr(webview, "renderer", "?"))
+    end = time.monotonic() + 45
+    while time.monotonic() < end and not server.hub.ever_connected:
+        time.sleep(0.5)
+    loaded = server.hub.ever_connected
+    logger.info("Selbsttest: Seite geladen und verbunden=%s", loaded)
+    holder["selftest"] = "ok" if ok_shown and loaded else "fehler"
+    time.sleep(2)
+    try:
+        window.destroy()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Selbsttest: Fenster liess sich nicht schliessen: %s", exc)
 
 
 def run_app(config, started_by: str | None = None) -> int:
@@ -293,7 +313,13 @@ def run_app(config, started_by: str | None = None) -> int:
     title = f"{config.ki.name} - {meaning}" if meaning else f"{config.ki.name} - Selbst-lernende KI"
     try:
         if run_native_window(server, ctl, title, root / "data" / "app-fenster", holder):
+            if os.environ.get("KI_SELBSTTEST"):
+                logger.info("Selbsttest: Ergebnis %s", holder.get("selftest", "fehler"))
+                return 0 if holder.get("selftest") == "ok" else 3
             return result["code"]
+        if os.environ.get("KI_SELBSTTEST"):
+            logger.warning("Selbsttest: Programmfenster ging nicht")
+            return 3
         # Ersatz nur nach Rueckfrage - die App soll ein eigenes Programm sein.
         if sys.platform == "win32" and not ask_yes_no(
             "Das App-Fenster konnte nicht geoeffnet werden (fehlt die Microsoft WebView2-Laufzeit?).\n\n"
