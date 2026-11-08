@@ -53,7 +53,9 @@ WARNUNG = (
     "Wenn du Live-Sehen einschaltest, schaut {name} st\u00e4ndig auf deinen Bildschirm (bzw. durch deine Webcam). "
     "Ein kleines Programm auf deinem PC erkennt Ver\u00e4nderungen sofort. Wenn etwas Wichtiges passiert, schickt "
     "{name} einen verkleinerten Ausschnitt oder den erkannten Text an dein KI-Gehirn ({gehirn}).{wohin}\n"
-    "- {name} speichert keine Bilder. Was sie sieht, vergisst sie nach einer Minute.\n"
+    "- {name} speichert keine Bilder auf deinem PC und nichts davon in ihrem Ged\u00e4chtnis. Was sie nur sieht, "
+    "vergisst sie nach einer Minute. Wozu sie sich meldet (Text und ggf. der Ausschnitt), bleibt bis zum Ende "
+    "des Gespr\u00e4chs im Gespr\u00e4chsverlauf (/neu leert ihn).\n"
     "- Passwortfelder, Passwort-Manager, private Browserfenster und {name}s eigenes Fenster werden nicht "
     "angesehen. Weitere Programme kannst du in [sehen] ausnahmen ausschlie\u00dfen.\n"
     "- Solange {name} zusieht, steht in der App \u201e{name} sieht zu\u201c. Mit {taste} (\u00fcberall in Windows), "
@@ -86,10 +88,12 @@ class SehDienst:
                  sieht_bilder: Callable[[], bool] | None = None, kostenlos: Callable[[], bool] | None = None,
                  auge_fabrik: Callable[[dict], Any] | None = None, bildschirm_moeglich: bool | None = None,
                  fenster_schutz: Callable[[bool], str] | None = None, uhr: Callable[[], float] = time.monotonic,
-                 speichern: Callable[[str, str], None] | None = None, mit_thread: bool = True):
+                 speichern: Callable[[str, str], None] | None = None, mit_thread: bool = True,
+                 on_halt: Callable[[], None] | None = None):
         self.config = config
         self.on_notiz = on_notiz or (lambda _t: None)
         self.on_status = on_status or (lambda: None)
+        self.on_halt = on_halt or (lambda: None)  # Pause/Aus: schon geplante Wortmeldungen verwerfen
         self.wecken = wecken or (lambda _p: None)
         self.sieht_bilder = sieht_bilder or (lambda: False)
         self.kostenlos = kostenlos or (lambda: False)
@@ -163,6 +167,38 @@ class SehDienst:
         return WARNUNG.format(name=self.config.ki.name, gehirn=gehirn, wohin=wohin, kosten=kosten,
                               taste=r.hotkey or "Strg+Alt+Umschalt+S")
 
+    def darf_melden(self) -> bool:
+        """Darf eine (schon geplante) Wortmeldung jetzt noch raus? An jedem Sende-Punkt pruefen.
+        Ohne Sperre (wird auch unter fremden Sperren aufgerufen)."""
+        return bool(self.aktiv and not self.pausiert and not (self.abwesend and not self.regeln.bei_abwesenheit)
+                    and not self.braucht_zustimmung())
+
+    def gehirn_gewechselt(self) -> bool:
+        """Nach einem Gehirn-Wechsel: gilt die Zustimmung nicht mehr, sofort wegschauen. True = ausgeschaltet."""
+        if not self.aktiv or not self.braucht_zustimmung():
+            return False
+        self.aus()
+        self.on_notiz("Live-Sehen ist aus, weil du das Gehirn gewechselt hast \u2013 was ich sehe, ginge jetzt an "
+                      "ein anderes Gehirn. Mit /sehen an frage ich dich daf\u00fcr neu um Erlaubnis.")
+        return True
+
+    def _halt(self) -> None:
+        try:
+            self.on_halt()
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _euro_grenze(self) -> float | None:
+        """Bei jeder Pruefung neu: Ollama kostet nichts, Claude/DeepSeek schon (Gehirn kann wechseln)."""
+        return None if self.kostenlos() else self.regeln.max_euro_pro_stunde
+
+    def _auge_abgleichen(self) -> None:
+        """Der Hauptprozess bestimmt, ob das Auge hinschaut (Pause, AFK) - nie das Auge selbst."""
+        if self._auge is None:
+            return
+        ruhig = self.pausiert or (self.abwesend and not self.regeln.bei_abwesenheit)
+        self._auge.senden(("pause",) if ruhig else ("weiter",))
+
     # -- Ein / Aus ---------------------------------------------------------------------------
     def an(self, wunsch: str | None = None) -> tuple[bool, str]:
         """Live-Sehen einschalten (nur mit Zustimmung). -> (ok, Text fuer den Menschen)."""
@@ -179,8 +215,7 @@ class SehDienst:
                 return False, hinweis or "Live-Sehen geht hier nicht."
             self.wunsch = wunsch
             self.quellen = quellen
-            self._regel = Weckregel(regeln.min_abstand, regeln.max_pro_stunde,
-                                    None if self.kostenlos() else regeln.max_euro_pro_stunde)
+            self._regel = Weckregel(regeln.min_abstand, regeln.max_pro_stunde, self._euro_grenze())
             self._buendler = Buendler(schwelle=regeln.schwelle)
             self._kurz.leeren()
             self._grenze_gemeldet = ""
@@ -216,6 +251,7 @@ class SehDienst:
     def aus(self, grund: str = "") -> str:
         war = self.aktiv
         self._aufraeumen(*self._ausschalten_gesperrt())
+        self._halt()
         self._status_jetzt()
         if not war:
             return "Live-Sehen ist schon aus."
@@ -261,9 +297,11 @@ class SehDienst:
             if not self.aktiv:
                 return "Live-Sehen ist aus."
             self.pausiert = True
-            if self._auge is not None:
-                self._auge.senden(("pause",))
+            self._auge_abgleichen()
             self.kamera.vergessen()
+            if self._buendler is not None:
+                self._buendler.verwerfen()
+        self._halt()
         self._status_jetzt()
         return "Ich schaue gerade nicht hin (Pause). Weiter: /sehen weiter."
 
@@ -272,8 +310,7 @@ class SehDienst:
             if not self.aktiv:
                 return "Live-Sehen ist aus."
             self.pausiert = False
-            if self._auge is not None and not (self.abwesend and not self.regeln.bei_abwesenheit):
-                self._auge.senden(("weiter",))
+            self._auge_abgleichen()
         self._status_jetzt()
         return "Ich schaue wieder hin."
 
@@ -283,10 +320,14 @@ class SehDienst:
             self.abwesend = bool(abwesend)
             if not self.aktiv:
                 return
-            if self._auge is not None and not self.regeln.bei_abwesenheit:
-                self._auge.senden(("pause",) if abwesend or self.pausiert else ("weiter",))
-            if abwesend and not self.regeln.bei_abwesenheit:
+            self._auge_abgleichen()
+            ruhig = abwesend and not self.regeln.bei_abwesenheit
+            if ruhig:
                 self.kamera.vergessen()
+                if self._buendler is not None:
+                    self._buendler.verwerfen()
+        if abwesend and not self.regeln.bei_abwesenheit:
+            self._halt()
         self._status_jetzt()
 
     def afk_zeilen_nehmen(self) -> str:
@@ -314,8 +355,7 @@ class SehDienst:
         try:
             self._auge = self.auge_fabrik(einst)
             self._auge.start()
-            if self.abwesend and not r.bei_abwesenheit:
-                self._auge.senden(("pause",))
+            self._auge_abgleichen()  # auch nach einem Neustart: Pause/AFK gelten weiter
         except Exception as exc:  # noqa: BLE001
             logger.warning("Auge startet nicht: %s", type(exc).__name__)
             self._auge = None
@@ -401,10 +441,20 @@ class SehDienst:
                 return
             ev = Wahrnehmung.aus_dict(daten)
             if ev.art in ("pause", "weiter"):
-                self.pausiert = ev.art == "pause"
-                if self.pausiert:
+                # Pause-Taste im Auge: das Auge hat (zur Sicherheit) schon weggeschaut; ob es wieder
+                # hinschaut, entscheidet nur der Hauptprozess.
+                halt = ev.art == "pause" and not self.pausiert
+                if ev.art == "pause":
+                    self.pausiert = True
                     self.kamera.vergessen()
+                    if self._buendler is not None:
+                        self._buendler.verwerfen()
+                else:
+                    self.pausiert = False
+                self._auge_abgleichen()
                 self._status_offen = True
+                if halt:
+                    threading.Thread(target=self._halt, name="sehen-halt", daemon=True).start()
                 return
             if ev.art == "quelle_fehler":
                 self.hinweis = ev.text
@@ -431,7 +481,10 @@ class SehDienst:
     def tick(self) -> None:
         """Regelmaessig (im Dienst-Thread): faellige Buendel wecken, Zeitgrenze, Anzeige."""
         jetzt = self.uhr()
-        paket = aufraeumen = None
+        paket = aufraeumen = buendel = None
+        if self.aktiv and self.braucht_zustimmung():  # z.B. Gehirn gewechselt
+            self.gehirn_gewechselt()
+            return
         with self._lock:
             if not self.aktiv:
                 return
@@ -443,17 +496,25 @@ class SehDienst:
                 self._status_offen = True
             elif self._buendler is not None:
                 buendel = self._buendler.faellig(jetzt)
-                if buendel:
-                    paket = self._pruefen(buendel, jetzt)
+                if buendel and not self._pruefen(buendel, jetzt):
+                    buendel = None
         if aufraeumen:
             self._aufraeumen(*aufraeumen)
-        if paket is not None:
-            self.wecken(paket)
+            self._halt()
+        if buendel:
+            # Paket (evtl. mit Bildschirmfoto, bis 1,5 s) AUSSERHALB der Sperre bauen - Pause wirkt sofort
+            paket = self._paket(buendel)
+            if paket.abwesend or self.darf_melden():
+                self.wecken(paket)
         if self._status_offen and jetzt - self._status_zeit >= 1.0:
             self._status_jetzt()
 
-    def _pruefen(self, buendel: list[Wahrnehmung], jetzt: float) -> Weckpaket | None:
+    def _pruefen(self, buendel: list[Wahrnehmung], jetzt: float) -> bool:
+        """Unter self._lock: darf Nova sich melden? Dann gleich verbuchen."""
+        if not self.darf_melden():
+            return False
         wichtig = max(e.wichtig for e in buendel)
+        self._regel.max_euro = self._euro_grenze()
         ok, grund = self._regel.darf(jetzt, wichtig)
         if not ok:
             if grund in ("anzahl", "budget") and self._grenze_gemeldet != grund:
@@ -464,13 +525,12 @@ class SehDienst:
                                if grund == "budget" else "Live-Sehen: F\u00fcr diese Stunde habe ich mich oft genug "
                                                           "gemeldet")
                               + f" \u2013 ich schaue weiter zu und melde mich{wann} wieder.")
-            return None
+            return False
         self._grenze_gemeldet = ""
-        paket = self._paket(buendel)
         self._regel.gebucht(jetzt)
         self.weckungen += 1
         self._status_offen = True
-        return paket
+        return True
 
     def _paket(self, buendel: list[Wahrnehmung]) -> Weckpaket:
         haupt = max(buendel, key=lambda e: e.wichtig)
@@ -549,6 +609,8 @@ class SehDienst:
 
         if not self.aktiv:
             return None, "Live-Sehen ist aus."
+        if self.braucht_zustimmung():
+            return None, "F\u00fcr dieses Gehirn hat mein Mensch Live-Sehen noch nicht erlaubt."
         if self.pausiert:
             return None, "Ich schaue gerade nicht hin (Pause)."
         if self.abwesend:
@@ -586,7 +648,10 @@ class SehDienst:
 
     def euro_rest(self) -> float | None:
         with self._lock:
-            return self._regel.euro_rest(self.uhr()) if self._regel is not None else None
+            if self._regel is None:
+                return None
+            self._regel.max_euro = self._euro_grenze()
+            return self._regel.euro_rest(self.uhr())
 
     # -- Dienst-Thread -------------------------------------------------------------------------------------
     def _nachricht(self, nachricht) -> None:
@@ -712,3 +777,28 @@ class StillFilter:
 
 def ist_still(antwort: str) -> bool:
     return str(antwort or "").strip().lower().startswith("[still")
+
+
+def euro_waechter(kosten: Callable[[], float], anhalten: Callable[[], None], rest: float | None,
+                  takt: float = 0.5) -> threading.Event:
+    """Waechter fuer eine Wortmeldung: kostet sie mehr als `rest` Euro, wird sie angehalten.
+    Gibt ein Event zurueck - setzen, wenn die Wortmeldung fertig ist."""
+    fertig = threading.Event()
+    if rest is None:
+        return fertig
+    try:
+        start = kosten()
+    except Exception:  # noqa: BLE001
+        return fertig
+
+    def wachen() -> None:
+        while not fertig.wait(takt):
+            try:
+                if kosten() - start >= rest:
+                    anhalten()
+                    return
+            except Exception:  # noqa: BLE001
+                continue
+
+    threading.Thread(target=wachen, name="sehen-waechter", daemon=True).start()
+    return fertig

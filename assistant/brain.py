@@ -33,6 +33,10 @@ AGENT_REPORT_PROMPT = (
 )
 
 
+WORTMELDUNG_SCHLUSS = ("[Live-Sehen: Ende der Wortmeldung. Sag jetzt ohne Werkzeuge in ein, zwei Saetzen, was dir "
+                       "aufgefallen ist (oder nur [still]). Das ist kein Auftrag, weiterzuarbeiten.]")
+
+
 class Brain:
     def __init__(
         self,
@@ -115,6 +119,24 @@ class Brain:
             text = CONTINUE_PROMPT
         self._maybe_compact()
         return "\n".join(p for p in parts if p).strip()
+
+    def wortmeldung(self, user_text: str, on_text: StreamFn | None = None, bilder: list[Bild] | None = None) -> str:
+        """Wortmeldung von Live-Sehen: hoechstens ein Werkzeug-Schritt und danach immer eine Antwort
+        ohne Werkzeuge (kein offenes Ergebnis, an das ein spaeteres "weiter" anknuepfen koennte), kein
+        automatisches Weiterarbeiten und KEINE Zusammenfassung ins Gedaechtnis. Der Aufrufer kennzeichnet
+        die Runde danach mit provider.als_wortmeldung()."""
+        self._on_text = on_text
+        self.compact_interrupted = False
+        provider = self.provider
+        mit_bildern = {"bilder": list(bilder)} if bilder else {}
+        answer = provider.respond(user_text, on_text=on_text, max_tool_rounds=2, announce_limit=False,
+                                  **mit_bildern)
+        if getattr(provider, "hit_limit", False):
+            rest = provider.respond(WORTMELDUNG_SCHLUSS, on_text=on_text, max_tool_rounds=1, announce_limit=False,
+                                    allow_tools=False)
+            answer = "\n".join(t for t in (answer, rest) if t and t != "(keine Textantwort)")
+        provider.hit_limit = False  # nie "weiter" an einer Wortmeldung
+        return answer
 
     # -- Agenten ------------------------------------------------------------
     def run_agent(self, role: str, task: str, context: str = "") -> str:

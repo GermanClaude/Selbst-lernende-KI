@@ -21,6 +21,7 @@ from .base import (
     TRUNCATED_TOOL_ERROR,
     BildTeil,
     LLMProvider,
+    Wortmeldung,
     StreamFn,
     aufteilen,
     bild_gewicht,
@@ -402,7 +403,8 @@ class DeepSeekProvider(LLMProvider):
     def user_turns(self) -> int:
         # Bilder eines Werkzeugs (eigene user-Nachricht) zaehlen nicht als Nachricht vom Menschen.
         return sum(1 for m in self.messages
-                   if m.get("role") == "user" and not isinstance(m.get("content"), _ToolImages))
+                   if m.get("role") == "user" and not isinstance(m.get("content"), _ToolImages)
+                   and not isinstance(m, Wortmeldung))  # Live-Sehen: Nova hat sich selbst gemeldet
 
     def _close_open_tool_calls(self, messages: list) -> None:
         idx = next((i for i in range(len(messages) - 1, -1, -1)
@@ -579,8 +581,8 @@ def _history_as_text(messages: list[dict[str, Any]]) -> str:
     lines: list[str] = []
     for msg in messages:
         role = msg.get("role")
-        if role == "system":
-            continue
+        if role == "system" or isinstance(msg, Wortmeldung):
+            continue  # Live-Sehen: Bildschirminhalt nie in die Zusammenfassung (-> Gedaechtnis)
         content = msg.get("content")
         if role == "tool":
             lines.append(f"werkzeug-ergebnis: {_parts_as_text(content)[:600]}")

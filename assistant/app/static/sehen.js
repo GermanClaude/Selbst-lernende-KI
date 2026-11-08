@@ -193,7 +193,9 @@
     const taste = st && st.hotkey ? st.hotkey : 'Strg+Alt+Umschalt+S';
     const liste = byId('sd-list');
     liste.replaceChildren(
-      li(name + ' speichert keine Bilder auf deinem PC. Was sie sieht, vergisst sie nach einer Minute.', 'Nichts gespeichert:'),
+      li(name + ' speichert keine Bilder auf deinem PC und nichts davon in ihrem Gedächtnis. Was sie nur sieht, ' +
+        'vergisst sie nach einer Minute. Wozu sie sich meldet (Text und ggf. der Ausschnitt), bleibt bis zum Ende ' +
+        'des Gesprächs im Gesprächsverlauf (/neu leert ihn).', 'Nichts gespeichert:'),
       li('Passwortfelder, Passwort-Manager, private Browserfenster und ' + name + 's eigenes Fenster werden nicht ' +
         'angesehen. Weitere Programme kannst du in den Einstellungen ausschließen.', 'Tabu:'),
       li('Solange ' + name + ' zusieht, steht oben „' + name + ' sieht zu“. Mit „Pause“, F4 oder ' + taste +
