@@ -52,7 +52,7 @@
   --shadow: 0 1px 2px rgba(16, 24, 40, .05), 0 6px 16px rgba(16, 24, 40, .06);
   --shadow-lg: 0 18px 48px rgba(16, 24, 40, .18), 0 2px 8px rgba(16, 24, 40, .08);
   --ring: 0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent);
-  --scrim: rgba(17, 19, 24, .42);
+  --scrim: rgba(17, 19, 24, .5);
   color-scheme: light;
 }
 
@@ -89,7 +89,7 @@
     --shadow: 0 1px 2px rgba(0, 0, 0, .35), 0 6px 18px rgba(0, 0, 0, .28);
     --shadow-lg: 0 18px 50px rgba(0, 0, 0, .55), 0 2px 8px rgba(0, 0, 0, .4);
     --ring: 0 0 0 3px color-mix(in srgb, var(--accent) 42%, transparent);
-    --scrim: rgba(0, 0, 0, .58);
+    --scrim: rgba(0, 0, 0, .64);
     color-scheme: dark;
   }
 }
@@ -124,7 +124,7 @@
   --shadow: 0 1px 2px rgba(0, 0, 0, .35), 0 6px 18px rgba(0, 0, 0, .28);
   --shadow-lg: 0 18px 50px rgba(0, 0, 0, .55), 0 2px 8px rgba(0, 0, 0, .4);
   --ring: 0 0 0 3px color-mix(in srgb, var(--accent) 42%, transparent);
-  --scrim: rgba(0, 0, 0, .58);
+  --scrim: rgba(0, 0, 0, .64);
   color-scheme: dark;
 }
 
@@ -1013,8 +1013,9 @@ kbd {
   position: fixed; inset: 0; z-index: 100;
   display: grid; place-items: center;
   padding: 16px;
+  /* bewusst ohne backdrop-filter: die Unschaerfe muesste bei jedem Bild der Sphaeren neu berechnet
+     werden (ohne Grafikkarte, z.B. in einer VM oder per Fernzugriff, ruckelt es dann) */
   background: var(--scrim);
-  -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px);
   animation: fade .16s ease both;
 }
 .dialog {
@@ -1103,8 +1104,7 @@ kbd {
   position: fixed; inset: 0; z-index: 90;
   display: grid; place-items: center;
   padding: 20px;
-  background: var(--scrim);
-  -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px);
+  background: var(--scrim); /* ohne backdrop-filter (siehe .modal) */
   animation: fade .16s ease both;
 }
 .panel {
@@ -1462,8 +1462,7 @@ kbd {
   position: absolute; inset: 0; z-index: 5;
   display: grid; place-items: center;
   padding: 16px;
-  background: color-mix(in srgb, var(--surface) 55%, transparent);
-  -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px);
+  background: color-mix(in srgb, var(--surface) 74%, transparent); /* ohne backdrop-filter (siehe .modal) */
   animation: fade .14s ease both;
 }
 .pc-card {

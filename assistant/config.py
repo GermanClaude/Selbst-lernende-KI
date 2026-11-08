@@ -257,6 +257,7 @@ class Config:
     update: UpdateSettings = field(default_factory=UpdateSettings)
     style: StyleSettings = field(default_factory=StyleSettings)
     about: dict = field(default_factory=dict)  # "Ueber mich" (config/ueber_mich.json)
+    provider_auto_switched: str = ""  # eingestelltes Gehirn hatte keinen Schluessel -> gewechselt
 
     # -- Komfort-Eigenschaften ---------------------------------------------
     @property
@@ -375,13 +376,29 @@ def save_setting(root: Path, section: str, key: str, value: str) -> Path:
             lines.append(f"\n[{section}]\n{key} = {value}\n")
     text = "".join(lines)
     tomllib.loads(text)  # nie eine kaputte Datei schreiben
-    path.write_text(text, encoding="utf-8")
+    # newline="": Zeilenenden so lassen, wie sie sind. Sonst macht Windows aus "\r\n"
+    # beim Schreiben "\r\r\n" - und die Datei laesst sich nicht mehr lesen.
+    path.write_text(text, encoding="utf-8", newline="")
     return path
 
 
 def _load_toml(path: Path) -> dict[str, Any]:
     try:
-        return tomllib.loads(path.read_bytes().decode("utf-8-sig"))
+        text = path.read_bytes().decode("utf-8-sig")
+        try:
+            return tomllib.loads(text)
+        except tomllib.TOMLDecodeError:
+            # Haeufigster Schaden: verdoppelte Zeilenenden ("\r\r\n", aelterer Fehler beim
+            # Speichern unter Windows) - selbst reparieren statt nicht mehr zu starten.
+            fixed = re.sub(r"\r+\n", "\n", text).replace("\r", "\n")
+            if fixed == text:
+                raise
+            data = tomllib.loads(fixed)
+            try:
+                path.write_text(fixed, encoding="utf-8", newline="")
+            except OSError:
+                pass
+            return data
     except (tomllib.TOMLDecodeError, UnicodeDecodeError) as exc:
         raise ConfigError(
             f"Die Einstellungsdatei ist fehlerhaft und kann nicht gelesen werden:\n"
@@ -454,6 +471,15 @@ def load_config(project_root: Path | None = None) -> Config:
         style=_merge(StyleSettings(), raw.get("stil", {})),
         about=_load_about(config_dir / "ueber_mich.json"),
     )
+    # Eingestelltes Gehirn ohne Schluessel, das andere hat einen (z.B. nur DEEPSEEK_API_KEY in
+    # .env, aber aktiv = "claude"): automatisch das Gehirn nehmen, fuer das es einen Schluessel gibt.
+    keys = {"claude": cfg.anthropic_api_key, "deepseek": cfg.deepseek_api_key}
+    active = cfg.active_provider
+    if not keys.get(active):
+        other = next((name for name, key in keys.items() if key and name != active), None)
+        if other:
+            cfg.provider.aktiv = other
+            cfg.provider_auto_switched = active
     # Relative Pfade gelten ab dem Programmordner, nicht ab dem aktuellen Verzeichnis.
     db_path = Path(cfg.memory.db_path).expanduser()
     if not db_path.is_absolute():

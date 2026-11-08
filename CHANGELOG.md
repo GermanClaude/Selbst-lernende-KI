@@ -4,6 +4,33 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.5.0 – 2026-11-08
+
+**Nova hat jetzt ein Gesicht: eine leuchtende Sphäre**
+- Groß auf dem Startbildschirm (antippen = Jarvis-Modus), klein in der Seitenleiste
+  und neben jeder Antwort. Sie **lebt mit**: atmet ruhig, kreist beim Nachdenken,
+  bekommt einen Ring, wenn sie arbeitet, pulsiert beim Schreiben und Vorlesen,
+  folgt deiner Stimme, wenn du ins Mikrofon sprichst, und leuchtet bei einer
+  Rückfrage gelb.
+- Sag Nova einfach, wie ihre Sphäre aussehen soll: „Mach deine Sphäre orange“,
+  „beweg dich lebhafter“ oder „zeig lieber deinen Buchstaben“.
+
+**Einrichtung direkt in der App**
+- Neues Fenster **„Gehirn & Schlüssel“**: DeepSeek oder Claude auswählen, Schlüssel
+  einfügen, „Prüfen & speichern“ – mit Anleitung, wo es den Schlüssel gibt, und
+  klaren Meldungen (z.B. „Guthaben leer“ mit Knopf zum Aufladen). Öffnet sich beim
+  ersten Start von selbst; später über die Karte „Gehirn“.
+- Knopf **„Terminal-Version öffnen“** in der Seitenleiste.
+
+**Repariert**
+- Ist für das eingestellte Gehirn kein Schlüssel da, aber für das andere schon, nimmt
+  Nova automatisch das mit Schlüssel (z.B. DeepSeek statt Claude).
+- Beim Speichern einer Einstellung konnte unter Windows die Datei `settings.toml`
+  kaputtgehen („invalid character '\r'“) – behoben, und kaputte Dateien repariert
+  Nova beim Start selbst.
+- Ein in den Chat kopierter Schlüssel ist nie mehr in voller Länge zu sehen.
+- Meldungen mit echten Umlauten, flüssigere Fenster.
+
 ## 0.4.3 – 2026-11-08
 
 - **Die App verschwindet nicht mehr still.** Stürzt das App-Fenster ab oder bleibt es

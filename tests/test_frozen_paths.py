@@ -140,3 +140,28 @@ def test_broken_settings_give_clear_error(tmp_path):
     (tmp_path / "config" / "settings.toml").write_text("[ki\nname = Jarvis\n", encoding="utf-8")
     with pytest.raises(ConfigError, match="settings.toml"):
         load_config(tmp_path)
+
+
+def test_settings_with_windows_line_endings_stay_readable_and_broken_ones_are_repaired(tmp_path, monkeypatch):
+    """Windows: aus "\\r\\n" wurde beim Speichern "\\r\\r\\n" - dann startete die KI nicht mehr."""
+    from assistant.config import save_setting
+
+    (tmp_path / "config").mkdir(exist_ok=True)
+    path = tmp_path / "config" / "settings.toml"
+    path.write_bytes(b"# Einstellungen fuer die KI\r\n[provider]\r\naktiv = \"claude\"\r\n")
+    from pathlib import Path as _P
+
+    real_write = _P.write_text
+
+    def windows_write_text(self, data, encoding=None, errors=None, newline=None):
+        if newline is None:  # wie Windows im Textmodus: "\n" wird "\r\n"
+            data = data.replace("\n", "\r\n")
+        return real_write(self, data, encoding=encoding, errors=errors, newline="")
+
+    monkeypatch.setattr(_P, "write_text", windows_write_text)
+    save_setting(tmp_path, "provider", "aktiv", '"deepseek"')
+    assert b"\r\r" not in path.read_bytes()
+    assert load_config(tmp_path).active_provider == "deepseek"
+    path.write_bytes(b"# Einstellungen fuer die KI\r\r\n[provider]\r\r\naktiv = \"deepseek\"\r\r\n")  # kaputt
+    assert load_config(tmp_path).active_provider == "deepseek"                  # repariert sich selbst
+    assert b"\r\r" not in path.read_bytes()

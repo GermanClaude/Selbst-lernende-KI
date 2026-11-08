@@ -486,6 +486,7 @@ class AppController(CLI):
             if self.busy:
                 return {"ok": False, "kind": "busy", "error": "Ich arbeite gerade - gleich nochmal versuchen."}
             self.busy = True
+        self._state_changed()  # andere Fenster sehen: die KI prueft gerade
         try:
             result = setup(self.config, key=key, provider=provider, test=not data.get("force"))
             if not result["ok"]:
@@ -708,6 +709,9 @@ class AppController(CLI):
         """Nach dem Oeffnen des Fensters: Hinweise und (hoechstens taeglich) Update-Pruefung."""
         if not self.config.api_key:
             self._notice(KEY_HINT.replace("\n  ", "\n- "), "warn")
+        elif self.config.provider_auto_switched:
+            self._notice(f"Fuer {self.config.provider_auto_switched} ist kein Schluessel da - ich nutze deshalb "
+                         f"{self.config.active_provider}. Wechseln: /gehirn")
         self._start_update_watch()
 
         def check() -> int | None:

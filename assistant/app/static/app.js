@@ -442,6 +442,7 @@
     let last = 0;
     let dirty = true;           // weniger Bewegung: nur bei Aenderung zeichnen
     let covered = false;        // Jarvis-Modus liegt ueber allem: andere Sphaeren nicht zeichnen
+    let scopeEl = null;         // offenes Fenster (Einrichtung, Profil): nur Sphaeren darin zeichnen
     let latestEl = null;
     let stillKey = '';
     let lastDpr = window.devicePixelRatio || 1;
@@ -531,8 +532,8 @@
       // 1. Leuchten (hell: zarter, dafuer ein weicher, farbiger Schatten)
       const ga = light ? 0.6 : 1;
       let g = ctx.createRadialGradient(cx, cy, R * 0.7, cx, cy, Math.min(half, R0 * (2.25 + e * 0.6 * b)));
-      g.addColorStop(0, hsla(hue + 6 * hs, 92 * sat, light ? 60 : 64, (0.42 * P.glow + 0.32 * e) * ga));
-      g.addColorStop(0.35, hsla(hue + 20 * hs, 90 * sat, 60, (0.16 * P.glow + 0.14 * e) * ga));
+      g.addColorStop(0, hsla(hue + 6 * hs, 92 * sat, (light ? 60 : 64) + dl * 0.5, (0.42 * P.glow + 0.32 * e) * ga));
+      g.addColorStop(0.35, hsla(hue + 20 * hs, 90 * sat, 60 + dl * 0.5, (0.16 * P.glow + 0.14 * e) * ga));
       g.addColorStop(1, hsla(hue + 30 * hs, 85 * sat, 56, 0));
       ctx.fillStyle = g;
       ctx.fillRect(0, 0, W, H);
@@ -761,7 +762,8 @@
       const slotCss = Math.min(s.cssW, s.cssH) / s.f;
       s.boost = s.small ? clampN(56 / Math.max(1, slotCss), 1, 2) : 1;
       s.dpr = Math.min(s.small ? 3 : 2, window.devicePixelRatio || 1);
-      const cap = s.small ? 900 : 1200;
+      // Jarvis: bis 688 CSS-px Leinwand (430 px Platz x 1,6) -> bei 2-facher Pixeldichte 1376 Pixel
+      const cap = s.small ? 900 : 1400;
       const w = Math.max(0, Math.min(cap, Math.round(s.cssW * s.dpr)));
       const hh = Math.max(0, Math.min(cap, Math.round(s.cssH * s.dpr)));
       if (w !== s.W || hh !== s.H) { s.W = s.cv.width = w; s.H = s.cv.height = hh; }
@@ -778,6 +780,7 @@
       let any = false;
       for (const s of slots.values()) {
         if (!s.live || !s.vis || (covered && !s.jarvis)) continue;
+        if (scopeEl && !s.jarvis && !scopeEl.contains(s.el)) continue; // liegt hinter dem Fenster
         any = true;
         if (s.need) size(s);
         if (!s.W || !s.H) continue;
@@ -861,9 +864,9 @@
       look.light = lum(bg) > 0.35;
       const own = look.color;
       const hex = own || cssColor('--accent', '#4f46e5');
-      const [hh, s] = rgbHsl(hexRgb(hex));
+      const [hh, s, l] = rgbHsl(hexRgb(hex));
       if (own) {
-        look.hue = hh;
+        look.hue = s < 0.04 ? 225 : hh;       // reines Grau: kuehles Silber statt rotstichig (Farbton 0)
         look.sat = clampN(s / 0.55, 0.06, 1); // eigene Farbe: auch Silber/Grau moeglich
       } else {
         look.hue = s < 0.12 ? 243 : hh;    // grau -> Standard (Indigo)
@@ -877,12 +880,14 @@
       // gleiche Helligkeit wirkt bei Gelb/Gruen viel heller als bei Indigo: ausgleichen
       const bright = lum(hslRgb(look.hue, 0.9 * look.sat, 0.6)) - lum(hslRgb(243, 0.9, 0.6));
       look.dl = clampN(-bright * 30, -13, 0);
+      // eigene Farbe: auch ihre Helligkeit zaehlt (Schwarz, Dunkelblau -> dunkler; Weiss, Hellblau -> heller)
+      if (own) look.dl = clampN(look.dl + (l - 0.5) * 60, -26, 20);
       const m = pick(MOTION, look.motion) || MOTION.normal;
       look.sp = m.sp;
       look.am = m.am;
       look.ki = m.ki;
-      root.style.setProperty('--orb-a', hsla(look.hue, 86 * look.sat, 64, 1));
-      root.style.setProperty('--orb-b', hsla(look.hue + 30 * look.spread, 78 * look.sat, 42, 1));
+      root.style.setProperty('--orb-a', hsla(look.hue, 86 * look.sat, 64 + look.dl * 0.8, 1));
+      root.style.setProperty('--orb-b', hsla(look.hue + 30 * look.spread, 78 * look.sat, 42 + look.dl * 0.8, 1));
     }
 
     function stillState() {
@@ -998,6 +1003,14 @@
       /** Fertig: sanftes Ausklingen. */
       settle() { ripple(1.7, 0.55, 12); S.kick = Math.min(1.2, S.kick + 0.35); wake(); },
       cover(on) { covered = !!on; dirty = true; wake(); },
+      /** Ein Fenster liegt ueber dem Chat: Sphaeren dahinter ruhen (Standbild bis es zu ist). */
+      scope(el) {
+        el = el || null;
+        if (el === scopeEl) return;
+        scopeEl = el;
+        dirty = true;
+        wake();
+      },
       jarvis(cv, on) {
         if (!slots.has(cv)) slot(cv, { jarvis: true, live: false });
         const s = slots.get(cv);
@@ -1478,8 +1491,15 @@
     requestAnimationFrame(() => {
       scrollQueued = false;
       if (stick) {
-        // nur Begruessung (noch gar nichts im Chat): oben anfangen, damit die Sphaere zu sehen ist
-        scroller.scrollTop = emptyEl.hidden || msgs.childElementCount ? scroller.scrollHeight : 0;
+        // Begruessung sichtbar (noch kein Gespraech, hoechstens Systemkarten wie "Neues Gespraech"):
+        // nur so weit nach unten, dass die Sphaere oben nicht abgeschnitten wird
+        let top = scroller.scrollHeight;
+        if (!emptyEl.hidden) {
+          let heroTop = -14;
+          for (let el = byId('hero'); el && el !== scroller; el = el.offsetParent) heroTop += el.offsetTop;
+          top = Math.max(0, Math.min(scroller.scrollHeight - scroller.clientHeight, heroTop));
+        }
+        scroller.scrollTop = top;
         lastTop = scroller.scrollTop;
       }
     });
@@ -1538,6 +1558,14 @@
     else if (speakingOn) m = 'speaking';
     else if (busy || reply) m = rs.phase || 'thinking';
     sphere.mood(m);
+  }
+
+  /** Vorlesen am PC an/aus (Ereignis "speaking"; nach Trennung/Ende zuruecksetzen, das "aus" fehlt evtl.). */
+  function setSpeaking(on) {
+    speakingOn = !!on;
+    sphere.talk('server', speakingOn);
+    moodSync();
+    updateStatus();
   }
 
   function addUser(text) {
@@ -2023,8 +2051,22 @@
   let recallIdx = -1;
 
   function rememberOwn(text) {
+    if (text.startsWith('\u{1F511} Schlüssel ')) return; // gekuerzter Schluessel: nutzlos fuer Pfeil hoch
     if (ownMsgs[ownMsgs.length - 1] !== text) ownMsgs.push(text);
     if (ownMsgs.length > 100) ownMsgs.shift();
+  }
+
+  // Eingefuegter API-Schluessel: nie voll anzeigen. Gleiche Regel wie der Server
+  // (schluessel.find_key/mask), damit die gekuerzte Blase zum Echo passt.
+  const RE_CHAT_KEY = /(^|[^A-Za-z0-9_-])(sk-[A-Za-z0-9_-]{20,})(?![A-Za-z0-9_-])/;
+  const maskKey = (k) => (k.length > 12 ? k.slice(0, 6) + '…' + k.slice(-4) : '…');
+  /** Was der Server als Echo zeigen wird – null, wenn kein Schluessel im Text steckt. */
+  function keyShown(text) {
+    const m = RE_CHAT_KEY.exec(text);
+    if (!m) return null;
+    const key = m[2];
+    if (!text.startsWith('/')) return '\u{1F511} Schlüssel ' + maskKey(key);
+    return text.split(key).join(maskKey(key));
   }
 
   async function send(text, fromInput) {
@@ -2047,10 +2089,13 @@
       toast('Ich arbeite noch an der letzten Nachricht – „Stopp“ oder Esc hält sie an.');
       return false;
     }
-    const row = addUser(text);
-    const p = { text, row, t: Date.now() };
+    // Schluessel: Blase nur gekuerzt (wie das Echo) und nicht fuer Pfeil hoch merken
+    const masked = keyShown(text);
+    const shown = masked || text;
+    const row = addUser(shown);
+    const p = { text: shown, row, t: Date.now() };
     pendingSent.push(p);
-    rememberOwn(text);
+    if (!masked) rememberOwn(text);
     recallIdx = -1;
     if (fromInput) {
       input.value = '';
@@ -2538,6 +2583,8 @@
     jvEl.inert = askOpen || confOpen;             // Rueckfragen liegen ueber Jarvis
     tourEl.inert = askOpen || confOpen || profOpen || jvOpen || setupOpen;
     modal.inert = confOpen;
+    // Sphaeren hinter dem obersten grossen Fenster nicht weiter zeichnen
+    sphere.scope(setupOpen ? smodal : profOpen ? pmodal : null);
   }
 
   function nextAsk() {
@@ -2606,6 +2653,13 @@
   function closeAsk(id) {
     if (askCur && askCur.id === id) nextAsk();
     else askQueue = askQueue.filter((a) => a.id !== id);
+  }
+
+  /** Alle offenen Fragen sind hinfaellig (z.B. neu verbunden und der Server arbeitet nicht mehr –
+   *  das "ask_done" ging waehrend der Trennung verloren). */
+  function dropAsks() {
+    askQueue = [];
+    if (askCur) nextAsk();
   }
 
   async function answer(value) {
@@ -5314,6 +5368,7 @@
   function onBye() {
     ended = true;
     connected = false;
+    setSpeaking(false);
     clearTimeout(retryTimer);
     if (es) { es.close(); es = null; }
     loadingHistory = false;
@@ -5363,6 +5418,7 @@
       if (ended) return;
       retry++;
       setConnected(false);
+      if (speakingOn) setSpeaking(false); // das "aus" kaeme evtl. nie an
       if (es && es.readyState === EventSource.CLOSED) {
         es.close();
         es = null;
@@ -5379,6 +5435,7 @@
     voiceSetupCard = null;
     pendingSent.length = 0;
     jumpBtn.hidden = true;
+    moodSync(); // keine laufende Antwort mehr -> Sphaere nicht weiter "nachdenken" lassen
   }
 
   function addFromHistory(m) {
@@ -5438,6 +5495,7 @@
     replay(later, tail);
     updateEmpty();
     toBottom(true);
+    moodSync();
   }
 
   /** Gepufferte Ereignisse nachspielen; Doppeltes (schon im Verlauf) auslassen. */
@@ -5479,6 +5537,9 @@
       case 'hello':
         retry = 0;
         setConnected(true);
+        // (neu) verbunden: verpasste "speaking aus" / "ask_done" nicht nachtragen muessen
+        setSpeaking(false);
+        if (ev.state && ev.state.busy === false) dropAsks();
         // getrennt gewesen: evtl. "off" verpasst – laeuft Jarvis nicht mehr, nichts mehr ignorieren
         if (jv.left && ev.state && ev.state.jarvis !== true) { jv.left = false; endClosing(); }
         applyState(ev.state);
@@ -5587,10 +5648,7 @@
         break;
       case 'speaking':
         // Vorlesen am PC: die Sphaere spricht mit
-        speakingOn = ev.on === true;
-        sphere.talk('server', speakingOn);
-        moodSync();
-        updateStatus();
+        setSpeaking(ev.on === true);
         break;
       case 'say':
         onSay(ev);
