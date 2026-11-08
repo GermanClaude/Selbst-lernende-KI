@@ -76,6 +76,26 @@ def _open_console() -> None:
         pass
 
 
+def _crash_log() -> None:
+    """Harte Abstuerze (z.B. in einer DLL) in logs/absturz.log festhalten - sonst unsichtbar."""
+    if not getattr(sys, "frozen", False):
+        return
+    try:
+        import faulthandler
+
+        from assistant.config import PROJECT_ROOT
+
+        log_dir = PROJECT_ROOT / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        handle = open(log_dir / "absturz.log", "a", encoding="utf-8")  # noqa: SIM115 - bleibt offen
+        handle.write(f"\n--- Start {__import__('datetime').datetime.now():%Y-%m-%d %H:%M:%S} "
+                     f"({' '.join(sys.argv[1:])}) ---\n")
+        handle.flush()
+        faulthandler.enable(handle)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def main() -> int:
     # Projektpfad in sys.path aufnehmen (fuer den Start aus dem Quellordner).
     sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -86,6 +106,7 @@ def main() -> int:
     from assistant.__main__ import safe_streams
 
     safe_streams()  # ohne Konsole: kein Absturz bei print()/isatty()
+    _crash_log()
     try:
         _ensure_runtime_dir()
         from assistant.__main__ import main as app_main
