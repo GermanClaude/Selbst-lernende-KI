@@ -428,7 +428,7 @@
       normal: { sp: 1, am: 1, ki: 1 },
       lebhaft: { sp: 1.45, am: 1.6, ki: 1.35 },
     };
-    const look = { mode: 'sphaere', color: '', motion: 'normal', hue: 243, sat: 1, shift: 1, spread: 1, light: true, sp: 1, am: 1, ki: 1 };
+    const look = { mode: 'sphaere', color: '', motion: 'normal', hue: 243, sat: 1, shift: 1, spread: 1, dl: 0, light: true, sp: 1, am: 1, ki: 1 };
     const S = {
       P: Object.assign({}, PRESET.idle), T: PRESET.idle, mood: 'idle',
       t: 0, tb: 0, tw: 0, ph: 0, lvl: 0, lvlT: 0, lvlAt: 0, prevLvl: 0,
@@ -522,6 +522,7 @@
       const sat = M.sat;
       const hue = M.hue;
       const hs = M.spread; // wie weit die Farben im Inneren auseinanderlaufen
+      const dl = look.dl;   // helle Farbtoene (Gelb, Gruen) etwas dunkler – sonst wirken sie blass
       const R = R0 * (1 + Math.min(0.34, e * 0.42 * b) + M.flinch * Math.min(b, 1.4));
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.globalCompositeOperation = 'source-over';
@@ -574,10 +575,10 @@
       const lift = P.bright * 7 + M.kick * 6;
       const dk = light ? 3 : 0;
       g = ctx.createRadialGradient(wx, wy, R * 0.02, cx + R * 0.06, cy + R * 0.08, R * 1.1);
-      g.addColorStop(0, hsla(hue - 14 * hs, 95 * sat, 80 + lift * 0.6, 1));
-      g.addColorStop(0.28, hsla(hue - 4 * hs, 90 * sat, 64 + lift - dk, 1));
-      g.addColorStop(0.68, hsla(hue + 16 * hs, 84 * sat, 48 - dk, 1));
-      g.addColorStop(1, hsla(hue + 30 * hs, 82 * sat, 30 - dk, 1));
+      g.addColorStop(0, hsla(hue - 14 * hs, 95 * sat, 80 + lift * 0.6 + dl * 0.4, 1));
+      g.addColorStop(0.28, hsla(hue - 4 * hs, 90 * sat, 64 + lift - dk + dl, 1));
+      g.addColorStop(0.68, hsla(hue + 16 * hs, 84 * sat, 48 - dk + dl, 1));
+      g.addColorStop(1, hsla(hue + 30 * hs, 82 * sat, 30 - dk + dl * 0.6, 1));
       ctx.fillStyle = g;
       ctx.fill();
 
@@ -587,9 +588,9 @@
       ctx.globalCompositeOperation = 'lighter';
       const tl = M.tb;
       lobe(ctx, cx + Math.cos(tl * 0.63 + 1) * R * 0.34, cy + Math.sin(tl * 0.81) * R * 0.3, R * 0.72,
-        hsla(hue - 52 * hs, 96 * sat, 58, 0.34 + 0.3 * e));
+        hsla(hue - 52 * hs, 96 * sat, 58 + dl * 0.5, 0.34 + 0.3 * e));
       lobe(ctx, cx + Math.cos(tl * 0.47 + 3.4) * R * 0.38, cy + Math.sin(tl * 0.59 + 2) * R * 0.34, R * 0.66,
-        hsla(hue + 58 * hs, 92 * sat, 60, 0.28 + 0.26 * e));
+        hsla(hue + 58 * hs, 92 * sat, 60 + dl * 0.5, 0.28 + 0.26 * e));
       lobe(ctx, cx + Math.cos(tl * 0.36 + 5.1) * R * 0.18, cy + Math.sin(tl * 0.44 + 4) * R * 0.2, R * 0.5,
         hsla(hue - 18 * hs, 100 * sat, 72, 0.16 + 0.22 * e + M.kick * 0.18));
       ctx.globalCompositeOperation = 'source-over';
@@ -873,6 +874,9 @@
       look.shift = indigo ? 1 : 0.6;
       // Farbverlauf im Inneren: beim Indigo bunt (wie im Jarvis-Modus), eigene Farben bleiben bei sich
       look.spread = indigo ? 1 : own ? 0.38 : 0.55;
+      // gleiche Helligkeit wirkt bei Gelb/Gruen viel heller als bei Indigo: ausgleichen
+      const bright = lum(hslRgb(look.hue, 0.9 * look.sat, 0.6)) - lum(hslRgb(243, 0.9, 0.6));
+      look.dl = clampN(-bright * 30, -13, 0);
       const m = pick(MOTION, look.motion) || MOTION.normal;
       look.sp = m.sp;
       look.am = m.am;
@@ -891,7 +895,7 @@
 
     function makeStill() {
       if (!canvasOk) return;
-      const key = look.hue.toFixed(1) + '|' + look.sat.toFixed(2) + '|' + look.spread + '|' + (look.light ? 'l' : 'd');
+      const key = look.hue.toFixed(1) + '|' + look.sat.toFixed(2) + '|' + look.spread + '|' + look.dl.toFixed(1) + '|' + (look.light ? 'l' : 'd');
       if (key === stillKey) return;
       const px = 140 * 2;
       const w = Math.round(px * F);
@@ -2824,6 +2828,7 @@
       b.tabIndex = on ? 0 : -1;
     }
     renderPanes();
+    panel.dataset.tab = t; // Reiter "Gehirn" speichert selbst: dort ohne die Profil-Knoepfe
     byId('pn-body').scrollTop = 0;
     const tabBtn = byId('tab-' + t);
     if (focus) tabBtn.focus();
@@ -5005,7 +5010,8 @@
     if (p.info) main.append(h('span', 'sp-info', p.info));
     const k = h('span', 'sp-key' + (p.hasKey ? ' ok' : ''));
     k.append(icon(p.hasKey ? 'checkCircle' : 'key'),
-      h('span', null, p.hasKey ? 'Schlüssel gespeichert' + (p.hint ? ' (' + p.hint + ')' : '') : 'noch kein Schlüssel'));
+      h('span', null, p.hasKey ? 'Schlüssel gespeichert' : 'noch kein Schlüssel'));
+    if (p.hasKey && p.hint) k.append(h('span', 'sp-hint', '(' + p.hint + ')'));
     main.append(k);
     const chk = h('span', 'sp-check');
     chk.append(icon('check'));

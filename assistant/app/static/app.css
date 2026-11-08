@@ -1977,15 +1977,16 @@ kbd {
 .su-x { align-self: flex-start; margin-top: -4px; }
 /* Willkommen: Sphaere gross in der Mitte */
 .setup.welcome .su-head {
-  position: relative; flex-direction: column; text-align: center; gap: 4px;
-  padding: 26px 24px 14px;
+  position: relative; flex-direction: column; text-align: center; gap: 2px;
+  padding: 18px 24px 10px;
   background: radial-gradient(90% 100% at 50% 0%, color-mix(in srgb, var(--grad-a) 14%, transparent), transparent 70%), var(--surface);
 }
 .setup.welcome .su-x { position: absolute; right: 10px; top: 10px; margin: 0; }
-.su-hero { display: grid; place-items: center; width: 96px; height: 96px; margin-bottom: 6px; }
-.su-av { width: 84px; height: 84px; font-size: calc(34px * var(--font-scale)); border-radius: calc(var(--radius) * 1.833); }
+.su-hero { display: grid; place-items: center; width: 84px; height: 84px; margin-bottom: 4px; }
+.su-av { width: 72px; height: 72px; font-size: calc(34px * var(--font-scale)); border-radius: calc(var(--radius) * 1.833); }
 .setup.welcome .su-title { font-size: calc(22px * var(--font-scale)); }
-.setup.welcome .su-sub { max-width: 440px; margin: 4px auto 0; font-size: calc(14.5px * var(--font-scale)); line-height: 1.5; }
+.setup.welcome .su-sub { max-width: 470px; margin: 2px auto 0; font-size: calc(14.5px * var(--font-scale)); line-height: 1.5; }
+.su-body > .su-result { margin-top: 12px; }
 
 .su-body { flex: 1; min-height: 0; overflow-y: auto; padding: 10px 22px 6px; }
 .su-body > * + * { margin-top: 16px; }
@@ -2041,6 +2042,9 @@ kbd {
   overflow-wrap: anywhere;
 }
 .sp-key .ic { width: 14px; height: 14px; }
+.sp-key { flex-wrap: wrap; }
+.sp-hint { font-family: var(--mono); font-size: calc(11.5px * var(--font-scale)); font-weight: 500; white-space: nowrap; opacity: .9; }
+.panel[data-tab="gehirn"] .pn-foot { display: none; }
 .sp-key.ok { color: var(--ok); }
 .sp-check {
   position: absolute; top: 10px; right: 10px;
