@@ -520,8 +520,10 @@ class AppController(CLI):
             from ..live import SEEN_HOLD
 
             paket, self._sehen_pending = self._sehen_pending, None
-            if time.monotonic() - paket.zeit <= SEEN_HOLD and self.sehen.aktiv and self._afk is None:
+            if time.monotonic() - paket.zeit <= SEEN_HOLD and self.sehen.darf_melden() and self._afk is None:
                 self.brain.provider.cancel_event.clear()
+                self._drop_turn = False
+                self._sehen_turn = True  # schon jetzt: eine Nachricht von dir unterbricht sie sicher
                 return {"sehen": paket}
         return None
 
@@ -665,8 +667,10 @@ class AppController(CLI):
         filter_ = StillFilter(self._emit) if sehen else None
         mit_bildern = {"bilder": list(bilder)} if bilder else {}
         try:
-            if as_notice:  # AFK-Schritt / Live-Sehen: begrenzt, kein automatisches Weiterarbeiten
-                answer = self.brain.respond(model_text or text, on_text=filter_ or self._emit,
+            if sehen:  # Live-Sehen: eigene Runde - kein Weiterarbeiten, nie ins Gedaechtnis
+                answer = self.brain.wortmeldung(model_text or text, on_text=filter_, bilder=bilder)
+            elif as_notice:  # AFK-Schritt: begrenzt, kein automatisches Weiterarbeiten
+                answer = self.brain.respond(model_text or text, on_text=self._emit,
                                             max_tool_rounds=max_tool_rounds, auto_continue=0, **mit_bildern)
             else:
                 answer = self.brain.respond(model_text or text, on_text=self._emit, **mit_bildern)
@@ -678,6 +682,7 @@ class AppController(CLI):
             if sehen:
                 if not self.brain.provider.drop_turn(snapshot, model_text or text):
                     self.brain.provider.abort_turn(snapshot, text)
+                    self.brain.provider.als_wortmeldung(snapshot)
                 self._event({"type": "thinking", "on": False})
                 self._event({"type": "sehen_still", "chip": False})
                 return
@@ -695,15 +700,20 @@ class AppController(CLI):
             return
         except Exception:
             self.brain.provider.abort_turn(snapshot, text)
+            if sehen:
+                self.brain.provider.als_wortmeldung(snapshot)
             raise
         if filter_ is not None and (filter_.ende() or ist_still(answer)):
             # Nichts zu sagen: Wortmeldung ganz zuruecknehmen (spart Verlauf) und nichts zeigen
-            self.brain.provider.drop_turn(snapshot, model_text or text)
+            if not self.brain.provider.drop_turn(snapshot, model_text or text):
+                self.brain.provider.als_wortmeldung(snapshot)  # mit Werkzeug: bleibt, aber gekennzeichnet
             if entry in self.history:
                 self.history.remove(entry)
             self._event({"type": "thinking", "on": False})
             self._event({"type": "sehen_still", "chip": True})
             return
+        if sehen:
+            self.brain.provider.als_wortmeldung(snapshot)  # zaehlt nicht als deine Nachricht, nie ins Gedaechtnis
         self.history.append({"role": "assistant", "text": "".join(self._answer_parts) or answer})
         self._event({"type": "thinking", "on": False})
         self._event({"type": "done"})
@@ -896,7 +906,7 @@ class AppController(CLI):
         """Live-Sehen hat etwas bemerkt: als niedrigste Aufgabe einreihen - nie mitten in eine
         laufende Antwort, nur die neueste wartet (hoechstens 20 s). Im Jarvis-Modus entscheidet
         der Sprachmodus, wann Nova ausgeredet hat und du nicht sprichst."""
-        if paket.abwesend or not self.config.api_key:
+        if paket.abwesend or not self.config.api_key or not self.sehen.darf_melden():
             return
         live = self._live
         if live is not None and not live.stop_event.is_set():
@@ -909,6 +919,7 @@ class AppController(CLI):
                 self._sehen_pending = paket
                 return
             self.busy = True
+            self._sehen_turn = True  # unter der Sperre: eine Nachricht ab jetzt unterbricht sie
             self._live_turn = None
             self._drop_turn = False
             self.brain.provider.cancel_event.clear()
@@ -916,12 +927,13 @@ class AppController(CLI):
 
     def _sehen_starten(self, paket, live) -> bool:
         """Jarvis-Modus: Wortmeldung als Runde dieses Sprachmodus (er spricht sie)."""
-        if not self.config.api_key:
+        if not self.config.api_key or not self.sehen.darf_melden():
             return False
         with self._lock:
             if self.busy or self._closing:
                 return False
             self.busy = True
+            self._sehen_turn = True
             self._live_turn = live
             self._drop_turn = False
             self.brain.provider.cancel_event.clear()
@@ -932,30 +944,22 @@ class AppController(CLI):
     def _run_sehen(self, paket, jarvis: bool = False) -> None:
         """Eine Wortmeldung: nur lesende Werkzeuge (wie im AFK-Modus), hoechstens ein Werkzeug-Schritt,
         Euro-Grenze pro Stunde mit Waechter."""
-        from ..sehen.dienst import WORTMELDUNG_WERKZEUGE
+        from ..sehen.dienst import WORTMELDUNG_WERKZEUGE, euro_waechter
 
         self._sehen_turn = True
+        if not self.sehen.darf_melden():  # inzwischen Pause/aus/anderes Gehirn
+            self._sehen_turn = False
+            return
         away = self.permissions.away
         if not away:
             self.permissions.begin_away()
         self.tool_ctx.extra["nur_diese_werkzeuge"] = WORTMELDUNG_WERKZEUGE
         start = self.brain.cost_now_eur()
-        fertig = threading.Event()
-        rest = self.sehen.euro_rest()
-        if rest is not None and not self.config.kostenlos:
-            def waechter() -> None:
-                while not fertig.wait(0.5):
-                    try:
-                        if self.brain.cost_now_eur() - start >= rest:
-                            self.brain.provider.cancel()
-                            return
-                    except Exception:  # noqa: BLE001
-                        continue
-
-            threading.Thread(target=waechter, name="sehen-waechter", daemon=True).start()
+        fertig = euro_waechter(self.brain.cost_now_eur, self.brain.provider.cancel,
+                               None if self.config.kostenlos else self.sehen.euro_rest())
         try:
             self._answer(paket.anzeige, model_text=paket.text + (JARVIS_HINT if jarvis else ""), as_notice=True,
-                         notice_level="sehen", max_tool_rounds=1, bilder=paket.bilder, sehen=True)
+                         notice_level="sehen", bilder=paket.bilder, sehen=True)
         finally:
             fertig.set()
             self.tool_ctx.extra.pop("nur_diese_werkzeuge", None)
@@ -966,6 +970,30 @@ class AppController(CLI):
                 self.sehen.gebucht(max(0.0, self.brain.cost_now_eur() - start))
             except Exception:  # noqa: BLE001
                 pass
+
+    def _sehen_halt(self) -> None:
+        """Pause/Aus/Pause-Taste/AFK: schon geplante Wortmeldungen verwerfen, eine laufende anhalten."""
+        with self._lock:
+            self._sehen_pending = None
+            laufend = self._sehen_turn
+            if laufend:
+                self._drop_turn = True
+                self.brain.provider.cancel()
+        live = self._live
+        if live is not None:
+            live.seen = None
+            if laufend:
+                live.hush()
+        if laufend:
+            self.voice_out.stop()
+
+    def sehen_fenster_schuetzen(self) -> None:
+        """Programmfenster ist jetzt da (Live-Sehen lief evtl. schon vor dem Fenster an): eigenes Fenster
+        aus der Aufnahme nehmen."""
+        if self.sehen.aktiv and "bildschirm" in self.sehen.quellen:
+            hinweis = self._fenster_schutz(True)
+            if hinweis:
+                self._notice(hinweis, "sehen")
 
     def sehen_api(self, data: dict) -> dict:
         """POST /api/sehen: {"aktion": "an"|"aus"|"pause"|"weiter"|"quelle"|"kamera"|"status", ...}."""
@@ -1115,6 +1143,7 @@ class AppController(CLI):
         self._state_changed()
 
     def _after_provider_change(self) -> None:
+        self.sehen.gehirn_gewechselt()  # Zustimmung galt dem alten Gehirn
         self._state_changed()
 
     def _open_terminal(self) -> int | None:
@@ -1220,6 +1249,7 @@ class AppController(CLI):
 
     def _model_changed(self) -> None:
         self.brain.model_changed()
+        self.sehen.gehirn_gewechselt()
         self._state_changed()
 
     def choose_model(self, data: dict) -> dict:
@@ -1265,6 +1295,7 @@ class AppController(CLI):
             fresh = self.brain.switch_provider()
             message = result["message"] + (" Wir beginnen ein neues Gespraech." if fresh else "")
             self._notice(message)
+            self.sehen.gehirn_gewechselt()
             return {"ok": True, "message": schoen(message), "setup": self.setup_info()}
         finally:
             self._release()
@@ -1901,6 +1932,9 @@ class _LiveHost:
 
     def seen_pause(self) -> None:
         self.ctl.sehen.pause()
+
+    def seen_ok(self) -> bool:
+        return self.ctl.sehen.darf_melden()
 
     def cancel_turn(self, drop: bool) -> None:
         if self.ctl._live_turn is not self.loop:

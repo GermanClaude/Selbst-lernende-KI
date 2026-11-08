@@ -40,10 +40,10 @@ from . import signal as sig
 log = logging.getLogger(__name__)
 
 ZUSTAENDE = ("wartet", "verbunden", "getrennt", "fehler")
-PAKET_HINWEIS = ("Für die Handy-Kamera fehlen noch Pakete. Im Terminal: "
+PAKET_HINWEIS = ("F\u00fcr die Handy-Kamera fehlen noch Pakete. Im Terminal: "
                  "pip install aiortc av cryptography segno")
-WLAN_HINWEIS = ("Keine Verbindung zum Handy. Handy und PC müssen im selben WLAN sein "
-                "(kein Gäste-WLAN, kein mobiles Netz).")
+WLAN_HINWEIS = ("Keine Verbindung zum Handy. Handy und PC m\u00fcssen im selben WLAN sein "
+                "(kein G\u00e4ste-WLAN, kein mobiles Netz).")
 MAX_SDP = 24_000
 MAX_DC_NACHRICHT = 4096
 
@@ -208,7 +208,7 @@ class HandyKamera:
         try:
             bild = frame.reformat(width=neu_b, height=neu_h, format="rgb24").to_image()
         except Exception:  # noqa: BLE001 - kaputtes Bild
-            log.debug("Handy-Bild lässt sich nicht umwandeln", exc_info=True)
+            log.debug("Handy-Bild l\u00e4sst sich nicht umwandeln", exc_info=True)
             return None
         ergebnis = bild
         if als == "jpeg":
@@ -307,12 +307,13 @@ class HandyKamera:
             self._setze_fehler(str(exc))
         except Exception as exc:  # noqa: BLE001
             log.error("Handy-Kamera: unerwarteter Fehler (%s)", type(exc).__name__)
-            self._setze_fehler("Die Handy-Kamera ist auf einen Fehler gestoßen. Bitte neu koppeln.")
+            self._setze_fehler("Die Handy-Kamera ist auf einen Fehler gesto\u00dfen. Bitte neu koppeln.")
         finally:
             await self._schliesse_pc()
 
     async def _lauschen(self) -> None:
-        seit = str(int(self._uhr()) - 5)
+        # Das Thema ist neu und zufaellig -> "alles" ist sicher und unabhaengig von der PC-Uhr.
+        seit: str | None = None
         gesehen: set[str] = set()
         fehlversuche = 0
         while True:
@@ -432,7 +433,7 @@ class HandyKamera:
         stand = pc.connectionState
         if stand == "connected":
             if not self._paar_im_lan(pc):
-                log.warning("Handy-Kamera: gewähltes Adresspaar liegt nicht im LAN - getrennt")
+                log.warning("Handy-Kamera: gew\u00e4hltes Adresspaar liegt nicht im LAN - getrennt")
                 self._setze_fehler(WLAN_HINWEIS)
                 await self._schliesse_pc()
                 return

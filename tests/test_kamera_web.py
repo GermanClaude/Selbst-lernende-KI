@@ -96,7 +96,7 @@ def test_texte_mit_umlauten_und_pflichtelemente():
                  "Handy ans Ladekabel, Bildschirm an lassen", "selben WLAN"):
         assert text in html
     js = (SEITE / "kamera.js").read_text(encoding="utf-8")
-    for text in ("Verbinde mit Nova …", "Mit Nova verbunden ✓", "Handy und PC müssen im selben WLAN sein"):
+    for text in ("Verbinde mit Nova \u2026", "Mit Nova verbunden \u2713", "Handy und PC m\u00fcssen im selben WLAN sein"):
         assert text in js
     assert 'lang="de"' in html
 
@@ -205,7 +205,7 @@ def test_gegenprobe_browser_und_python(tmp_path):
     _, code_text = sig.code_nachricht(kopplung, code)
     ein = {
         "link": kopplung.link(),
-        "von_nova": nova.verpacke("antwort", {"sdp": SDP_ANGEBOT, "umlaut": "Grüße äöü ß ✓"}),
+        "von_nova": nova.verpacke("antwort", {"sdp": SDP_ANGEBOT, "umlaut": "Gr\u00fc\u00dfe \u00e4\u00f6\u00fc \u00df \u2713"}),
         "fremd": sig.Kopplung.neu().payload(),
         "sdp": SDP_ANGEBOT,
         "code": code,
@@ -218,10 +218,10 @@ def test_gegenprobe_browser_und_python(tmp_path):
     assert ergebnis.returncode == 0, ergebnis.stderr
     raus = json.loads(ergebnis.stdout)
     assert raus["thema"] == kopplung.thema
-    assert raus["typ"] == "antwort" and raus["sdp"] == SDP_ANGEBOT and raus["umlaut"] == "Grüße äöü ß ✓"
+    assert raus["typ"] == "antwort" and raus["sdp"] == SDP_ANGEBOT and raus["umlaut"] == "Gr\u00fc\u00dfe \u00e4\u00f6\u00fc \u00df \u2713"
     assert raus["echo"] is None
     assert "wiederholt" in raus["wiederholung"]
-    assert "ungültig" in raus["fremd"]
+    assert "ung\u00fcltig" in raus["fremd"]
     angebot = nova.oeffne(raus["angebot"])
     assert angebot.typ == "angebot" and angebot.daten == {"sdp": SDP_ANGEBOT, "g": "geraet1"}
     assert len(raus["angebot"]) < 4096

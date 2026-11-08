@@ -1,6 +1,7 @@
 """Live-Sehen: Aenderungserkennung und das "Auge" (mit Ersatzteilen - kein echter Bildschirm noetig)."""
 import queue
 import time
+from types import SimpleNamespace
 
 import pytest
 
@@ -236,6 +237,9 @@ def test_titelwechsel_dialog_und_pausetaste():
     auge._vorne_pruefen("taste")
     assert auge.pause
     auge._vorne_pruefen("taste")
+    assert auge.pause                     # wieder hinschauen entscheidet nur das Hauptprogramm
+    auge.befehle.put(("weiter",))
+    auge._befehle()
     assert not auge.pause
     ereignisse = [x[1] for x in _meldungen(ausgang)]
     assert [e["art"] for e in ereignisse] == ["fenster", "titel", "dialog", "pause", "weiter"]
@@ -310,3 +314,59 @@ def test_auge_als_thread_und_als_eigener_prozess():
         finally:
             v.stop()
         assert not v.lebt()
+
+
+def test_auge_endet_wenn_das_hauptprogramm_weg_ist():
+    auge, befehle, ausgang, _ocr, _z = _auge()
+    auge.eltern = SimpleNamespace(is_alive=lambda: False)
+    assert _laufen(auge, befehle, sekunden=5.0) == "eltern"
+    assert auge.uhr() < 2.0
+
+
+def test_ansehen_aus_novas_fenster_zeigt_das_fenster_dahinter():
+    pytest.importorskip("PIL")
+    excel = {"hwnd": 5, "pid": 7, "exe": "excel.exe", "titel": "Mappe", "klasse": "X", "rechteck": (60, 40, 200, 80)}
+    nova = {"hwnd": 6, "pid": 99, "exe": "ki-app.exe", "titel": "Nova", "klasse": "X", "rechteck": (0, 0, W, H)}
+    auge, befehle, ausgang, _ocr, zustand = _auge(vorne=excel)
+    auge._vorne_pruefen()
+    zustand["vorne"] = nova
+    auge._vorne_pruefen()
+    auge.bild = _mit_fenster()
+    jpeg, grund = auge.schnappschuss()
+    assert grund == "" and jpeg
+    # privates Fenster dazwischen: danach nie "daneben" schauen
+    zustand["vorne"] = {"hwnd": 7, "pid": 8, "exe": "keepass.exe", "titel": "x", "klasse": "X", "rechteck": (0, 0, W, H)}
+    auge._vorne_pruefen()
+    zustand["vorne"] = nova
+    auge._vorne_pruefen()
+    assert auge.schnappschuss() == (None, "eigen")
+    # frisch nachgefragt: das gemerkte Fenster ist inzwischen privat geworden
+    zustand["vorne"] = excel
+    auge._vorne_pruefen()
+    zustand["vorne"] = nova
+    auge._vorne_pruefen()
+    auge.t.fenster_info = lambda hwnd: dict(excel, titel="Neuer Tab [InPrivate]")
+    assert auge.schnappschuss() == (None, "eigen")
+
+
+def test_ansehen_prueft_zuerst_was_jetzt_vorne_ist():
+    auge, befehle, ausgang, _ocr, zustand = _auge()
+    auge._vorne_pruefen()
+    auge.bild = _mit_fenster()
+    zustand["vorne"] = {"hwnd": 9, "pid": 3, "exe": "msedge.exe", "titel": "Bank [InPrivate]", "klasse": "X",
+                        "rechteck": (0, 0, W, H)}
+    assert auge.schnappschuss() == (None, "privat")   # ohne dass ein Fenster-Ereignis verarbeitet wurde
+
+
+def test_dxcam_kennt_die_lage_des_bildschirms():
+    from assistant.sehen.quellen import DxcamQuelle, QuellenFehler
+
+    ecke = SimpleNamespace(left=-1920, top=0)
+    kamera = SimpleNamespace(_output=SimpleNamespace(desc=SimpleNamespace(DesktopCoordinates=ecke)),
+                             grab=lambda **k: None)
+    modul = SimpleNamespace(create=lambda **k: kamera)
+    assert DxcamQuelle(1, modul=modul).ursprung == (-1920, 0)
+    ohne = SimpleNamespace(create=lambda **k: SimpleNamespace(grab=lambda **k: None))
+    assert DxcamQuelle(0, modul=ohne).ursprung == (0, 0)
+    with pytest.raises(QuellenFehler):
+        DxcamQuelle(1, modul=ohne)

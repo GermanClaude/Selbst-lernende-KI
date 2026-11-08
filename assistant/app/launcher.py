@@ -360,6 +360,10 @@ def run_native_window(server, ctl, title: str, storage: Path, on_quit_holder: di
             window.events.shown += lambda *a: shown.set()
         except Exception:  # noqa: BLE001 - aeltere pywebview: dann eben ohne diese Pruefung
             shown.set()
+        try:  # Live-Sehen lief evtl. schon vor dem Fenster an: eigenes Fenster jetzt aus der Aufnahme nehmen
+            window.events.shown += lambda *a: getattr(ctl, "sehen_fenster_schuetzen", lambda: None)()
+        except Exception:  # noqa: BLE001 - aeltere pywebview
+            pass
         try:  # Live-Sehen mit Webcam: Kamera nur fuer unsere Seite und nur mit Zustimmung
             window.events.loaded += lambda *a: _kamera_erlaubnis_einrichten(window, ctl, server.port, on_quit_holder)
         except Exception:  # noqa: BLE001 - aeltere pywebview

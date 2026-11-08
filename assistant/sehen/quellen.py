@@ -55,6 +55,14 @@ class DxcamQuelle(BildschirmQuelle):
             raise QuellenFehler(f"dxcam kann diesen Bildschirm nicht aufnehmen ({type(exc).__name__}).") from exc
         if self._cam is None:
             raise QuellenFehler("dxcam hat keinen Bildschirm gefunden.")
+        # Wo liegt dieser Bildschirm auf dem Desktop? (Fensterrechtecke -> Bildkoordinaten)
+        try:
+            ecke = self._cam._output.desc.DesktopCoordinates
+            self.ursprung = (int(ecke.left), int(ecke.top))
+        except Exception:  # noqa: BLE001
+            if monitor:
+                raise QuellenFehler("dxcam kennt die Lage dieses Bildschirms nicht \u2013 ich nehme mss.") from None
+            self.ursprung = (0, 0)  # Hauptbildschirm liegt immer bei (0, 0)
 
     def bild(self):
         return self._cam.grab(new_frame_only=False)

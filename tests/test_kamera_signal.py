@@ -131,7 +131,7 @@ def test_verschluesselung_rundweg():
 def test_falscher_schluessel_wird_abgelehnt():
     k, k2 = sig.Kopplung.neu(), sig.Kopplung.neu()
     text = sig.verschluesseln(k.schluessel, k.thema, b"geheim")
-    with pytest.raises(sig.SignalFehler, match="ungültig"):
+    with pytest.raises(sig.SignalFehler, match="ung\u00fcltig"):
         sig.entschluesseln(k2.schluessel, k.thema, text)
 
 
@@ -272,7 +272,8 @@ class FakeAntwort:
     def json(self):
         return self._daten
 
-    def iter_lines(self):
+    def iter_lines(self, chunk_size=512):
+        assert chunk_size == 1  # sonst haengen kurze Zeilen im Puffer (Datenstrom)
         for zeile in self._zeilen:
             yield zeile.encode() if isinstance(zeile, str) else zeile
         if self._fehler:

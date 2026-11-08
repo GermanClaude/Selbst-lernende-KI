@@ -277,7 +277,7 @@ async def _warte(bedingung, timeout=10):
         if bedingung():
             return True
         await asyncio.sleep(0.05)
-    raise AssertionError("Bedingung nicht erfüllt")
+    raise AssertionError("Bedingung nicht erf\u00fcllt")
 
 
 def _warte_sync(bedingung, timeout=10):

@@ -1006,6 +1006,30 @@ class LiveLoop:
             self._carry_on()
             self._idle_state()
             return
+        pause = getattr(self.host, "seen_pause", None)
+        if callable(pause) and is_look_away(text):
+            # "Schau weg" wirkt sofort und ohne KI - auch mitten in einer Antwort
+            self.spoke += 1
+            self.seen = None
+            pause()
+            if self.turn_active and self.proactive:
+                if self.speaking:
+                    self._hush()
+                if not self.cancelled:
+                    self._cancel(drop=True)  # die Wortmeldung ganz zuruecknehmen
+                self._state("listening")
+                return
+            if self.turn_active:
+                self._carry_on()  # deine Bitte laeuft weiter - Nova schaut nur nicht mehr hin
+                self._idle_state()
+                return
+            if self.speaking:
+                self._hush()
+            self.held, self.barged = [], False
+            self._queue("Okay, ich schaue weg.")
+            self._close_speech()
+            self._idle_state()
+            return
         at, said = self.last_said
         asked = said.rstrip().endswith("?") and time.monotonic() - at < 60
         goodbye = is_goodbye(text, after_question=asked)
@@ -1098,14 +1122,6 @@ class LiveLoop:
         if self.pending is not None:  # wartet schon (z.B. App beschaeftigt): Nachtrag anhaengen
             self.pending = f"{self.pending} {text}"
             self._state("thinking", text=self.pending)
-            return
-        pause = getattr(self.host, "seen_pause", None)
-        if callable(pause) and is_look_away(text):
-            self.seen = None
-            pause()
-            self._queue("Okay, ich schaue weg.")
-            self._close_speech()
-            self._idle_state()
             return
         self.seen = None  # du redest: eine wartende Wortmeldung ist ueberholt
         self._send(text)
@@ -1221,7 +1237,16 @@ class LiveLoop:
         self.turn_active = True
         self._state("thinking", text=text)
 
+    def _seen_ok(self) -> bool:
+        ok = getattr(self.host, "seen_ok", None)
+        try:
+            return bool(ok()) if callable(ok) else True
+        except Exception:  # noqa: BLE001
+            return False
+
     def _on_seen(self, paket) -> None:
+        if not self._seen_ok():
+            return
         self.seen = paket
         self.seen_at = time.monotonic()
 
@@ -1298,8 +1323,8 @@ class LiveLoop:
             text, self.pending = self.pending, None
             self._send(text)
         if self.seen is not None:
-            if time.monotonic() - self.seen_at > SEEN_HOLD:
-                self.seen = None  # zu alt - inzwischen ist es nicht mehr aktuell
+            if time.monotonic() - self.seen_at > SEEN_HOLD or not self._seen_ok():
+                self.seen = None  # zu alt - oder inzwischen Pause/aus
             elif (self.pending is None and not self.turn_active and not self.speaking and not self.hearing
                   and not self.recognizing and self.ask_text is None and not self.stop_event.is_set()
                   and not self.host.busy()):

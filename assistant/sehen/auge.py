@@ -116,7 +116,9 @@ def _schnitt(a, b):
 
 
 class Auge:
-    def __init__(self, befehle, ausgang, einst: dict, teile: AugenTeile):
+    def __init__(self, befehle, ausgang, einst: dict, teile: AugenTeile, eltern=None):
+        self.eltern = eltern  # Hauptprogramm (multiprocessing.parent_process()) - endet es, endet das Auge
+        self.letztes_fremdes: dict | None = None  # letztes normales Fenster vorne (fuer "ansehen" aus Nova)
         self.befehle = befehle
         self.ausgang = ausgang
         self.einst = einst
@@ -191,6 +193,10 @@ class Auge:
         vorher, self.vorne = self.vorne, info
         eigen = self._ist_eigen(info)
         privat = ist_ausgeschlossen(info.get("exe"), info.get("titel"), self.ausnahmen)
+        if privat:
+            self.letztes_fremdes = None  # ein privates Fenster lag zuletzt oben - nie daneben schauen
+        elif not eigen:
+            self.letztes_fremdes = info
         if vorher is None or info.get("hwnd") != vorher.get("hwnd"):
             self.vorne_eigen, self.vorne_privat = eigen, privat
             self.diff.zuruecksetzen()
@@ -222,11 +228,15 @@ class Auge:
             self.melde("titel", quelle="fenster", app=info.get("exe", ""), titel=info.get("titel", ""))
 
     def _pause_umschalten(self) -> None:
-        self.pause = not self.pause
-        if self.pause:
+        """Pause-Taste: wegschauen geht sofort hier im Auge; wieder hinschauen entscheidet nur der
+        Hauptprogramm (z.B. nicht waehrend AFK) - es schickt dann ("weiter",)."""
+        if not self.pause:
+            self.pause = True
             self.bild = None  # nichts mehr im Speicher behalten
             self.diff.zuruecksetzen()
-        self.melde("pause" if self.pause else "weiter", quelle="taste")
+            self.melde("pause", quelle="taste")
+        else:
+            self.melde("weiter", quelle="taste")  # nur eine Bitte
 
     # -- Befehle ---------------------------------------------------------------------------------
     def _befehle(self) -> None:
@@ -271,12 +281,23 @@ class Auge:
             return None, "pause"
         if not self.einst.get("bilder", True):
             return None, "aus"
-        if self.vorne_eigen or self.vorne_privat:
+        self._vorne_pruefen()  # erst nachsehen, was JETZT vorne ist (privates Fenster gerade aufgegangen?)
+        if self.vorne_privat:
             return None, "privat"
+        ziel = self.vorne
+        if self.vorne_eigen:
+            # Novas eigenes Fenster ist vorne (ist aus der Aufnahme genommen): das Fenster dahinter zeigen
+            ziel = self.letztes_fremdes
+            if ziel and self.t.fenster_info is not None:
+                frisch = self.t.fenster_info(ziel.get("hwnd"))
+                ziel = frisch if frisch else None
+            if not ziel or self._ist_eigen(ziel) or ist_ausgeschlossen(ziel.get("exe"), ziel.get("titel"),
+                                                                       self.ausnahmen):
+                return None, "eigen"
         status = self._passwort()
         if status != OK:
             return None, "passwort" if status == PASSWORT else "unbekannt"
-        rechteck = (self.vorne or {}).get("rechteck")
+        rechteck = (ziel or {}).get("rechteck")
         teil = _ausschnitt(self.bild, rechteck, getattr(self.quelle, "ursprung", (0, 0))) if rechteck else None
         if teil is None:
             return None, "kein_bild"
@@ -393,10 +414,7 @@ class Auge:
         try:
             while self.laeuft:
                 takt = self.uhr()
-                self._befehle()
-                if not self.laeuft:
-                    break
-                while True:
+                while True:  # erst die Fenster-Ereignisse, dann die Befehle (z.B. "bild")
                     try:
                         art, hwnd = self.signale.get_nowait()
                     except queue.Empty:
@@ -405,10 +423,16 @@ class Auge:
                 if takt - self._poll >= 0.5:
                     self._poll = takt
                     self._vorne_pruefen()
+                    if self.eltern is not None and not self.eltern.is_alive():
+                        grund = "eltern"  # Hauptprogramm ist weg - nie allein weiter zusehen
+                        break
+                self._befehle()
+                if not self.laeuft:
+                    break
                 if self.pause:
                     self.t.schlafe(0.05)
                     continue
-                if not (self.vorne_eigen or self.vorne_privat):
+                if not self.vorne_privat:
                     try:
                         bild = self.quelle.bild()
                     except Exception as exc:  # noqa: BLE001
@@ -418,7 +442,8 @@ class Auge:
                         bild = None
                     if bild is not None:
                         self.bild = bild
-                        self._bild_verarbeiten(bild, takt)
+                        if not self.vorne_eigen:  # Novas eigenes Fenster vorne: nichts melden
+                            self._bild_verarbeiten(bild, takt)
                 else:
                     self.bild = None  # nichts von privaten Fenstern im Speicher
                 rest = 1.0 / self.fps - (self.uhr() - takt)
@@ -479,13 +504,13 @@ def _fake_teile(einst: dict) -> AugenTeile:
     )
 
 
-def hauptschleife(befehle, ausgang, einst: dict, teile: AugenTeile | None = None) -> None:
+def hauptschleife(befehle, ausgang, einst: dict, teile: AugenTeile | None = None, eltern=None) -> None:
     teile = teile if teile is not None else _standard_teile(einst)
     if isinstance(teile, str):
         senden(ausgang, ("ende", teile))
         return
     try:
-        grund = Auge(befehle, ausgang, einst, teile).lauf()
+        grund = Auge(befehle, ausgang, einst, teile, eltern=eltern).lauf()
     except Exception as exc:  # noqa: BLE001
         grund = f"Fehler im Auge ({type(exc).__name__})"
     senden(ausgang, ("ende", grund))
@@ -505,7 +530,9 @@ def _prozess_einstieg(befehle, ausgang, einst: dict) -> None:  # pragma: no cove
                 ctypes.windll.user32.SetProcessDPIAware()
             except Exception:  # noqa: BLE001
                 pass
-    hauptschleife(befehle, ausgang, einst)
+    import multiprocessing
+
+    hauptschleife(befehle, ausgang, einst, eltern=multiprocessing.parent_process())
 
 
 class AugeVerbindung:

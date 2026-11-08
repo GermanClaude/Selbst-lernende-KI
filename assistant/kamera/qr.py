@@ -10,8 +10,8 @@ import logging
 
 log = logging.getLogger(__name__)
 
-OHNE_SEGNO = ("QR-Code nicht möglich (Paket 'segno' fehlt: pip install segno). "
-              "Öffne den Link am Handy oder gib dort den Code ein.")
+OHNE_SEGNO = ("QR-Code nicht m\u00f6glich (Paket 'segno' fehlt: pip install segno). "
+              "\u00d6ffne den Link am Handy oder gib dort den Code ein.")
 
 
 def _segno():
@@ -23,7 +23,7 @@ def _segno():
 
 
 def qr_svg(text: str, *, skala: int = 6, rand: int = 3, dunkel: str = "#111111", hell: str = "#ffffff",
-           titel: str = "QR-Code für die Nova-Kamera") -> str | None:
+           titel: str = "QR-Code f\u00fcr die Nova-Kamera") -> str | None:
     """SVG-Text (ohne XML-Kopf, zum direkten Einbetten) oder None, wenn segno fehlt."""
     segno = _segno()
     if segno is None:

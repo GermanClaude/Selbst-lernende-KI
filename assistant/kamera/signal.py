@@ -71,18 +71,18 @@ def b64u(daten: bytes) -> str:
 
 def b64u_dekodieren(text: str) -> bytes:
     if not isinstance(text, str) or not re.fullmatch(r"[-_A-Za-z0-9]*", text):
-        raise SignalFehler("Ungültige Zeichen in den Daten.")
+        raise SignalFehler("Ung\u00fcltige Zeichen in den Daten.")
     try:
         return base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
     except (ValueError, TypeError) as exc:
-        raise SignalFehler("Ungültige Daten.") from exc
+        raise SignalFehler("Ung\u00fcltige Daten.") from exc
 
 
 def _aesgcm(schluessel: bytes):
     try:
         from cryptography.hazmat.primitives.ciphers.aead import AESGCM  # noqa: PLC0415
     except Exception as exc:  # noqa: BLE001
-        raise SignalFehler("Für die Handy-Kamera fehlt das Paket 'cryptography' "
+        raise SignalFehler("F\u00fcr die Handy-Kamera fehlt das Paket 'cryptography' "
                            "(pip install cryptography).") from exc
     return AESGCM(schluessel)
 
@@ -104,7 +104,7 @@ class Kopplung:
 
     def __post_init__(self):
         if len(self.thema_roh) != 16 or len(self.schluessel) != 32:
-            raise SignalFehler("Kopplung unvollständig.")
+            raise SignalFehler("Kopplung unvollst\u00e4ndig.")
 
     @classmethod
     def neu(cls, gueltig: float = GUELTIG_S, uhr=time.time, flags: int = FLAG_NTFY) -> "Kopplung":
@@ -130,7 +130,7 @@ class Kopplung:
         """Liest eine Kopplung. Mit ``jetzt`` wird auch der Ablauf geprueft."""
         roh = b64u_dekodieren((text or "").strip())
         if len(roh) != _PAYLOAD_LAENGE:
-            raise SignalFehler("Der Kopplungs-Code ist unvollständig.")
+            raise SignalFehler("Der Kopplungs-Code ist unvollst\u00e4ndig.")
         version, thema, schluessel, ablauf, flags = struct.unpack(">B16s32sIB", roh)
         if version != PROTOKOLL:
             raise SignalFehler("Diese Kopplung stammt von einer anderen Nova-Version.")
@@ -162,7 +162,7 @@ def entpacken(daten: bytes, grenze: int = MAX_KLARTEXT) -> bytes:
     art, rest = daten[0], daten[1:]
     if art == 0:
         if len(rest) > grenze:
-            raise SignalFehler("Nachricht zu groß.")
+            raise SignalFehler("Nachricht zu gro\u00df.")
         return rest
     if art != 1:
         raise SignalFehler("Unbekannte Packart.")
@@ -170,9 +170,9 @@ def entpacken(daten: bytes, grenze: int = MAX_KLARTEXT) -> bytes:
         entpacker = zlib.decompressobj(-15)
         ergebnis = entpacker.decompress(rest, grenze + 1)
     except zlib.error as exc:
-        raise SignalFehler("Nachricht lässt sich nicht entpacken.") from exc
+        raise SignalFehler("Nachricht l\u00e4sst sich nicht entpacken.") from exc
     if len(ergebnis) > grenze or entpacker.unconsumed_tail:
-        raise SignalFehler("Nachricht zu groß.")
+        raise SignalFehler("Nachricht zu gro\u00df.")
     return ergebnis
 
 
@@ -192,7 +192,7 @@ def entschluesseln(schluessel: bytes, thema: str, text: str) -> bytes:
     try:
         return _aesgcm(schluessel).decrypt(roh[1:13], roh[13:], _aad(thema))
     except InvalidTag as exc:
-        raise SignalFehler("Nachricht ungültig (falscher Schlüssel oder verändert).") from exc
+        raise SignalFehler("Nachricht ung\u00fcltig (falscher Schl\u00fcssel oder ver\u00e4ndert).") from exc
 
 
 # -- Nachrichten --------------------------------------------------------------------------
@@ -235,13 +235,13 @@ class Kanal:
         klartext = packen(json.dumps(inhalt, separators=(",", ":"), ensure_ascii=False).encode("utf-8"))
         text = verschluesseln(self.kopplung.schluessel, self.thema, klartext)
         if len(text) > MAX_TEXT:
-            raise SignalFehler(f"Nachricht zu groß für das Relais ({len(text)} > {MAX_TEXT} Bytes).")
+            raise SignalFehler(f"Nachricht zu gro\u00df f\u00fcr das Relais ({len(text)} > {MAX_TEXT} Bytes).")
         return text
 
     def oeffne(self, text: str) -> Nachricht | None:
         """Gibt die Nachricht der Gegenseite zurueck, None fuer eigene (Echo vom Relais)."""
         if not isinstance(text, str) or len(text) > MAX_TEXT + 96:
-            raise SignalFehler("Nachricht zu groß.")
+            raise SignalFehler("Nachricht zu gro\u00df.")
         klartext = entpacken(entschluesseln(self.kopplung.schluessel, self.thema, text))
         try:
             inhalt = json.loads(klartext.decode("utf-8"))
@@ -325,7 +325,7 @@ class Relay(Protocol):
 
 def pruefe_thema(thema: str) -> str:
     if not isinstance(thema, str) or not _THEMA_MUSTER.match(thema):
-        raise RelayFehler("Ungültiger Kanalname.")
+        raise RelayFehler("Ung\u00fcltiger Kanalname.")
     return thema
 
 
@@ -353,14 +353,14 @@ class NtfyRelay:
     def senden(self, thema: str, text: str) -> str | None:
         pruefe_thema(thema)
         if len(text.encode("utf-8")) > 4096:
-            raise RelayFehler("Nachricht zu groß für ntfy.sh.")
+            raise RelayFehler("Nachricht zu gro\u00df f\u00fcr ntfy.sh.")
         try:
             antwort = self._sitzung().post(
                 f"{self.basis}/{thema}", data=text.encode("utf-8"),
                 headers={"X-Firebase": "no", "Content-Type": "text/plain; charset=utf-8"},
                 timeout=(self.verbinden_timeout, self.senden_timeout))
         except Exception as exc:  # noqa: BLE001 - requests.RequestException u.a.
-            raise RelayFehler("ntfy.sh ist nicht erreichbar – ist der PC online?") from exc
+            raise RelayFehler("ntfy.sh ist nicht erreichbar \u2013 ist der PC online?") from exc
         self._pruefe_status(antwort)
         try:
             return str(antwort.json().get("id") or "") or None
@@ -387,12 +387,14 @@ class NtfyRelay:
         except Exception as exc:  # noqa: BLE001
             if type(exc).__name__ in ("ReadTimeout", "Timeout"):
                 return []
-            raise RelayFehler("ntfy.sh ist nicht erreichbar – ist der PC online?") from exc
+            raise RelayFehler("ntfy.sh ist nicht erreichbar \u2013 ist der PC online?") from exc
         self._offen = antwort
         ergebnis: list[RelayNachricht] = []
         try:
             self._pruefe_status(antwort)
-            for zeile in antwort.iter_lines():
+            # chunk_size=1: sonst wartet requests auf 512 Bytes, und kurze Zeilen eines
+            # laufenden Datenstroms bleiben im Puffer haengen (ntfy schickt nur ab und zu etwas).
+            for zeile in antwort.iter_lines(chunk_size=1):
                 if self._geschlossen:
                     break
                 if zeile:

@@ -26,16 +26,26 @@ SEH_PAKETE = [
 ]
 
 
-def fehlende_pakete() -> list[str]:
-    """Welche Pakete fuer Bildschirm-Sehen fehlen (Namen fuer die Anzeige)."""
+def fehlende_pakete(plattform: str | None = None, importierbar=None) -> list[str]:
+    """Welche Teile fuer Bildschirm-Sehen fehlen wirklich (auch in der KI.exe) - Namen fuer die Anzeige."""
     import sys
 
     from ..voice import _importable
 
-    fehlt = [name for name, modul in (("numpy", "numpy"), ("pillow", "PIL")) if not _importable(modul)]
-    if sys.platform == "win32":
-        if not (_importable("dxcam") or _importable("mss")):
-            fehlt.append("dxcam/mss")
-        if not _importable("comtypes"):
-            fehlt.append("comtypes")
+    pruefe = importierbar or _importable
+
+    def da(name: str) -> bool:
+        try:
+            return bool(pruefe(name))
+        except Exception:  # noqa: BLE001
+            return False
+
+    fehlt = [name for name, modul in (("numpy", "numpy"), ("pillow", "PIL")) if not da(modul)]
+    if (plattform or sys.platform) == "win32":
+        if not (da("dxcam") or da("mss")):
+            fehlt.append("dxcam/mss (Bildschirmaufnahme)")
+        if not da("comtypes"):
+            fehlt.append("comtypes (Passwortschutz - ohne ihn nur Fenstertitel)")
+        if not da("winrt.windows.media.ocr"):
+            fehlt.append("winrt-Windows.Media.Ocr (Texterkennung)")
     return fehlt
