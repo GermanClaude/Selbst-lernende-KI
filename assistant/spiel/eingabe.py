@@ -63,14 +63,14 @@ ALIASSE = {
 MODIFIER = ("ctrl", "shift", "alt")
 # Immer gesperrt - egal, was ein Spielprofil erlaubt.
 IMMER_VERBOTEN = {
-    "alt+f4": "Alt+F4 würde das Spiel schließen.",
+    "alt+f4": "Alt+F4 w\u00fcrde das Spiel schlie\u00dfen.",
     "alt+tab": "Alt+Tab wechselt aus dem Spiel heraus.",
     "alt+esc": "Alt+Esc wechselt aus dem Spiel heraus.",
-    "ctrl+esc": "Strg+Esc öffnet das Startmenü.",
-    "ctrl+shift+esc": "Strg+Umschalt+Esc öffnet den Task-Manager.",
-    "ctrl+w": "Strg+W schließt in vielen Programmen Fenster.",
+    "ctrl+esc": "Strg+Esc \u00f6ffnet das Startmen\u00fc.",
+    "ctrl+shift+esc": "Strg+Umschalt+Esc \u00f6ffnet den Task-Manager.",
+    "ctrl+w": "Strg+W schlie\u00dft in vielen Programmen Fenster.",
     "ctrl+q": "Strg+Q beendet in vielen Programmen alles.",
-    "shift+tab": "Umschalt+Tab öffnet das Steam-Overlay.",
+    "shift+tab": "Umschalt+Tab \u00f6ffnet das Steam-Overlay.",
     "alt+enter": "Alt+Enter wechselt den Vollbildmodus.",
 }
 MAX_HALTEN = 5.0     # Sekunden, laenger haelt Nova keine Taste
@@ -130,10 +130,10 @@ class Erlaubnis:
         text = kombi_text(namen)
         grund = IMMER_VERBOTEN.get(text) or self.verbotene_kombis.get(text)
         if grund:
-            raise EingabeFehler(f"Gesperrt: {text} – {grund}")
+            raise EingabeFehler(f"Gesperrt: {text} \u2013 {grund}")
         for name in namen:
             if name not in MODIFIER and self.erlaubte_tasten and name not in self.erlaubte_tasten:
-                raise EingabeFehler(f"Die Taste '{name}' ist für dieses Spiel nicht freigegeben.")
+                raise EingabeFehler(f"Die Taste '{name}' ist f\u00fcr dieses Spiel nicht freigegeben.")
 
 
 class Eingabe:
@@ -177,11 +177,11 @@ class Eingabe:
             info = None
         if not self.ziel.passt(info):
             vorne = (info or {}).get("titel") or (info or {}).get("exe") or "ein anderes Fenster"
-            raise FensterWeg(f"Nicht ausgeführt: Vorne ist gerade „{str(vorne)[:60]}“, nicht das Spiel. "
+            raise FensterWeg(f"Nicht ausgef\u00fchrt: Vorne ist gerade \u201e{str(vorne)[:60]}\u201c, nicht das Spiel. "
                              "Ich warte, bis das Spiel wieder vorne ist.")
         rechteck = info.get("rechteck") or (0, 0, 0, 0)
         if len(rechteck) != 4 or rechteck[2] <= 0 or rechteck[3] <= 0:
-            raise FensterWeg("Das Spielfenster ist minimiert oder hat keine Größe.")
+            raise FensterWeg("Das Spielfenster ist minimiert oder hat keine Gr\u00f6\u00dfe.")
         if self.mausbewegung_stoppen and self._erwartet is not None:
             try:
                 jetzt = self.tasten.cursor()
@@ -189,7 +189,7 @@ class Eingabe:
                 jetzt = None
             if jetzt is not None and math.dist(jetzt, self._erwartet) > 60:
                 self.stopp.set()
-                raise NutzerEingriff("Du hast die Maus bewegt – ich halte an, du übernimmst.")
+                raise NutzerEingriff("Du hast die Maus bewegt \u2013 ich halte an, du \u00fcbernimmst.")
         return info
 
     def neuer_zug(self) -> None:
@@ -204,9 +204,9 @@ class Eingabe:
         try:
             fx, fy = float(nx), float(ny)
         except (TypeError, ValueError):
-            raise EingabeFehler("x und y müssen Zahlen zwischen 0 und 1 sein.") from None
+            raise EingabeFehler("x und y m\u00fcssen Zahlen zwischen 0 und 1 sein.") from None
         if not (math.isfinite(fx) and math.isfinite(fy)) or not (-0.01 <= fx <= 1.01 and -0.01 <= fy <= 1.01):
-            raise EingabeFehler(f"Koordinaten ({nx}, {ny}) liegen außerhalb des Spielfensters – x und y "
+            raise EingabeFehler(f"Koordinaten ({nx}, {ny}) liegen au\u00dferhalb des Spielfensters \u2013 x und y "
                                 "sind Anteile 0..1 (x = Pixel-x / Bildbreite).")
         fx, fy = min(1.0, max(0.0, fx)), min(1.0, max(0.0, fy))
         x, y, b, h = rechteck
@@ -271,7 +271,7 @@ class Eingabe:
         if not namen:
             raise EingabeFehler("Keine Taste angegeben.")
         if len(namen) > 4:
-            raise EingabeFehler("Höchstens 4 Tasten gleichzeitig.")
+            raise EingabeFehler("H\u00f6chstens 4 Tasten gleichzeitig.")
         tasten = [tastenname(n) for n in namen]
         if freigabe:
             Erlaubnis(set(), self.erlaubnis.verbotene_kombis).pruefen(tasten)
@@ -366,7 +366,7 @@ class Eingabe:
         try:
             dx, dy = int(dx or 0), int(dy or 0)
         except (TypeError, ValueError):
-            raise EingabeFehler("dx/dy müssen ganze Zahlen (Pixel) sein.") from None
+            raise EingabeFehler("dx/dy m\u00fcssen ganze Zahlen (Pixel) sein.") from None
         dx, dy = max(-2000, min(2000, dx)), max(-1000, min(1000, dy))
         if not dx and not dy:
             raise EingabeFehler("kamera_drehen braucht dx (links -, rechts +) und/oder dy.")

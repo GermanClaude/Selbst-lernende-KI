@@ -3256,3 +3256,29 @@ button.att-thumb:hover { border-color: var(--accent); box-shadow: var(--shadow-s
 .handy-code { font-family: var(--mono, ui-monospace, monospace); font-size: calc(17px * var(--font-scale)); letter-spacing: .08em; }
 .handy-link { flex: 1 1 auto; min-width: 0; font-size: calc(12px * var(--font-scale)); }
 .sehen-handy { flex: none; }
+
+/* =====================================================================
+   Spielmodus: Band „Nova spielt …“, Dialog, Berichtsbilder
+   ===================================================================== */
+.spiel-band { background: color-mix(in srgb, var(--accent) 9%, var(--surface)); border-bottom-color: color-mix(in srgb, var(--accent) 30%, var(--border)); }
+.spiel-band .sehen-eye { background: color-mix(in srgb, var(--accent) 16%, var(--surface)); color: var(--accent); }
+.spiel-band .sehen-title { color: var(--accent-text); }
+.spiel-band .sehen-stop { background: var(--accent); color: var(--accent-on, #fff); }
+.spiel-band[data-mode="spielt"] .sehen-eye { animation: none; }
+.spiel-band[data-mode="pause"] { background: var(--surface-2); border-bottom-color: var(--border); }
+.spiel-band[data-mode="pause"] .sehen-eye { color: var(--text-3); background: var(--surface-3); }
+.sb-spiel.on .sba-ic { color: var(--accent); }
+.spiel-dialog { width: min(600px, 100%); }
+.spiel-body .field { display: block; margin-bottom: 12px; }
+.spiel-body .afk-pick { margin-bottom: 12px; }
+.spiel-erkannt { color: var(--text-2); }
+.spiel-grenzen { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
+.spiel-grenze { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.spiel-grenze .input { width: 100%; font-variant-numeric: tabular-nums; }
+.spiel-zustimmung { margin-top: 12px; padding: 12px; border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--surface-2); }
+.spiel-warnung { white-space: pre-line; font-size: calc(13.5px * var(--font-scale)); color: var(--text); }
+.spiel-ok { display: flex; gap: 8px; align-items: flex-start; margin-top: 10px; font-weight: 600; cursor: pointer; }
+.spiel-bilder { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.spiel-bilder a { display: block; flex: 1 1 140px; max-width: 220px; border-radius: calc(var(--radius) * .75); overflow: hidden; border: 1px solid var(--border); }
+.spiel-bilder img { display: block; width: 100%; height: auto; }
+@media (max-width: 560px) { .spiel-grenzen { grid-template-columns: 1fr; } }

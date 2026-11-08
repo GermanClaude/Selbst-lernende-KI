@@ -62,6 +62,7 @@
     send: '<path d="M12 19V5"/><path d="m5 12 7-7 7 7"/>',
     stop: '<rect x="6" y="6" width="12" height="12" rx="2.5" fill="currentColor" stroke="none"/>',
     queue: '<path d="M4 6h12M4 12h8M4 18h8"/><path d="M18 13v8M14 17h8"/>',
+    gamepad: '<path d="M7.5 6.5h9a4.5 4.5 0 0 1 4.4 3.6l.9 4.6a2.6 2.6 0 0 1-4.6 2.1L15.6 15H8.4l-1.6 1.8a2.6 2.6 0 0 1-4.6-2.1l.9-4.6a4.5 4.5 0 0 1 4.4-3.6z"/><path d="M7 11h3M8.5 9.5v3"/><path d="M15.5 10.5h.01M17.5 12.5h.01"/>',
     clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.2 2"/>',
     mic: '<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M19 10v1a7 7 0 0 1-14 0v-1"/><path d="M12 18v4"/>',
     menu: '<path d="M4 6h16M4 12h16M4 18h16"/>',
@@ -1251,6 +1252,7 @@
     } else if (s.jarvis === false && jv.open && !jv.starting && performance.now() - jv.openedAt > 2500) closeJarvisView();
     fpCheck(); // Nachfrage "Wie gefaellt dir Nova?" (nur, wenn faellig und Nova frei ist)
     if (window.NovaSehen) window.NovaSehen.zustand(s); // Live-Sehen: Band, Schalter, Webcam (sehen.js)
+    if (window.NovaSpiel) window.NovaSpiel.zustand(s); // Spielmodus: Band, Dialog (spiel.js)
   }
 
   const WHEELS_SUB = {
@@ -8639,7 +8641,7 @@
   let resyncCount = 0;
   let helloCount = 0;
   const FLOW = new Set(['user', 'start', 'thinking', 'chunk', 'tool', 'agent', 'info', 'done', 'stopped', 'error',
-    'notice', 'reset', 'retract', 'afk_report', 'image', 'image_progress', 'sehen_still']);
+    'notice', 'reset', 'retract', 'afk_report', 'image', 'image_progress', 'sehen_still', 'spiel_bericht']);
 
   function setConnected(ok) {
     connected = ok;
@@ -8779,6 +8781,7 @@
     } else if (m.role === 'notice') {
       if (m.level === 'afk') addAfkNotice(text); // AFK-Schritt (Trennzeile) oder Bericht (Karte)
       else if (m.level === 'sehen') addSehenNotice(text);
+      else if (m.level === 'spiel' && window.NovaSpiel && Array.isArray(m.bilder)) window.NovaSpiel.bericht(text, m.bilder);
       else addCard(m.level, text);
     } else if (m.role === 'error') addError(text);
   }
@@ -8889,6 +8892,7 @@
     toast: (text, kind, ms) => toast(text, kind, ms),
     name: () => kiName(),
     providerName: () => String(state.provider_name || state.provider || ''),
+    card: (level, text) => addCard(level, text), // Spielbericht (spiel.js): Karte, Bilder haengt spiel.js an
   });
 
   function handleEvent(ev) {
@@ -8992,6 +8996,19 @@
           if (window.NovaSehen) window.NovaSehen.zustand(state);
         }
         break;
+      case 'spiel': // Zwischenstand des Spielmodus
+        if (ev.spiel && typeof ev.spiel === 'object' && state && typeof state === 'object') {
+          state.spiel = ev.spiel;
+          if (window.NovaSpiel) window.NovaSpiel.zustand(state);
+        }
+        break;
+      case 'spiel_bericht':
+        if (window.NovaSpiel) window.NovaSpiel.bericht(String(ev.text || ''), Array.isArray(ev.bilder) ? ev.bilder : []);
+        else addCard('ok', String(ev.text || ''));
+        break;
+      case 'spiel_vorschlag':
+        if (window.NovaSpiel) window.NovaSpiel.oeffnen({ ziel: String(ev.ziel || ''), modus: String(ev.modus || 'normal'), vorschlag: true });
+        break;
       case 'queue_returned':
         onQueueReturned(ev);
         break;
@@ -9058,6 +9075,7 @@
         else if (ev.what === 'tutorial') startTour();
         else if (ev.what === 'feedback') openFeedback({ trigger: 'menue' });
         else if (ev.what === 'handy' && window.NovaSehen) window.NovaSehen.handyDialog(true); // /sehen handy
+        else if (ev.what === 'spiel' && window.NovaSpiel) window.NovaSpiel.oeffnen({ ziel: String(ev.ziel || ''), modus: String(ev.modus || 'normal') });
         break;
       case 'appearance':
         loadAppearance(true);

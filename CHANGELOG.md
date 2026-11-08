@@ -4,6 +4,32 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.11.0 – 2026-11-08
+
+**Spielmodus: Nova spielt selbst – auch über Nacht**
+- Nova kann jetzt **Einzelspieler-Spiele selbst spielen**, zuerst **Manor Lords**. Sag einfach
+  „Spiel Manor Lords und bau eine wunderschöne mittelalterliche Stadt“ – oder tippe
+  `/spiel start Bau eine wunderschöne mittelalterliche Stadt`. In der App gibt es dafür in der
+  Seitenleiste den Knopf **„Spielmodus“**.
+- **Spiel-AFK über Nacht:** `/spiel nacht <Ziel>` (oder im Dialog „Über Nacht“) – Nova spielt
+  stundenlang weiter, während du schläfst, und gibt dir am Morgen einen **Bericht** mit Ziel,
+  Fortschritt, Problemen, Kosten und ein paar **Bildern aus dem Spiel**.
+- So spielt Nova: Spiel pausieren, genau hinschauen, handeln (bauen, klicken, Tasten),
+  kontrollieren, das Spiel ein paar Sekunden laufen lassen – und von vorn. Sie führt dabei ein
+  kleines **Tagebuch**, damit sie auch nach vielen Stunden noch weiß, was ihr Plan war.
+- Beim ersten Start **sucht Nova die wichtigsten Anzeigen** des Spiels (Kalibrierung) und merkt
+  sie sich. Mit `/spiel kalibrieren` sucht sie neu.
+- **Sicher:** Nova drückt nur etwas, solange **das Spielfenster vorne ist** – wechselst du in ein
+  anderes Fenster, hält sie sofort an und wartet. Anhalten jederzeit mit **Strg+Alt+Umschalt+P**,
+  dem Stopp-Knopf im Band „Nova spielt …“ oder einfach, indem du **die Maus bewegst**.
+  Gefährliche Tasten (z. B. Alt+F4, die Windows-Taste, Strg+C in Manor Lords) sind gesperrt.
+- **Nie Online- oder Mehrspieler-Spiele** – das verstößt gegen deren Regeln und wäre unfair.
+- Grenzen für Zeit, Kosten und Züge stellst du im Dialog ein (normal: 2 Std./1 €, nachts:
+  10 Std./5 €; mit Ollama kostenlos). Während Nova spielt, bleibt der PC wach – danach wie vorher.
+- Tipps: Im Spiel „Randloses Vollbild“ einstellen, das Spiel nicht als Administrator starten,
+  den Bildschirm nicht sperren lassen. Am besten mit einem Modell, das Bilder sieht
+  (z. B. Claude Sonnet/Haiku oder DeepSeek Flash). Nur unter Windows.
+
 ## 0.10.2 – 2026-11-08
 
 - **Zweite Korrektur für Claude:** Nach 0.10.1 kam bei Claude noch die Meldung „too many

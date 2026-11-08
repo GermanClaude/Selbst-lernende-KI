@@ -27,18 +27,18 @@ logger = get_logger()
 START_WARTEN = 120.0  # so lange wartet Nova nach dem Start, dass du ins Spiel wechselst
 
 ZUSTIMMUNG = (
-    "**Spielmodus – bitte einmal lesen:**\n"
-    "- {name} steuert dann Maus und Tastatur selbst – aber NUR, solange das Spielfenster ({spiele}) vorne "
-    "ist. Wechselst du zu einem anderen Fenster, drückt {name} nichts mehr und wartet.\n"
-    "- Sofort anhalten: **{taste}** (überall), der Stopp-Knopf, oder einfach die Maus bewegen.\n"
+    "**Spielmodus \u2013 bitte einmal lesen:**\n"
+    "- {name} steuert dann Maus und Tastatur selbst \u2013 aber NUR, solange das Spielfenster ({spiele}) vorne "
+    "ist. Wechselst du zu einem anderen Fenster, dr\u00fcckt {name} nichts mehr und wartet.\n"
+    "- Sofort anhalten: **{taste}** (\u00fcberall), der Stopp-Knopf, oder einfach die Maus bewegen.\n"
     "- {name} schickt dazu Bilder des Spielfensters an {gehirn}.{kosten}\n"
-    "- Nur Einzelspieler-Spiele – nie Online- oder Mehrspieler-Spiele (Regeln, Anti-Cheat, Fairness).\n"
-    "- Der Bildschirm darf nicht gesperrt werden (sonst kein Bild und keine Eingabe). {name} hält PC und "
-    "Bildschirm während der Sitzung wach – danach wie vorher. Energiesparen/Sperre nach Zeit bitte nicht "
+    "- Nur Einzelspieler-Spiele \u2013 nie Online- oder Mehrspieler-Spiele (Regeln, Anti-Cheat, Fairness).\n"
+    "- Der Bildschirm darf nicht gesperrt werden (sonst kein Bild und keine Eingabe). {name} h\u00e4lt PC und "
+    "Bildschirm w\u00e4hrend der Sitzung wach \u2013 danach wie vorher. Energiesparen/Sperre nach Zeit bitte nicht "
     "erzwingen.\n"
-    "- Im Spiel am besten „Randloses Vollbild“ (Borderless) einstellen und das Spiel NICHT als "
+    "- Im Spiel am besten \u201eRandloses Vollbild\u201c (Borderless) einstellen und das Spiel NICHT als "
     "Administrator starten.\n"
-    "- Das gilt auch bei Safe Mode – aber nur für das Spielfenster, nur in dieser Sitzung."
+    "- Das gilt auch bei Safe Mode \u2013 aber nur f\u00fcr das Spielfenster, nur in dieser Sitzung."
 )
 
 
@@ -119,8 +119,8 @@ class SpielSteuerung:
         gehirn = {"claude": "Claude von Anthropic", "deepseek": "DeepSeek",
                   "ollama": "Ollama auf deinem PC"}.get(self.config.active_provider, self.config.active_provider)
         kosten = (" Mit Ollama kostet es nichts." if self.config.kostenlos else
-                  f" Das kostet Geld – höchstens {_eur(self.einst.max_euro)} € pro Sitzung, nachts "
-                  f"{_eur(self.einst.nacht_max_euro)} € (einstellbar).")
+                  f" Das kostet Geld \u2013 h\u00f6chstens {_eur(self.einst.max_euro)} \u20ac pro Sitzung, nachts "
+                  f"{_eur(self.einst.nacht_max_euro)} \u20ac (einstellbar).")
         spiele = ", ".join(p.name for p in erlaubte_profile(self.einst.erlaubte_spiele)) or "keins freigegeben"
         return ZUSTIMMUNG.format(name=self.config.ki.name, spiele=spiele, taste=self.stopp_taste(), gehirn=gehirn,
                                  kosten=kosten)
@@ -140,7 +140,7 @@ class SpielSteuerung:
                      "zuege": 0, "aktionen": 0, "minuten": 0, "eur": 0.0, "max_eur": start["grenzen"].max_euro,
                      "max_minuten": int(start["grenzen"].max_minuten), "max_zuege": start["grenzen"].max_zuege,
                      "kostenlos": bool(self.config.kostenlos),
-                     "letztes": "Wechsle jetzt ins Spiel – ich beginne, sobald es vorne ist.", "ende": ""}
+                     "letztes": "Wechsle jetzt ins Spiel \u2013 ich beginne, sobald es vorne ist.", "ende": ""}
         else:
             daten = {"aktiv": False, "zustand": "aus"}
         daten["zustimmung_noetig"] = self.braucht_zustimmung()
@@ -178,7 +178,9 @@ class SpielSteuerung:
     # -- Vorschlag (Werkzeug spiel_starten) ---------------------------------------------
     def vorschlagen(self, ziel: str, modus: str) -> str:
         if self.aktiv:
-            return "Der Spielmodus läuft schon."
+            return "Der Spielmodus l\u00e4uft schon."
+        if self.afk_aktiv() or self.permissions.away:
+            return "Nicht vorgeschlagen: Dein Mensch ist gerade weg (AFK-Modus) \u2013 den Spielmodus startet er selbst."
         if klingt_online(ziel):
             return ("Nicht vorgeschlagen: Online- oder Mehrspieler-Spiele spiele ich nie selbst (Regeln der Spiele, "
                     "Anti-Cheat, Fairness). Sag das deinem Menschen freundlich.")
@@ -198,14 +200,14 @@ class SpielSteuerung:
         if self.plattform != "win32" and self.tasten_fabrik is None:
             return NUR_WINDOWS
         if self.aktiv:
-            return "Der Spielmodus läuft schon."
+            return "Der Spielmodus l\u00e4uft schon."
         if self.afk_aktiv() or self.permissions.away:
-            return "Während des AFK-Modus gibt es keinen Spielmodus – erst zurückkommen."
+            return "W\u00e4hrend des AFK-Modus gibt es keinen Spielmodus \u2013 erst zur\u00fcckkommen."
         if not self.config.api_key:
-            return "Dafür brauche ich erst einen Schlüssel (Gehirn & Schlüssel)."
+            return "Daf\u00fcr brauche ich erst einen Schl\u00fcssel (Gehirn & Schl\u00fcssel)."
         if klingt_online(ziel):
-            return ("Online- und Mehrspieler-Spiele spiele ich nicht selbst – das verstößt meist gegen "
-                    "die Regeln der Spiele (Anti-Cheat) und wäre unfair gegenüber anderen Menschen.")
+            return ("Online- und Mehrspieler-Spiele spiele ich nicht selbst \u2013 das verst\u00f6\u00dft meist gegen "
+                    "die Regeln der Spiele (Anti-Cheat) und w\u00e4re unfair gegen\u00fcber anderen Menschen.")
         if not erlaubte_profile(self.einst.erlaubte_spiele):
             return "In [spiel] erlaubte_spiele ist kein Spiel freigegeben, das ich kenne (z.B. \"manor_lords\")."
         return ""
@@ -229,12 +231,12 @@ class SpielSteuerung:
         except Exception:  # noqa: BLE001
             sieht = False
         if not sieht:
-            hinweise.append("Achtung: Dein Modell sieht keine Bilder – der Spielmodus braucht eigentlich ein "
+            hinweise.append("Achtung: Dein Modell sieht keine Bilder \u2013 der Spielmodus braucht eigentlich ein "
                             "Modell mit Augen (z.B. Claude Sonnet/Haiku, DeepSeek Flash oder ein Ollama-Modell mit "
-                            "„vision“). Ich bekomme nur erkannten Text.")
+                            "\u201evision\u201c). Ich bekomme nur erkannten Text.")
         with self._lock:
             if self.aktiv:
-                return {"ok": False, "error": "Der Spielmodus läuft schon."}
+                return {"ok": False, "error": "Der Spielmodus l\u00e4uft schon."}
             self.vorschlag = None
             self._start_stopp.clear()
             self._start = {"ziel": ziel, "modus": modus, "grenzen": grenzen, "sieht": sieht}
@@ -242,8 +244,8 @@ class SpielSteuerung:
                                             daemon=True)
             self._thread.start()
         dauer = (f"{grenzen.max_minuten / 60:.1f}".replace(".", ",").replace(",0", "") + " Std.")
-        kosten = "kostenlos" if self.config.kostenlos else f"höchstens ca. {_eur(grenzen.max_euro)} €"
-        text = (f"Spielmodus {'(Nacht) ' if modus == 'nacht' else ''}bereit – wechsle jetzt ins Spiel "
+        kosten = "kostenlos" if self.config.kostenlos else f"h\u00f6chstens ca. {_eur(grenzen.max_euro)} \u20ac"
+        text = (f"Spielmodus {'(Nacht) ' if modus == 'nacht' else ''}bereit \u2013 wechsle jetzt ins Spiel "
                 f"(z.B. mit Alt+Tab). Ich beginne, sobald es vorne ist. Grenzen: {dauer}, {kosten}. "
                 f"Anhalten: {self.stopp_taste()}, Stopp-Knopf oder Maus bewegen.")
         if hinweise:
@@ -259,11 +261,11 @@ class SpielSteuerung:
             self._start_stopp.set()
         if sitzung is not None and sitzung.laeuft:
             sitzung.stop(grund)
-            return "Ich halte an – der Bericht kommt gleich."
+            return "Ich halte an \u2013 der Bericht kommt gleich."
         if start is not None:
             return "Spielmodus abgebrochen."
         self._status_neu()
-        return "Der Spielmodus läuft gerade nicht."
+        return "Der Spielmodus l\u00e4uft gerade nicht."
 
     def warten(self, timeout: float | None = None) -> bool:
         """Bis die Sitzung zu Ende ist (Terminal). True = beendet."""
@@ -281,10 +283,10 @@ class SpielSteuerung:
         sitzung = self.sitzung
         if sitzung is not None and sitzung.laeuft:
             sitzung.kalibrieren_noetig = True
-            return "Ich kalibriere im nächsten Zug neu (Positionen der Anzeigen suchen)."
+            return "Ich kalibriere im n\u00e4chsten Zug neu (Positionen der Anzeigen suchen)."
         if geloescht:
-            return "Gespeicherte Positionen vergessen – beim nächsten Spielstart kalibriere ich neu."
-        return "Es gab noch keine Kalibrierung – die mache ich beim ersten Spielstart automatisch."
+            return "Gespeicherte Positionen vergessen \u2013 beim n\u00e4chsten Spielstart kalibriere ich neu."
+        return "Es gab noch keine Kalibrierung \u2013 die mache ich beim ersten Spielstart automatisch."
 
     # -- intern -----------------------------------------------------------------------
     def _ordner(self) -> Path:
@@ -339,7 +341,7 @@ class SpielSteuerung:
                     logger.exception("Spielbericht anzeigen")
         except Exception:  # noqa: BLE001
             logger.exception("Spielmodus")
-            self._melden("Der Spielmodus ging nicht (interner Fehler) – ich habe nichts mehr gedrückt.")
+            self._melden("Der Spielmodus ging nicht (interner Fehler) \u2013 ich habe nichts mehr gedr\u00fcckt.")
         finally:
             with self._lock:
                 self._start = None
@@ -358,12 +360,12 @@ class SpielSteuerung:
                 info = None
             online = online_spiel(info)
             if online:
-                self._melden(f"{online} ist ein Online-Spiel – das spiele ich nicht selbst. Spielmodus beendet.")
+                self._melden(f"{online} ist ein Online-Spiel \u2013 das spiele ich nicht selbst. Spielmodus beendet.")
                 return None
             if finde_profil(info, self.einst.erlaubte_spiele) is not None:
                 return info
             self.schlafe(0.25)
-        self._melden("Ich habe kein freigegebenes Spiel im Vordergrund gesehen – Spielmodus beendet. "
+        self._melden("Ich habe kein freigegebenes Spiel im Vordergrund gesehen \u2013 Spielmodus beendet. "
                      "Starte das Spiel und versuch es nochmal.")
         return None
 
@@ -426,7 +428,7 @@ class SpielSteuerung:
             thread.start()
             thread.bereit.wait(2.0)
             if thread.ok is False:
-                self._melden(f"Hinweis: Die Not-Aus-Taste {self.stopp_taste()} ist schon belegt – anhalten "
+                self._melden(f"Hinweis: Die Not-Aus-Taste {self.stopp_taste()} ist schon belegt \u2013 anhalten "
                              "geht trotzdem mit dem Stopp-Knopf oder einer Mausbewegung.")
             return thread
 

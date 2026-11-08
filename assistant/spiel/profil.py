@@ -57,9 +57,9 @@ class SpielProfil:
 
     def tasten_text(self) -> str:
         namen = {"pause": "Pause/Weiter", "schneller": "schneller", "langsamer": "langsamer",
-                 "bau_menue": "Bau-Menü", "strassen": "Straßen", "hofstaette": "Hofstätte",
+                 "bau_menue": "Bau-Men\u00fc", "strassen": "Stra\u00dfen", "hofstaette": "Hofst\u00e4tte",
                  "karte": "Regionskarte", "zur_stadt": "Kamera zur Stadt", "info": "Info-Schilder",
-                 "abbrechen": "abbrechen/Menü schließen", "kamera": "Kamera bewegen"}
+                 "abbrechen": "abbrechen/Men\u00fc schlie\u00dfen", "kamera": "Kamera bewegen"}
         return ", ".join(f"{namen.get(rolle, rolle)} = {taste}" for rolle, taste in self.tasten.items())
 
 

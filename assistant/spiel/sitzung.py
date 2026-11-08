@@ -35,17 +35,17 @@ MAX_BILDER_IM_GESPRAECH = 60   # danach frisches Gespraech (Claude: hoechstens 1
 STILLSTAND_SCHWELLE = 1.5      # mittlere Helligkeitsaenderung (0..255), darunter gilt: nichts bewegt sich
 GRUENDE = {
     "nutzer": "Du hast angehalten.",
-    "taste": "Du hast die Not-Aus-Taste gedrückt.",
-    "maus": "Du hast die Maus bewegt – du hast übernommen.",
+    "taste": "Du hast die Not-Aus-Taste gedr\u00fcckt.",
+    "maus": "Du hast die Maus bewegt \u2013 du hast \u00fcbernommen.",
     "fertig": "Ich habe das Ziel erreicht.",
-    "aufgeben": "Ich bin nicht weitergekommen und habe aufgehört.",
+    "aufgeben": "Ich bin nicht weitergekommen und habe aufgeh\u00f6rt.",
     "zeit": "Die eingestellte Zeit ist um.",
     "budget": "Das Kosten-Budget ist aufgebraucht.",
-    "schritte": "Die maximale Zahl an Zügen ist erreicht.",
+    "schritte": "Die maximale Zahl an Z\u00fcgen ist erreicht.",
     "fenster": "Das Spiel war zu lange nicht im Vordergrund.",
     "festgefahren": "Ich kam nicht mehr weiter (das Spiel reagierte nicht).",
-    "kein_bild": "Ich bekam kein Bild vom Spiel (schwarz) – bitte „Randloses Vollbild“ einstellen.",
-    "fehler": "Es gab wiederholt Fehler – ich habe sicherheitshalber aufgehört.",
+    "kein_bild": "Ich bekam kein Bild vom Spiel (schwarz) \u2013 bitte \u201eRandloses Vollbild\u201c einstellen.",
+    "fehler": "Es gab wiederholt Fehler \u2013 ich habe sicherheitshalber aufgeh\u00f6rt.",
 }
 
 ZUSAMMENFASSEN = ("[Spielmodus: Das Gespraech wird gleich frisch begonnen. Fasse JETZT ohne Werkzeuge in hoechstens "
@@ -331,12 +331,12 @@ class SpielSitzung:
         """Spielfenster vorne? Sonst warten (nichts druecken) - hoechstens grenzen.warten_sekunden."""
         if self.eingabe.ist_vorne():
             if self._fenster_weg:
-                self._melden("Das Spiel ist wieder vorne – ich spiele weiter.")
+                self._melden("Das Spiel ist wieder vorne \u2013 ich spiele weiter.")
                 self.journal.notiz("system", "Spiel wieder vorne.")
             self._fenster_weg = False
             return True
         self.zustand = "wartet"
-        self._melden(f"Ich warte, bis {self.profil.name} wieder vorne ist (ich drücke so lange nichts).")
+        self._melden(f"Ich warte, bis {self.profil.name} wieder vorne ist (ich dr\u00fccke so lange nichts).")
         self._aktualisieren()
         ende = self.uhr() + self.grenzen.warten_sekunden
         while self.uhr() < ende:
@@ -345,7 +345,7 @@ class SpielSitzung:
             if self.eingabe.ist_vorne():
                 self._fenster_weg = False
                 self.eingabe.neuer_zug()
-                self._melden("Das Spiel ist wieder vorne – ich spiele weiter.")
+                self._melden("Das Spiel ist wieder vorne \u2013 ich spiele weiter.")
                 self.journal.notiz("system", "Spiel wieder vorne.")
                 return True
             self.schlafe(0.25)
@@ -418,7 +418,7 @@ class SpielSitzung:
         self.eingabe.neuer_zug()
         provider.cancel_event.clear()
         snapshot = provider.history_snapshot()
-        self._melden(f"Zug {self.zuege}: ich schaue hin und entscheide …")
+        self._melden(f"Zug {self.zuege}: ich schaue hin und entscheide \u2026")
         self._aktualisieren()
         try:
             kwargs = {"bilder": bilder} if bilder else {}
@@ -467,7 +467,7 @@ class SpielSitzung:
         logger.info("Spielmodus: %s", text)
         if self._fehler_folge >= 3:
             return "fehler"
-        self._melden(f"Problem: {text[:150]} – ich versuche es gleich nochmal.")
+        self._melden(f"Problem: {text[:150]} \u2013 ich versuche es gleich nochmal.")
         self._pause(min(30.0, 3.0 * 2 ** self._fehler_folge))
         return ""
 
@@ -537,15 +537,15 @@ class SpielSitzung:
                 # haeufigste Ursache: der Pausen-Merker stimmt nicht -> einmal druecken, die KI prueft im Bild
                 self._pausentaste()
                 self.pausiert = None
-                text = ("Pausentaste einmal extra gedrückt (der Pausen-Merker stimmte wohl nicht) – bitte "
-                        "im Bild prüfen, ob das Spiel jetzt pausiert ist.")
+                text = ("Pausentaste einmal extra gedr\u00fcckt (der Pausen-Merker stimmte wohl nicht) \u2013 bitte "
+                        "im Bild pr\u00fcfen, ob das Spiel jetzt pausiert ist.")
             elif stufe == 1:
                 for _ in range(2):
                     self.eingabe.taste(self.profil.tasten.get("abbrechen", "esc"), freigabe=True)
-                text = "Zweimal Esc gedrückt (offene Menüs/Fenster schließen)."
+                text = "Zweimal Esc gedr\u00fcckt (offene Men\u00fcs/Fenster schlie\u00dfen)."
             elif stufe == 2:
                 self.kalibrieren_noetig = True
-                text = "Neu kalibrieren – vielleicht hat sich die Oberfläche verschoben."
+                text = "Neu kalibrieren \u2013 vielleicht hat sich die Oberfl\u00e4che verschoben."
             elif stufe == 3 and self.quickload_erlaubt and self.profil.laden_tasten:
                 self.eingabe.kombi(list(self.profil.laden_tasten), freigabe=True)
                 self.pausiert = None
@@ -559,7 +559,7 @@ class SpielSitzung:
             text = f"Erholung (Stufe {stufe + 1}) ging nicht: {exc}"
         self._erholt = text
         self.journal.notiz("problem", f"Festgefahren - Erholung Stufe {stufe + 1}: {text}")
-        self._melden(f"Es ging nicht weiter – {text}")
+        self._melden(f"Es ging nicht weiter \u2013 {text}")
         return ""
 
     # -- Gespraech mit der KI -------------------------------------------------------------
@@ -692,7 +692,7 @@ class SpielSitzung:
         if not isinstance(aktionen, list) or not aktionen:
             return "Bitte mindestens eine Aktion in 'aktionen' angeben."
         if len(aktionen) > MAX_AKTIONEN:
-            return f"Höchstens {MAX_AKTIONEN} Aktionen pro Aufruf – teile sie auf."
+            return f"H\u00f6chstens {MAX_AKTIONEN} Aktionen pro Aufruf \u2013 teile sie auf."
         if laufen_sekunden is not None:
             self._laufen_wunsch = _zahl(laufen_sekunden, 0.0, 120.0, self.grenzen.laufen_sekunden)
         zeilen: list[str] = []
@@ -701,7 +701,7 @@ class SpielSitzung:
         try:
             for nummer, aktion in enumerate(aktionen, 1):
                 if not isinstance(aktion, dict):
-                    zeilen.append(f"{nummer}. übersprungen (keine Aktion)")
+                    zeilen.append(f"{nummer}. \u00fcbersprungen (keine Aktion)")
                     continue
                 typ = str(aktion.get("typ") or "")
                 try:
@@ -722,7 +722,7 @@ class SpielSitzung:
                     break
                 except (EingabeFehler, OSError, AufnahmeFehler) as exc:
                     self._fehlschlaege += 1
-                    zeilen.append(f"{nummer}. NICHT ausgeführt ({typ}): {exc} – die weiteren Aktionen "
+                    zeilen.append(f"{nummer}. NICHT ausgef\u00fchrt ({typ}): {exc} \u2013 die weiteren Aktionen "
                                   "habe ich ausgelassen.")
                     break
                 self.aktionen += 1
@@ -755,7 +755,7 @@ class SpielSitzung:
         except BildFehler as exc:
             return bericht + f"\n(Kein neues Bild: {exc})"
         self._bilder_im_gespraech += 1
-        wann = "während die Taste gehalten wurde" if bild_waehrend is not None else "danach"
+        wann = "w\u00e4hrend die Taste gehalten wurde" if bild_waehrend is not None else "danach"
         return ToolOutput(f"{bericht}\nNeues Bild des Spielfensters ({wann}):", [bild])
 
     def _eine_aktion(self, typ: str, a: dict) -> tuple[str, bytes | None]:
@@ -794,18 +794,18 @@ class SpielSitzung:
         if typ in ("pause", "weiter"):
             self._pausentaste()
             self.pausiert = typ == "pause"
-            return ("Pausentaste gedrückt – Merker: pausiert" if typ == "pause"
-                    else "Pausentaste gedrückt – Merker: läuft"), None
+            return ("Pausentaste gedr\u00fcckt \u2013 Merker: pausiert" if typ == "pause"
+                    else "Pausentaste gedr\u00fcckt \u2013 Merker: l\u00e4uft"), None
         if typ in ("schneller", "langsamer"):
             taste = self.profil.tasten.get(typ)
             if not taste:
-                raise EingabeFehler(f"Für '{typ}' kenne ich in diesem Spiel keine Taste.")
+                raise EingabeFehler(f"F\u00fcr '{typ}' kenne ich in diesem Spiel keine Taste.")
             e.taste(taste, freigabe=True)
-            return f"{typ}: {taste} gedrückt", None
+            return f"{typ}: {taste} gedr\u00fcckt", None
         if typ == "speichern":
             if not self.profil.speichern_tasten:
-                raise EingabeFehler("Für dieses Spiel kenne ich keine Schnellspeicher-Taste – speichere "
-                                    "über das Esc-Menü (Klicks) und prüfe es im Bild.")
+                raise EingabeFehler("F\u00fcr dieses Spiel kenne ich keine Schnellspeicher-Taste \u2013 speichere "
+                                    "\u00fcber das Esc-Men\u00fc (Klicks) und pr\u00fcfe es im Bild.")
             e.kombi(list(self.profil.speichern_tasten), freigabe=True)
             self.journal.notiz("system", "Schnellgespeichert.")
             return "gespeichert (Schnellspeichern)", None
@@ -829,12 +829,12 @@ class SpielSitzung:
                 if len(gesammelt) >= 30:
                     break
             if not gesammelt:
-                return "Keine gültigen Elemente (name, x, y zwischen 0 und 1)."
+                return "Keine g\u00fcltigen Elemente (name, x, y zwischen 0 und 1)."
             anzahl = self.kalibrierung.speichern(self.aufloesung, gesammelt, notiz=text)
             self.kalibrieren_noetig = False
             self.journal.notiz("system", f"Kalibrierung gespeichert ({len(gesammelt)} Elemente).")
             self.journal.speichern()
-            return f"Kalibrierung gespeichert ({anzahl} Elemente für {Kalibrierung.schluessel(self.aufloesung)})."
+            return f"Kalibrierung gespeichert ({anzahl} Elemente f\u00fcr {Kalibrierung.schluessel(self.aufloesung)})."
         text = " ".join(str(text or "").split())
         if not text:
             return "Bitte einen text angeben."
@@ -852,7 +852,7 @@ class SpielSitzung:
         with self._lock:
             if not self._grenze:
                 self._grenze = grund
-        return "Gut – die Spielsitzung endet nach diesem Zug. Antworte jetzt nur noch kurz."
+        return "Gut \u2013 die Spielsitzung endet nach diesem Zug. Antworte jetzt nur noch kurz."
 
     # -- Bericht --------------------------------------------------------------------------
     def _bericht_bild(self, png: bytes, erstes: bool = False, letztes: bool = False) -> None:
@@ -904,8 +904,8 @@ class SpielSitzung:
         dauer = self.minuten
         dauer_text = f"{dauer // 60} Std. {dauer % 60} Min." if dauer >= 60 else f"{dauer} Min."
         kosten = "kostenlos" if self.kostenlos else f"ca. {_eur(self.kosten())} EUR"
-        modus = "Spiel-AFK über Nacht" if self.modus == "nacht" else "Spielmodus"
-        zeilen = [f"**Spielbericht – {self.profil.name}** ({modus}, {dauer_text}, {self.zuege} Züge, "
+        modus = "Spiel-AFK \u00fcber Nacht" if self.modus == "nacht" else "Spielmodus"
+        zeilen = [f"**Spielbericht \u2013 {self.profil.name}** ({modus}, {dauer_text}, {self.zuege} Z\u00fcge, "
                   f"{self.aktionen} Aktionen, {kosten}). {GRUENDE.get(self.ende, '')}"]
         zeilen.append(f"\n**Ziel:** {self.ziel or 'frei spielen'}")
         if self.ergebnis:

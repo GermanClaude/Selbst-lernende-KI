@@ -21,7 +21,7 @@ from assistant.spiel.sitzung import STILLSTAND_SCHWELLE, grenzen_aus
 from assistant.spiel.steuerung import SpielSteuerung
 from assistant.spiel.windows import ES_CONTINUOUS, ES_DISPLAY_REQUIRED, ES_SYSTEM_REQUIRED, WachHalter, parse_taste
 from assistant.tools import build_registry
-from assistant.tools.base import MAX_STRIKT, ToolOutput
+from assistant.tools.base import MAX_STRIKT
 from assistant.tools.spiel import spiel_registry
 from tests._fakes import AnthroClient, anthro_msg, text_block, tool_use_block
 
@@ -184,7 +184,7 @@ def test_koordinaten_relativ_zum_spielfenster():
     assert e.klick(0.0, 0.0) == (100, 50)
     assert e.klick(1.0, 1.0) == (100 + 1919, 50 + 1079)
     assert e.klick(0.5, 0.25) == (100 + round(0.5 * 1919), 50 + round(0.25 * 1079))
-    with pytest.raises(EingabeFehler, match="außerhalb"):
+    with pytest.raises(EingabeFehler, match="au\u00dferhalb"):
         e.klick(1.5, 0.2)
     with pytest.raises(EingabeFehler):
         e.klick("links", 0.2)
@@ -206,7 +206,8 @@ def test_ziehen_relativ_und_scrollen():
     tasten = FakeTasten()
     e = _eingabe(tasten=tasten)
     e.ziehen(0.5, 0.5, 0.6, 0.5, relativ=True)
-    assert sum(ev[1] for ev in tasten.ereignisse if ev[0] == "rel") == round(0.1 * 1919) + 0 or True
+    assert sum(ev[1] for ev in tasten.ereignisse if ev[0] == "rel") == round(0.6 * 1919) - round(0.5 * 1919)
+    assert [ev for ev in tasten.ereignisse if ev[0] == "knopf"] == [("knopf", "links", True), ("knopf", "links", False)]
     e.scrollen(-3, 0.5, 0.5)
     assert [ev for ev in tasten.ereignisse if ev[0] == "rad"] == [("rad", -1)] * 3
 
@@ -327,7 +328,7 @@ def test_spielwerkzeuge_ohne_sitzung_tun_nichts(tmp_path):
     ctx = ToolContext(permissions=pm)
     reg = spiel_registry()
     text, fehler = reg.execute(ctx, "spiel_aktion", {"aktionen": [{"typ": "taste", "taste": "c"}]})
-    assert "läuft gerade nicht" in text
+    assert "l\u00e4uft gerade nicht" in text
     with pytest.raises(PermissionError_):
         pm.require_spiel()
     pm.begin_spiel("Manor Lords")
@@ -627,23 +628,7 @@ def test_tasten_halten_mit_bild_und_spielfremde_aktion(tmp_path):
     s = u.spielen()
     assert s.ende == "fertig"
     alles = " ".join(u.client.messages.requests)
-    assert "w\\u00e4hrend die Taste gehalten wurde" in alles or "während die Taste gehalten wurde" in alles
+    assert "w\\u00e4hrend die Taste gehalten wurde" in alles or "w\u00e4hrend die Taste gehalten wurde" in alles
     assert "Unbekannte Aktion" in alles
     assert u.tasten.gedrueckt(0x43) == 0  # nach einem Fehler werden die weiteren Aktionen ausgelassen
     assert u.tasten.gedrueckt(0x09) == 1
-
-
-def test_werkzeug_ergebnis_ist_tooloutput_mit_bild(tmp_path):
-    u = Umgebung(tmp_path, [_text("ok")])
-    from assistant.tools import ToolContext
-
-    s_holder = {}
-
-    def fabrik(system, registry, ctx):
-        s_holder["ctx"] = ctx
-        return AnthropicProvider(u.cfg, system, registry, ctx, client=u.client)
-
-    u.st.provider_fabrik = fabrik
-    assert u.st.starten("Stadt", einverstanden=True, schritte=1)["ok"]
-    assert u.st.warten(20)
-    assert isinstance(ToolContext, type) and "ctx" in s_holder

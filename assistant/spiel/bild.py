@@ -20,7 +20,7 @@ def aufnehmen(rechteck: tuple[int, int, int, int]) -> bytes:  # pragma: no cover
     """PNG des Bereichs (x, y, b, h) in Bildschirm-Pixeln."""
     x, y, b, h = (int(v) for v in rechteck)
     if b <= 0 or h <= 0:
-        raise AufnahmeFehler("Das Spielfenster hat keine Größe (minimiert?).")
+        raise AufnahmeFehler("Das Spielfenster hat keine Gr\u00f6\u00dfe (minimiert?).")
     fehler = ""
     try:
         import mss
@@ -44,7 +44,7 @@ def aufnehmen(rechteck: tuple[int, int, int, int]) -> bytes:  # pragma: no cover
         fehler = fehler or type(exc).__name__
     raise AufnahmeFehler("Ich konnte kein Bild vom Spielfenster machen"
                          + (f" ({fehler})" if fehler else "") + ". Ist der Bildschirm gesperrt? Tipp: im Spiel "
-                         "„Randloses Vollbild“ (Borderless) einstellen.")
+                         "\u201eRandloses Vollbild\u201c (Borderless) einstellen.")
 
 
 def _pillow():
@@ -134,3 +134,35 @@ def als_bericht_bild(png: bytes, name: str) -> Bild | None:
         return vorbereiten(png, name, max_kante=1280)
     except BildFehler:
         return None
+
+
+class OcrLeser:
+    """Text im Spielfenster lesen (Windows-Texterkennung) - nur fuer Modelle ohne Augen.
+    Startet die Texterkennung erst beim ersten Aufruf; ohne winrt/numpy liefert es ''."""
+
+    def __init__(self, sprache: str = "de-DE"):
+        self.sprache = sprache
+        self._ocr = None
+        self._versucht = False
+
+    def __call__(self, png: bytes) -> str:
+        if not self._versucht:
+            self._versucht = True
+            try:
+                from ..sehen.ocr import WindowsOcr
+
+                ocr = WindowsOcr()
+                self._ocr = ocr if ocr.start(self.sprache) else None
+            except Exception:  # noqa: BLE001
+                self._ocr = None
+        if self._ocr is None:
+            return ""
+        try:
+            import numpy as np
+            from PIL import Image
+
+            rgba = np.asarray(Image.open(io.BytesIO(png)).convert("RGBA"))
+            bgra = rgba[..., [2, 1, 0, 3]]
+            return self._ocr.erkenne(bgra)
+        except Exception:  # noqa: BLE001
+            return ""

@@ -75,7 +75,7 @@ class SpielAktionTool(Tool):
             bild_danach: bool = True) -> str | ToolOutput:
         sitzung = _sitzung(ctx)
         if sitzung is None:
-            return "Der Spielmodus läuft gerade nicht."
+            return "Der Spielmodus l\u00e4uft gerade nicht."
         gesperrt = _erlaubt(ctx)
         if gesperrt:
             return gesperrt
@@ -111,7 +111,7 @@ class SpielNotizTool(Tool):
     def run(self, ctx: ToolContext, art: str, text: str = "", elemente: list | None = None) -> str:
         sitzung = _sitzung(ctx)
         if sitzung is None:
-            return "Der Spielmodus läuft gerade nicht."
+            return "Der Spielmodus l\u00e4uft gerade nicht."
         return sitzung.notiz(art, text, elemente)
 
 
@@ -128,7 +128,7 @@ class SpielEndeTool(Tool):
     def run(self, ctx: ToolContext, grund: str, text: str = "") -> str:
         sitzung = _sitzung(ctx)
         if sitzung is None:
-            return "Der Spielmodus läuft gerade nicht."
+            return "Der Spielmodus l\u00e4uft gerade nicht."
         return sitzung.beenden_wunsch(grund, text)
 
 

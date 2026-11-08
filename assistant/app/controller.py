@@ -991,6 +991,8 @@ class AppController(CLI):
         der Sprachmodus, wann Nova ausgeredet hat und du nicht sprichst."""
         if paket.abwesend or not self.config.api_key or not self.sehen.darf_melden():
             return
+        if self.spiel.aktiv:
+            return  # Nova spielt gerade - keine Wortmeldungen (sie wuerden die Spiel-Eingaben sperren)
         live = self._live
         if live is not None and not live.stop_event.is_set():
             live.seen_event(paket)

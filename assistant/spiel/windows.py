@@ -14,7 +14,7 @@ from __future__ import annotations
 import sys
 import threading
 
-NUR_WINDOWS = ("Der Spielmodus steuert Maus und Tastatur über Windows (SendInput) – das geht nur "
+NUR_WINDOWS = ("Der Spielmodus steuert Maus und Tastatur \u00fcber Windows (SendInput) \u2013 das geht nur "
                "unter Windows.")
 
 INPUT_MOUSE = 0
@@ -106,8 +106,8 @@ class SendInputTasten:  # pragma: no cover - nur unter Windows
         gesendet = self._u.SendInput(1, ctypes.byref(eingabe), ctypes.sizeof(self._INPUT))
         if gesendet != 1:
             fehler = ctypes.get_last_error()
-            raise OSError(f"Windows hat die Eingabe nicht angenommen (Fehler {fehler}). Läuft das Spiel "
-                          "als Administrator? Dann Nova ebenfalls als Administrator starten – oder das Spiel "
+            raise OSError(f"Windows hat die Eingabe nicht angenommen (Fehler {fehler}). L\u00e4uft das Spiel "
+                          "als Administrator? Dann Nova ebenfalls als Administrator starten \u2013 oder das Spiel "
                           "normal starten.")
 
     def scancode(self, vk: int) -> int:

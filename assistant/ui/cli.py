@@ -195,6 +195,7 @@ class CLI:
         self.brain = Brain(config, self.memory, self.registry, self.tool_ctx)
         self.brain.provider.wait_fn = self.thinking.start
         # Spielmodus (assistant/spiel): Nova spielt selbst - nur nach deinem Start, nur im Spielfenster
+        from ..spiel.bild import OcrLeser
         from ..spiel.steuerung import SpielSteuerung
 
         self._spiel_vorschlag: dict | None = None
@@ -202,7 +203,7 @@ class CLI:
             config, self.permissions, self.memory, self._spiel_provider, on_notiz=self._spiel_notiz,
             on_vorschlag=self._spiel_vorgeschlagen, nutzung_buchen=self._spiel_nutzung,
             afk_aktiv=lambda: self.tool_ctx.extra.get("afk_session") is not None,
-            sieht_bilder=self._spiel_sieht_bilder)
+            sieht_bilder=self._spiel_sieht_bilder, ocr=OcrLeser(config.sehen.ocr_sprache))
         self.tool_ctx.extra["spiel_vorschlag"] = self.spiel.vorschlagen
         self.voice_out = VoiceOutput(config.voice.speak_responses)
         self.voice_in = VoiceInput(config.voice.enabled)
@@ -803,8 +804,8 @@ class CLI:
     def _sehen_wecken(self, paket) -> None:
         """Live-Sehen hat etwas bemerkt. Im Terminal meldet sich Nova nur im Jarvis-Modus von selbst -
         sonst kommt es vor die naechste Eingabe und in die naechste Nachricht an die KI."""
-        if paket.abwesend:
-            return
+        if paket.abwesend or getattr(getattr(self, "spiel", None), "aktiv", False):
+            return  # auch nicht, waehrend Nova spielt
         loop = self._jarvis_loop
         if loop is not None and not loop.stop_event.is_set():
             loop.seen_event(paket)
