@@ -77,6 +77,12 @@ class Tool:
         }
 
 
+MAX_STRIKT = 20  # Grenze der Claude-API fuer Werkzeuge mit "strict": true
+# Werkzeuge mit sehr einfachen Eingaben - die brauchen "strict" am wenigsten.
+OHNE_STRIKT_ZUERST = ("system_info", "live_sehen", "bildschirmfoto", "app_anpassen", "erinnern",
+                      "vergessen", "ordner_auflisten", "tastenkombination")
+
+
 class ToolRegistry:
     """Haelt alle aktiven Werkzeuge in stabiler Reihenfolge."""
 
@@ -93,7 +99,19 @@ class ToolRegistry:
 
     def specs(self) -> list[dict[str, Any]]:
         # Nach Namen sortiert -> stabile, cache-freundliche Reihenfolge.
-        return [self._tools[n].spec() for n in sorted(self._tools)]
+        specs = [self._tools[n].spec() for n in sorted(self._tools)]
+        # Claude erlaubt hoechstens MAX_STRIKT "strict"-Werkzeuge pro Anfrage (sonst Fehler 400
+        # fuer JEDE Antwort). Darueber verlieren zuerst die einfachsten Werkzeuge das "strict"
+        # (feste Reihenfolge -> Anfragen bleiben gleich, Prompt-Cache bleibt gueltig).
+        zuviel = sum(1 for sp in specs if sp.get("strict")) - MAX_STRIKT
+        if zuviel > 0:
+            reihenfolge = [n for n in OHNE_STRIKT_ZUERST if n in self._tools]
+            reihenfolge += [n for n in sorted(self._tools, reverse=True) if n not in reihenfolge]
+            weg = set(reihenfolge[:zuviel])
+            for sp in specs:
+                if sp["name"] in weg:
+                    sp.pop("strict", None)
+        return specs
 
     def specs_openai(self) -> list[dict[str, Any]]:
         """Werkzeug-Definitionen im OpenAI-/DeepSeek-Format, stabile Reihenfolge."""
