@@ -488,3 +488,32 @@ def test_tutorial_keeps_ids_and_state_tells_the_jarvis_state(app, monkeypatch):
     time.sleep(0.3)
     assert _req(server, "/api/state")[1]["jarvis_state"] == "listening"
     ctl.jarvis("stop")
+
+
+def test_window_profile_is_local_and_blank_window_falls_back(tmp_path, monkeypatch):
+    import threading as _t
+
+    from assistant.app import launcher
+
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
+    a = launcher.webview_storage(tmp_path / "Desktop" / "NovaAI")
+    assert str(a).startswith(str(tmp_path / "local")) and "SelbstLernendeKI" in str(a)
+    assert a == launcher.webview_storage(tmp_path / "Desktop" / "NovaAI")       # immer derselbe Ordner
+    assert a != launcher.webview_storage(tmp_path / "anderer")                  # pro Installation eigener
+
+    class Hub:
+        ever_connected = False
+
+    class Win:
+        destroyed = False
+
+        def destroy(self):
+            self.destroyed = True
+
+    shown, holder, win = _t.Event(), {}, Win()
+    shown.set()
+    monkeypatch.setattr(launcher.time, "monotonic", iter([0, 0, 100, 100, 100]).__next__)
+    monkeypatch.setattr(launcher.time, "sleep", lambda s: None)
+    launcher._watch_blank(win, shown, SimpleNamespace(hub=Hub()), holder)
+    assert holder.get("leer") and win.destroyed                                 # leeres Fenster -> Ersatz
