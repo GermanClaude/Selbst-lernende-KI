@@ -78,9 +78,59 @@ class Tool:
 
 
 MAX_STRIKT = 20  # Grenze der Claude-API fuer Werkzeuge mit "strict": true
+MAX_OPTIONAL = 24  # Grenze der Claude-API: optionale Angaben in allen "strict"-Werkzeugen zusammen
 # Werkzeuge mit sehr einfachen Eingaben - die brauchen "strict" am wenigsten.
 OHNE_STRIKT_ZUERST = ("system_info", "live_sehen", "bildschirmfoto", "app_anpassen", "erinnern",
                       "vergessen", "ordner_auflisten", "tastenkombination")
+# Diese behalten "strict" so lange wie moeglich (hier zaehlt jede genaue Eingabe).
+STRIKT_BEHALTEN = ("shell_befehl", "datei_schreiben", "datei_bearbeiten", "datei_loeschen")
+
+
+def zaehle_optionale(schema: Any) -> int:
+    """Wie viele Angaben im Schema sind optional (nicht in "required")? Auch verschachtelt."""
+    if not isinstance(schema, dict):
+        return 0
+    anzahl = 0
+    props = schema.get("properties")
+    if isinstance(props, dict):
+        pflicht = set(schema.get("required") or [])
+        anzahl += sum(1 for k in props if k not in pflicht)
+        anzahl += sum(zaehle_optionale(v) for v in props.values())
+    anzahl += zaehle_optionale(schema.get("items"))
+    for schluessel in ("anyOf", "oneOf", "allOf"):
+        for teil in schema.get(schluessel) or []:
+            anzahl += zaehle_optionale(teil)
+    for teil in (schema.get("$defs") or schema.get("definitions") or {}).values():
+        anzahl += zaehle_optionale(teil)
+    return anzahl
+
+
+def grenzen_einhalten(specs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Nimmt einzelnen Werkzeugen das "strict", bis Claudes Grenzen eingehalten sind
+    (hoechstens MAX_STRIKT Werkzeuge und MAX_OPTIONAL optionale Angaben). Feste Reihenfolge
+    -> gleiche Anfragen, der Prompt-Cache bleibt gueltig. Veraendert `specs` direkt."""
+    namen = sorted(sp["name"] for sp in specs)
+    nach_name = {sp["name"]: sp for sp in specs}
+    optional = {n: zaehle_optionale(nach_name[n].get("input_schema")) for n in namen}
+
+    def strikt() -> list[str]:
+        return [n for n in namen if nach_name[n].get("strict")]
+
+    # 1) zu viele Werkzeuge: zuerst die einfachsten, dann von hinten im Alphabet
+    reihenfolge = [n for n in OHNE_STRIKT_ZUERST if n in nach_name]
+    reihenfolge += [n for n in reversed(namen) if n not in reihenfolge and n not in STRIKT_BEHALTEN]
+    reihenfolge += [n for n in STRIKT_BEHALTEN if n in nach_name]
+    for n in reihenfolge:
+        if len(strikt()) <= MAX_STRIKT:
+            break
+        nach_name[n].pop("strict", None)
+    # 2) zu viele optionale Angaben: zuerst die Werkzeuge mit den meisten
+    while sum(optional[n] for n in strikt()) > MAX_OPTIONAL:
+        kandidaten = [n for n in strikt() if optional[n] > 0]
+        bevorzugt = [n for n in kandidaten if n not in STRIKT_BEHALTEN] or kandidaten
+        opfer = max(bevorzugt, key=lambda n: (optional[n], n))
+        nach_name[opfer].pop("strict", None)
+    return specs
 
 
 class ToolRegistry:
@@ -100,17 +150,9 @@ class ToolRegistry:
     def specs(self) -> list[dict[str, Any]]:
         # Nach Namen sortiert -> stabile, cache-freundliche Reihenfolge.
         specs = [self._tools[n].spec() for n in sorted(self._tools)]
-        # Claude erlaubt hoechstens MAX_STRIKT "strict"-Werkzeuge pro Anfrage (sonst Fehler 400
-        # fuer JEDE Antwort). Darueber verlieren zuerst die einfachsten Werkzeuge das "strict"
-        # (feste Reihenfolge -> Anfragen bleiben gleich, Prompt-Cache bleibt gueltig).
-        zuviel = sum(1 for sp in specs if sp.get("strict")) - MAX_STRIKT
-        if zuviel > 0:
-            reihenfolge = [n for n in OHNE_STRIKT_ZUERST if n in self._tools]
-            reihenfolge += [n for n in sorted(self._tools, reverse=True) if n not in reihenfolge]
-            weg = set(reihenfolge[:zuviel])
-            for sp in specs:
-                if sp["name"] in weg:
-                    sp.pop("strict", None)
+        # Claude lehnt sonst JEDE Anfrage mit Fehler 400 ab (zu viele "strict"-Werkzeuge oder
+        # zu viele optionale Angaben darin).
+        grenzen_einhalten(specs)
         return specs
 
     def specs_openai(self) -> list[dict[str, Any]]:

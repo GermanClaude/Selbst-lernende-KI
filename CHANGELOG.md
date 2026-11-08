@@ -4,6 +4,13 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.10.2 – 2026-11-08
+
+- **Zweite Korrektur für Claude:** Nach 0.10.1 kam bei Claude noch die Meldung „too many
+  optional parameters“. Claude hat neben der Zahl der Werkzeuge noch eine zweite Grenze –
+  Nova hält jetzt beide ein. Sollte Claude in Zukunft eine neue Grenze einführen, versucht
+  Nova es automatisch noch einmal auf einfachere Weise, statt mit einem Fehler aufzuhören.
+
 ## 0.10.1 – 2026-11-08
 
 - **Wichtige Korrektur für Claude:** Seit den neuen Werkzeugen (Bilder erstellen, Live-Sehen)

@@ -34,3 +34,51 @@ def test_claude_gets_at_most_20_strict_tools():
     assert specs == build_registry().specs()  # stabil (Prompt-Cache)
     wichtig = {s["name"]: s.get("strict") for s in specs}
     assert wichtig["datei_schreiben"] and wichtig["shell_befehl"]  # Wichtige bleiben strikt
+
+
+def test_claude_strict_tools_have_at_most_24_optional_params():
+    from assistant.tools import build_registry
+    from assistant.tools.base import MAX_OPTIONAL, zaehle_optionale
+
+    specs = build_registry().specs()
+    optional = sum(zaehle_optionale(s["input_schema"]) for s in specs if s.get("strict"))
+    assert optional <= MAX_OPTIONAL == 24
+    assert specs == build_registry().specs()  # stabil (Prompt-Cache)
+
+
+def test_limits_hold_even_with_many_tools():
+    from assistant.tools.base import MAX_OPTIONAL, MAX_STRIKT, grenzen_einhalten, zaehle_optionale
+
+    def spec(name, opt):
+        props = {f"p{i}": {"type": "string"} for i in range(opt + 1)}
+        return {"name": name, "input_schema": {"type": "object", "properties": props,
+                                               "required": ["p0"]}, "strict": True}
+
+    specs = grenzen_einhalten([spec(f"w{i:02d}", i % 4) for i in range(30)] + [spec("shell_befehl", 2)])
+    strikt = [s for s in specs if s.get("strict")]
+    assert len(strikt) <= MAX_STRIKT
+    assert sum(zaehle_optionale(s["input_schema"]) for s in strikt) <= MAX_OPTIONAL
+    assert any(s["name"] == "shell_befehl" for s in strikt)
+
+
+def test_optional_params_counted_in_nested_schemas():
+    from assistant.tools.base import zaehle_optionale
+
+    schema = {"type": "object", "required": ["a"], "properties": {
+        "a": {"type": "array", "items": {"type": "object", "required": [],
+                                         "properties": {"x": {"type": "string"}}}},
+        "b": {"type": "string"}}}
+    assert zaehle_optionale(schema) == 2  # b und x
+
+
+def test_claude_retries_without_strict_when_schema_rejected():
+    from assistant.providers.anthropic_provider import AnthropicProvider
+
+    class Fehler(Exception):
+        status_code = 400
+        message = "Schemas contains too many optional parameters (26) (limit: 24)"
+
+    assert AnthropicProvider._schema_abgelehnt(Fehler())
+    andere = Fehler()
+    andere.message = "prompt is too long"
+    assert not AnthropicProvider._schema_abgelehnt(andere)
