@@ -9057,6 +9057,7 @@
         if (ev.what === 'jarvis') { if (!jv.open && !jv.closing) { jv.left = false; openJarvisView(false, 'listening'); } }
         else if (ev.what === 'tutorial') startTour();
         else if (ev.what === 'feedback') openFeedback({ trigger: 'menue' });
+        else if (ev.what === 'handy' && window.NovaSehen) window.NovaSehen.handyDialog(true); // /sehen handy
         break;
       case 'appearance':
         loadAppearance(true);

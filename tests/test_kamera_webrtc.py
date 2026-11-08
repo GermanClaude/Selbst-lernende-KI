@@ -20,7 +20,7 @@ import numpy as np  # noqa: E402
 from aiortc import RTCConfiguration, RTCPeerConnection, RTCSessionDescription, VideoStreamTrack  # noqa: E402
 
 from assistant.kamera import signal as sig  # noqa: E402
-from assistant.kamera.quelle import HandyQuelle, KameraQuelle  # noqa: E402
+from assistant.kamera.quelle import HandyQuelle, HandyQuellenProtokoll  # noqa: E402
 from assistant.kamera.webrtc import HandyKamera  # noqa: E402
 
 # In Test-Containern haben die Netzwerkkarten oft keine Privatadresse (z.B. 192.0.2.x) -
@@ -58,18 +58,24 @@ class Farbspur(VideoStreamTrack):
 class FakeHandy:
     """Spielt die Handy-Seite (wie kamera.js): Angebot schicken, Antwort setzen, DataChannel."""
 
-    def __init__(self, link, relay, geraet="testhandy01", zusatz_kandidat=None):
+    def __init__(self, link, relay, geraet="testhandy01", zusatz_kandidat=None, oeffentlich=False,
+                 antwort_setzen=True, seq_start=0):
         self.kopplung = sig.Kopplung.aus_link(link, jetzt=time.time())
         self.kanal = sig.Kanal(self.kopplung, "h")
         self.relay = relay
         self.geraet = geraet
         self.zusatz_kandidat = zusatz_kandidat
+        self.oeffentlich = oeffentlich        # alle eigenen Kandidaten auf eine oeffentliche Adresse biegen
+        self.antwort_setzen = antwort_setzen  # False: Antwort nie verwenden (Versuch laeuft ins Leere)
+        self.kanal._seq = seq_start
         self.dc_nachrichten = []
         self.signal = []
         self.pc = None
         self.dc = None
 
     async def verbinden(self, timeout=15):
+        if self.pc is not None:
+            await self.pc.close()
         self.pc = RTCPeerConnection(RTCConfiguration(iceServers=[]))
         self.pc.addTrack(Farbspur())
         self.dc = self.pc.createDataChannel("steuerung")
@@ -82,6 +88,15 @@ class FakeHandy:
         sdp = self.pc.localDescription.sdp
         if self.zusatz_kandidat:
             sdp = sdp.replace("a=end-of-candidates", self.zusatz_kandidat + "\r\na=end-of-candidates", 1)
+        if self.oeffentlich:
+            zeilen = []
+            for zeile in sdp.split("\r\n"):
+                if zeile.startswith("a=candidate:"):
+                    teile = zeile.split()
+                    teile[4] = "8.8.8.8"
+                    zeile = " ".join(teile)
+                zeilen.append(zeile)
+            sdp = "\r\n".join(zeilen)
         seit = await asyncio.to_thread(self.relay.senden, self.kanal.thema,
                                        self.kanal.verpacke("angebot", {"sdp": sdp, "g": self.geraet}))
         ende = time.monotonic() + timeout
@@ -93,6 +108,8 @@ class FakeHandy:
                     continue
                 self.signal.append(nachricht)
                 if nachricht.typ == "antwort":
+                    if not self.antwort_setzen:
+                        return nachricht
                     await self.pc.setRemoteDescription(RTCSessionDescription(nachricht.daten["sdp"], "answer"))
                     return nachricht
                 if nachricht.typ in ("fehler", "besetzt"):
@@ -182,7 +199,7 @@ def test_loopback_bilder_kommen_an_und_stop_ist_sauber(relay):
 
         # Quelle-Adapter
         quelle = HandyQuelle(kamera)
-        assert isinstance(quelle, KameraQuelle)
+        assert isinstance(quelle, HandyQuellenProtokoll)
         assert quelle.status()["zustand"] == "verbunden"
         assert quelle.latest_frame(max_kante=100) is not None
 
@@ -203,15 +220,87 @@ def test_loopback_bilder_kommen_an_und_stop_ist_sauber(relay):
 def test_zweites_handy_wird_abgewiesen(relay):
     kamera = _kamera(relay)
     info = kamera.start()
-    h1, h2 = FakeHandy(info.link, relay, "erstes"), FakeHandy(info.link, relay, "zweites")
+    h1 = FakeHandy(info.link, relay, "erstes")
+    h2 = FakeHandy(info.link, relay, "zweites", seq_start=100)
     t1, t2 = HandyThread(h1), HandyThread(h2)
     try:
         assert t1.rufe(h1.verbinden()).typ == "antwort"
         assert kamera.warte_auf("verbunden", 20)
-        # zweites Handy: eigener Kanal mit hoeherer Folgenummer noetig (gleiche Kopplung, anderes Geraet)
-        h2.kanal._seq = 100
-        assert t2.rufe(h2.verbinden()).typ == "besetzt"
+        # waehrend einer laufenden Verbindung wird gar kein Angebot angenommen
+        antwort = t2.rufe(h2.verbinden())
+        assert (antwort.typ, antwort.daten.get("grund")) == ("fehler", "noch-verbunden")
         assert kamera.zustand == "verbunden"
+        # nach dem Trennen gehoert die Kopplung weiter dem ersten Handy
+        t1.loop.call_soon_threadsafe(h1.dc.send, json.dumps({"t": "stopp"}))
+        assert kamera.warte_auf("getrennt", 10)
+        assert t2.rufe(h2.verbinden()).typ == "besetzt"
+        # ... und das erste Handy darf wieder verbinden (Folgenummern zaehlen pro Absender "h" -
+        # die echte Seite startet sie bei Date.now()/100, hier von Hand weiterzaehlen)
+        h1.kanal._seq = 1000
+        assert t1.rufe(h1.verbinden()).typ == "antwort"
+        assert kamera.warte_auf("verbunden", 20)
+    finally:
+        kamera.stop()
+        t1.ende()
+        t2.ende()
+
+
+def test_laufende_verbindung_laesst_sich_nicht_uebernehmen(relay):
+    """Wer den Schluessel kennt, darf mit derselben Geraete-ID kein neues Video unterschieben."""
+    kamera = _kamera(relay)
+    info = kamera.start()
+    echt = FakeHandy(info.link, relay, "geraet-a")
+    falsch = FakeHandy(info.link, relay, "geraet-a", seq_start=10_000)  # gleiche ID, hoehere Folgenummer
+    t1, t2 = HandyThread(echt), HandyThread(falsch)
+    try:
+        assert t1.rufe(echt.verbinden()).typ == "antwort"
+        assert kamera.warte_auf("verbunden", 20)
+        pc_vorher = kamera._pc
+        antwort = t2.rufe(falsch.verbinden())
+        assert (antwort.typ, antwort.daten.get("grund")) == ("fehler", "noch-verbunden")
+        time.sleep(0.5)
+        assert kamera.zustand == "verbunden" and kamera._pc is pc_vorher
+        # "tschuess" ueber das Relais trennt eine laufende Verbindung auch nicht
+        relay.senden(falsch.kanal.thema, falsch.kanal.verpacke("tschuess", {"g": "geraet-a"}))
+        time.sleep(0.8)
+        assert kamera.zustand == "verbunden"
+    finally:
+        kamera.stop()
+        t1.ende()
+        t2.ende()
+
+
+def test_gescheiterter_erster_versuch_sperrt_die_kopplung_nicht(relay):
+    kamera = _kamera(relay)
+    info = kamera.start()
+    kaputt = FakeHandy(info.link, relay, "erster-versuch", oeffentlich=True)
+    neu = FakeHandy(info.link, relay, "neu-gescannt", seq_start=100)
+    t1, t2 = HandyThread(kaputt), HandyThread(neu)
+    try:
+        antwort = t1.rufe(kaputt.verbinden())
+        assert (antwort.typ, antwort.daten.get("grund")) == ("fehler", "kein-lan")
+        assert kamera.warte_auf("fehler", 5)
+        # neu gescannt (andere Geraete-ID): wird angenommen, nicht "besetzt"
+        assert t2.rufe(neu.verbinden()).typ == "antwort"
+        assert kamera.warte_auf("verbunden", 20)
+    finally:
+        kamera.stop()
+        t1.ende()
+        t2.ende()
+
+
+def test_abgebrochener_versuch_sperrt_nur_solange_er_laeuft(relay):
+    kamera = _kamera(relay, verbinden_timeout=1.5)
+    info = kamera.start()
+    stumm = FakeHandy(info.link, relay, "stumm", antwort_setzen=False)
+    anderes = FakeHandy(info.link, relay, "anderes", seq_start=100)
+    t1, t2 = HandyThread(stumm), HandyThread(anderes)
+    try:
+        assert t1.rufe(stumm.verbinden()).typ == "antwort"  # Antwort kommt, wird aber nie gesetzt
+        assert t2.rufe(anderes.verbinden()).typ == "besetzt"  # Versuch laeuft noch
+        assert kamera.warte_auf("fehler", 10)  # Zeitueberschreitung beendet den Versuch
+        assert t2.rufe(anderes.verbinden()).typ == "antwort"
+        assert kamera.warte_auf("verbunden", 20)
     finally:
         kamera.stop()
         t1.ende()

@@ -5,7 +5,7 @@ import pytest
 
 from assistant import kamera
 from assistant.kamera import qr
-from assistant.kamera.quelle import HandyQuelle, KameraQuelle
+from assistant.kamera.quelle import HandyQuelle, HandyQuellenProtokoll
 
 
 class FakeInfo:
@@ -36,7 +36,7 @@ class FakeKamera:
 
 def test_handy_quelle_erfuellt_schnittstelle():
     quelle = HandyQuelle(FakeKamera())
-    assert isinstance(quelle, KameraQuelle)
+    assert isinstance(quelle, HandyQuellenProtokoll)
     assert quelle.start()["code"] == "ABCD-EFGH"
     assert quelle.status()["zustand"] == "wartet" and not quelle.aktiv()
     assert quelle.latest_frame() is None

@@ -29,5 +29,7 @@ pywebview>=6.2 ; sys_platform == "win32"
 #   Live-Sehen am Bildschirm (Windows):   im Chat "/sehen einrichten"
 #                                         (= pip install numpy mss dxcam comtypes winrt-Windows.Media.Ocr ...)
 #                                         Webcam in der App braucht nichts extra.
+#   Handy als Kamera (/sehen handy):      pip install "aiortc>=1.16,<1.17" "av>=14,<20" "cryptography>=44" "segno>=1.6"
+#                                         (oder im Chat "/sehen einrichten")
 #   Build zur .exe:                       pip install pyinstaller
 # -----------------------------------------------------------------------------

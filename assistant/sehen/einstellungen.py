@@ -9,7 +9,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 
-QUELLEN = ("auto", "bildschirm", "webcam", "beides")
+QUELLEN = ("auto", "bildschirm", "webcam", "handy", "beides")
 AUFNAHMEN = ("auto", "dxcam", "mss")
 AUFMERKSAMKEIT = {"niedrig": 0.8, "normal": 0.6, "hoch": 0.4}
 HARTE_GRENZE_WECKUNGEN = 360

@@ -30,6 +30,7 @@
     ungueltig: "Dieser Link ist ungültig. Bitte den QR-Code in Nova neu scannen.",
     altBrowser: "Dieser Browser kann das leider nicht. Bitte Safari oder Chrome auf den neuesten Stand bringen.",
     unsicher: "Die Kamera geht nur über eine sichere Verbindung (https).",
+    nichtLan: "Verbindung abgelehnt: Die Gegenstelle ist nicht in deinem WLAN. Bitte den QR-Code in Nova neu scannen.",
   };
 
   class NutzerFehler extends Error {}
@@ -45,7 +46,7 @@
 
   const z = {
     kopplung: null, kanal: null, relay: new S.NtfyRelay(RELAY_BASIS), geraet: null,
-    pc: null, dc: null, strom: null, seite: "environment", lauf: 0, scanLauf: 0,
+    pc: null, dc: null, sender: null, geprueft: false, strom: null, seite: "environment", lauf: 0, scanLauf: 0,
     verbunden: false, aktiv: false, wachBleiben: false, wakeLock: null, pingTimer: null, abbruch: null,
   };
 
@@ -80,12 +81,20 @@
   function jetztSek() { return Date.now() / 1000; }
   function zufallsId() { return S.b64u(crypto.getRandomValues(new Uint8Array(9))); }
 
+  function gespeicherteGeraeteId(payload) {
+    // Dieselbe Kopplung erneut gescannt/geöffnet: gleiche Geräte-ID, sonst hielte Nova uns für ein zweites Handy.
+    try {
+      const d = JSON.parse(sessionStorage.getItem(SPEICHER) || "null");
+      if (d && d.p === payload && typeof d.g === "string" && d.g) return d.g;
+    } catch (e) { /* nichts gespeichert */ }
+    return null;
+  }
   function uebernehme(kopplung, geraet) {
     z.kopplung = kopplung;
     z.kanal = new S.Kanal(kopplung, "h");
     // Folgenummern steigen auch über ein Neuladen hinweg (Nova lehnt Wiederholungen ab).
     z.kanal.seq = Math.floor(Date.now() / 100);
-    z.geraet = geraet || zufallsId();
+    z.geraet = geraet || gespeicherteGeraeteId(kopplung.payload) || zufallsId();
     try { sessionStorage.setItem(SPEICHER, JSON.stringify({ p: kopplung.payload, g: z.geraet })); } catch (e) { /* privat */ }
   }
   function kopplungPruefen(k, kulanz) {
@@ -168,15 +177,15 @@
       z.strom = await kameraHolen(z.seite);
       const spur = z.strom.getVideoTracks()[0];
       spurVorbereiten(spur);
-      await videoSender().replaceTrack(spur);
+      await spurSenden(spur);
       vorschauZeigen();
     } catch (e) {
       status(kameraFehlerText(e), "schlecht");
     }
   }
-  function videoSender() {
-    const senders = z.pc ? z.pc.getSenders() : [];
-    return senders.find((s) => s.track && s.track.kind === "video") || senders[0];
+  /** Bild erst senden, wenn geprüft ist, dass die Verbindung im LAN bleibt. */
+  async function spurSenden(spur) {
+    if (z.sender && z.geprueft) await z.sender.replaceTrack(spur);
   }
 
   // -- Wachhalten --------------------------------------------------------------------------
@@ -227,7 +236,7 @@
     if (z.abbruch) { try { z.abbruch.abort(); } catch (e) { /* egal */ } }
     z.abbruch = null;
     const pc = z.pc;
-    z.pc = null; z.dc = null; z.verbunden = false;
+    z.pc = null; z.dc = null; z.sender = null; z.geprueft = false; z.verbunden = false;
     if (pc) { try { pc.close(); } catch (e) { /* egal */ } }
   }
   function sendeDc(daten) {
@@ -244,13 +253,14 @@
     status("Verbinde mit Nova …");
     const pc = new RTCPeerConnection({ iceServers: [] });
     z.pc = pc;
-    const spur = z.strom.getVideoTracks()[0];
+    // Videospur ohne Bild anlegen: das Kamerabild kommt erst nach der LAN-Prüfung dazu (spurSenden).
     let tr;
     try {
-      tr = pc.addTransceiver(spur, { direction: "sendonly", streams: [z.strom], sendEncodings: [{ maxBitrate: 1500000, maxFramerate: 15 }] });
+      tr = pc.addTransceiver("video", { direction: "sendonly", streams: [z.strom], sendEncodings: [{ maxBitrate: 1500000, maxFramerate: 15 }] });
     } catch (e) {
-      tr = pc.addTransceiver(spur, { direction: "sendonly", streams: [z.strom] });
+      tr = pc.addTransceiver("video", { direction: "sendonly", streams: [z.strom] });
     }
+    z.sender = tr.sender;
     codecWahl(tr);
     const dc = pc.createDataChannel("steuerung", { ordered: true });
     z.dc = dc;
@@ -287,7 +297,10 @@
         try { m = await z.kanal.oeffne(n.text); } catch (e) { continue; }
         if (!m || m.daten.g !== z.geraet || lauf !== z.lauf) continue;
         if (m.typ === "antwort" && typeof m.daten.sdp === "string") {
-          await pc.setRemoteDescription({ type: "answer", sdp: m.daten.sdp });
+          // Nur LAN: Kandidaten außerhalb des Heimnetzes nie verwenden (auch nicht, wenn die Antwort sie enthält).
+          const gefiltert = S.filtereSdp(m.daten.sdp);
+          if (!gefiltert.behalten) throw new NutzerFehler(TEXTE.nichtLan);
+          await pc.setRemoteDescription({ type: "answer", sdp: gefiltert.sdp });
           setTimeout(() => {
             if (lauf === z.lauf && pc.connectionState !== "connected") {
               schliessePc();
@@ -303,6 +316,7 @@
           const g = m.daten.grund;
           if (g === "kein-lan") throw new NutzerFehler(TEXTE.wlan);
           if (g === "pc-kein-lan") throw new NutzerFehler("Der PC ist nicht mit dem Heimnetz verbunden (WLAN/LAN prüfen).");
+          if (g === "noch-verbunden") throw new NutzerFehler("Nova hängt noch an der alten Verbindung. Bitte in ein paar Sekunden noch einmal versuchen.");
           if (g === "angebot") throw new NutzerFehler("Nova versteht das Videoformat dieses Browsers nicht. Bitte einen anderen Browser versuchen.");
           throw new NutzerFehler("Nova meldet einen Fehler. Bitte neu koppeln.");
         }
@@ -315,12 +329,13 @@
     if (pc !== z.pc) return;
     const stand = pc.connectionState;
     if (stand === "connected") {
+      if (!z.geprueft) { lanPruefen(pc); return; }
       z.verbunden = true;
       status("Mit Nova verbunden ✓", "gut");
       liveAnzeige(true);
       wachHalten(true);
       try {
-        const sender = videoSender();
+        const sender = z.sender;
         const p = sender.getParameters();
         if (p.encodings && p.encodings.length) {
           p.encodings[0].maxBitrate = 1500000;
@@ -338,6 +353,50 @@
       ui.btnStart.textContent = "Neu verbinden";
       status(war ? TEXTE.verloren : TEXTE.wlan, "schlecht");
     }
+  }
+
+  /** Adressen des gewählten Kandidatenpaars (Gegenseite) aus getStats(); null = (noch) unbekannt. */
+  async function gewaehlteAdressen(pc) {
+    const stats = await pc.getStats();
+    const paare = [];
+    stats.forEach((r) => {
+      if (r.type === "transport" && r.selectedCandidatePairId && stats.get(r.selectedCandidatePairId)) paare.push(stats.get(r.selectedCandidatePairId));
+    });
+    if (!paare.length) {
+      stats.forEach((r) => {
+        if (r.type === "candidate-pair" && (r.selected === true || (r.nominated && r.state === "succeeded"))) paare.push(r);
+      });
+    }
+    if (!paare.length) return null;
+    const adressen = [];
+    for (const paar of paare) {
+      const ferne = stats.get(paar.remoteCandidateId);
+      const adresse = ferne && (ferne.address || ferne.ip);
+      if (!adresse) return null; // z.B. versteckte peer-reflexive Adresse
+      adressen.push(adresse);
+    }
+    return adressen;
+  }
+  /** Erst wenn das gewählte Paar ins LAN zeigt, geht das Bild raus. Sonst: trennen (sicher ist sicher). */
+  async function lanPruefen(pc) {
+    let adressen = null;
+    for (let versuch = 0; versuch < 6 && pc === z.pc; versuch++) {
+      try { adressen = await gewaehlteAdressen(pc); } catch (e) { adressen = null; }
+      if (adressen) break;
+      await pause(500);
+    }
+    if (pc !== z.pc) return;
+    if (!adressen || !adressen.every((a) => S.istLanAdresse(a))) {
+      schliessePc();
+      liveAnzeige(false);
+      ui.btnStopp.hidden = false;
+      ui.btnStart.textContent = "Neu verbinden";
+      status(TEXTE.nichtLan, "schlecht");
+      return;
+    }
+    z.geprueft = true;
+    try { await spurSenden(z.strom.getVideoTracks()[0]); } catch (e) { /* unten sichtbar */ }
+    if (pc === z.pc && pc.connectionState === "connected") verbindungsZustand(pc);
   }
 
   function steuerkanal(dc, pc) {
@@ -415,7 +474,7 @@
       z.strom = strom;
       const spur = strom.getVideoTracks()[0];
       spurVorbereiten(spur);
-      await videoSender().replaceTrack(spur);
+      await spurSenden(spur);
       vorschauZeigen();
       sendeStatus();
     } catch (e) {
@@ -568,6 +627,10 @@
       }
     });
     window.addEventListener("pagehide", () => { sendeDc({ t: "stopp" }); });
+    // Neuer QR-Link im schon offenen Tab ändert nur das Fragment – dann sauber neu laden.
+    window.addEventListener("hashchange", () => {
+      if ((location.hash || "").indexOf("p=") >= 0) { sendeDc({ t: "stopp" }); location.reload(); }
+    });
 
     let gekoppelt = false;
     try {

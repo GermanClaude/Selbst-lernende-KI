@@ -229,3 +229,64 @@ def test_gegenprobe_browser_und_python(tmp_path):
     assert nova.oeffne(raus["klein"]).typ == "tschuess"
     assert raus["code_thema"] == sig.code_kopplung(code, 0).thema
     assert raus["code_payload"] == kopplung.payload()
+
+
+_LAN_PROBE = r"""
+require(process.argv[2]);
+const S = globalThis.NovaSignal;
+const ein = JSON.parse(require("fs").readFileSync(0, "utf8"));
+const raus = {
+  lan: ein.faelle.map((a) => S.istLanAdresse(a)),
+  sdp: S.filtereSdp(ein.sdp),
+  oeffentlich: S.filtereSdp(ein.oeffentlich),
+  srflx: S.kandidatErlaubt("candidate:9 1 udp 1 192.168.0.9 3478 typ srflx raddr 192.168.0.2 rport 1"),
+  relay: S.kandidatErlaubt("candidate:9 1 udp 1 10.0.0.9 3478 typ relay raddr 0.0.0.0 rport 0"),
+  kurz: S.kandidatErlaubt("candidate:9 1 udp 1 10.0.0.9"),
+};
+process.stdout.write(JSON.stringify(raus));
+"""
+
+
+@pytest.mark.skipif(not NODE, reason="node fehlt")
+def test_lan_filter_im_browser_wie_in_python(tmp_path):
+    """Die Handy-Seite prueft Novas Antwort mit demselben LAN-Filter wie Nova das Angebot."""
+    from assistant.kamera import signal as sig
+    from tests.test_kamera_signal import LAN_FAELLE, SDP_ANGEBOT
+
+    oeffentlich = "\r\n".join(z for z in SDP_ANGEBOT.split("\r\n")
+                               if not z.startswith("a=candidate:") or "2003:e3:" in z)
+    ein = {"faelle": [a for a, _ in LAN_FAELLE], "sdp": SDP_ANGEBOT, "oeffentlich": oeffentlich}
+    skript = tmp_path / "lanprobe.js"
+    skript.write_text(_LAN_PROBE, encoding="utf-8")
+    ergebnis = subprocess.run([NODE, str(skript), str(SEITE / "signal.js")], input=json.dumps(ein),
+                              capture_output=True, text=True, timeout=60, encoding="utf-8")
+    assert ergebnis.returncode == 0, ergebnis.stderr
+    raus = json.loads(ergebnis.stdout)
+    for (adresse, soll), js in zip(LAN_FAELLE, raus["lan"]):
+        assert js is soll, f"signal.js: {adresse!r} -> {js}, erwartet {soll}"
+        assert sig.ist_lan_adresse(adresse) is soll
+    py_sdp, py_behalten, py_verworfen = sig.filtere_sdp(SDP_ANGEBOT)
+    assert raus["sdp"] == {"sdp": py_sdp, "behalten": py_behalten, "verworfen": py_verworfen}
+    assert raus["oeffentlich"]["behalten"] == 0 and raus["oeffentlich"]["verworfen"] == 2
+    assert "a=candidate:" not in raus["oeffentlich"]["sdp"]
+    assert raus["srflx"] is False and raus["relay"] is False and raus["kurz"] is False
+
+
+def test_handy_prueft_antwort_und_gewaehltes_paar():
+    """Statische Absicherung der LAN-Pruefungen in kamera.js (Verhalten: Spike mit Chromium)."""
+    js = (SEITE / "kamera.js").read_text(encoding="utf-8")
+    # Antwort wird gefiltert, ohne LAN-Kandidaten abgelehnt
+    assert re.search(r"const gefiltert = S\.filtereSdp\(m\.daten\.sdp\);\s*"
+                     r"if \(!gefiltert\.behalten\) throw new NutzerFehler\(TEXTE\.nichtLan\);\s*"
+                     r"await pc\.setRemoteDescription\(\{ type: \"answer\", sdp: gefiltert\.sdp \}\);", js)
+    assert js.count("setRemoteDescription(") == 1
+    # Bild erst nach der Pruefung des gewaehlten Paars (getStats)
+    assert 'pc.addTransceiver("video"' in js and "addTransceiver(spur" not in js
+    assert "if (z.sender && z.geprueft) await z.sender.replaceTrack(spur);" in js
+    assert js.count("replaceTrack(") == 1
+    assert "pc.getStats()" in js and "selectedCandidatePairId" in js and "S.istLanAdresse(a)" in js
+    assert "if (!z.geprueft) { lanPruefen(pc); return; }" in js
+    # gleiche Kopplung -> gleiche Geraete-ID (sonst "besetzt" nach erneutem Scannen)
+    assert "gespeicherteGeraeteId(kopplung.payload)" in js
+    # neuer QR-Link im offenen Tab (nur Fragment geaendert) wird neu geladen statt ignoriert
+    assert re.search(r'addEventListener\("hashchange".*?location\.reload\(\)', js, re.S)

@@ -3246,3 +3246,13 @@ button.att-thumb:hover { border-color: var(--accent); box-shadow: var(--shadow-s
 .sehen-list { margin: 0; padding-left: 20px; font-size: calc(13.5px * var(--font-scale)); color: var(--text-2); }
 .sehen-list li + li { margin-top: 5px; }
 .sehen-list b { color: var(--text); }
+
+.handy-qr { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; margin-bottom: 12px; }
+.handy-qr img { flex: none; width: 240px; height: 240px; border-radius: calc(var(--radius) * 0.75); background: #fff; }
+.handy-daten { flex: 1 1 220px; min-width: 0; }
+.handy-hinweis { margin: 0 0 8px; font-size: calc(13.5px * var(--font-scale)); color: var(--text-2); }
+.handy-zeile { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; font-size: calc(13.5px * var(--font-scale)); }
+.handy-lbl { flex: none; min-width: 38px; color: var(--text-3); font-size: calc(12px * var(--font-scale)); text-transform: uppercase; letter-spacing: .04em; }
+.handy-code { font-family: var(--mono, ui-monospace, monospace); font-size: calc(17px * var(--font-scale)); letter-spacing: .08em; }
+.handy-link { flex: 1 1 auto; min-width: 0; font-size: calc(12px * var(--font-scale)); }
+.sehen-handy { flex: none; }

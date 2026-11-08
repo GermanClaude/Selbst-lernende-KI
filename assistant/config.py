@@ -221,7 +221,7 @@ class SehenSettings:
     # Live-Sehen: Nova schaut (nur wenn du es einschaltest) auf deinen Bildschirm und/oder
     # durch deine Webcam und meldet sich von selbst, wenn etwas Wichtiges passiert.
     aktiv: bool = False                  # beim Start gleich einschalten (nur mit Zustimmung)
-    quelle: str = "auto"                 # auto | bildschirm | webcam | beides
+    quelle: str = "auto"                 # auto | bildschirm | webcam | handy | beides
     aufnahme: str = "auto"               # Bildschirm-Technik: auto | dxcam | mss
     fps: int = 15                        # Bilder pro Sekunde fuer die Aenderungserkennung (1-240)
     monitor: int = 0                     # 0 = Hauptbildschirm

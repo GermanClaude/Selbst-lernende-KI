@@ -51,6 +51,17 @@ jobs:
           python -c "from assistant.sehen import fehlende_pakete as f; print('Live-Sehen fehlt:', f() or 'nichts')"
           if [ -n "$fehlt" ]; then echo "::warning::Live-Sehen unvollstaendig:$fehlt"; fi
 
+      - name: Handy-Kamera (aiortc, PyAV, cryptography, segno) dazu
+        continue-on-error: true
+        shell: bash
+        run: |
+          fehlt=""
+          for paket in "aiortc>=1.16,<1.17" "av>=14,<20" "cryptography>=44" "segno>=1.6"; do
+            pip install "$paket" || { echo "::warning::Handy-Kamera: $paket liess sich nicht installieren"; fehlt="$fehlt $paket"; }
+          done
+          python -c "from assistant.kamera import fehlende_pakete as f; print('Handy-Kamera fehlt:', f() or 'nichts')"
+          if [ -n "$fehlt" ]; then echo "::warning::Handy-Kamera unvollstaendig:$fehlt"; fi
+
       - name: Live-Mitschrift (vosk) dazu
         continue-on-error: true
         shell: bash
@@ -64,6 +75,12 @@ jobs:
 
       - name: KI-App.exe bauen
         run: pyinstaller packaging/ki.spec --noconfirm
+
+      - name: Groesse der exe
+        shell: bash
+        run: |
+          ls -l dist/*.exe
+          for f in dist/*.exe; do echo "### $(basename "$f"): $(( $(stat -c %s "$f") / 1048576 )) MB" >> "$GITHUB_STEP_SUMMARY"; done
 
       - name: KI-App.exe starten (auch umbenannt)
         shell: pwsh

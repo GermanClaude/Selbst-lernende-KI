@@ -65,6 +65,31 @@ try:
 except Exception:  # noqa: BLE001 - ohne numpy: Live-Sehen nur mit Webcam
     sehen_imports = []
 
+# Handy als Kamera (aiortc/WebRTC, PyAV, cryptography, segno): nur, wenn beim Bauen installiert.
+handy_imports, handy_binaries = [], []
+try:
+    from PyInstaller.utils.hooks import collect_dynamic_libs, collect_submodules
+
+    import aiortc  # noqa: F401
+    import av  # noqa: F401
+    handy_imports += collect_submodules("aiortc") + collect_submodules("av")
+    handy_binaries += collect_dynamic_libs("av")
+    try:
+        import pylibsrtp  # noqa: F401
+        handy_binaries += collect_dynamic_libs("pylibsrtp")
+        handy_imports += ["pylibsrtp"]
+    except Exception:  # noqa: BLE001
+        pass
+except Exception:  # noqa: BLE001 - ohne aiortc: keine Handy-Kamera in dieser exe
+    handy_imports, handy_binaries = [], []
+for _modul in ("segno", "cryptography.hazmat.primitives.ciphers.aead"):
+    try:
+        __import__(_modul)
+        handy_imports.append(_modul)
+    except Exception:  # noqa: BLE001
+        pass
+extra_binaries += handy_binaries
+
 a = Analysis(
     [str(project_root / "run_ki.py")],
     pathex=[str(project_root)],
@@ -73,7 +98,7 @@ a = Analysis(
     # Optionale Extras werden nur eingebunden, wenn sie installiert sind.
     # PIL: Bilder verkleinern/pruefen (nur bei Bedarf importiert, deshalb hier ausdruecklich).
     hiddenimports=["anthropic", "openai", "requests", "bs4", "webview", "PIL", "PIL.Image", "PIL.ImageOps",
-                   "PIL.ImageGrab"] + sehen_imports,
+                   "PIL.ImageGrab"] + sehen_imports + handy_imports,
     hookspath=[],
     runtime_hooks=[],
     excludes=["cv2"],  # OpenCV nie mitnehmen (dxcam braucht es mit processor_backend="numpy" nicht)

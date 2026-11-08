@@ -12,13 +12,13 @@ Module:
   * signal.py  - Kopplung/Link, Verschluesselung, Nachrichten, Relay-Schnittstelle + NtfyRelay
   * webrtc.py  - HandyKamera: aiortc-Gegenstelle im eigenen asyncio-Thread, letztes Bild abholen
   * qr.py      - QR-Code als SVG/Text (segno, wenn installiert - sonst nur der Link)
-  * quelle.py  - KameraQuelle-Schnittstelle + HandyQuelle (fuer das Live-Sehen-"Auge")
+  * quelle.py  - HandyQuellenProtokoll (Schnittstelle) + HandyQuelle (fuer das Live-Sehen-"Auge")
 
 Zusatzpakete (alle erst bei Bedarf geladen): aiortc, av (PyAV), cryptography, segno.
 """
 from __future__ import annotations
 
-HANDY_PAKETE = ["aiortc>=1.16,<1.17", "av", "cryptography>=42", "segno>=1.6"]
+HANDY_PAKETE = ["aiortc>=1.16,<1.17 ; python_version >= '3.11'", "av>=14,<20", "cryptography>=44", "segno>=1.6"]
 
 
 def fehlende_pakete() -> list[str]:

@@ -33,6 +33,7 @@ sehen = [
   "winrt-Windows.Foundation ; sys_platform == 'win32'",
   "winrt-Windows.Foundation.Collections ; sys_platform == 'win32'",
 ]
+handy = ["aiortc>=1.16,<1.17 ; python_version >= '3.11'", "av>=14,<20", "cryptography>=44", "segno>=1.6"]
 build = ["pyinstaller>=6.0"]
 dev = ["pytest>=7.4"]
 

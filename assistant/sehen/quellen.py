@@ -210,6 +210,14 @@ class BrowserKamera(KameraQuelle):
     name = "Webcam"
 
 
+class HandyKameraQuelle(KameraQuelle):
+    """Das Handy als Kamera (assistant/kamera): HandyQuelle.pumpe() reicht jede Sekunde ein neues
+    Bild per nimm(jpeg) herein - danach wie die Webcam (nur das letzte Bild, nur im Speicher)."""
+
+    art = "handy"
+    name = "Handy-Kamera"
+
+
 def _klein_grau(data: bytes) -> list[int] | None:
     """32x24 Graustufen (fuer die Bewegungserkennung) - None ohne Pillow oder bei kaputtem Bild."""
     try:
@@ -227,9 +235,15 @@ def _klein_grau(data: bytes) -> list[int] | None:
 
 
 def waehle_quellen(wunsch: str, kamera_vorhanden: bool, bildschirm_moeglich: bool,
-                   sieht_bilder: bool) -> tuple[set[str], str]:
-    """Welche Quellen laufen sollen -> ({"bildschirm", "webcam"} Teilmenge, Hinweis)."""
+                   sieht_bilder: bool, handy_verbunden: bool = False) -> tuple[set[str], str]:
+    """Welche Quellen laufen sollen -> ({"bildschirm", "webcam", "handy"} Teilmenge, Hinweis).
+    auto: PC-Webcam (wenn da) -> schon gekoppeltes Handy -> Bildschirm."""
     hinweis = ""
+    if wunsch == "handy":
+        if not sieht_bilder:
+            hinweis = ("Dein Gehirn kann keine Bilder sehen \u2013 mit der Handy-Kamera bemerke ich nur Bewegung. "
+                       "Besser: ein Modell mit Augen (z.B. Claude oder deepseek-flash).")
+        return {"handy"}, hinweis
     if wunsch == "bildschirm":
         return ({"bildschirm"}, "") if bildschirm_moeglich else (set(), "Den Bildschirm kann ich hier nicht sehen "
                                                                      "(nur unter Windows).")
@@ -254,6 +268,8 @@ def waehle_quellen(wunsch: str, kamera_vorhanden: bool, bildschirm_moeglich: boo
     # auto: Webcam, wenn da und sinnvoll (Gehirn mit Augen), sonst Bildschirm
     if kamera_vorhanden and (sieht_bilder or not bildschirm_moeglich):
         return {"webcam"}, ""
+    if handy_verbunden and (sieht_bilder or not bildschirm_moeglich):
+        return {"handy"}, ""
     if bildschirm_moeglich:
         return {"bildschirm"}, ""
     return set(), ("Hier gibt es weder eine Webcam noch Bildschirm-Sehen (das geht nur unter Windows). "
