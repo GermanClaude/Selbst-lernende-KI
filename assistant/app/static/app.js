@@ -121,6 +121,9 @@
     play: '<path d="M7 4.5v15l12-7.5z" fill="currentColor" stroke="none"/>',
     shieldOff: '<path d="M19.7 14a6.9 6.9 0 0 0 .3-2V5l-8-3-3.2 1.2"/><path d="m2 2 20 20"/><path d="M4.7 4.7 4 5v7c0 6 8 10 8 10a20.3 20.3 0 0 0 5.6-4.4"/>',
     zap: '<path d="M13 2 3 14h9l-1 8 10-12h-9z"/>',
+    eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+    eyeOff: '<path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c6.5 0 10 7 10 7a18.5 18.5 0 0 1-2.16 3.19"/><path d="M6.61 6.61A13.53 13.53 0 0 0 2 12s3.5 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/><path d="m2 2 20 20"/>',
+    external: '<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
   };
 
   function icon(name, cls) {
@@ -383,6 +386,608 @@
   }
 
   // =====================================================================
+  // Novas Sphaere – ihr lebendiges Gesicht (Leinwand, ohne Bibliotheken)
+  //  * EINE gemeinsame requestAnimationFrame-Schleife fuer alle Sphaeren. Sie ruht,
+  //    wenn das Fenster verborgen ist oder keine lebende Sphaere zu sehen ist.
+  //  * Alle Sphaeren zeigen denselben Zustand ("Gemuet"): atmen, nachdenken,
+  //    arbeiten (Ring), schreiben (Pulse), sprechen, zuhoeren (Pegel), Rueckfrage ...
+  //  * Pro Bild nur Zeichnen auf den Leinwaenden – kein Layout, kein DOM. Die Leinwand-
+  //    groesse wird nur nach einer Groessenaenderung neu gesetzt (ResizeObserver).
+  //  * Ruhige Stellen (aeltere Antworten, weniger Bewegung) zeigen ein Standbild, das
+  //    einmal gezeichnet und als CSS-Bild (--orb-still) benutzt wird.
+  // =====================================================================
+  const sphere = (() => {
+    const TAU = Math.PI * 2;
+    const clampN = (v, a, b) => Math.min(b, Math.max(a, v));
+    const root = document.documentElement;
+    const motionQ = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : { matches: false };
+    const darkQ = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+    const canvasOk = (() => {
+      try { return !!document.createElement('canvas').getContext('2d'); } catch (_) { return false; }
+    })();
+    const F = 1.8;      // Leinwand = 1,8 x Platz der Sphaere: das Leuchten laeuft weich aus
+    const FILL = 0.42;  // Radius der Kugel im Verhaeltnis zum Platz
+    // amp/speed = Form, breathe/rate = Atmen, gain = Pegel, glow/bright = Leuchten,
+    // spin = kreisende Boegen, ring = Arbeits-Ring, wander = wanderndes Licht, talk = Sprechen,
+    // hue = Farbverschiebung, warn = Richtung Warnfarbe (Rueckfrage)
+    const PRESET = {
+      idle: { amp: 0.03, speed: 0.5, breathe: 0.075, rate: 1.45, gain: 0.3, glow: 0.52, bright: 0, spin: 0, ring: 0, wander: 0, talk: 0, hue: 0, warn: 0 },
+      starting: { amp: 0.022, speed: 0.5, breathe: 0.03, rate: 1.7, gain: 0.25, glow: 0.45, bright: 0, spin: 0.6, ring: 0, wander: 0, talk: 0, hue: 0, warn: 0 },
+      listening: { amp: 0.026, speed: 0.55, breathe: 0.04, rate: 1.7, gain: 0.6, glow: 0.55, bright: 0, spin: 0, ring: 0, wander: 0, talk: 0, hue: 0, warn: 0 },
+      hearing: { amp: 0.045, speed: 1.15, breathe: 0.012, rate: 2, gain: 1.2, glow: 0.9, bright: 0.1, spin: 0, ring: 0, wander: 0, talk: 0, hue: -46, warn: 0 },
+      recognizing: { amp: 0.03, speed: 0.9, breathe: 0.02, rate: 2, gain: 0.25, glow: 0.62, bright: 0.04, spin: 1, ring: 0, wander: 0, talk: 0, hue: -18, warn: 0 },
+      thinking: { amp: 0.036, speed: 0.78, breathe: 0.035, rate: 2.1, gain: 0.2, glow: 0.74, bright: 0.12, spin: 0, ring: 0, wander: 1, talk: 0, hue: 40, warn: 0 },
+      working: { amp: 0.036, speed: 0.88, breathe: 0.035, rate: 2.1, gain: 0.2, glow: 0.78, bright: 0.12, spin: 0, ring: 1, wander: 1, talk: 0, hue: 62, warn: 0 },
+      writing: { amp: 0.032, speed: 0.72, breathe: 0.03, rate: 1.8, gain: 0.2, glow: 0.7, bright: 0.07, spin: 0, ring: 0, wander: 0.45, talk: 0, hue: 18, warn: 0 },
+      speaking: { amp: 0.04, speed: 1, breathe: 0.02, rate: 1.8, gain: 0.1, glow: 0.88, bright: 0.08, spin: 0, ring: 0, wander: 0, talk: 1, hue: -62, warn: 0 },
+      asking: { amp: 0.03, speed: 0.6, breathe: 0.11, rate: 3.1, gain: 0.2, glow: 0.74, bright: 0.04, spin: 0, ring: 0, wander: 0, talk: 0, hue: 0, warn: 1 },
+    };
+    const KEYS = Object.keys(PRESET.idle);
+    const MOTION = {
+      ruhig: { sp: 0.6, am: 0.55, ki: 0.6 },
+      normal: { sp: 1, am: 1, ki: 1 },
+      lebhaft: { sp: 1.45, am: 1.6, ki: 1.35 },
+    };
+    const look = { mode: 'sphaere', color: '', motion: 'normal', hue: 243, sat: 1, shift: 1, light: true, sp: 1, am: 1, ki: 1 };
+    const S = {
+      P: Object.assign({}, PRESET.idle), T: PRESET.idle, mood: 'idle',
+      t: 0, tb: 0, tw: 0, ph: 0, lvl: 0, lvlT: 0, lvlAt: 0, prevLvl: 0,
+      talkL: false, talkS: false, talkEnv: 0, kick: 0, pulseAt: 0, flinch: 0, flinchV: 0, flash: 0,
+      err: 0, errV: 0, ripples: [], lastRipple: 0, e: 0, hue: 243, sat: 1, still: false,
+    };
+    const slots = new Map();   // Platz-Element -> Sphaere
+    const byCanvas = new Map(); // Leinwand -> Sphaere
+    let reduce = !!motionQ.matches;
+    let raf = 0;
+    let last = 0;
+    let dirty = true;           // weniger Bewegung: nur bei Aenderung zeichnen
+    let covered = false;        // Jarvis-Modus liegt ueber allem: andere Sphaeren nicht zeichnen
+    let latestEl = null;
+    let stillKey = '';
+    let lastDpr = window.devicePixelRatio || 1;
+
+    const io = canvasOk && window.IntersectionObserver ? new IntersectionObserver((entries) => {
+      for (const en of entries) {
+        const s = byCanvas.get(en.target);
+        if (!s) continue;
+        s.vis = en.isIntersecting;
+        if (s.vis) { s.need = true; wake(); }
+      }
+    }) : null;
+    const ro = canvasOk && window.ResizeObserver ? new ResizeObserver((entries) => {
+      for (const en of entries) {
+        const s = byCanvas.get(en.target);
+        if (!s) continue;
+        s.cssW = en.contentRect.width;
+        s.cssH = en.contentRect.height;
+        s.need = true;
+      }
+      dirty = true;
+      wake();
+    }) : null;
+
+    const hsla = (hh, s, l, a) => 'hsla(' + hh.toFixed(1) + ',' + clampN(s, 0, 100).toFixed(1) + '%,' +
+      clampN(l, 0, 100).toFixed(1) + '%,' + clampN(a, 0, 1).toFixed(3) + ')';
+    /** Farbton a -> b auf dem kuerzeren Weg (k = 0..1). */
+    function mixHue(a, b, k) {
+      if (k <= 0) return a;
+      const d = ((((b - a) % 360) + 540) % 360) - 180;
+      return a + d * clampN(k, 0, 1);
+    }
+
+    // ---------- Zeichnen ----------
+    const XS = new Float32Array(96);
+    const YS = new Float32Array(96);
+    function outline(ctx, n, cx, cy, R, amp, tt) {
+      ctx.beginPath();
+      if (amp < 0.0004) { ctx.arc(cx, cy, R, 0, TAU); return; }
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * TAU;
+        const d = 1 + amp * (0.5 * Math.sin(3 * a + tt * 1.3) + 0.32 * Math.sin(5 * a - tt * 1.75 + 1.7) +
+          0.18 * Math.sin(2 * a + tt * 0.9 + 4.1));
+        XS[i] = cx + Math.cos(a) * R * d;
+        YS[i] = cy + Math.sin(a) * R * d;
+      }
+      // weich: Kurven durch die Mittelpunkte
+      ctx.moveTo((XS[n - 1] + XS[0]) / 2, (YS[n - 1] + YS[0]) / 2);
+      for (let i = 0; i < n; i++) {
+        const j = (i + 1) % n;
+        ctx.quadraticCurveTo(XS[i], YS[i], (XS[i] + XS[j]) / 2, (YS[i] + YS[j]) / 2);
+      }
+      ctx.closePath();
+    }
+
+    function lobe(ctx, x, y, r, color) {
+      const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+      g.addColorStop(0, color);
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(x - r, y - r, r * 2, r * 2);
+    }
+
+    /** Eine Sphaere zeichnen. s = Leinwand + Masse, M = Zustand (gemeinsam oder Standbild). */
+    function paint(s, M) {
+      const ctx = s.ctx;
+      const W = s.W;
+      const H = s.H;
+      const dpr = s.dpr;
+      const cx = W / 2;
+      const cy = H / 2;
+      const half = Math.min(W, H) / 2;
+      const R0 = (Math.min(W, H) / s.f) * s.fill;
+      const P = M.P;
+      const b = s.boost;
+      const e = M.e;
+      const light = !s.dark && look.light;
+      const sat = M.sat;
+      const hue = M.hue;
+      const R = R0 * (1 + Math.min(0.34, e * 0.42 * b) + M.flinch * Math.min(b, 1.4));
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.clearRect(0, 0, W, H);
+
+      // 1. Leuchten (hell: zarter, dafuer ein weicher Schatten)
+      const ga = light ? 0.55 : 1;
+      let g = ctx.createRadialGradient(cx, cy, R * 0.45, cx, cy, Math.min(half, R0 * (2.2 + e * 0.6 * b)));
+      g.addColorStop(0, hsla(hue, 90 * sat, light ? 58 : 62, (0.4 * P.glow + 0.3 * e) * ga));
+      g.addColorStop(0.45, hsla(hue + 24, 88 * sat, 58, (0.13 * P.glow + 0.12 * e) * ga));
+      g.addColorStop(1, hsla(hue + 30, 85 * sat, 56, 0));
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, W, H);
+      if (M.flash > 0.02) {
+        g = ctx.createRadialGradient(cx, cy, R * 0.8, cx, cy, Math.min(half, R * 1.7));
+        g.addColorStop(0, 'hsla(24,95%,62%,' + (0.45 * M.flash).toFixed(3) + ')');
+        g.addColorStop(1, 'hsla(24,95%,62%,0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, W, H);
+      }
+      if (light) {
+        ctx.save();
+        ctx.translate(cx, cy + R * 0.8);
+        ctx.scale(1, 0.34);
+        g = ctx.createRadialGradient(0, 0, 0, 0, 0, R * 1.05);
+        g.addColorStop(0, hsla(hue + 22, 55 * sat, 26, 0.32));
+        g.addColorStop(1, hsla(hue + 22, 55 * sat, 26, 0));
+        ctx.fillStyle = g;
+        ctx.fillRect(-R * 1.1, -R * 1.1, R * 2.2, R * 2.2);
+        ctx.restore();
+      }
+
+      // 2. Wellen (beim Sprechen, bei lauter Stimme, nach einer Antwort)
+      for (const rp of M.ripples) {
+        const k = rp.age / rp.life;
+        if (k >= 1) continue;
+        ctx.beginPath();
+        ctx.arc(cx, cy, R0 * (1.04 + k * 0.75), 0, TAU);
+        ctx.lineWidth = Math.max(0.6 * dpr, R0 * 0.0085 * (1 + 1.6 * (1 - k)));
+        ctx.strokeStyle = hsla(hue + rp.shift, 90 * sat, light ? 52 : 72, rp.s * (1 - k) * (1 - k) * 0.55);
+        ctx.stroke();
+      }
+
+      // 3. Koerper
+      const amp = P.amp * (0.7 + e * 1.6) * look.am * (1 + (b - 1) * 0.6);
+      outline(ctx, s.n, cx, cy, R, amp, M.tb);
+      const wx = cx + (Math.cos(M.tw * 0.8) * 0.34 * P.wander - 0.22 * (1 - P.wander)) * R;
+      const wy = cy + (Math.sin(M.tw * 1.1) * 0.3 * P.wander - 0.27 * (1 - P.wander)) * R;
+      const lift = P.bright * 7 + M.kick * 5;
+      const dk = light ? 4 : 0;
+      g = ctx.createRadialGradient(wx, wy, R * 0.04, cx, cy, R * 1.08);
+      g.addColorStop(0, hsla(hue - 10, 96 * sat, 86 + lift * 0.5, 1));
+      g.addColorStop(0.3, hsla(hue - 2, 92 * sat, 68 + lift - dk, 1));
+      g.addColorStop(0.76, hsla(hue + 20, 84 * sat, 54 - dk, 1));
+      g.addColorStop(1, hsla(hue + 32, 80 * sat, 40 - dk, 1));
+      ctx.fillStyle = g;
+      ctx.fill();
+
+      // 4. innere Lichter (wirbeln), Fehler-Schimmer, Schatten, Glanz – nur in der Kugel
+      ctx.save();
+      ctx.clip();
+      ctx.globalCompositeOperation = 'lighter';
+      const tl = M.tb;
+      lobe(ctx, cx + Math.cos(tl * 0.63 + 1) * R * 0.32, cy + Math.sin(tl * 0.81) * R * 0.28, R * 0.75,
+        hsla(hue - 50, 94 * sat, 62, 0.4 + 0.3 * e));
+      lobe(ctx, cx + Math.cos(tl * 0.47 + 3.4) * R * 0.36, cy + Math.sin(tl * 0.59 + 2) * R * 0.32, R * 0.68,
+        hsla(hue + 64, 90 * sat, 62, 0.32 + 0.24 * e));
+      ctx.globalCompositeOperation = 'source-over';
+      if (M.errV > 0.02) {
+        ctx.fillStyle = 'hsla(354,86%,54%,' + (0.5 * M.errV).toFixed(3) + ')';
+        ctx.fillRect(cx - R * 1.4, cy - R * 1.4, R * 2.8, R * 2.8);
+      }
+      g = ctx.createRadialGradient(cx - R * 0.28, cy - R * 0.34, R * 0.25, cx, cy, R * 1.12);
+      g.addColorStop(0, 'rgba(0,0,0,0)');
+      g.addColorStop(1, light ? 'rgba(10,8,40,0.34)' : 'rgba(6,7,22,0.42)');
+      ctx.fillStyle = g;
+      ctx.fillRect(cx - R * 1.4, cy - R * 1.4, R * 2.8, R * 2.8);
+      lobe(ctx, cx - R * 0.36, cy - R * 0.42, R * 0.5, 'rgba(255,255,255,0.4)');
+      ctx.restore();
+      ctx.lineWidth = Math.max(0.5 * dpr, R0 * 0.0052);
+      ctx.strokeStyle = light ? hsla(hue + 24, 60 * sat, 32, 0.22) : 'rgba(255,255,255,0.16)';
+      ctx.stroke();
+
+      // 5. Kreisen (erkennt Sprache)
+      if (P.spin > 0.02) {
+        const rr = R0 * 1.2;
+        ctx.lineCap = 'round';
+        ctx.lineWidth = Math.max(1.1 * dpr, R0 * 0.0102);
+        const l = light ? 50 : 78;
+        for (let k = 0; k < 2; k++) {
+          const a0 = M.t * 3.1 + k * Math.PI;
+          ctx.beginPath();
+          ctx.arc(cx, cy, rr, a0, a0 + 1.05);
+          if (ctx.createConicGradient) {
+            const cg = ctx.createConicGradient(a0, cx, cy);
+            cg.addColorStop(0, hsla(hue, 90 * sat, l, 0));
+            cg.addColorStop(0.167, hsla(hue, 90 * sat, l, 0.75 * P.spin));
+            cg.addColorStop(0.17, hsla(hue, 90 * sat, l, 0));
+            ctx.strokeStyle = cg;
+          } else ctx.strokeStyle = hsla(hue, 90 * sat, l, 0.5 * P.spin);
+          ctx.stroke();
+        }
+      }
+      // 6. feiner, umlaufender Ring (arbeitet mit Werkzeugen)
+      if (P.ring > 0.02) {
+        const rr = R0 * (s.small ? 1.25 : 1.3);
+        const l = light ? 48 : 82;
+        const lw = Math.max(0.9 * dpr, R0 * 0.0064);
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.lineWidth = lw;
+        if (!s.small) ctx.setLineDash([1.6 * dpr, 7 * dpr]);
+        ctx.strokeStyle = hsla(hue + 20, 85 * sat, l, (s.small ? 0.22 : 0.5) * P.ring);
+        ctx.beginPath();
+        ctx.arc(0, 0, rr, 0, TAU);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        const ba = M.t * 1.5;
+        if (ctx.createConicGradient) {
+          // Schweif hinter dem Lichtpunkt
+          const tail = 1.8;
+          const cg = ctx.createConicGradient(ba - tail, 0, 0);
+          cg.addColorStop(0, hsla(hue + 20, 95 * sat, l, 0));
+          cg.addColorStop(tail / TAU, hsla(hue + 20, 95 * sat, l, 0.85 * P.ring));
+          cg.addColorStop(tail / TAU + 0.002, hsla(hue + 20, 95 * sat, l, 0));
+          ctx.strokeStyle = cg;
+          ctx.lineWidth = lw * 1.5;
+          ctx.lineCap = 'round';
+          ctx.beginPath();
+          ctx.arc(0, 0, rr, ba - tail, ba);
+          ctx.stroke();
+        }
+        ctx.fillStyle = hsla(hue + 20, 95 * sat, light ? 52 : 86, 0.95 * P.ring);
+        if (!s.small) {
+          ctx.shadowColor = hsla(hue + 20, 95 * sat, 70, 0.9 * P.ring);
+          ctx.shadowBlur = 10 * dpr;
+        }
+        ctx.beginPath();
+        ctx.arc(Math.cos(ba) * rr, Math.sin(ba) * rr, clampN(R0 * 0.022, 1.1 * dpr, 2.6 * dpr), 0, TAU);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    // ---------- Zustand pro Bild (einmal fuer alle Sphaeren) ----------
+    function step(dt, now) {
+      const P = S.P;
+      const T = S.T;
+      if (reduce) {
+        for (const key of KEYS) P[key] = T[key];
+        S.lvl = S.lvlT = 0;
+        S.talkEnv = S.kick = S.flinch = S.flinchV = S.flash = S.err = 0;
+        S.ripples.length = 0;
+      } else {
+        const k = 1 - Math.exp(-dt * 4.5);
+        for (const key of KEYS) P[key] += (T[key] - P[key]) * k;
+        S.t += dt;
+        S.tb += dt * P.speed * look.sp;   // Form und innere Lichter (eigene Uhr: kein Ruck bei Tempowechsel)
+        S.tw += dt * look.sp;             // wanderndes Licht
+        S.ph += dt * P.rate * look.sp;    // Atmen
+        if (now - S.lvlAt > 320) S.lvlT *= Math.exp(-dt * 5);
+        S.lvl += (S.lvlT - S.lvl) * (1 - Math.exp(-dt * (S.lvlT > S.lvl ? 22 : 5)));
+        const talking = S.talkL || S.talkS;
+        S.talkEnv += ((talking ? 1 : P.talk > 0.5 ? 0.35 : 0) - S.talkEnv) * (1 - Math.exp(-dt * 6));
+        S.kick *= Math.exp(-dt * 5.5);
+        const acc = -150 * S.flinch - 13 * S.flinchV;
+        S.flinchV += acc * dt;
+        S.flinch += S.flinchV * dt;
+        S.flash *= Math.exp(-dt * 3.2);
+        S.err *= Math.exp(-dt * 2.4);
+        if (S.err < 0.01) S.err = 0;
+        for (let i = S.ripples.length - 1; i >= 0; i--) {
+          const rp = S.ripples[i];
+          rp.age += dt;
+          if (rp.age >= rp.life) S.ripples.splice(i, 1);
+        }
+        // Wellen: beim Sprechen im Rhythmus, beim Zuhoeren bei lauter Stimme
+        if (talking && now - S.lastRipple > 560) { ripple(1.5, 0.8, -20); S.lastRipple = now; }
+        if (P.gain > 0.9 && S.lvl > 0.42 && S.prevLvl <= 0.42 && now - S.lastRipple > 220) {
+          ripple(1.2, Math.min(1, S.lvl + 0.2), 0);
+          S.lastRipple = now;
+        }
+      }
+      S.prevLvl = S.lvl;
+      const syl = S.talkEnv * Math.max(0, 0.55 + 0.45 * Math.sin(S.t * 10.6) * Math.sin(S.t * 3.7 + 1.1));
+      S.e = P.breathe * (0.5 + 0.5 * Math.sin(S.ph)) + S.lvl * P.gain * 0.5 + syl * 0.13 * P.talk + S.kick * 0.16 * look.ki;
+      let hue = look.hue + P.hue * look.shift;
+      if (!reduce) hue += 7 * Math.sin(S.t * 0.21); // sanftes Farbschimmern
+      hue = mixHue(hue, 38, P.warn * 0.92);
+      S.errV = S.err > 0 ? S.err * (0.62 + 0.38 * Math.sin(S.t * 38)) : 0;
+      S.hue = mixHue(hue, 354, S.errV * 0.85);
+      S.sat = look.sat + (1 - look.sat) * Math.max(P.warn, S.errV);
+    }
+
+    function ripple(life, strength, shift) {
+      if (reduce) return;
+      S.ripples.push({ age: 0, life, s: strength, shift });
+      if (S.ripples.length > 6) S.ripples.shift();
+    }
+
+    // ---------- Leinwaende ----------
+    function size(s) {
+      s.need = false;
+      if (!ro) {
+        const r = s.cv.getBoundingClientRect(); // ohne ResizeObserver (alt): selten
+        s.cssW = r.width;
+        s.cssH = r.height;
+      }
+      const slotCss = Math.min(s.cssW, s.cssH) / s.f;
+      s.boost = s.small ? clampN(56 / Math.max(1, slotCss), 1, 2) : 1;
+      s.dpr = Math.min(s.small ? 3 : 2, window.devicePixelRatio || 1);
+      const cap = s.small ? 900 : 1200;
+      const w = Math.max(0, Math.min(cap, Math.round(s.cssW * s.dpr)));
+      const hh = Math.max(0, Math.min(cap, Math.round(s.cssH * s.dpr)));
+      if (w !== s.W || hh !== s.H) { s.W = s.cv.width = w; s.H = s.cv.height = hh; }
+    }
+
+    function frame(now) {
+      raf = 0;
+      if (document.hidden) return;
+      const dt = last ? Math.min(0.05, (now - last) / 1000) : 1 / 60;
+      last = now;
+      const dpr = window.devicePixelRatio || 1;
+      if (dpr !== lastDpr) { lastDpr = dpr; for (const s of slots.values()) s.need = true; }
+      step(dt, now);
+      let any = false;
+      for (const s of slots.values()) {
+        if (!s.live || !s.vis || (covered && !s.jarvis)) continue;
+        any = true;
+        if (s.need) size(s);
+        if (!s.W || !s.H) continue;
+        paint(s, S);
+        if (!s.drawn) {
+          s.drawn = true;
+          if (!s.jarvis) s.el.classList.add('drawn');
+        }
+      }
+      dirty = false;
+      if (any && !reduce) raf = requestAnimationFrame(frame);
+    }
+
+    function wake() {
+      if (raf || document.hidden) return;
+      last = 0;
+      raf = requestAnimationFrame(frame);
+    }
+
+    /** Lebt die Sphaere an diesem Platz gerade (Leinwand) – oder zeigt sie ein Standbild? */
+    function apply(s) {
+      const eff = canvasOk && s.want && (s.jarvis || (look.mode === 'sphaere' && !reduce));
+      if (eff === s.live) return;
+      s.live = eff;
+      if (eff) {
+        if (!s.cv) {
+          s.cv = document.createElement('canvas');
+          s.cv.className = 'orb-cv';
+          s.cv.setAttribute('aria-hidden', 'true');
+          s.el.append(s.cv);
+        }
+        if (!s.ctx) s.ctx = s.cv.getContext('2d');
+        if (!s.ctx) { s.live = false; return; }
+        s.need = true;
+        s.drawn = false;
+        s.vis = !io;
+        byCanvas.set(s.cv, s);
+        if (io) io.observe(s.cv);
+        if (ro) ro.observe(s.cv);
+        if (!s.jarvis) s.el.classList.add('live');
+        dirty = true;
+        wake();
+      } else if (s.cv) {
+        if (io) io.unobserve(s.cv);
+        if (ro) ro.unobserve(s.cv);
+        byCanvas.delete(s.cv);
+        if (!s.jarvis) {
+          s.cv.remove();
+          s.cv = null;
+          s.ctx = null;
+          s.W = s.H = 0;
+          s.el.classList.remove('live', 'drawn');
+        }
+      }
+    }
+
+    function slot(el, o) {
+      if (!el || slots.has(el)) return;
+      o = o || {};
+      const jarvis = !!o.jarvis;
+      const s = {
+        el, cv: jarvis ? el : null, ctx: null, want: o.live !== false, jarvis, small: !jarvis,
+        f: jarvis ? 1.6 : F, fill: jarvis ? 0.272 : FILL, dark: jarvis, n: jarvis ? 72 : 48,
+        boost: 1, vis: !io, cssW: 0, cssH: 0, W: 0, H: 0, dpr: 1, need: true, drawn: false, live: false,
+      };
+      slots.set(el, s);
+      apply(s);
+    }
+
+    function unslot(el) {
+      const s = slots.get(el);
+      if (!s) return;
+      s.want = false;
+      apply(s);
+      slots.delete(el);
+    }
+
+    // ---------- Farbe, Thema, Standbild ----------
+    function readLook() {
+      const bg = hexRgb(cssColor('--bg', '#f7f7f9'));
+      look.light = lum(bg) > 0.35;
+      const own = look.color;
+      const hex = own || cssColor('--accent', '#4f46e5');
+      const [hh, s] = rgbHsl(hexRgb(hex));
+      if (own) {
+        look.hue = hh;
+        look.sat = clampN(s / 0.55, 0.06, 1); // eigene Farbe: auch Silber/Grau moeglich
+      } else {
+        look.hue = s < 0.12 ? 243 : hh;    // grau -> Standard (Indigo)
+        look.sat = 1;
+      }
+      // Indigo: volle Farbwechsel wie im Jarvis-Modus; eigene Farben behalten ihren Charakter
+      look.shift = Math.abs(mixHue(look.hue, 243, 1) - look.hue) < 25 && !own ? 1 : 0.6;
+      const m = pick(MOTION, look.motion) || MOTION.normal;
+      look.sp = m.sp;
+      look.am = m.am;
+      look.ki = m.ki;
+      root.style.setProperty('--orb-a', hsla(look.hue, 86 * look.sat, 64, 1));
+      root.style.setProperty('--orb-b', hsla(look.hue + 30, 78 * look.sat, 42, 1));
+    }
+
+    function stillState() {
+      const P = Object.assign({}, PRESET.idle);
+      return {
+        P, e: 0.03, hue: look.hue, sat: look.sat, flinch: 0, flash: 0, errV: 0, kick: 0, ripples: [],
+        t: 0, tb: 2.3, tw: 0,
+      };
+    }
+
+    function makeStill() {
+      if (!canvasOk) return;
+      const key = look.hue.toFixed(1) + '|' + look.sat.toFixed(2) + '|' + (look.light ? 'l' : 'd');
+      if (key === stillKey) return;
+      const px = 140 * 2;
+      const w = Math.round(px * F);
+      const cv = document.createElement('canvas');
+      cv.width = cv.height = w;
+      const ctx = cv.getContext('2d');
+      if (!ctx) return;
+      const s = { ctx, W: w, H: w, dpr: 2, f: F, fill: FILL, dark: false, small: true, n: 72, boost: 1 };
+      paint(s, stillState());
+      let url = '';
+      try {
+        url = cv.toDataURL('image/webp', 0.92);
+        if (!/^data:image\/webp/.test(url)) url = cv.toDataURL('image/png');
+      } catch (_) { url = ''; }
+      if (!url) return;
+      stillKey = key;
+      root.style.setProperty('--orb-still', 'url("' + url + '")');
+      root.classList.add('orb-img');
+    }
+
+    function refresh() {
+      readLook();
+      makeStill();
+      dirty = true;
+      wake();
+    }
+
+    function relayout() {
+      reduce = !!motionQ.matches;
+      root.classList.toggle('orb-on', look.mode === 'sphaere');
+      root.classList.toggle('orb-calm', reduce);
+      for (const s of slots.values()) apply(s);
+      dirty = true;
+      wake();
+    }
+
+    const onMq = (q, fn) => {
+      if (!q) return;
+      if (typeof q.addEventListener === 'function') q.addEventListener('change', fn);
+      else if (typeof q.addListener === 'function') q.addListener(fn);
+    };
+    onMq(motionQ, relayout);
+    onMq(darkQ, () => refresh());
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) { if (raf) cancelAnimationFrame(raf); raf = 0; } else { dirty = true; wake(); }
+    });
+    root.classList.add('orb-on');
+    if (reduce) root.classList.add('orb-calm');
+
+    return {
+      canvasOk,
+      slot,
+      unslot,
+      /** Nur die Sphaere der neuesten Antwort lebt; aeltere zeigen das Standbild. */
+      latest(el) {
+        if (el === latestEl) return;
+        if (latestEl) unslot(latestEl);
+        latestEl = el || null;
+        if (latestEl) slot(latestEl, { live: true });
+      },
+      mood(name) {
+        const m = own(PRESET, name) ? name : 'idle';
+        if (m === S.mood) return;
+        S.mood = m;
+        S.T = PRESET[m];
+        dirty = true;
+        wake();
+      },
+      get current() { return S.mood; },
+      level(v) {
+        v = Number(v);
+        if (!Number.isFinite(v)) return;
+        S.lvlT = clampN(v, 0, 1);
+        S.lvlAt = performance.now();
+        wake();
+      },
+      kick(v) { S.kick = Math.min(1.4, S.kick + (v || 1) * 0.7); wake(); },
+      /** Schreiben: kurzer Puls je Text-Stueck – ruhig, hoechstens ~3x pro Sekunde. */
+      pulse() {
+        const now = performance.now();
+        if (now - S.pulseAt < 280) return;
+        S.pulseAt = now;
+        S.kick = Math.min(1, S.kick + 0.5);
+        wake();
+      },
+      talk(src, on) {
+        if (src === 'local') S.talkL = !!on; else S.talkS = !!on;
+        wake();
+      },
+      /** Angehalten / unterbrochen: kurzes Zucken (mit Aufleuchten im Jarvis-Modus). */
+      flinch(withFlash) {
+        S.flinchV -= 2.4;
+        if (withFlash) S.flash = 1;
+        wake();
+      },
+      /** Fehler: kurzes roetliches Flackern. */
+      flicker() { S.err = 1; wake(); },
+      /** Fertig: sanftes Ausklingen. */
+      settle() { ripple(1.7, 0.55, 12); S.kick = Math.min(1.2, S.kick + 0.35); wake(); },
+      cover(on) { covered = !!on; dirty = true; wake(); },
+      jarvis(cv, on) {
+        if (!slots.has(cv)) slot(cv, { jarvis: true, live: false });
+        const s = slots.get(cv);
+        if (on && !s.live) {
+          S.lvl = S.lvlT = 0;
+          S.ripples.length = 0;
+        }
+        s.want = !!on;
+        apply(s);
+        if (!on) S.talkL = false;
+      },
+      /** Aussehen: avatar sphaere|buchstabe, sphaere_farbe (Hex), bewegung ruhig|normal|lebhaft. */
+      setLook(o) {
+        o = o || {};
+        look.mode = o.mode === 'buchstabe' ? 'buchstabe' : 'sphaere';
+        look.color = o.color || '';
+        look.motion = own(MOTION, o.motion) ? o.motion : 'normal';
+        readLook();
+        relayout();
+        makeStill();
+      },
+      refresh,
+      get mode() { return look.mode; },
+    };
+  })();
+
+  // =====================================================================
   // Zustand & Seitenleiste
   // =====================================================================
   let state = {};
@@ -491,17 +1096,23 @@
     fillMeaning(byId('sb-meaning'), name, meaning);
     byId('sb-name').title = meaning ? name + ' – ' + meaning : name;
     byId('sb-meaning').title = meaning;
-    for (const a of document.querySelectorAll('.ai-avatar')) a.textContent = letter;
+    for (const a of document.querySelectorAll('.ai-avatar:not([data-own-letter]) > .av-l')) a.textContent = letter;
     setFavicon(letter);
     input.placeholder = 'Schreib ' + name + ' eine Nachricht …';
     byId('sb-version').textContent = s.version ? 'Version ' + s.version : '';
 
-    // Gehirn
+    // Gehirn (Karte in der Seitenleiste oeffnet "Gehirn & Schluessel")
     const prov = String(s.provider || '');
-    byId('sb-provider').textContent = pick(PROVIDERS, prov.toLowerCase()) || prov || '–';
+    const keyMissing = s.api_key_missing === true;
+    byId('sb-provider').textContent = (s.provider_name ? String(s.provider_name) : '') ||
+      pick(PROVIDERS, prov.toLowerCase()) || prov || '–';
     byId('sb-provider').title = byId('sb-provider').textContent;
-    byId('sb-model').textContent = s.model || '–';
-    byId('sb-model').title = s.model || '';
+    byId('sb-model').textContent = keyMissing ? 'Schlüssel fehlt – hier einrichten' : s.model || '–';
+    byId('sb-model').title = keyMissing ? '' : s.model || '';
+    byId('sb-brain').classList.toggle('nokey', keyMissing);
+    byId('tab-gehirn').classList.toggle('nokey', keyMissing);
+    byId('key-bar').hidden = !keyMissing || ended;
+    setupState(prov, keyMissing);
     byId('tb-model-text').textContent = s.model || '';
     byId('tb-model').hidden = !s.model;
 
@@ -615,7 +1226,10 @@
       if (btnLabel) {
         const b = h('button', 'btn small ' + (cls === 'update' ? 'primary' : 'secondary'), btnLabel);
         b.type = 'button';
-        b.addEventListener('click', () => { closeSidebar(); send(cmd); });
+        b.addEventListener('click', () => {
+          closeSidebar();
+          if (typeof cmd === 'function') cmd(); else send(cmd);
+        });
         a.append(b);
       }
       box.append(a);
@@ -624,11 +1238,8 @@
       add('update', 'download', 'Update verfügbar', 'Version ' + s.update.new + ' ist bereit.', 'Jetzt aktualisieren', '/update');
     }
     if (s.api_key_missing) {
-      const key = String(s.provider || '').toLowerCase() === 'deepseek' ? 'DEEPSEEK_API_KEY' : 'ANTHROPIC_API_KEY';
-      const frag = document.createDocumentFragment();
-      frag.append('Trag ihn in die Datei ', h('code', null, '.env'), ' ein (Zeile ', h('code', null, key + '=…'),
-        '). Ohne Schlüssel kann ich nicht denken.');
-      add('danger', 'key', 'API-Schlüssel fehlt', frag);
+      add('danger', 'key', 'API-Schlüssel fehlt', 'Ohne Schlüssel kann ich nicht denken. Er ist in einer Minute eingerichtet.',
+        'Jetzt einrichten', () => openSetup(true));
     }
     if (s.started_by) {
       add('warn', 'power', 'Automatisch gestartet', 'Ich wurde automatisch gestartet – ' + s.started_by + '.',
@@ -652,6 +1263,8 @@
     updateSendBtn();
     updateStatus();
     tourBusy(busy);
+    if (!busy) rs.phase = '';
+    moodSync();
   }
 
   function updateSendBtn() {
@@ -755,6 +1368,7 @@
     btn.title = THEME_INFO[t][1] + ' – klicken zum Wechseln';
     btn.setAttribute('aria-label', THEME_INFO[t][1] + ', wechseln');
     try { localStorage.setItem('ki-theme', t); } catch (_) { /* egal */ }
+    sphere.refresh(); // Sphaere im hellen Thema satter, mit Schatten
   }
   byId('theme-btn').addEventListener('click', () => applyTheme(THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length]));
   applyTheme(theme);
@@ -850,13 +1464,41 @@
     emptyEl.hidden = !historyReady || talked;
     byId('tb-new').hidden = !talked || ended;
     byId('tour-offer').hidden = !historyReady || state.tutorial_done !== false || tourLater || tour.open || ended;
+    markLatest();
   }
   function added() { updateEmpty(); keepBottom(); }
 
   function aiAvatar() {
-    const a = h('div', 'avatar ai-avatar', initial());
+    const a = h('div', 'avatar ai-avatar');
     a.setAttribute('aria-hidden', 'true');
+    a.append(h('span', 'av-l', initial()));
     return a;
+  }
+
+  // ---------- Novas Gemuet: alle Sphaeren zeigen, was sie gerade tut ----------
+  let histBuilding = false;  // Verlauf wird aufgebaut: erst am Ende die neueste Antwort beleben
+  let speakingOn = false;    // Vorlesen am PC (Ereignis "speaking")
+  const rs = { phase: '' };  // laufende Antwort: thinking | working | writing
+
+  /** Nur die Sphaere der neuesten Antwort ist lebendig; aeltere sind ein ruhiges Standbild. */
+  function markLatest() {
+    if (histBuilding) return;
+    let el = msgs.lastElementChild;
+    while (el && !(el.classList.contains('msg') && el.classList.contains('ai'))) el = el.previousElementSibling;
+    sphere.latest(el ? el.querySelector('.ai-avatar') : null);
+  }
+
+  function moodSync() {
+    let m = 'idle';
+    const vp = voice.phase;
+    if (jv.open) m = jv.state === 'thinking' && jv.working ? 'working' : jv.state || 'starting';
+    else if (askCur && !modal.hidden) m = 'asking';
+    else if (vp === 'starting' || vp === 'recording' || vp === 'remote') m = 'hearing';
+    else if (vp === 'stopping' || vp === 'remote-rec') m = 'recognizing';
+    else if (su.checking) m = 'thinking';
+    else if (speakingOn) m = 'speaking';
+    else if (busy || reply) m = rs.phase || 'thinking';
+    sphere.mood(m);
   }
 
   function addUser(text) {
@@ -1460,7 +2102,7 @@
   /** Eingabefeld fokussieren – aber nie einem offenen Dialog den Fokus wegnehmen. */
   function focusInput() {
     if (!modal.hidden) { askFocusBack = input; return false; }
-    if (!pmodal.hidden || ended || jv.open || !cmodal.hidden) return false;
+    if (!pmodal.hidden || ended || jv.open || !cmodal.hidden || !smodal.hidden) return false;
     input.focus();
     return true;
   }
@@ -1654,6 +2296,7 @@
       voice.timer = 0;
     }
     updateStatus();
+    moodSync();
   }
 
   function voiceReset() {
@@ -1849,10 +2492,12 @@
     const confOpen = !cmodal.hidden;
     const profOpen = !pmodal.hidden;
     const jvOpen = jv.open;
-    app.inert = askOpen || confOpen || profOpen || jvOpen;
-    pmodal.inert = askOpen || confOpen || jvOpen; // Jarvis liegt ueber dem Profil-Fenster
+    const setupOpen = !smodal.hidden;
+    app.inert = askOpen || confOpen || profOpen || jvOpen || setupOpen;
+    pmodal.inert = askOpen || confOpen || jvOpen || setupOpen; // Jarvis liegt ueber dem Profil-Fenster
+    smodal.inert = askOpen || confOpen || jvOpen;
     jvEl.inert = askOpen || confOpen;             // Rueckfragen liegen ueber Jarvis
-    tourEl.inert = askOpen || confOpen || profOpen || jvOpen;
+    tourEl.inert = askOpen || confOpen || profOpen || jvOpen || setupOpen;
     modal.inert = confOpen;
   }
 
@@ -1866,10 +2511,12 @@
       if (wasOpen) {
         if (askFocusBack && document.contains(askFocusBack) && !askFocusBack.closest('[inert]')) askFocusBack.focus();
         else if (jv.open) jvEl.focus();
+        else if (!smodal.hidden) sdialog.focus();
         else if (!pmodal.hidden) panel.focus();
         else focusInput();
       }
       askFocusBack = null;
+      moodSync();
       return;
     }
     if (!askFocusBack) askFocusBack = document.activeElement;
@@ -1914,6 +2561,7 @@
     askAt = performance.now();
     closeCmdPop();
     dialog.focus();
+    moodSync();
   }
 
   function closeAsk(id) {
@@ -1979,8 +2627,8 @@
   const memSearch = byId('mem-search');
   const memAddBtn = byId('mem-add-btn');
   const pconfirm = byId('pn-confirm');
-  const TABS = ['charakter', 'stil', 'ueber', 'werte', 'gedaechtnis', 'sicherheit'];
-  const NO_PROFILE_TABS = new Set(['gedaechtnis', 'sicherheit']); // brauchen das geladene Profil nicht
+  const TABS = ['charakter', 'stil', 'ueber', 'werte', 'gedaechtnis', 'sicherheit', 'gehirn'];
+  const NO_PROFILE_TABS = new Set(['gedaechtnis', 'sicherheit', 'gehirn']); // brauchen das geladene Profil nicht
   const LONG_ABOUT = new Set(['interessen', 'projekte', 'wichtig', 'nicht', 'sonstiges']);
   const CHAR_ICONS = {
     freundlich: 'smile', sachlich: 'briefcase', butler: 'bowtie', mentor: 'cap',
@@ -2074,6 +2722,7 @@
   function closeProfile() {
     hideConfirm();
     memConfirmReset();
+    if (su.where === 'pane') { su.where = ''; clearKey(); }
     pmodal.hidden = true;
     updateInert();
     const back = profFocusBack;
@@ -2146,6 +2795,8 @@
     tabBtn.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     updateTabFade();
     if (t === 'gedaechtnis' && !mem.loaded && !mem.loading) loadMemory();
+    if (t === 'gehirn') { mountSetup('pane'); loadSetup(); }
+    else if (su.where === 'pane') { su.where = ''; clearKey(); }
   }
 
   function renderPanes() {
@@ -2196,7 +2847,7 @@
   // ---------- Charakter ----------
   function updateIdentity() {
     const n = pfName.value.trim() || (prof && prof.name) || 'KI';
-    byId('pf-avatar').textContent = (n.charAt(0) || 'K').toUpperCase();
+    byId('pf-avatar').querySelector('.av-l').textContent = (n.charAt(0) || 'K').toUpperCase();
     byId('pf-name-preview').textContent = n;
     fillMeaning(byId('pf-meaning-preview'), n, pfMeaning.value);
   }
@@ -2958,7 +3609,15 @@
     renderGreeting();
     renderSuggestions();
     setFavicon(initial());
-    orb.refreshColor();
+    // Novas Sphaere: Art, Farbe, Bewegung (unbekannte Werte -> Standard)
+    const orbHex = typeof s.sphaere_farbe === 'string' && /^#(?:[0-9a-f]{3}){1,2}$/i.test(s.sphaere_farbe.trim())
+      ? s.sphaere_farbe.trim() : '';
+    sphere.setLook({
+      mode: s.avatar === 'buchstabe' ? 'buchstabe' : 'sphaere',
+      color: orbHex,
+      motion: ['ruhig', 'normal', 'lebhaft'].includes(s.bewegung) ? s.bewegung : 'normal',
+    });
+    syncHero();
   }
 
   function renderGreeting() {
@@ -2999,7 +3658,7 @@
       look.cssLoaded = gen;
       for (const old of document.querySelectorAll('link#custom-css, link.custom-css')) if (old !== link) old.remove();
       link.id = 'custom-css';
-      orb.refreshColor();
+      sphere.refresh();
     };
     link.addEventListener('load', done);
     link.addEventListener('error', done);
@@ -3044,6 +3703,7 @@
     const back = st.back;
     if (back && back !== document.body && document.contains(back) && !back.closest('[inert]')) back.focus();
     else if (jv.open) jvEl.focus();
+    else if (!smodal.hidden) sdialog.focus();
     else if (!pmodal.hidden) panel.focus();
     else focusInput();
     st.resolve(!!result);
@@ -3436,287 +4096,18 @@
   }
 
   // =====================================================================
-  // Jarvis-Modus: der leuchtende Orb (Canvas, requestAnimationFrame)
-  // Pro Bild nur Zeichnen auf der Leinwand – kein Layout, kein DOM.
+  // Jarvis-Modus: die grosse Sphaere – dieselbe wie ueberall (siehe "Novas Sphaere")
   // =====================================================================
-  const orb = (() => {
-    const cv = byId('jv-orb');
-    const ctx = cv.getContext ? cv.getContext('2d') : null;
-    const motion = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : { matches: false };
-    const TAU = Math.PI * 2;
-    const N = 72;
-    const COS = new Float32Array(N);
-    const SIN = new Float32Array(N);
-    for (let i = 0; i < N; i++) { COS[i] = Math.cos((i / N) * TAU); SIN[i] = Math.sin((i / N) * TAU); }
-    const XS = new Float32Array(N);
-    const YS = new Float32Array(N);
-    // Zustaende: Bewegung, Pegel-Einfluss, Farbe (Farbton-Verschiebung), Extras
-    const PRESET = {
-      starting: { amp: 0.022, speed: 0.5, breathe: 0.03, gain: 0.25, glow: 0.45, spin: 0.6, ring: 0, wander: 0, hue: 0, talk: 0 },
-      listening: { amp: 0.026, speed: 0.55, breathe: 0.04, gain: 0.6, glow: 0.55, spin: 0, ring: 0, wander: 0, hue: 0, talk: 0 },
-      hearing: { amp: 0.045, speed: 1.15, breathe: 0.012, gain: 1.2, glow: 0.9, spin: 0, ring: 0, wander: 0, hue: -46, talk: 0 },
-      recognizing: { amp: 0.03, speed: 0.9, breathe: 0.02, gain: 0.25, glow: 0.62, spin: 1, ring: 0, wander: 0, hue: -18, talk: 0 },
-      thinking: { amp: 0.034, speed: 0.75, breathe: 0.03, gain: 0.2, glow: 0.66, spin: 0, ring: 0, wander: 1, hue: 40, talk: 0 },
-      working: { amp: 0.034, speed: 0.85, breathe: 0.03, gain: 0.2, glow: 0.72, spin: 0, ring: 1, wander: 1, hue: 62, talk: 0 },
-      speaking: { amp: 0.04, speed: 1.0, breathe: 0.02, gain: 0.1, glow: 0.88, spin: 0, ring: 0, wander: 0, hue: -62, talk: 1 },
-    };
-    const KEYS = Object.keys(PRESET.listening);
-    const P = Object.assign({}, PRESET.starting);
-    let T = PRESET.starting;
-    let running = false;
-    let raf = 0;
-    let last = 0;
-    let t = 0;
-    let lvl = 0;
-    let lvlT = 0;
-    let lvlAt = 0;
-    let prevLvl = 0;
-    let talking = false;
-    let talkEnv = 0;
-    let kickV = 0;
-    let flinch = 0;
-    let flinchV = 0;
-    let flash = 0;
-    let lastRipple = 0;
-    let baseHue = 243;
-    let W = 0;
-    let H = 0;
-    let dpr = 1;
-    const ripples = [];
-
-    function resize() {
-      const r = cv.getBoundingClientRect();
-      dpr = Math.min(2, window.devicePixelRatio || 1);
-      const w = Math.max(1, Math.min(1200, Math.round(r.width * dpr)));
-      const hh = Math.max(1, Math.min(1200, Math.round(r.height * dpr)));
-      if (w !== W || hh !== H) { W = cv.width = w; H = cv.height = hh; }
-    }
-    if (window.ResizeObserver) new ResizeObserver(() => { if (running) resize(); }).observe(cv);
-
-    /** Farbton aus der Akzentfarbe (folgt dem Aussehen, das Nova eingestellt hat). */
-    function refreshColor() {
-      const probe = h('span');
-      probe.style.cssText = 'position:absolute;width:0;height:0;overflow:hidden;color:var(--grad-a)';
-      document.body.append(probe);
-      const c = getComputedStyle(probe).color || '';
-      probe.remove();
-      let rgb = null;
-      let m = c.match(/rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/);
-      if (m) rgb = [+m[1], +m[2], +m[3]];
-      else if ((m = c.match(/color\(srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)/))) rgb = [m[1] * 255, m[2] * 255, m[3] * 255];
-      if (!rgb) return;
-      const [hh, s] = rgbHsl(rgb.map((x) => clamp(Math.round(x), 0, 255)));
-      baseHue = s < 0.12 ? 243 : hh; // grau -> Standard (Indigo)
-    }
-
-    const hsla = (hh, s, l, a) => 'hsla(' + hh.toFixed(1) + ',' + s + '%,' + l + '%,' + clamp(a, 0, 1).toFixed(3) + ')';
-
-    function shape(cx, cy, R, amp, tt) {
-      for (let i = 0; i < N; i++) {
-        const a = (i / N) * TAU;
-        const d = 1 + amp * (0.5 * Math.sin(3 * a + tt * 1.3) + 0.32 * Math.sin(5 * a - tt * 1.75 + 1.7) +
-          0.18 * Math.sin(2 * a + tt * 0.9 + 4.1));
-        XS[i] = cx + COS[i] * R * d;
-        YS[i] = cy + SIN[i] * R * d;
-      }
-      // weich: Kurven durch die Mittelpunkte
-      ctx.beginPath();
-      ctx.moveTo((XS[N - 1] + XS[0]) / 2, (YS[N - 1] + YS[0]) / 2);
-      for (let i = 0; i < N; i++) {
-        const j = (i + 1) % N;
-        ctx.quadraticCurveTo(XS[i], YS[i], (XS[i] + XS[j]) / 2, (YS[i] + YS[j]) / 2);
-      }
-      ctx.closePath();
-    }
-
-    function lobe(x, y, r, color) {
-      const g = ctx.createRadialGradient(x, y, 0, x, y, r);
-      g.addColorStop(0, color);
-      g.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.fillStyle = g;
-      ctx.fillRect(x - r, y - r, r * 2, r * 2);
-    }
-
-    function draw(dt) {
-      const reduce = motion.matches;
-      const cx = W / 2;
-      const cy = H / 2;
-      const S = Math.min(W, H);
-      const R0 = S * 0.17; // Leinwand ist 1,6x so gross wie der Platz des Orbs
-      const syl = talkEnv * Math.max(0, 0.55 + 0.45 * Math.sin(t * 10.6) * Math.sin(t * 3.7 + 1.1));
-      const e = P.breathe * (0.5 + 0.5 * Math.sin(t * 1.7)) + lvl * P.gain * 0.5 + syl * 0.13 * P.talk + kickV * 0.1;
-      const R = R0 * (1 + e * 0.42 + flinch);
-      const hue = baseHue + P.hue;
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.globalCompositeOperation = 'source-over';
-      ctx.clearRect(0, 0, W, H);
-
-      // 1. Leuchten
-      let g = ctx.createRadialGradient(cx, cy, R * 0.45, cx, cy, Math.min(S * 0.5, R0 * (2.3 + e * 0.6)));
-      g.addColorStop(0, hsla(hue, 90, 62, 0.4 * P.glow + 0.3 * e));
-      g.addColorStop(0.45, hsla(hue + 24, 88, 58, 0.13 * P.glow + 0.12 * e));
-      g.addColorStop(1, hsla(hue + 30, 85, 56, 0));
-      ctx.fillStyle = g;
-      ctx.fillRect(0, 0, W, H);
-      if (flash > 0.02) {
-        g = ctx.createRadialGradient(cx, cy, R * 0.8, cx, cy, R * 1.7);
-        g.addColorStop(0, 'hsla(24,95%,62%,' + (0.45 * flash).toFixed(3) + ')');
-        g.addColorStop(1, 'hsla(24,95%,62%,0)');
-        ctx.fillStyle = g;
-        ctx.fillRect(0, 0, W, H);
-      }
-
-      // 2. Wellen (beim Sprechen / lauter Stimme)
-      for (let i = ripples.length - 1; i >= 0; i--) {
-        const rp = ripples[i];
-        rp.age += dt;
-        const k = rp.age / rp.life;
-        if (k >= 1) { ripples.splice(i, 1); continue; }
-        ctx.beginPath();
-        ctx.arc(cx, cy, R0 * (1.04 + k * 0.75), 0, TAU);
-        ctx.lineWidth = (1 + 1.6 * (1 - k)) * dpr;
-        ctx.strokeStyle = hsla(hue + rp.shift, 90, 72, rp.s * (1 - k) * (1 - k) * 0.55);
-        ctx.stroke();
-      }
-
-      // 3. Koerper
-      const amp = P.amp * (0.7 + e * 1.6) * (reduce ? 0.4 : 1);
-      shape(cx, cy, R, amp, t * P.speed);
-      const wx = cx + (Math.cos(t * 0.8) * 0.34 * P.wander - 0.22 * (1 - P.wander)) * R;
-      const wy = cy + (Math.sin(t * 1.1) * 0.3 * P.wander - 0.27 * (1 - P.wander)) * R;
-      g = ctx.createRadialGradient(wx, wy, R * 0.04, cx, cy, R * 1.08);
-      g.addColorStop(0, hsla(hue - 10, 96, 86, 1));
-      g.addColorStop(0.3, hsla(hue - 2, 90, 68, 1));
-      g.addColorStop(0.76, hsla(hue + 20, 82, 54, 1));
-      g.addColorStop(1, hsla(hue + 32, 78, 40, 1));
-      ctx.fillStyle = g;
-      ctx.fill();
-
-      // 4. innere Lichter (wirbeln), Schatten, Glanz – nur im Orb
-      ctx.save();
-      ctx.clip();
-      ctx.globalCompositeOperation = 'lighter';
-      const sp = P.speed;
-      lobe(cx + Math.cos(t * 0.63 * sp + 1) * R * 0.32, cy + Math.sin(t * 0.81 * sp) * R * 0.28, R * 0.75,
-        hsla(hue - 50, 94, 62, 0.4 + 0.3 * e));
-      lobe(cx + Math.cos(t * 0.47 * sp + 3.4) * R * 0.36, cy + Math.sin(t * 0.59 * sp + 2) * R * 0.32, R * 0.68,
-        hsla(hue + 64, 90, 62, 0.32 + 0.24 * e));
-      ctx.globalCompositeOperation = 'source-over';
-      g = ctx.createRadialGradient(cx - R * 0.28, cy - R * 0.34, R * 0.25, cx, cy, R * 1.12);
-      g.addColorStop(0, 'rgba(0,0,0,0)');
-      g.addColorStop(1, 'rgba(6,7,22,0.42)');
-      ctx.fillStyle = g;
-      ctx.fillRect(cx - R * 1.4, cy - R * 1.4, R * 2.8, R * 2.8);
-      lobe(cx - R * 0.36, cy - R * 0.42, R * 0.5, 'rgba(255,255,255,0.38)');
-      ctx.restore();
-      ctx.lineWidth = 1.2 * dpr;
-      ctx.strokeStyle = 'rgba(255,255,255,0.16)';
-      ctx.stroke();
-
-      // 5. Kreisen (erkennt Sprache)
-      if (P.spin > 0.02) {
-        const rr = R0 * 1.2;
-        ctx.lineCap = 'round';
-        ctx.lineWidth = 2.4 * dpr;
-        for (let k = 0; k < 2; k++) {
-          const a0 = t * 3.1 + k * Math.PI;
-          ctx.beginPath();
-          ctx.arc(cx, cy, rr, a0, a0 + 1.05);
-          if (ctx.createConicGradient) {
-            const cg = ctx.createConicGradient(a0, cx, cy);
-            cg.addColorStop(0, hsla(hue, 90, 78, 0));
-            cg.addColorStop(0.167, hsla(hue, 90, 78, 0.75 * P.spin));
-            cg.addColorStop(0.17, hsla(hue, 90, 78, 0));
-            ctx.strokeStyle = cg;
-          } else ctx.strokeStyle = hsla(hue, 90, 78, 0.5 * P.spin);
-          ctx.stroke();
-        }
-      }
-      // 6. feiner Ring (arbeitet mit Werkzeugen)
-      if (P.ring > 0.02) {
-        const rr = R0 * 1.3;
-        ctx.save();
-        ctx.translate(cx, cy);
-        ctx.rotate(t * 0.45);
-        ctx.setLineDash([1.6 * dpr, 7 * dpr]);
-        ctx.lineWidth = 1.5 * dpr;
-        ctx.strokeStyle = hsla(hue + 20, 90, 82, 0.5 * P.ring);
-        ctx.beginPath();
-        ctx.arc(0, 0, rr, 0, TAU);
-        ctx.stroke();
-        ctx.setLineDash([]);
-        const ba = t * 1.5;
-        ctx.fillStyle = hsla(hue + 20, 95, 86, 0.95 * P.ring);
-        ctx.shadowColor = hsla(hue + 20, 95, 70, 0.9 * P.ring);
-        ctx.shadowBlur = 10 * dpr;
-        ctx.beginPath();
-        ctx.arc(Math.cos(ba) * rr, Math.sin(ba) * rr, 2.6 * dpr, 0, TAU);
-        ctx.fill();
-        ctx.restore();
-      }
-    }
-
-    function frame(now) {
-      raf = 0;
-      if (!running) return;
-      const dt = last ? Math.min(0.05, (now - last) / 1000) : 1 / 60;
-      last = now;
-      t += dt;
-      const k = 1 - Math.exp(-dt * 4.5);
-      for (const key of KEYS) P[key] += (T[key] - P[key]) * k;
-      if (now - lvlAt > 320) lvlT *= Math.exp(-dt * 5);
-      lvl += (lvlT - lvl) * (1 - Math.exp(-dt * (lvlT > lvl ? 22 : 5)));
-      talkEnv += ((talking ? 1 : P.talk > 0.5 ? 0.35 : 0) - talkEnv) * (1 - Math.exp(-dt * 6));
-      kickV *= Math.exp(-dt * 7);
-      const acc = -150 * flinch - 13 * flinchV;
-      flinchV += acc * dt;
-      flinch += flinchV * dt;
-      flash *= Math.exp(-dt * 3.2);
-      if (!motion.matches) {
-        // Wellen: beim Sprechen im Rhythmus, beim Zuhoeren bei lauter Stimme
-        if (talking && now - lastRipple > 560) { ripples.push({ age: 0, life: 1.5, s: 0.8, shift: -20 }); lastRipple = now; }
-        if (P.gain > 0.9 && lvl > 0.42 && prevLvl <= 0.42 && now - lastRipple > 220) {
-          ripples.push({ age: 0, life: 1.2, s: Math.min(1, lvl + 0.2), shift: 0 });
-          lastRipple = now;
-        }
-        if (ripples.length > 6) ripples.shift();
-      }
-      prevLvl = lvl;
-      if (ctx && W) draw(dt);
-      raf = requestAnimationFrame(frame);
-    }
-
-    return {
-      start() {
-        if (running) return;
-        running = true;
-        last = 0;
-        lvl = lvlT = 0;
-        ripples.length = 0;
-        refreshColor();
-        resize();
-        if (!raf) raf = requestAnimationFrame(frame);
-      },
-      stop() {
-        running = false;
-        if (raf) cancelAnimationFrame(raf);
-        raf = 0;
-        talking = false;
-      },
-      setState(st, working) {
-        T = pick(PRESET, st === 'thinking' && working ? 'working' : st) || PRESET.listening;
-      },
-      level(v) {
-        if (!Number.isFinite(v)) return;
-        lvlT = clamp(v, 0, 1);
-        lvlAt = performance.now();
-      },
-      kick(s) { kickV = Math.min(1.4, kickV + (s || 1)); },
-      speaking(on) { talking = !!on; },
-      flinch() { flinchV -= 2.4; flash = 1; },
-      refreshColor() { if (running) refreshColor(); },
-    };
-  })();
+  const orb = {
+    start() { sphere.jarvis(byId('jv-orb'), true); sphere.cover(true); },
+    stop() { sphere.jarvis(byId('jv-orb'), false); sphere.cover(false); },
+    uncover() { sphere.cover(false); },
+    setState() { moodSync(); },
+    level(v) { sphere.level(v); },
+    kick(s) { sphere.kick(s); },
+    speaking(on) { sphere.talk('local', on); },
+    flinch() { sphere.flinch(true); },
+  };
 
   // =====================================================================
   // Jarvis-Modus: Ansicht und Ablauf
@@ -3903,6 +4294,7 @@
     hideNote();
     clearTimeout(jv.labelTimer);
     jvEl.classList.add('leaving');
+    orb.uncover();
     clearTimeout(jv.leaveTimer);
     jv.leaveTimer = setTimeout(() => {
       jvEl.hidden = true;
@@ -3913,13 +4305,15 @@
     }, 230);
     updateInert();
     updateDlgVoice();
+    moodSync();
     if (tour.open) tourPause(false);
     const back = jv.focusBack;
     jv.focusBack = null;
-    if (modal.hidden && cmodal.hidden && pmodal.hidden) {
+    if (modal.hidden && cmodal.hidden && pmodal.hidden && smodal.hidden) {
       if (back && back !== document.body && document.contains(back) && !back.closest('[inert]')) back.focus();
       else focusInput();
-    } else if (!pmodal.hidden && modal.hidden) panel.focus();
+    } else if (!smodal.hidden && modal.hidden) sdialog.focus();
+    else if (!pmodal.hidden && modal.hidden) panel.focus();
   }
 
   /** Schliessen lokal: bis "off" kommt, gehoeren Ereignisse noch zur alten Sitzung und werden
@@ -4377,6 +4771,7 @@
     if (!cmodal.hidden) { confirmKey(e); return; }
     if (askCur && !modal.hidden) { modalKey(e); return; }
     if (jv.open) { jarvisKey(e); return; }
+    if (!smodal.hidden) { setupKey(e); return; }
     if (!pmodal.hidden) { profileKey(e); return; }
     if (ended) return;
     if (tour.open && !tour.paused && e.key === 'Escape' && tourCard.contains(document.activeElement)) {
@@ -4451,6 +4846,8 @@
     askQueue = [];
     if (askCur) { askCur = null; askFocusBack = null; modal.hidden = true; }
     if (!pmodal.hidden) closeProfile(true);
+    if (!smodal.hidden) closeSetup();
+    byId('key-bar').hidden = true;
     if (confirmState) closeConfirm(false);
     if (jv.open) closeJarvisView();
     ttsStop();
@@ -4501,6 +4898,7 @@
   function clearChat() {
     if (reply) { reply.dispose(); reply = null; }
     msgs.replaceChildren();
+    markLatest();
     voiceSetupCard = null;
     pendingSent.length = 0;
     jumpBtn.hidden = true;
@@ -4545,7 +4943,12 @@
     clearChat();
     ownMsgs.length = 0;
     recallIdx = -1;
-    for (const m of list) addFromHistory(m);
+    histBuilding = true;
+    try {
+      for (const m of list) addFromHistory(m);
+    } finally {
+      histBuilding = false;
+    }
     if (keep) { msgs.append(keep.row); reply = keep; }
     else if (wasBusy) ensureReply();
     historyReady = true;
@@ -4614,20 +5017,32 @@
       case 'start':
         if (reply) endReply('done');
         ensureReply();
+        rs.phase = 'thinking';
         setBusy(true);
         break;
       case 'thinking':
-        if (ev.on) ensureReply().thinking(true);
-        else if (reply) reply.thinking(false);
+        if (ev.on) {
+          ensureReply().thinking(true);
+          if (rs.phase !== 'working') rs.phase = 'thinking';
+        } else if (reply) reply.thinking(false);
+        moodSync();
         break;
       case 'chunk':
         ensureReply().text(String(ev.text == null ? '' : ev.text));
+        rs.phase = 'writing';
+        sphere.pulse();
+        moodSync();
         break;
       case 'tool':
         ensureReply().tool(String(ev.name || ''), ev.agent ? String(ev.agent) : null);
+        if (rs.phase !== 'working') sphere.kick(0.4);
+        rs.phase = 'working';
+        moodSync();
         break;
       case 'agent':
         ensureReply().agent(ev.phase, ev.role, ev.task ? String(ev.task) : '');
+        rs.phase = 'working';
+        moodSync();
         break;
       case 'info': {
         const t = String(ev.text || '');
@@ -4639,17 +5054,20 @@
       case 'done':
         endReply('done');
         setBusy(false);
+        sphere.settle();
         maybeResync();
         break;
       case 'stopped':
         endReply('stopped');
         setBusy(false);
+        sphere.flinch(false);
         maybeResync();
         break;
       case 'error':
         endReply('error');
         addError(String(ev.text || ''));
         setBusy(false);
+        sphere.flicker();
         maybeResync();
         break;
       case 'notice':
@@ -4685,6 +5103,16 @@
         break;
       case 'level':
         if (jv.open && !jv.left) orb.level(Number(ev.value));
+        break;
+      case 'mic':
+        // Pegel beim Mikrofon-Knopf / F2: die Sphaere waechst und leuchtet mit der Stimme
+        if (voice.phase !== 'idle' && !jv.open) sphere.level(Number(ev.level));
+        break;
+      case 'speaking':
+        // Vorlesen am PC: die Sphaere spricht mit
+        speakingOn = ev.on === true;
+        sphere.talk('server', speakingOn);
+        moodSync();
         break;
       case 'say':
         onSay(ev);
