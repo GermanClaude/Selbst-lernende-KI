@@ -1,4 +1,4 @@
-"""Das "Gehirn": orchestriert den aktiven Provider (Claude oder DeepSeek).
+"""Das "Gehirn": orchestriert den aktiven Provider (Claude, DeepSeek oder Ollama).
 
 Brain ist bewusst schlank. Die eigentliche Modell-Kommunikation und der
 Werkzeug-Loop liegen im jeweiligen Provider (assistant/providers/). Brain kuemmert
@@ -167,7 +167,7 @@ class Brain:
                 self.provider._children.remove(agent)
             u = agent.usage  # Kosten des Agenten zaehlen zur Sitzung
             self.provider.usage.add(input_full=u.input_full_tokens, cache_hit=u.cache_hit_tokens,
-                                    output=u.output_tokens, usd=u.usd)
+                                    output=u.output_tokens, usd=u.usd, bepreist=u.bepreist)
         emit(f"  << Agent '{role}' fertig\n")
         if limit_reached:
             result += "\n(Hinweis: Der Agent hat sein Schritt-Limit erreicht - das Ergebnis ist evtl. unvollstaendig.)"
@@ -193,7 +193,8 @@ class Brain:
         # sonst wuerde mitten in einer Programmieraufgabe alles Gelesene vergessen.
         turns = self.provider.user_turns()
         chars = self.provider.history_chars()
-        max_chars = self.config.conversation.max_verlauf_zeichen
+        grenze = getattr(self.provider, "verlauf_grenze", None)
+        max_chars = grenze() if callable(grenze) else self.config.conversation.max_verlauf_zeichen
         too_large = bool(max_chars and chars > max_chars)
         if only_if_large and not too_large:
             return

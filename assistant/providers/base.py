@@ -113,8 +113,13 @@ class Usage:
     cache_hit_tokens: int = 0   # aus dem Cache (sehr guenstig)
     output_tokens: int = 0
     usd: float = 0.0            # Kosten, mit dem Preis des Modells, das gerade lief
+    # True = die Kosten wurden beim Zaehlen schon berechnet (auch 0 bei Ollama) - dann nie
+    # nachtraeglich mit einem anderen Preis schaetzen (sonst kosten kostenlose Token ploetzlich Geld).
+    bepreist: bool = False
 
-    def add(self, input_full: int = 0, cache_hit: int = 0, output: int = 0, usd: float = 0.0) -> None:
+    def add(self, input_full: int = 0, cache_hit: int = 0, output: int = 0, usd: float = 0.0,
+            bepreist: bool = False) -> None:
+        self.bepreist = self.bepreist or bepreist
         self.input_full_tokens += max(0, input_full)
         self.cache_hit_tokens += max(0, cache_hit)
         self.output_tokens += max(0, output)
@@ -266,6 +271,11 @@ class LLMProvider(ABC):
         """Ungefaehre Groesse des Verlaufs in Zeichen (fuer die Kompaktierung)."""
         return 0
 
+    def verlauf_grenze(self) -> int:
+        """Ab so vielen Zeichen wird der Verlauf zusammengefasst (0 = nie). Ollama: weniger,
+        weil lokale Modelle nur einen kleinen Kontext haben."""
+        return int(self.config.conversation.max_verlauf_zeichen or 0)
+
     @abstractmethod
     def summarize_history(self) -> str: ...
 
@@ -306,12 +316,12 @@ class LLMProvider(ABC):
         `model`: ein anderes Modell hat gearbeitet (z.B. DeepSeek Flash beschreibt ein Bild)."""
         usd, _eur = self.config.cost_estimate(input_full, cache_hit, output, provider=self.name,
                                               model=model, per_request=True)
-        self.usage.add(input_full=input_full, cache_hit=cache_hit, output=output, usd=usd)
+        self.usage.add(input_full=input_full, cache_hit=cache_hit, output=output, usd=usd, bepreist=True)
 
     def cost(self) -> tuple[float, float]:
         """Geschaetzte Kosten dieser Sitzung in (USD, EUR)."""
         u = self.usage
-        if u.usd <= 0 and u.total_tokens:
+        if u.usd <= 0 and u.total_tokens and not u.bepreist:
             usd, _ = self.config.cost_estimate(u.input_full_tokens, u.cache_hit_tokens, u.output_tokens)
         else:
             usd = u.usd

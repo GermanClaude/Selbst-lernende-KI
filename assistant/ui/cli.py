@@ -26,8 +26,12 @@ Sonderbefehle (mit '/' beginnen):
   /stuetzraeder an|aus - an: fragt vor allem, nur Arbeitsordner; aus: darf alles
   /aussehen [zuruecksetzen] - Aussehen der App anzeigen bzw. zuruecksetzen
   /name <Name> [= Bedeutung] - der KI einen anderen Namen geben
-  /gehirn [deepseek|claude] - Gehirn zeigen bzw. wechseln (Schluessel: einfach in den Chat einfuegen)
-  /modell [name]      - Modell zeigen bzw. waehlen (z.B. /modell sonnet, /modell flash)
+  /gehirn [deepseek|claude|ollama] - Gehirn zeigen bzw. wechseln (Schluessel: einfach in den Chat einfuegen)
+  /modell [name]      - Modell zeigen bzw. waehlen (z.B. /modell sonnet, /modell flash, /modell qwen3.5:9b)
+  /ollama             - Ollama (kostenlos, auf deinem PC): laeuft es? welche Modelle sind da?
+  /ollama laden <modell> - ein Modell fuer Ollama herunterladen (z.B. /ollama laden qwen3.5:4b)
+  /ollama adresse <url>  - andere Adresse fuer Ollama (Standard: http://localhost:11434)
+  /ollama starten     - das installierte Ollama starten
   /afk [Auftrag]      - ich bin weg: die KI arbeitet allein weiter (Strg+C = zurueck)
   /bild <pfad> [frage] - Bild mitschicken, z.B. /bild foto.jpg Was steht da drauf? (mehrere Pfade
                         moeglich, mit Leerzeichen in Anfuehrungszeichen; ohne Pfad: Zwischenablage).
@@ -190,6 +194,11 @@ class CLI:
         self._feedback_from_hint = False
         self._nutzung_lock = threading.Lock()
         self._nutzung_offen = 0.0  # gezaehlte, noch nicht gespeicherte Sekunden
+        # Ollama (kostenlos, auf dem PC): Herunterladen von Modellen; _ollama_http fuer Tests
+        from .. import ollama as _ollama
+
+        self.ollama_lader = _ollama.Lader()
+        self._ollama_http = None
 
     def _permission_answer(self, message: str, risk: Risk) -> str:
         """'einmal', 'immer' oder 'nein' - im Terminal per Eingabe, in der App per Knopf."""
@@ -704,8 +713,12 @@ class CLI:
         from ..schluessel import PROVIDERS, provider_for_key, setup
 
         target = provider or (provider_for_key(key) if key else self.config.active_provider)
-        print(_c(f"Ich pruefe den Schluessel kurz bei {PROVIDERS.get(target, {}).get('name', target)} …", GREY))
-        result = setup(self.config, key=key, provider=target)
+        if target == "ollama":
+            print(_c("Ich schaue kurz nach, ob Ollama auf deinem PC laeuft …", GREY))
+        else:
+            print(_c(f"Ich pruefe den Schluessel kurz bei {PROVIDERS.get(target, {}).get('name', target)} …", GREY))
+        extra = {"http": getattr(self, "_ollama_http", None)} if target == "ollama" else {}
+        result = setup(self.config, key=key, provider=target, **extra)
         if not result["ok"]:
             print(_c(result["message"], YELLOW))
             return False
@@ -719,14 +732,14 @@ class CLI:
         """Fuer die App: Anzeige auffrischen."""
 
     def _brain_command(self, args: list[str]) -> None:
-        from ..schluessel import PROVIDERS, key_of, mask
+        from ..schluessel import PROVIDERS, braucht_schluessel, key_of, mask
 
         if args:
             wanted = args[0].lower().replace("anthropic", "claude")
             if wanted not in PROVIDERS:
                 print(_c(f"Moeglich: {', '.join(PROVIDERS)} - z.B. /gehirn deepseek", YELLOW))
                 return
-            if not key_of(self.config, wanted):
+            if braucht_schluessel(wanted) and not key_of(self.config, wanted):
                 print(_c(f"Fuer {PROVIDERS[wanted]['name']} fehlt noch der Schluessel - fuege ihn einfach hier "
                          f"ein (zu bekommen unter {PROVIDERS[wanted]['url']}).", YELLOW))
                 return
@@ -735,9 +748,11 @@ class CLI:
         for pid, info in PROVIDERS.items():
             key = key_of(self.config, pid)
             mark = "->" if pid == self.config.active_provider else "  "
-            state = f"Schluessel {mask(key)}" if key else "kein Schluessel"
+            state = (f"Schluessel {mask(key)}" if key else "kein Schluessel") if braucht_schluessel(pid) \
+                else "kein Schluessel noetig"
             print(_c(f"{mark} {info['name']}: {info['info']} ({state})", CYAN))
-        print(_c("Wechseln: /gehirn deepseek  bzw.  /gehirn claude. Neuer Schluessel: einfach einfuegen.", GREY))
+        print(_c("Wechseln: /gehirn deepseek, /gehirn claude oder /gehirn ollama. Neuer Schluessel: einfach "
+                 "einfuegen.", GREY))
 
     # -- AFK-Modus: allein weiterarbeiten, waehrend du weg bist (abwesend.py) -------
     def _afk_request(self, auftrag: str = "", minutes: int | None = None, budget: float | None = None) -> bool:
@@ -805,15 +820,17 @@ class CLI:
 
     def _split_provider(self, args: list[str]) -> tuple[str, list[str]]:
         """'/modell deepseek pro' -> ('deepseek', ['pro']); ohne Gehirn-Name: das aktive."""
-        if args and args[0].lower() in ("claude", "anthropic", "deepseek"):
-            return ("deepseek" if args[0].lower() == "deepseek" else "claude"), args[1:]
+        if args and args[0].lower() in ("claude", "anthropic", "deepseek", "ollama"):
+            low = args[0].lower()
+            return ("claude" if low == "anthropic" else low), args[1:]
         return self.config.active_provider, args
 
     def _apply_model_choice(self, provider: str, model: str | None = None, denken: str | None = None) -> None:
         from ..modelle import waehle
 
         try:
-            result = waehle(self.config, provider, model=model, denken=denken)
+            result = waehle(self.config, provider, model=model, denken=denken,
+                            http=getattr(self, "_ollama_http", None))
         except Exception as exc:  # noqa: BLE001 - z.B. settings.toml schreibgeschuetzt
             print(_c(f"Konnte die Einstellung nicht speichern: {exc}", YELLOW))
             return
@@ -832,7 +849,10 @@ class CLI:
         if args:
             self._apply_model_choice(provider, model=" ".join(args))
             return
-        current = self.config.deepseek.model if provider == "deepseek" else self.config.claude.model
+        if provider == "ollama":
+            self._ollama_command([])
+            return
+        current = self.config.model_of(provider)
         print(_c(f"\nModelle fuer {PROVIDERS[provider]['name']}:", BOLD))
         for m in MODELLE[provider]:
             mark = "->" if m["id"] == current else "  "
@@ -848,13 +868,158 @@ class CLI:
             self._apply_model_choice(provider, denken=" ".join(args))
             return
         current = aktuelle_denktiefe(self.config, provider)
-        model = self.config.deepseek.model if provider == "deepseek" else self.config.claude.model
+        model = self.config.model_of(provider)
         print(_c(f"\nDenk-Tiefe fuer {modell_name(provider, model)}:", BOLD))
         for value, name, info in DENKTIEFEN[provider]:
             mark = "->" if value == current else "  "
             print(_c(f"{mark} {name:<16} {info}", CYAN))
         print(_c("Aendern z.B.: /denken schnell  bzw.  /denken gruendlich. Schneller antworten = weniger "
                  "nachdenken; fuer schwere Aufgaben lieber gruendlich.", GREY))
+
+    # -- Ollama (kostenlos, auf deinem PC) --------------------------------------------
+    def _ollama_command(self, args: list[str]) -> None:
+        from .. import ollama
+        from ..modelle import kurzbeschreibung
+
+        sub = args[0].lower() if args else ""
+        if sub in ("laden", "herunterladen", "pull", "download"):
+            if len(args) < 2:
+                print(_c(f"Welches Modell? z.B. /ollama laden {ollama.STANDARD_MODELL}", YELLOW))
+                return
+            self._ollama_laden(args[1])
+            return
+        if sub in ("abbrechen", "stopp", "stop"):
+            print(_c("Herunterladen abgebrochen." if self.ollama_lader.abbrechen()
+                     else "Es wird gerade nichts heruntergeladen.", CYAN))
+            return
+        if sub == "adresse":
+            self._ollama_adresse(" ".join(args[1:]))
+            return
+        if sub == "starten":
+            ok, message = ollama.starten()
+            print(_c(message, CYAN if ok else YELLOW))
+            return
+        if sub:
+            print(_c("Moeglich: /ollama, /ollama laden <modell>, /ollama adresse <url>, /ollama starten", YELLOW))
+            return
+        info = ollama.status(self.config, http=getattr(self, "_ollama_http", None))
+        print(_c("\nOllama - kostenlose KI auf deinem PC:", BOLD))
+        if info["laeuft"]:
+            version = f" (Version {info['version']})" if info["version"] else ""
+            print(_c(f"  laeuft{version} unter {info['adresse']}", GREEN))
+        elif info["installiert"] is False:
+            print(_c(f"  nicht installiert - kostenlos herunterladen: {ollama.DOWNLOAD_SEITE}", YELLOW))
+            print(_c("  (oder im Windows-Terminal: winget install Ollama.Ollama)", GREY))
+        else:
+            print(_c(f"  nicht gestartet ({info['adresse']}) - starte Ollama (Startmenue) oder tippe /ollama starten",
+                     YELLOW))
+        active = self.config.active_provider == "ollama"
+        print(_c(f"  Gehirn: {'Ollama ist aktiv' if active else 'gerade nicht aktiv - wechseln: /gehirn ollama'}",
+                 GREY))
+        print(_c(f"  Modell: {kurzbeschreibung(self.config, 'ollama')} ({self.config.ollama.model})"
+                 + ("" if info["modell_da"] or not info["laeuft"] else " - noch nicht heruntergeladen!"), CYAN))
+        if info["modelle"]:
+            print(_c("  Auf deinem PC:", BOLD))
+            for m in info["modelle"]:
+                mark = "->" if ollama.ist_installiert(self.config.ollama.model, [m["name"]]) else "  "
+                size = ollama.groesse_text(m["groesse"])
+                print(_c(f"  {mark} {m['name']}" + (f" ({size})" if size else ""), CYAN))
+        elif info["laeuft"]:
+            print(_c("  Noch kein Modell heruntergeladen.", YELLOW))
+        print(_c("  Empfohlen:", BOLD))
+        for m in info["empfohlen"]:
+            da = "heruntergeladen" if m["installiert"] else f"{m['groesse']}, {m['ram']}"
+            print(_c(f"     {m['id']:<12} {m['info']} ({da})", CYAN))
+        print(_c("Herunterladen: /ollama laden <modell>  -  Waehlen: /modell ollama <modell>", GREY))
+
+    def _ollama_starthinweis(self) -> str:
+        """Beim Start mit Ollama: laeuft es, ist das Modell da? (sonst ein Hinweis, was zu tun ist)"""
+        if self.config.active_provider != "ollama":
+            return ""
+        from .. import ollama
+
+        try:
+            info = ollama.status(self.config, http=getattr(self, "_ollama_http", None))
+        except Exception:  # noqa: BLE001
+            return ""
+        if not info["laeuft"]:
+            if info["installiert"] is False:
+                return ("Ollama ist noch nicht installiert - kostenlos unter " + ollama.DOWNLOAD_SEITE
+                        + " (danach starten). Oder anderes Gehirn: /gehirn")
+            return ollama.NICHT_ERREICHBAR.format(adresse=info["adresse"])
+        if not info["modell_da"]:
+            return ollama.MODELL_FEHLT.format(modell=self.config.ollama.model)
+        return ""
+
+    def _ollama_adresse(self, text: str) -> None:
+        from .. import ollama
+
+        if not text.strip():
+            print(_c(f"Adresse jetzt: {ollama.adresse_aus(self.config)}. Aendern: /ollama adresse "
+                     f"http://localhost:11434", CYAN))
+            return
+        try:
+            adresse = ollama.pruefe_adresse(text)
+        except ValueError as exc:
+            print(_c(str(exc), YELLOW))
+            return
+        save_setting(self.config.project_root, "ollama", "adresse", toml_string(adresse))
+        self.config.ollama.adresse = adresse
+        (self.tool_ctx.extra.get("on_model") or self.brain.model_changed)()
+        print(_c(f"Ollama-Adresse: {adresse}", GREEN))
+
+    def _ollama_laden(self, modell: str) -> None:
+        """Modell herunterladen - mit Fortschritt; Strg+C bricht ab (schon Geladenes bleibt)."""
+        from .. import ollama
+
+        dienst = ollama.Dienst(ollama.adresse_aus(self.config), self._ollama_http)
+        ende: dict = {}
+
+        def melde(ev: dict) -> None:
+            if ev.get("fertig"):
+                ende.update(ev)
+                return
+            prozent = ev.get("prozent")
+            if prozent is not None and ev.get("gesamt"):
+                text = (f"\r  {ev['text']} {prozent:5.1f} % ({ollama.groesse_text(ev['erledigt']) or '0 MB'} von "
+                        f"{ollama.groesse_text(ev['gesamt'])})   ")
+            else:
+                text = f"\r  {ev['text']}" + " " * 30
+            print(_c(text, GREY), end="", flush=True)
+
+        print(_c(f"Lade {modell} fuer Ollama herunter (Strg+C = abbrechen) …", GREY))
+        try:
+            ok, message = self.ollama_lader.starten(dienst, modell, melde, hintergrund=False)
+        except KeyboardInterrupt:
+            print(_c("\nHerunterladen abgebrochen - beim naechsten Versuch geht es an dieser Stelle weiter.", YELLOW))
+            return
+        if not ok:
+            print(_c(message, YELLOW))
+            return
+        print()
+        if ende.get("ok"):
+            print(_c(ende.get("text") or "Fertig.", GREEN))
+            hinweis = self._ollama_nach_laden(modell)
+            if hinweis:
+                print(_c(hinweis, GREEN))
+            if self.config.active_provider != "ollama":
+                print(_c("Zu Ollama wechseln: /gehirn ollama", GREY))
+        else:
+            print(_c(ende.get("fehler") or ende.get("text") or "Das hat nicht geklappt.", YELLOW))
+
+    def _ollama_nach_laden(self, modell: str) -> str:
+        """Nach dem Herunterladen: ist das eingestellte Modell gar nicht da, das neue nehmen.
+        Gibt einen Hinweis zurueck (oder ""); gibt selbst nichts aus (laeuft auch im Hintergrund)."""
+        from .. import ollama
+        from ..modelle import waehle
+
+        info = ollama.status(self.config, http=getattr(self, "_ollama_http", None))
+        if info["laeuft"] and not info["modell_da"] and ollama.ist_installiert(modell, [m["name"] for m in info["modelle"]]):
+            result = waehle(self.config, "ollama", model=modell, http=getattr(self, "_ollama_http", None))
+            if result["ok"]:
+                (self.tool_ctx.extra.get("on_model") or self.brain.model_changed)()
+                return f"Ich nutze jetzt {result['message']}"
+        return ""
 
     def _open_in_editor(self, name: str) -> None:
         path = self.config.project_root / "config" / name
@@ -1140,6 +1305,8 @@ class CLI:
             self._afk_command(cmd.split()[1:])
         elif base in ("/modell", "/model", "/modelle"):
             self._model_command(cmd.split()[1:])
+        elif base == "/ollama":
+            self._ollama_command(cmd.split()[1:])
         elif base in ("/denken", "/denktiefe", "/effort"):
             self._think_command(cmd.split()[1:])
         elif base == "/terminal":
@@ -1408,6 +1575,9 @@ class CLI:
     def _print_cost_line(self) -> None:
         u = self.brain.usage
         usd, eur = self.brain.cost()
+        if self.config.kostenlos and eur <= 0:
+            print(_c(f"[Sitzung: {u.total_tokens} Token - kostenlos (Ollama auf deinem PC)]", GREY))
+            return
         print(
             _c(
                 f"[Sitzung: {u.total_tokens} Token "
@@ -1426,6 +1596,8 @@ class CLI:
         print(f"  Output:          {u.output_tokens} Token")
         print(f"  Gesamt:          {u.total_tokens} Token")
         print(f"  Geschaetzt:      {usd:.4f} USD  (~{eur:.4f} EUR)")
+        if self.config.kostenlos:
+            print(_c("  Ollama laeuft auf deinem PC - das kostet nichts.", GREEN))
         print(_c("  (Preise anpassbar in config/settings.toml unter [preise].)", GREY))
 
     def _print_status(self) -> None:
@@ -1465,6 +1637,9 @@ class CLI:
             )
         )
         print(_c("Rede einfach los. '/hilfe' fuer Befehle, '/beenden' zum Schluss.", GREY))
+        hinweis = self._ollama_starthinweis()
+        if hinweis:
+            print(_c(hinweis, YELLOW))
         if self.config.voice.f2_aufnahme and sys.stdin is not None and sys.stdin.isatty():
             print(_c("Sprechen: bei leerer Zeile F2 halten (oder kurz druecken = Mikrofon an/aus).", GREY))
         if self.config.permissions.safe_mode:
@@ -1492,7 +1667,8 @@ KEY_HINT = (
     "Mir fehlt noch der Schluessel fuer mein Gehirn. Fuege ihn einfach hier ein und druecke Enter - "
     "ich pruefe ihn und richte alles ein:\n"
     "  DeepSeek (guenstig): beginnt mit sk-...      -> https://platform.deepseek.com/api_keys\n"
-    "  Claude (stark):      beginnt mit sk-ant-...  -> https://console.anthropic.com/settings/keys"
+    "  Claude (stark):      beginnt mit sk-ant-...  -> https://console.anthropic.com/settings/keys\n"
+    "  Oder ganz ohne Schluessel und kostenlos: Ollama auf deinem PC -> /gehirn ollama"
 )
 JARVIS_HINT = (
     "\n\n[Sprachmodus: Antworte kurz und natuerlich gesprochen - ohne Tabellen, Code und Listen-Zeichen.]"

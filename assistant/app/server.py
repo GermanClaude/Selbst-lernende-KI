@@ -7,13 +7,14 @@ koennen. Der Server spricht nur mit der eigenen Oberflaeche:
   GET  /, /static/*      Oberflaeche
   GET  /api/events       Ereignisstrom (Server-Sent Events)
   GET  /api/state, /api/history, /api/profile, /api/memory, /api/tutorial, /api/appearance, /custom.css,
-       /api/setup, /api/feedback
+       /api/setup, /api/feedback, /api/ollama
   GET  /api/bild/<h|e>/<name>?t=   Bild anzeigen: h = hochgeladen (data/bilder/hochgeladen),
                                    e = erstellt (<Arbeitsordner>/bilder) - nur PNG/JPEG/GIF/WebP
   POST /api/send (Text + Bilder, Warteschlange, interrupt), /api/queue, /api/afk, /api/stop,
        /api/answer, /api/voice, /api/toggle, /api/profile, /api/memory, /api/jarvis, /api/tutorial,
        /api/setup, /api/modell, /api/update, /api/feedback, /api/feedback/spaeter,
-       /api/feedback/gezeigt, /api/bilder/einstellen
+       /api/feedback/gezeigt, /api/bilder/einstellen,
+       /api/ollama/laden, /api/ollama/abbrechen, /api/ollama/adresse, /api/ollama/starten
 Anfragen duerfen hoechstens 1 MB gross sein - /api/send und /api/feedback (mit Bildern) 40 MB.
 """
 from __future__ import annotations
@@ -182,6 +183,8 @@ class AppServer:
                     return self._json(ctl.setup_info())
                 if url.path == "/api/feedback":
                     return self._json(ctl.feedback_status())
+                if url.path == "/api/ollama":
+                    return self._json(ctl.ollama_info())
                 if url.path.startswith("/api/bild/"):
                     return self._bild(url.path[len("/api/bild/"):])
                 return self._deny(404)
@@ -304,6 +307,14 @@ class AppServer:
                     return self._json(ctl.choose_model(body))
                 if url.path == "/api/update":
                     return self._json(ctl.check_update_now())
+                if url.path == "/api/ollama/laden":
+                    return self._json(ctl.ollama_laden(body))
+                if url.path == "/api/ollama/abbrechen":
+                    return self._json(ctl.ollama_abbrechen())
+                if url.path == "/api/ollama/adresse":
+                    return self._json(ctl.ollama_adresse(body))
+                if url.path == "/api/ollama/starten":
+                    return self._json(ctl.ollama_starten())
                 return self._deny(404)
 
             def _static(self, name: str) -> None:

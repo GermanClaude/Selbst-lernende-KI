@@ -154,3 +154,106 @@ class DSChat:
 class DSClient:
     def __init__(self, scripted_streams, non_stream=None):
         self.chat = DSChat(scripted_streams, non_stream)
+
+
+# ----- Ollama (eigene Schnittstelle /api/...) ------------------------------
+class OllamaAntwort:
+    """Antwort wie von urllib: read(), readline(), close()."""
+
+    def __init__(self, data=None, lines=None):
+        self._lines = [(json.dumps(x) if not isinstance(x, (bytes, str)) else x) for x in (lines or [])]
+        self._lines = [(x.encode() if isinstance(x, str) else x) + b"\n" for x in self._lines]
+        self._body = json.dumps(data).encode() if data is not None else b"".join(self._lines)
+        self.closed = False
+
+    def read(self):
+        return self._body
+
+    def readline(self):
+        if self.closed or not self._lines:
+            return b""
+        return self._lines.pop(0)
+
+    def close(self):
+        self.closed = True
+
+
+def ollama_http_fehler(code, text):
+    import io
+    import urllib.error
+
+    return urllib.error.HTTPError("http://localhost:11434/x", code, "Fehler", {},
+                                  io.BytesIO(json.dumps({"error": text}).encode()))
+
+
+def ollama_chunk(content="", thinking="", tool_calls=None, done=False, done_reason="stop",
+                 prompt=0, completion=0):
+    msg = {"role": "assistant", "content": content}
+    if thinking:
+        msg["thinking"] = thinking
+    if tool_calls:
+        msg["tool_calls"] = tool_calls
+    data = {"model": "m", "message": msg, "done": done}
+    if done:
+        data.update(done_reason=done_reason, prompt_eval_count=prompt, eval_count=completion)
+    return data
+
+
+class FakeOllama:
+    """Unechter Ollama-Server als http-Funktion (methode, url, daten, timeout) -> Antwort.
+
+    caps: Modell -> Liste der Faehigkeiten (fehlt ein Modell: 404 bei /api/show).
+    chats: Liste je /api/chat-Anfrage: Liste von Zeilen (dicts), ein dict (nicht gestreamt)
+           oder eine Exception. offline=True: jede Anfrage scheitert wie "Verbindung abgelehnt"."""
+
+    def __init__(self, caps=None, chats=None, models=None, version="0.30.1", offline=False, pulls=None):
+        self.caps = {"qwen3.5:4b": ["completion", "tools", "vision", "thinking"]} if caps is None else caps
+        self.chats = list(chats or [])
+        self.models = list(self.caps) if models is None else models
+        self.version = version
+        self.offline = offline
+        self.pulls = pulls or {}
+        self.requests = []
+
+    def chat_requests(self):
+        return [d for m, p, d in self.requests if p == "/api/chat"]
+
+    def __call__(self, methode, url, daten, timeout):
+        import copy
+        import urllib.error
+        from urllib.parse import urlsplit
+
+        path = urlsplit(url).path
+        self.requests.append((methode, path, copy.deepcopy(daten)))
+        if self.offline:
+            raise urllib.error.URLError(ConnectionRefusedError(111, "Connection refused"))
+        if path == "/api/version":
+            return OllamaAntwort({"version": self.version})
+        if path == "/api/tags":
+            return OllamaAntwort({"models": [{"name": n, "model": n, "size": 3_400_000_000,
+                                              "details": {"parameter_size": "4B", "family": "qwen"}}
+                                             for n in self.models]})
+        if path == "/api/show":
+            name = daten["model"]
+            if name not in self.caps:
+                raise ollama_http_fehler(404, f"model '{name}' not found")
+            return OllamaAntwort({"capabilities": self.caps[name]})
+        if path == "/api/pull":
+            item = self.pulls.get(daten["model"])
+            if item is None:
+                return OllamaAntwort(lines=[{"status": "pulling manifest"},
+                                            {"error": "pull model manifest: file does not exist"}])
+            if isinstance(item, BaseException):
+                raise item
+            if item and item[-1].get("status") == "success" and daten["model"] not in self.models:
+                self.models.append(daten["model"])  # danach "heruntergeladen"
+                self.caps.setdefault(daten["model"], ["completion", "tools"])
+            return OllamaAntwort(lines=item)
+        if path == "/api/chat":
+            item = self.chats.pop(0) if self.chats else [ollama_chunk("ok", done=True)]
+            if isinstance(item, BaseException):
+                raise item
+            if isinstance(item, dict):
+                return OllamaAntwort(item)
+            return OllamaAntwort(lines=item)
+        raise ollama_http_fehler(404, "404 page not found")

@@ -311,7 +311,80 @@
     return body;
   }
 
+  // ---------------------------------------------------------------------
+  // Ollama (kostenlos, auf dem PC) – Daten aus GET /api/ollama und Ereignisse "ollama_pull"
+  // ---------------------------------------------------------------------
+  const OLLAMA_DOWNLOAD = 'https://ollama.com/download';
+  const OLLAMA_MODELLE_SEITE = 'https://ollama.com/search?c=tools';
+  const RE_OLLAMA_NAME = /^[A-Za-z0-9][A-Za-z0-9._\-/:]{0,150}$/;
+  const ollamaName = (v) => {
+    const n = String(v == null ? '' : v).trim();
+    return RE_OLLAMA_NAME.test(n) && !n.includes('..') ? n : '';
+  };
+  const txt = (v, max) => String(v == null ? '' : v).trim().slice(0, max || 200);
+  const jaNein = (v) => (v === true ? true : v === false ? false : null);
+  const zahl = (v) => (Number.isFinite(Number(v)) && Number(v) > 0 ? Math.round(Number(v)) : 0);
+
+  /** Bytes -> "3,4 GB" / "512 MB" (leer bei 0). */
+  function ollamaGroesse(bytes) {
+    const b = zahl(bytes);
+    if (!b) return '';
+    if (b >= 1e9) return (b / 1e9).toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' GB';
+    return Math.max(1, Math.round(b / 1e6)).toLocaleString('de-DE') + ' MB';
+  }
+
+  /** Fortschritt in Prozent (0–100) oder null (unbekannt). */
+  function prozent(v) {
+    if (v == null || v === '' || !Number.isFinite(Number(v))) return null;
+    return Math.max(0, Math.min(100, Number(v)));
+  }
+
+  /** Ereignis "ollama_pull" bzw. "laden" aus /api/ollama -> sauberes Objekt (oder null). */
+  function normPull(ev) {
+    if (!ev || typeof ev !== 'object' || Array.isArray(ev)) return null;
+    const model = ollamaName(ev.model);
+    if (!model) return null;
+    return {
+      model, text: txt(ev.text, 160), prozent: prozent(ev.prozent), erledigt: zahl(ev.erledigt), gesamt: zahl(ev.gesamt),
+      fertig: ev.fertig === true, ok: ev.ok === true, abgebrochen: ev.abgebrochen === true, fehler: txt(ev.fehler, 300),
+    };
+  }
+
+  /** "Lade herunter … 45 % (1,5 GB von 3,4 GB)" */
+  function pullText(p) {
+    if (!p) return '';
+    const base = p.text || 'Lade herunter …';
+    if (p.prozent == null || !p.gesamt) return base;
+    const pz = Math.floor(p.prozent).toLocaleString('de-DE') + ' %';
+    return base + ' ' + pz + ' (' + (ollamaGroesse(p.erledigt) || '0 MB') + ' von ' + ollamaGroesse(p.gesamt) + ')';
+  }
+
+  /** GET /api/ollama -> {laeuft, version, installiert, adresse, openai, modelle, empfohlen, modell, ...} oder null. */
+  function normOllama(d) {
+    if (!d || typeof d !== 'object' || Array.isArray(d)) return null;
+    const adresse = txt(d.adresse, 200);
+    const seen = new Set();
+    const modelle = (Array.isArray(d.modelle) ? d.modelle : []).filter((m) => m && typeof m === 'object').map((m) => {
+      const name = ollamaName(m.name);
+      return {
+        name, anzeige: txt(m.anzeige, 80) || name, groesse: txt(m.groesse_text, 20) || ollamaGroesse(m.groesse),
+        werkzeuge: jaNein(m.werkzeuge), bilder: jaNein(m.sieht_bilder), denkt: jaNein(m.denkt), aktiv: m.aktiv === true,
+      };
+    }).filter((m) => m.name && !seen.has(m.name) && seen.add(m.name)).slice(0, 60);
+    const empfohlen = (Array.isArray(d.empfohlen) ? d.empfohlen : []).filter((m) => m && typeof m === 'object').map((m) => ({
+      id: ollamaName(m.id), name: txt(m.name, 60), info: txt(m.info, 140), groesse: txt(m.groesse, 20), ram: txt(m.ram, 60),
+      werkzeuge: m.werkzeuge === true, bilder: m.sieht_bilder === true, installiert: m.installiert === true,
+    })).filter((m) => m.id).slice(0, 12);
+    return {
+      laeuft: d.laeuft === true, version: txt(d.version, 30), installiert: jaNein(d.installiert),
+      adresse: /^https?:\/\/[^\s"'<>\\]+$/.test(adresse) ? adresse : '', openai: d.openai === true,
+      modelle, empfohlen, modell: ollamaName(d.modell), modellDa: d.modell_da === true, fehler: txt(d.fehler, 400),
+      laden: normPull(d.laden), aktiv: d.aktiv === true, modelName: txt(d.model_name, 80), kontext: zahl(d.kontext),
+    };
+  }
+
   return {
+    OLLAMA_DOWNLOAD, OLLAMA_MODELLE_SEITE, ollamaName, ollamaGroesse, normPull, pullText, normOllama,
     ERLAUBT, MAX_KANTE, MAX_KANTE_FEEDBACK, JPEG_GUETE, MAX_DATEI, BEHALTEN_BIS, MAX_CHAT, MAX_FEEDBACK,
     CHAT_GESAMT, FEEDBACK_GESAMT,
     typ, zielMass, behalten, kodierung, hatTransparenz, pruefSchritt, dataUrlTyp, dataUrlBytes, mitTyp,

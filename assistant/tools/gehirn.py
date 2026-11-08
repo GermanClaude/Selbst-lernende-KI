@@ -12,10 +12,13 @@ class GehirnEinstellenTool(Tool):
         "Zeigt oder aendert, welches Modell du nutzt und wie gruendlich du nachdenkst - NUR auf "
         "ausdruecklichen Wunsch deines Menschen (z.B. 'denk schneller', 'antworte schneller', 'nimm "
         "Sonnet', 'denk gruendlicher'). aktion: 'anzeigen' oder 'setzen'. modell: bei Claude opus | "
-        "sonnet | haiku | fable, bei DeepSeek flash | pro. denken: schnell | ausgewogen | gruendlich | "
-        "sehr gruendlich | maximal. Gilt ab deiner naechsten Antwort, das Gespraech bleibt erhalten. "
-        "Mehr Denk-Tiefe = bessere Antworten bei schweren Aufgaben, aber laengeres Warten und hoehere "
-        "Kosten. Zwischen Claude und DeepSeek wechselt dein Mensch selbst (in der App unter Gehirn)."
+        "sonnet | haiku | fable, bei DeepSeek flash | pro, bei Ollama ein heruntergeladenes Modell (z.B. "
+        "qwen3.5:4b). denken: schnell | ausgewogen | gruendlich | sehr gruendlich | maximal. Gilt ab deiner "
+        "naechsten Antwort, das Gespraech bleibt erhalten. Mehr Denk-Tiefe = bessere Antworten bei schweren "
+        "Aufgaben, aber laengeres Warten und hoehere Kosten. Zwischen Claude, DeepSeek und Ollama (kostenlos, "
+        "auf dem PC) wechselt dein Mensch selbst: in der App unter 'Gehirn & Schluessel' oder mit /gehirn "
+        "ollama (bzw. /gehirn claude, /gehirn deepseek) - sag ihm das, wenn er wechseln moechte. Neue "
+        "Ollama-Modelle laedt er mit /ollama laden <modell>."
     )
     input_schema = {
         "type": "object",
@@ -32,6 +35,15 @@ class GehirnEinstellenTool(Tool):
         if config is None:
             return "Hier nicht moeglich (keine Einstellungen verfuegbar)."
         provider = config.active_provider
+        if aktion == "anzeigen" and provider == "ollama":
+            from .. import ollama
+
+            info = ollama.status(config)
+            da = ", ".join(m["name"] for m in info["modelle"]) or "noch keins"
+            return (f"Jetzt: {modelle.kurzbeschreibung(config)} (Ollama, kostenlos auf dem PC, "
+                    f"{'laeuft' if info['laeuft'] else 'laeuft gerade nicht'}). Heruntergeladen: {da}. "
+                    "Empfohlen: " + "; ".join(f"{m['id']} ({m['info']}, {m['groesse']})" for m in ollama.EMPFOHLEN)
+                    + ". Denk-Tiefen: schnell, gruendlich.")
         if aktion == "anzeigen":
             info = modelle.beschreibung(config)[provider]
             models = "; ".join(f"{m['name']} ({m['info']})" for m in info["modelle"])
@@ -47,6 +59,13 @@ class GehirnEinstellenTool(Tool):
         # Teure Wahl (staerkstes Modell / maximale Tiefe) nur mit Zustimmung
         wanted_model = modelle._finde_modell(provider, modell) if modell else None
         wanted_level = modelle.finde_denktiefe(provider, denken) if denken else None
+        if provider == "ollama" and wanted_model:
+            from .. import ollama
+
+            info = ollama.status(config)
+            if info["laeuft"] and not ollama.ist_installiert(wanted_model, [m["name"] for m in info["modelle"]]):
+                return (f"Nicht geaendert: {wanted_model} ist noch nicht heruntergeladen. Dein Mensch kann es "
+                        f"mit /ollama laden {wanted_model} holen (oder in der App unter Gehirn & Schluessel).")
         if wanted_model == "claude-fable-5-1" or wanted_level == "max":
             ctx.permissions.require(Risk.MODERATE, "Teureres Denken einstellen "
                                     f"({modell or ''} {denken or ''})".replace("  ", " "))
