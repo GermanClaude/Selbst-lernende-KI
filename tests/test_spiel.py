@@ -632,3 +632,194 @@ def test_tasten_halten_mit_bild_und_spielfremde_aktion(tmp_path):
     assert "Unbekannte Aktion" in alles
     assert u.tasten.gedrueckt(0x43) == 0  # nach einem Fehler werden die weiteren Aktionen ausgelassen
     assert u.tasten.gedrueckt(0x09) == 1
+
+
+# -- Korrekturen aus der Pruefung ----------------------------------------------------------
+@pytest.mark.parametrize("kombi", [["alt", "tab", "tab"], ["alt", "tab", "1"], ["shift", "alt", "tab"],
+                                   ["ctrl", "esc", "a"], ["ctrl", "shift", "esc", "a"], ["shift", "tab", "tab"],
+                                   ["alt", "esc", "esc"], ["ctrl", "c", "c"], ["alt", "space"], ["alt", "enter", "a"],
+                                   ["alt", "f4", "x"], ["shift", "ctrl", "c"]])
+def test_sperrliste_laesst_sich_nicht_mit_extra_tasten_umgehen(kombi):
+    tasten = FakeTasten()
+    e = _eingabe(tasten=tasten)
+    with pytest.raises(EingabeFehler):
+        e.kombi(kombi)
+    with pytest.raises(EingabeFehler):
+        e.kombi(kombi, freigabe=True)
+    assert not tasten.ereignisse
+
+
+def test_erlaubte_kombinationen_gehen_weiter():
+    e = _eingabe()
+    for kombi in (["alt"], ["shift", "1"], ["ctrl", "shift", "1"], ["ctrl", "1"], ["alt", "w"]):
+        e.kombi(kombi)
+
+
+def test_gehaltene_tasten_zaehlen_mit():
+    tasten = FakeTasten()
+    e = _eingabe(tasten=tasten)
+    e._runter("alt")  # z.B. noch von einer vorigen Aktion gehalten
+    with pytest.raises(EingabeFehler):
+        e.kombi(["tab"])
+    e.loslassen()
+    assert tasten.gedrueckt(0x09) == 0
+
+
+def test_vor_jedem_tastendruck_wird_neu_geprueft():
+    class Kippt(Vorne):
+        def __init__(self):
+            super().__init__()
+            self.n = 0
+
+        def __call__(self):
+            self.n += 1
+            return dict(SPIEL) if self.n <= 2 else dict(NOVA)  # mitten in der Kombination: Fenster weg
+
+    tasten = FakeTasten()
+    e = _eingabe(Kippt(), tasten)
+    with pytest.raises(FensterWeg):
+        e.kombi(["ctrl", "1"])
+    runter = [ev for ev in tasten.ereignisse if ev[0] == "taste" and ev[2]]
+    hoch = [ev for ev in tasten.ereignisse if ev[0] == "taste" and not ev[2]]
+    assert [ev[1] for ev in runter] == [0xA2] and [ev[1] for ev in hoch] == [0xA2]  # '1' nie gedrueckt
+
+
+def test_scrollen_ohne_ort_geht_zuerst_ins_spielfenster():
+    tasten = FakeTasten()
+    e = _eingabe(tasten=tasten)
+    tasten.pos = (5, 5)  # Zeiger ausserhalb des Spiels (z.B. ueber Nova)
+    e._erwartet = None
+    e.scrollen(2)
+    bewegt = [ev for ev in tasten.ereignisse if ev[0] == "abs"]
+    assert bewegt == [("abs", 100 + round(0.5 * 1919), 50 + round(0.5 * 1079))]
+    assert [ev for ev in tasten.ereignisse if ev[0] == "rad"] == [("rad", 1)] * 2
+    tasten.ereignisse.clear()
+    tasten.pos = (300, 300)  # schon im Spiel: dort bleiben
+    e._erwartet = (300, 300)
+    e.scrollen(-1)
+    assert not [ev for ev in tasten.ereignisse if ev[0] == "abs"]
+
+
+def test_minimiertes_fenster_hat_keine_groesse(monkeypatch):
+    from assistant.sehen import windows as sw
+    from assistant.spiel import windows as w
+
+    monkeypatch.setattr(w, "ist_windows", lambda: True)
+    monkeypatch.setattr(sw, "vordergrund", lambda: dict(SPIEL, rechteck=(-32000, -32000, 160, 28)))
+    monkeypatch.setattr(w, "client_rechteck", lambda hwnd: None)
+    info = w.vordergrund_info()
+    assert info["rechteck"] == (0, 0, 0, 0)
+    e = _eingabe(Vorne(info))
+    with pytest.raises(FensterWeg, match="minimiert"):
+        e.taste("c")
+
+
+def test_bilder_nach_mitternacht_im_ordner_des_starttags(tmp_path):
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    from assistant.spiel.sitzung import SpielSitzung
+
+    assert SpielSitzung._ordner_datum(SimpleNamespace(bilder_ordner=Path("w/spiele/2026-11-07"))) == "20261107"
+    u = Umgebung(tmp_path, [_werkzeug(1, "spiel_ende", {"grund": "fertig", "text": "ok"}), _text("ok")])
+    s = u.spielen()
+    for bild in s.bericht_bilder:
+        assert bild.name.startswith(s.bilder_ordner.name.replace("-", "") + "_")
+
+
+def test_modellfehler_zaehlen_als_fehler_und_das_spiel_laeuft_nicht_weiter(tmp_path):
+    u = Umgebung(tmp_path, [RuntimeError("Netz weg")])
+    s = u.spielen()
+    assert s.ende == "fehler"
+    assert u.tasten.gedrueckt(0x20) == 0  # nie unbeaufsichtigt weiterlaufen lassen
+    assert len(u.provider) >= 5  # nach jedem Fehler ein frisches Gespraech (keine Bilder-Stapel)
+    assert all(len(json.loads(r)) == 1 for r in u.client.messages.requests)
+    assert "nicht geantwortet" in " ".join(s.journal.von("problem"))
+
+
+def test_leere_antwort_ohne_werkzeug_ist_ein_fehler(tmp_path):
+    u = Umgebung(tmp_path, [_text("")])
+    s = u.spielen()
+    assert s.ende == "fehler" and "leere Antwort" in " ".join(s.journal.von("problem"))
+
+
+def test_routine_meldungen_werden_keine_karten(tmp_path):
+    u = Umgebung(tmp_path, [_werkzeug(1, "spiel_notiz", {"art": "plan", "text": "Plan A"}), _text("Zug fertig."),
+                            _text("weiter")])
+    u.cfg.spiel.max_schritte = 4
+    s = u.spielen()
+    assert s.ende == "schritte"
+    assert not any(n.startswith("Zug ") or n.startswith("Plan:") for n in u.notizen)
+    assert s.letztes  # das Band bekommt den Stand trotzdem
+
+
+def test_stopp_waehrend_des_bildes_schickt_keine_anfrage_mehr(tmp_path):
+    u = Umgebung(tmp_path, [_text("ok")])
+    original = u.bilder.__call__
+
+    def aufnahme(rechteck):
+        bild = original(rechteck)
+        if u.st.sitzung is not None:
+            u.st.stoppen()
+        return bild
+
+    u.st.aufnahme = aufnahme
+    s = u.spielen()
+    assert s.ende == "nutzer" and u.client.messages.calls == 0
+
+
+def test_grenze_beim_laufenlassen_pausiert_das_spiel(tmp_path):
+    u = Umgebung(tmp_path, [_aktion(1, [{"typ": "warten", "zahl": 0.1}]), _text("weiter")], laufen_sekunden=120)
+    s = u.spielen(stunden=0.05)  # 3 Minuten - die Grenze kommt mitten im Laufenlassen
+    assert s.ende == "zeit"
+    assert u.tasten.gedrueckt(0x20) % 2 == 0 and s.pausiert is True
+    assert "Zum Schluss pausiert." in s.journal.von("system")
+
+
+def test_bei_mausuebernahme_kein_pausieren(tmp_path, monkeypatch):
+    u = Umgebung(tmp_path, [_aktion(1, [{"typ": "klick", "x": 0.5, "y": 0.5}, {"typ": "warten", "zahl": 0.1},
+                                        {"typ": "klick", "x": 0.2, "y": 0.2}]), _text("ok")])
+    original = Eingabe.warten
+
+    def warten(self, sekunden):
+        self.tasten.pos = (1, 1)  # dein Mensch greift zur Maus
+        return original(self, sekunden)
+
+    monkeypatch.setattr(Eingabe, "warten", warten)
+    s = u.spielen()
+    assert s.ende == "maus"
+    assert "Zum Schluss pausiert." not in s.journal.von("system")
+
+
+def test_spielbilder_gehen_als_jpeg_und_bytes_begrenzen_das_gespraech(tmp_path, monkeypatch):
+    from assistant.spiel import sitzung as sitzung_modul
+    from assistant.spiel.bild import fuer_ki
+
+    import os
+
+    Image = pytest.importorskip("PIL.Image")
+    puffer = io.BytesIO()
+    Image.frombytes("RGB", (1200, 700), os.urandom(1200 * 700 * 3)).save(puffer, "PNG")  # wie ein echtes Spielbild
+    gross = puffer.getvalue()
+    bild = fuer_ki(gross, "x.png", 1280)
+    assert bild.mime == "image/jpeg" and bild.name.endswith(".jpg") and len(bild.data) < len(gross)
+    monkeypatch.setattr(sitzung_modul, "MAX_BILD_BYTES_IM_GESPRAECH", 1)
+    u = Umgebung(tmp_path, [_aktion(1, [{"typ": "warten", "zahl": 0.1}]), _text("ok")])
+    u.cfg.spiel.max_schritte = 3
+    s = u.spielen()
+    assert s.ende == "schritte" and len(u.provider) == 3
+
+
+def test_stopp_kurz_vor_dem_start_der_sitzung_wird_nie_verschluckt(tmp_path):
+    u = Umgebung(tmp_path, [_text("ok")])
+    bauen = u.st._sitzung_bauen
+
+    def bauen_und_stopp(start, info):
+        sitzung = bauen(start, info)
+        u.st.stoppen()  # genau zwischen Bauen und Starten
+        return sitzung
+
+    u.st._sitzung_bauen = bauen_und_stopp
+    assert u.st.starten("Stadt", einverstanden=True)["ok"]
+    assert u.st.warten(20)
+    assert u.st.letzte_sitzung is None and not u.tasten.ereignisse and u.client.messages.calls == 0

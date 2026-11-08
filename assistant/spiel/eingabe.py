@@ -73,6 +73,9 @@ IMMER_VERBOTEN = {
     "shift+tab": "Umschalt+Tab \u00f6ffnet das Steam-Overlay.",
     "alt+enter": "Alt+Enter wechselt den Vollbildmodus.",
 }
+# Alt zusammen mit diesen Tasten ist immer gesperrt - egal, welche Tasten noch dazukommen
+# (Alt+Tab/Esc wechseln das Fenster, Alt+F4 schliesst, Alt+Leertaste = Systemmenue, Alt+Enter = Vollbild).
+ALT_NIE = {"tab", "esc", "f4", "space", "enter"}
 MAX_HALTEN = 5.0     # Sekunden, laenger haelt Nova keine Taste
 MAX_WARTEN = 30.0
 _DEFAULT_HALTEN = 0.06
@@ -122,16 +125,26 @@ class Erlaubnis:
     erlaubte_tasten: set[str] = field(default_factory=set)
     verbotene_kombis: dict[str, str] = field(default_factory=dict)
 
-    def pruefen(self, namen: list[str]) -> None:
-        if "win" in namen:
+    def sperre_pruefen(self, namen) -> None:
+        """Nur die Sperrliste - fuer jede Menge gleichzeitig gedrueckter Tasten (auch mit Extra-Tasten:
+        Alt+Tab+1 ist genauso gesperrt wie Alt+Tab)."""
+        menge = set(namen)
+        if "win" in menge:
             raise EingabeFehler("Die Windows-Taste ist im Spielmodus gesperrt.")
-        if "ctrl" in namen and "alt" in namen:
+        if {"ctrl", "alt"} <= menge:
             raise EingabeFehler("Strg+Alt-Kombinationen sind im Spielmodus gesperrt (System und Not-Aus).")
-        text = kombi_text(namen)
-        grund = IMMER_VERBOTEN.get(text) or self.verbotene_kombis.get(text)
-        if grund:
-            raise EingabeFehler(f"Gesperrt: {text} \u2013 {grund}")
-        for name in namen:
+        if "alt" in menge and menge & ALT_NIE:
+            raise EingabeFehler(f"Gesperrt: Alt mit {'/'.join(sorted(menge & ALT_NIE))} (System-Tasten von Windows).")
+        if "ctrl" in menge and "esc" in menge:
+            raise EingabeFehler("Gesperrt: Strg+Esc \u00f6ffnet das Startmen\u00fc.")
+        for kombi, grund in (*IMMER_VERBOTEN.items(), *self.verbotene_kombis.items()):
+            teile = set(kombi.split("+"))
+            if teile and teile <= menge:
+                raise EingabeFehler(f"Gesperrt: {kombi} \u2013 {grund}")
+
+    def pruefen(self, namen) -> None:
+        self.sperre_pruefen(namen)
+        for name in set(namen):
             if name not in MODIFIER and self.erlaubte_tasten and name not in self.erlaubte_tasten:
                 raise EingabeFehler(f"Die Taste '{name}' ist f\u00fcr dieses Spiel nicht freigegeben.")
 
@@ -223,7 +236,15 @@ class Eingabe:
             self.schlafe(min(0.05, rest))
 
     # -- Grundbausteine -----------------------------------------------------------------
+    def _gehaltene_namen(self) -> list[str]:
+        nach_code = {wert: name for name, wert in TASTEN.items()}
+        return [nach_code[t] for t in self._gedrueckt_tasten if t in nach_code]
+
     def _runter(self, name: str) -> None:
+        # Die ganze Menge, die gleich gedrueckt ist, gegen die Sperrliste - und direkt vor dem
+        # Senden noch einmal: Spiel vorne, nicht angehalten?
+        self.erlaubnis.sperre_pruefen([*self._gehaltene_namen(), name])
+        self.pruefen()
         vk, erw = TASTEN[name]
         self.tasten.taste(vk, True, erw)
         self._gedrueckt_tasten.append((vk, erw))
@@ -237,6 +258,8 @@ class Eingabe:
     def _knopf(self, knopf: str, runter: bool) -> None:
         if knopf not in ("links", "rechts", "mitte"):
             raise EingabeFehler("Maustaste: links, rechts oder mitte.")
+        if runter:
+            self.pruefen()  # direkt vor dem Druecken: Spiel noch vorne?
         self.tasten.maus_knopf(knopf, runter)
         if runter:
             self._gedrueckt_knoepfe.append(knopf)
@@ -272,7 +295,7 @@ class Eingabe:
             raise EingabeFehler("Keine Taste angegeben.")
         if len(namen) > 4:
             raise EingabeFehler("H\u00f6chstens 4 Tasten gleichzeitig.")
-        tasten = [tastenname(n) for n in namen]
+        tasten = list(dict.fromkeys(tastenname(n) for n in namen))  # doppelte Tasten zaehlen einmal
         if freigabe:
             Erlaubnis(set(), self.erlaubnis.verbotene_kombis).pruefen(tasten)
         else:
@@ -280,9 +303,11 @@ class Eingabe:
         halten = min(MAX_HALTEN, max(0.03, float(halten or _DEFAULT_HALTEN)))
         reihenfolge = [t for t in MODIFIER if t in tasten] + [t for t in tasten if t not in MODIFIER]
         self.pruefen()
+        gedrueckt: list[str] = []
         try:
             for name in reihenfolge:
                 self._runter(name)
+                gedrueckt.append(name)
                 self.schlafe(0.02)
             if waehrend is not None:
                 vorher = min(0.4, halten)
@@ -292,7 +317,7 @@ class Eingabe:
             else:
                 self._warte(halten)
         finally:
-            for name in reversed(reihenfolge):
+            for name in reversed(gedrueckt):  # nur loslassen, was wirklich gedrueckt wurde
                 try:
                     self._hoch(name)
                 except Exception:  # noqa: BLE001
@@ -407,6 +432,10 @@ class Eingabe:
         if nx is not None and ny is not None:
             self._bewege(*self.punkt(nx, ny, info["rechteck"]))
             self.schlafe(0.05)
+        elif not self._zeiger_im_fenster(info["rechteck"]):
+            # Das Mausrad geht an das Fenster UNTER dem Zeiger - also erst in die Mitte des Spiels.
+            self._bewege(*self.punkt(0.5, 0.5, info["rechteck"]))
+            self.schlafe(0.05)
         schritt = 1 if rasten > 0 else -1
         for _ in range(abs(rasten)):
             self.pruefen()
@@ -414,6 +443,32 @@ class Eingabe:
             self.schlafe(0.04)
         self.zaehler += 1
         self.schlafe(_PAUSE_ZWISCHEN)
+
+    def _zeiger_im_fenster(self, rechteck) -> bool:
+        try:
+            pos = self.tasten.cursor()
+        except Exception:  # noqa: BLE001
+            pos = None
+        if pos is None:
+            return False
+        x, y, b, h = rechteck
+        return x <= pos[0] < x + b and y <= pos[1] < y + h
+
+    def notfall_pause(self, name: str) -> bool:
+        """Zum Schluss einmal die Pausentaste - auch nach einem Stopp (sonst liefe die Stadt allein
+        weiter). Nur wenn das Spiel vorne ist. True = gedrueckt."""
+        try:
+            name = tastenname(name)
+            self.erlaubnis.sperre_pruefen([name])
+            if not self.ziel.passt(self.vordergrund()):
+                return False
+            vk, erw = TASTEN[name]
+            self.tasten.taste(vk, True, erw)
+            self.schlafe(_DEFAULT_HALTEN)
+            self.tasten.taste(vk, False, erw)
+            return True
+        except Exception:  # noqa: BLE001
+            return False
 
     def warten(self, sekunden: Any) -> float:
         try:

@@ -13,6 +13,7 @@ Waehrend der Sitzung bleiben PC und Bildschirm wach (danach wie vorher).
 from __future__ import annotations
 
 import math
+import re
 import threading
 import time
 from dataclasses import dataclass
@@ -32,6 +33,13 @@ logger = get_logger()
 
 MAX_AKTIONEN = 12
 MAX_BILDER_IM_GESPRAECH = 60   # danach frisches Gespraech (Claude: hoechstens 100 Bilder pro Anfrage)
+MAX_BILD_BYTES_IM_GESPRAECH = 20 * 1024 * 1024  # ... oder so viele Bild-Bytes (Claude: 32 MB pro Anfrage)
+MAX_FEHLER_FOLGE = 6           # so viele Fehler hintereinander (z.B. Netz weg), dann Schluss
+# Woran man erkennt, dass das Modell nicht geantwortet hat (die Provider liefern dann einen Text)
+FEHLER_MUSTER = re.compile(
+    r"\[(Fehler vom Modell|Keine Verbindung zum Modell|Verbindung zum Modell unterbrochen|[A-Za-z]+-(Stream)?[Ff]ehler:)"
+    r"|^Es gab ein Problem bei der Verbindung zum Modell|Ollama antwortet nicht \(|ist noch nicht heruntergeladen"
+    r"|^Ollama meldet:|Das Modell hat die Nachricht mit Bild abgelehnt", re.MULTILINE)
 STILLSTAND_SCHWELLE = 1.5      # mittlere Helligkeitsaenderung (0..255), darunter gilt: nichts bewegt sich
 GRUENDE = {
     "nutzer": "Du hast angehalten.",
@@ -166,6 +174,10 @@ class SpielSitzung:
         self._erholt = ""
         self._schwarz = 0
         self._fehler_folge = 0
+        self._bild_bytes_im_gespraech = 0
+        self._gespraech_kaputt = False   # Modell hat nicht geantwortet -> frisches Gespraech
+        self._werkzeug_aufrufe = 0
+        self._zug_fehler = False         # dieser Zug ging schief -> das Spiel NICHT laufen lassen
         self._letztes_png: bytes | None = None
         self._zwischenbilder: list[Path] = []
         self._letztes_zwischenbild = 0.0
@@ -201,14 +213,15 @@ class SpielSitzung:
     def kosten(self) -> float:
         if self.kostenlos:
             return 0.0
+        with self._lock:
+            provider, alt = self._provider, self._kosten_alt
         aktuell = 0.0
-        provider = self._provider
         if provider is not None:
             try:
                 aktuell = float(provider.cost()[1])
             except Exception:  # noqa: BLE001
                 aktuell = 0.0
-        return self._kosten_alt + aktuell
+        return alt + aktuell
 
     def usages(self) -> list:
         """Verbrauch aller Gespraeche dieser Sitzung (fuer die Gesamtkosten der App)."""
@@ -226,8 +239,12 @@ class SpielSitzung:
             "letztes": self.letztes, "ende": self.ende, "fenster": self.eingabe.ziel.beschreibung(),
         }
 
-    def _melden(self, text: str) -> None:
+    def _melden(self, text: str, wichtig: bool = True) -> None:
+        """wichtig=False: nur der Stand im Band (letztes) - sonst gaebe es nachts tausende Karten."""
         self.letztes = text[:200]
+        if not wichtig:
+            self._aktualisieren()
+            return
         try:
             self.on_notiz(text)
         except Exception:  # noqa: BLE001
@@ -274,6 +291,9 @@ class SpielSitzung:
                     break
                 if self._fenster_weg:
                     continue
+                if self._zug_fehler:  # ohne Antwort der KI laeuft das Spiel nicht unbeaufsichtigt weiter
+                    self._zug_fehler = False
+                    continue
                 self._lassen_laufen()
         except Exception:  # noqa: BLE001 - lieber aufhoeren als unbeaufsichtigt Fehler wiederholen
             logger.exception("Spielsitzung")
@@ -285,6 +305,7 @@ class SpielSitzung:
                 self.eingabe.loslassen()
             except Exception:  # noqa: BLE001
                 pass
+            self._zum_schluss_pausieren()
             self.wach.ausschalten()
             if notaus is not None:
                 try:
@@ -301,6 +322,15 @@ class SpielSitzung:
             self.zustand = "beendet"
             self._aktualisieren()
         return self.ende
+
+    def _zum_schluss_pausieren(self) -> None:
+        """Endet die Sitzung (Grenze, Stopp, Fehler), waehrend das Spiel laeuft, nie die Stadt allein
+        weiterlaufen lassen. Ausnahme: du hast mit der Maus uebernommen - dann fasst Nova nichts an."""
+        if (self.ende or self._grenze) == "maus" or self.pausiert is not False:
+            return
+        if self.eingabe.notfall_pause(self.profil.tasten.get("pause", "space")):
+            self.pausiert = True
+            self.journal.notiz("system", "Zum Schluss pausiert.")
 
     def _waechter(self, fertig: threading.Event) -> None:
         """Zeit und Euro auch mitten in einem Zug pruefen (ein Zug kann dauern)."""
@@ -417,14 +447,17 @@ class SpielSitzung:
         prompt = self._zug_prompt(png)
         self.eingabe.neuer_zug()
         provider.cancel_event.clear()
+        if self.stop_event.is_set() or self._grenze:  # Stopp kam waehrend Bild/Zusammenfassung
+            return self._grenze_erreicht() or "nutzer"
         snapshot = provider.history_snapshot()
-        self._melden(f"Zug {self.zuege}: ich schaue hin und entscheide \u2026")
-        self._aktualisieren()
+        gesehen: list[str] = []
+        aufrufe_vorher = self._werkzeug_aufrufe
+        self._melden(f"Zug {self.zuege}: ich schaue hin und entscheide \u2026", wichtig=False)
         try:
             kwargs = {"bilder": bilder} if bilder else {}
-            antwort = provider.respond(prompt, on_text=None, max_tool_rounds=self.grenzen.max_aktionen_pro_zug,
-                                       announce_limit=False, **kwargs)
-            self._fehler_folge = 0
+            antwort = provider.respond(prompt, on_text=gesehen.append,
+                                       max_tool_rounds=self.grenzen.max_aktionen_pro_zug, announce_limit=False,
+                                       **kwargs)
         except KeyboardInterrupt:  # Abgebrochen (Stopp, Grenze, Fenster weg)
             try:
                 provider.abort_turn(snapshot, prompt)
@@ -441,15 +474,32 @@ class SpielSitzung:
             return self._fehler(f"KI: {type(exc).__name__}: {exc}")
         finally:
             self._bilder_im_gespraech += len(bilder)
+            self._bild_bytes_im_gespraech += sum(len(b.data) for b in bilder)
             self._zuege_im_gespraech += 1
             self.journal.daten["zuege"] = self.zuege
             self.journal.speichern()
+        problem = self._antwort_problem(provider, antwort, "".join(gesehen), aufrufe_vorher)
+        if problem:
+            self._gespraech_kaputt = True  # unbeantwortete Bilder nicht weiter anhaeufen
+            return self._fehler(f"KI hat nicht geantwortet: {problem}")
+        self._fehler_folge = 0
         satz = " ".join(str(antwort or "").split())[:200]
         if satz and satz != "(keine Textantwort)":
-            self._melden(f"Zug {self.zuege}: {satz}")
+            self._melden(f"Zug {self.zuege}: {satz}", wichtig=False)
         self._aktualisieren()
         if self.ergebnis and self._grenze in ("fertig", "aufgeben"):
             return self._grenze
+        return ""
+
+    def _antwort_problem(self, provider, antwort: str, gesehen: str, aufrufe_vorher: int) -> str:
+        """Hat das Modell wirklich geantwortet? Die Provider melden API-/Verbindungsfehler als Text."""
+        if getattr(provider, "_error_status", None) is not None:
+            return f"API-Fehler {provider._error_status}"
+        text = f"{gesehen}\n{antwort or ''}"
+        if FEHLER_MUSTER.search(text):
+            return " ".join(text.split())[:160]
+        if self._werkzeug_aufrufe == aufrufe_vorher and str(antwort or "").strip() in ("", "(keine Textantwort)"):
+            return "leere Antwort"
         return ""
 
     def _eingabe_problem(self, exc: Exception) -> str:
@@ -463,12 +513,14 @@ class SpielSitzung:
 
     def _fehler(self, text: str) -> str:
         self._fehler_folge += 1
+        self._zug_fehler = True
         self.journal.notiz("problem", text[:300])
         logger.info("Spielmodus: %s", text)
-        if self._fehler_folge >= 3:
+        if self._fehler_folge >= MAX_FEHLER_FOLGE:
             return "fehler"
-        self._melden(f"Problem: {text[:150]} \u2013 ich versuche es gleich nochmal.")
-        self._pause(min(30.0, 3.0 * 2 ** self._fehler_folge))
+        warten = min(300.0, 5.0 * 2 ** self._fehler_folge)  # 10 s, 20 s, 40 s ... (Netz kurz weg)
+        self._melden(f"Problem: {text[:150]} \u2013 ich versuche es in {int(warten)} s nochmal.")
+        self._pause(warten)
         return ""
 
     def _pause(self, sekunden: float) -> None:
@@ -501,8 +553,8 @@ class SpielSitzung:
         self._aktualisieren()
         start = self.uhr()
         while self.uhr() - start < sekunden:
-            if self.stop_event.is_set() or self._grenze:
-                return
+            if self.stop_event.is_set() or self._grenze_erreicht():
+                return  # (am Ende der Sitzung pausiert _zum_schluss_pausieren)
             if not self.eingabe.ist_vorne():
                 self._fenster_weg = True
                 return
@@ -565,8 +617,10 @@ class SpielSitzung:
     # -- Gespraech mit der KI -------------------------------------------------------------
     def _provider_holen(self):
         alt = self._provider
-        neu_noetig = (alt is None or self._zuege_im_gespraech >= self.grenzen.neustart_nach_zuegen
-                      or self._bilder_im_gespraech >= MAX_BILDER_IM_GESPRAECH)
+        neu_noetig = (alt is None or self._gespraech_kaputt
+                      or self._zuege_im_gespraech >= self.grenzen.neustart_nach_zuegen
+                      or self._bilder_im_gespraech >= MAX_BILDER_IM_GESPRAECH
+                      or self._bild_bytes_im_gespraech >= MAX_BILD_BYTES_IM_GESPRAECH)
         if not neu_noetig:
             grenze = getattr(alt, "verlauf_grenze", None)
             try:
@@ -577,22 +631,33 @@ class SpielSitzung:
         if not neu_noetig:
             return alt
         if alt is not None:
-            self._zusammenfassen(alt)
+            if not self._gespraech_kaputt and not self.stop_event.is_set():
+                self._zusammenfassen(alt)
             try:
-                self._kosten_alt += 0.0 if self.kostenlos else float(alt.cost()[1])
+                alt_kosten = 0.0 if self.kostenlos else float(alt.cost()[1])
             except Exception:  # noqa: BLE001
-                pass
-            self._usages.append(alt.usage)
+                alt_kosten = 0.0
+            with self._lock:  # Kosten nie doppelt zaehlen (alt + neues Gespraech)
+                self._kosten_alt += alt_kosten
+                self._usages.append(alt.usage)
+                self._provider = None
         neu = self.provider_fabrik(self.system_prompt(), self.registry, self.tool_ctx)
-        self._provider = neu
+        with self._lock:
+            self._provider = neu
+        if self.stop_event.is_set():
+            neu.cancel()
+        self._gespraech_kaputt = False
         self._zuege_im_gespraech = 0
         self._bilder_im_gespraech = 0
+        self._bild_bytes_im_gespraech = 0
         self._neues_gespraech = True
         return neu
 
     def _zusammenfassen(self, provider) -> None:
         try:
             provider.cancel_event.clear()
+            if self.stop_event.is_set():
+                return
             text = provider.respond(ZUSAMMENFASSEN, on_text=None, max_tool_rounds=1, announce_limit=False,
                                     allow_tools=False)
             if text and text != "(keine Textantwort)":
@@ -687,6 +752,7 @@ class SpielSitzung:
 
     # -- Werkzeuge (von assistant/tools/spiel.py aufgerufen) ----------------------------------
     def aktionen_ausfuehren(self, aktionen: Any, laufen_sekunden: Any = None, bild_danach: bool = True):
+        self._werkzeug_aufrufe += 1
         if not self.laeuft or self.zustand in ("endet", "beendet"):
             return "Die Spielsitzung ist vorbei."
         if not isinstance(aktionen, list) or not aktionen:
@@ -755,6 +821,7 @@ class SpielSitzung:
         except BildFehler as exc:
             return bericht + f"\n(Kein neues Bild: {exc})"
         self._bilder_im_gespraech += 1
+        self._bild_bytes_im_gespraech += len(bild.data)
         wann = "w\u00e4hrend die Taste gehalten wurde" if bild_waehrend is not None else "danach"
         return ToolOutput(f"{bericht}\nNeues Bild des Spielfensters ({wann}):", [bild])
 
@@ -812,6 +879,7 @@ class SpielSitzung:
         raise EingabeFehler(f"Unbekannte Aktion '{typ}'.")
 
     def notiz(self, art: str, text: str = "", elemente: Any = None) -> str:
+        self._werkzeug_aufrufe += 1
         if art == "kalibrierung":
             gesammelt: dict[str, dict] = {}
             for eintrag in elemente if isinstance(elemente, list) else []:
@@ -841,10 +909,11 @@ class SpielSitzung:
         self.journal.notiz(art, text, zug=self.zuege)
         self.journal.speichern()
         if art in ("plan", "fortschritt"):
-            self._melden(("Plan: " if art == "plan" else "") + text[:180])
+            self._melden(("Plan: " if art == "plan" else "") + text[:180], wichtig=False)
         return "Notiert."
 
     def beenden_wunsch(self, grund: str, text: str = "") -> str:
+        self._werkzeug_aufrufe += 1
         grund = "fertig" if grund == "fertig" else "aufgeben"
         self.ergebnis = " ".join(str(text or "").split())[:1500] or ("Ziel erreicht." if grund == "fertig" else "")
         self.journal.notiz("fortschritt" if grund == "fertig" else "problem",
@@ -864,7 +933,7 @@ class SpielSitzung:
         bild = als_bericht_bild(png, "spiel.png")
         if bild is None:
             return
-        stamm = f"{time.strftime('%Y%m%d_%H%M%S')}_{self.journal.kennung[-6:]}_{len(self.bericht_bilder) + 1}"
+        stamm = f"{self._ordner_datum()}_{time.strftime('%H%M%S')}_{self.journal.kennung[-6:]}_{len(self.bericht_bilder) + 1}"
         try:
             pfad = bild.speichern(self.bilder_ordner, stamm=stamm)
         except OSError:
@@ -883,6 +952,16 @@ class SpielSitzung:
         elif erstes:
             self._letztes_zwischenbild = jetzt
         self.bericht_bilder.append(pfad)
+
+    def _ordner_datum(self) -> str:
+        """Datum des Bilder-Ordners (JJJJMMTT) - nach Mitternacht nicht das neue Datum (sonst findet
+        die App die Bilder nicht: sie sucht im Ordner, dessen Datum vorn im Namen steht)."""
+        import re
+
+        name = self.bilder_ordner.name if self.bilder_ordner is not None else ""
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", name):
+            return name.replace("-", "")
+        return time.strftime("%Y%m%d")
 
     def _abschluss(self) -> None:
         self.journal.daten["ende"] = self.ende

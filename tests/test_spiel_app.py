@@ -241,3 +241,26 @@ def test_terminal_ganze_sitzung(cli, capsys, monkeypatch):
 def test_terminal_nicht_unter_linux(cli, capsys):
     cli._handle_command("/spiel start Stadt")
     assert "nur unter Windows" in capsys.readouterr().out
+
+
+def test_spiel_befehl_ohne_angabe_haelt_ein_laufendes_spiel_nicht_an(app):
+    server = app([_text("ok")])
+    ctl = server.controller
+    vorne = Vorne(dict(SPIEL, exe="ki-app.exe", titel="Nova", pid=1, hwnd=9))  # Nova wartet aufs Spiel
+    _fakes(ctl.spiel, vorne)
+    ctl.spiel.zustimmen()
+    assert _req(server, "/api/spiel", {"aktion": "start", "ziel": "Stadt"})[1]["ok"]
+    assert _req(server, "/api/send", {"text": "/spiel"})[1]["ok"]
+    events = _events_until(server, "notice")
+    assert not any(e["type"] == "open" for e in events)
+    assert ctl.spiel.aktiv
+    ctl.spiel.stoppen()
+    assert ctl.spiel.warten(10)
+
+
+def test_berichtsbilder_ordner_nach_dem_datum_im_namen(app):
+    server = app([_text("ok")])
+    ctl = server.controller
+    ordner = ctl.bild_ordner("s", "20261107_013000_abcdef_2.jpg")
+    assert ordner.name == "2026-11-07" and ordner.parent.name == "spiele"
+    assert ctl.bild_ordner("s", "bild.jpg") is None

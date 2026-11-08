@@ -104,7 +104,10 @@
 
   async function oeffnen(opts) {
     if (!modal) return;
-    if (st && st.aktiv) { anhalten(); return; }
+    if (st && st.aktiv) { // läuft schon: nur Bescheid geben – angehalten wird nur mit Stopp
+      app().toast(app().name() + ' spielt gerade – anhalten mit „Stopp“ im Band ober dem Chat.', 'info', 5000);
+      return;
+    }
     zurueck = document.activeElement;
     const o = opts || {};
     fehler('');

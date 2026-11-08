@@ -83,9 +83,29 @@ def mit_raster(png: bytes) -> bytes:
         return png
 
 
+JPEG_QUALITAET = 80
+
+
 def fuer_ki(png: bytes, name: str, max_kante: int, raster: bool = True) -> Bild:
-    """Einmal vorbereitet (verkleinert) - so geht es an die KI. Wirft BildFehler."""
-    return vorbereiten(mit_raster(png) if raster else png, name, max_kante=max(256, min(int(max_kante or 1280), 2000)))
+    """Einmal vorbereitet - so geht es an die KI. Immer als JPEG (ein Spielbild als PNG hat 1,5-3 MB;
+    viele davon sprengen die Groessengrenze einer Anfrage). Wirft BildFehler."""
+    kante = max(256, min(int(max_kante or 1280), 2000))
+    roh = mit_raster(png) if raster else png
+    Image, _ = _pillow()
+    stamm = str(name or "spiel").rsplit(".", 1)[0]
+    if Image is None:
+        return vorbereiten(roh, f"{stamm}.png", max_kante=kante)
+    try:
+        bild = Image.open(io.BytesIO(roh)).convert("RGB")
+        faktor = min(1.0, kante / max(bild.size))
+        if faktor < 1.0:
+            bild = bild.resize((max(1, round(bild.size[0] * faktor)), max(1, round(bild.size[1] * faktor))),
+                               Image.LANCZOS)
+        puffer = io.BytesIO()
+        bild.save(puffer, "JPEG", quality=JPEG_QUALITAET, optimize=True)
+    except Exception as exc:  # noqa: BLE001 - kaputtes Bild
+        raise BildFehler("Das Bild vom Spiel lie\u00df sich nicht umwandeln.") from exc
+    return vorbereiten(puffer.getvalue(), f"{stamm}.jpg", max_kante=kante)
 
 
 def fingerabdruck(png: bytes) -> tuple[int, ...] | None:

@@ -257,8 +257,8 @@ class SpielSteuerung:
         with self._lock:
             sitzung, start = self.sitzung, self._start
             self.vorschlag = None
-        if start is not None:
-            self._start_stopp.set()
+            if start is not None:
+                self._start_stopp.set()  # unter der Sperre (siehe _lauf)
         if sitzung is not None and sitzung.laeuft:
             sitzung.stop(grund)
             return "Ich halte an \u2013 der Bericht kommt gleich."
@@ -316,7 +316,11 @@ class SpielSteuerung:
             sitzung = self._sitzung_bauen(start, info)
             if sitzung is None:
                 return
-            with self._lock:
+            with self._lock:  # unter derselben Sperre wie stoppen(): ein Stopp geht nie verloren
+                if self._start_stopp.is_set():
+                    self._start = None
+                    self._melden("Spielmodus abgebrochen.")
+                    return
                 self.sitzung = sitzung
                 self._start = None
             self.permissions.begin_spiel(sitzung.profil.name)

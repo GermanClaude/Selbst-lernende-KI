@@ -972,7 +972,7 @@ class AppController(CLI):
             print(ergebnis.get("text") if ergebnis.get("ok") else ergebnis.get("error", "Ging nicht."))
             self._state_changed()
             return
-        if sub == "":
+        if sub == "" and not self.spiel.aktiv:  # laeuft schon: nur der Stand (nie anhalten)
             self._event({"type": "open", "what": "spiel", "ziel": "", "modus": "normal"})
         super()._spiel_command(rest)
         self._state_changed()

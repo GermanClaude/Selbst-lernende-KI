@@ -214,7 +214,7 @@ def client_rechteck(hwnd) -> tuple[int, int, int, int] | None:  # pragma: no cov
         return None
 
 
-def vordergrund_info() -> dict | None:  # pragma: no cover - nur unter Windows
+def vordergrund_info() -> dict | None:
     """{"hwnd", "pid", "exe", "titel", "rechteck"} des vorderen Fensters - rechteck = Innenbereich."""
     if not ist_windows():
         return None
@@ -223,10 +223,9 @@ def vordergrund_info() -> dict | None:  # pragma: no cover - nur unter Windows
     info = vordergrund()
     if not info:
         return None
-    innen = client_rechteck(info.get("hwnd"))
-    if innen:
-        info = dict(info, rechteck=innen)
-    return info
+    # Kein Innenbereich (minimiert: GetWindowRect meldet dann -32000,-32000) -> Groesse 0, damit der
+    # Waechter jede Eingabe ablehnt - nie das alte Fensterrechteck weiterverwenden.
+    return dict(info, rechteck=client_rechteck(info.get("hwnd")) or (0, 0, 0, 0))
 
 
 class WachHalter:
