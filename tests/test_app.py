@@ -559,3 +559,32 @@ def test_update_indicator_and_send_right_away_switch(app, tmp_path):
     _req(server, "/api/toggle", {"name": "sofort_senden", "value": True})
     assert _req(server, "/api/state")[1]["voice_autosend"] is True
     assert load_config(tmp_path).voice.sofort_senden is True
+
+
+def test_model_choice_in_the_app_and_by_command(app, tmp_path):
+    from assistant.config import load_config
+
+    server = app([])
+    setup = _req(server, "/api/setup")[1]
+    claude = setup["modelle"]["claude"]
+    assert claude["model"] == "claude-opus-5-5"
+    assert [d["name"] for d in claude["denktiefen"]][:3] == ["schnell", "ausgewogen", "gründlich"]
+    assert "Opus" in _req(server, "/api/state")[1]["model_name"]
+
+    status, result = _req(server, "/api/modell", {"provider": "claude", "model": "claude-sonnet-5-5",
+                                                  "denken": "low"})
+    assert status == 200 and result["ok"], result
+    assert result["setup"]["modelle"]["claude"]["model"] == "claude-sonnet-5-5"
+    assert "Sonnet" in _req(server, "/api/state")[1]["model_name"]
+    assert load_config(tmp_path).claude.effort == "low"
+    assert not _req(server, "/api/modell", {"provider": "claude", "model": "quatsch"})[1]["ok"]
+    assert _req(server, "/api/modell", {"provider": "claude"})[1]["ok"] is False
+
+    _req(server, "/api/send", {"text": "/denken gruendlich"})
+    events = _events_until(server, "notice")
+    assert "gründlich" in events[-1]["text"]
+    assert load_config(tmp_path).claude.effort == "high"
+    _req(server, "/api/send", {"text": "/modell deepseek pro"})
+    events = _events_until(server, "notice")
+    assert "DeepSeek V4 Pro" in events[-1]["text"]
+    assert load_config(tmp_path).deepseek.model == "deepseek-v4-pro"

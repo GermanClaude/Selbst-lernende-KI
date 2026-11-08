@@ -98,7 +98,8 @@ def test_key(config, provider: str, key: str) -> tuple[bool, str, str]:
                             timeout=Timeout(25.0, connect=10.0), max_retries=0)
             # 1 Token Antwort: kostet praktisch nichts, zeigt aber auch leeres Guthaben
             client.chat.completions.create(model=config.deepseek.model, max_tokens=1,
-                                           messages=[{"role": "user", "content": "Hi"}])
+                                           messages=[{"role": "user", "content": "Hi"}],
+                                           extra_body={"thinking": {"type": "disabled"}})
         else:
             import anthropic
 
@@ -158,12 +159,17 @@ def setup(config, key: str | None = None, provider: str | None = None, test: boo
 
 def describe(config) -> dict:
     """Fuer die Einstellungen in der App."""
+    from .modelle import beschreibung, kurzbeschreibung
+
     return {
+        "modelle": beschreibung(config),
+        "aktuell": kurzbeschreibung(config),
         "provider": config.active_provider,
         "providers": [
             {"id": pid, "name": info["name"], "info": info["info"], "url": info["url"],
              "has_key": bool(key_of(config, pid)), "key_hint": mask(key_of(config, pid) or "") if key_of(config, pid)
-             else "", "model": config.deepseek.model if pid == "deepseek" else config.claude.model}
+             else "", "model": config.deepseek.model if pid == "deepseek" else config.claude.model,
+             "model_name": kurzbeschreibung(config, pid)}
             for pid, info in PROVIDERS.items()
         ],
         "key_missing": not config.api_key,

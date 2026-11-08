@@ -53,6 +53,12 @@ class Brain:
         self._on_text: StreamFn | None = None
         self._agent_running = False
         tool_ctx.extra["agent_runner"] = self.run_agent
+        tool_ctx.extra["config"] = config
+        tool_ctx.extra.setdefault("on_model", self.model_changed)
+
+    def model_changed(self) -> None:
+        """Modell/Denk-Tiefe wurde umgestellt - gilt ab der naechsten Anfrage."""
+        self.provider.settings_changed()
 
     @property
     def usage(self) -> Usage:
@@ -139,7 +145,7 @@ class Brain:
                 self.provider._children.remove(agent)
             u = agent.usage  # Kosten des Agenten zaehlen zur Sitzung
             self.provider.usage.add(input_full=u.input_full_tokens, cache_hit=u.cache_hit_tokens,
-                                    output=u.output_tokens)
+                                    output=u.output_tokens, usd=u.usd)
         emit(f"  << Agent '{role}' fertig\n")
         if limit_reached:
             result += "\n(Hinweis: Der Agent hat sein Schritt-Limit erreicht - das Ergebnis ist evtl. unvollstaendig.)"

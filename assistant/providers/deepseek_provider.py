@@ -38,6 +38,9 @@ class DeepSeekProvider(LLMProvider):
     def __init__(self, *args: Any, **kwargs: Any):
         super().__init__(*args, **kwargs)
         self._finish_reason: str | None = None
+        # Lehnt DeepSeek das Nachdenken in diesem Gespraech ab (z.B. alter Verlauf ohne
+        # Denk-Text), laeuft der Rest des Gespraechs ohne - statt bei jeder Frage zu scheitern.
+        self._thinking_off = False
         # OpenAI-Format: System-Prompt ist die erste Nachricht.
         self.messages: list[dict[str, Any]] = [{"role": "system", "content": self.system_prompt}]
         if self.client is None:
@@ -82,7 +85,7 @@ class DeepSeekProvider(LLMProvider):
         for _ in range(rounds):
             self._finish_reason = None
             self._waiting()
-            text, tool_calls = self._one_turn(on_text, tool_choice="auto" if allow_tools else "none")
+            text, tool_calls, reasoning = self._one_turn(on_text, tool_choice="auto" if allow_tools else "none")
             if text is None:
                 return "Es gab ein Problem bei der Verbindung zu DeepSeek."
             if text:
@@ -91,6 +94,9 @@ class DeepSeekProvider(LLMProvider):
 
             # Assistenten-Nachricht (OpenAI-Format) anhaengen.
             assistant_msg: dict[str, Any] = {"role": "assistant", "content": text or ""}
+            if reasoning is not None:
+                # Beim Nachdenken mit Werkzeugen will DeepSeek den Denk-Text spaeter zurueck.
+                assistant_msg["reasoning_content"] = reasoning
             if tool_calls:
                 assistant_msg["tool_calls"] = [
                     {
@@ -138,21 +144,65 @@ class DeepSeekProvider(LLMProvider):
 
         return "\n".join(final_parts).strip() or "(keine Textantwort)"
 
+    # -- Nachdenken ---------------------------------------------------------
+    def settings_changed(self) -> None:
+        self._thinking_off = False  # neue Wahl -> Nachdenken wieder probieren
+
+    def _think_level(self) -> str:
+        """aus | low | high | max - im Live-Modus zaehlt Tempo (effort_override)."""
+        if self._thinking_off:
+            return "aus"
+        from ..modelle import deepseek_denken
+
+        return deepseek_denken(self.config, self.effort_override)
+
+    def _max_tokens(self, level: str) -> int:
+        # Der Denk-Text zaehlt mit - beim Nachdenken mehr Platz lassen.
+        extra = {"low": 16384, "high": 32768, "max": 65536}.get(level, 0)
+        return max(int(self.config.deepseek.max_tokens or 0), extra)
+
+    def _request_messages(self, thinking: bool) -> list[dict[str, Any]]:
+        """Mit Nachdenken: jede Assistenten-Nachricht traegt einen Denk-Text (notfalls leer).
+        Ohne: Denk-Texte weglassen (werden dann ohnehin nicht gebraucht)."""
+        out = []
+        for m in self.messages:
+            if m.get("role") != "assistant":
+                out.append(m)
+            elif thinking and "reasoning_content" not in m:
+                out.append({**m, "reasoning_content": ""})
+            elif not thinking and "reasoning_content" in m:
+                out.append({k: v for k, v in m.items() if k != "reasoning_content"})
+            else:
+                out.append(m)
+        return out
+
     def _one_turn(self, on_text: StreamFn | None, tool_choice: str = "auto", retried: bool = False):
-        """Ein Modell-Durchlauf (gestreamt). Gibt (text, tool_calls) zurueck."""
+        """Ein Modell-Durchlauf (gestreamt). Gibt (text, tool_calls, denk_text) zurueck -
+        denk_text ist None, wenn ohne Nachdenken gearbeitet wurde."""
+        level = self._think_level()
+        thinking = level != "aus"
+        kwargs: dict[str, Any] = {
+            "model": self.config.deepseek.model,
+            "messages": self._request_messages(thinking),
+            "tools": self.registry.specs_openai(),
+            "tool_choice": tool_choice,
+            "max_tokens": self._max_tokens(level),
+            "stream": True,
+            "stream_options": {"include_usage": True},
+        }
+        if thinking:
+            kwargs["extra_body"] = {"thinking": {"type": "enabled"}, "reasoning_effort": level}
+        else:
+            kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
+            kwargs["temperature"] = self.config.deepseek.temperature
         try:
-            stream = self.client.chat.completions.create(
-                model=self.config.deepseek.model,
-                messages=self.messages,
-                tools=self.registry.specs_openai(),
-                tool_choice=tool_choice,
-                max_tokens=self.config.deepseek.max_tokens,
-                temperature=self.config.deepseek.temperature,
-                stream=True,
-                stream_options={"include_usage": True},
-            )
+            stream = self.client.chat.completions.create(**kwargs)
         except Exception as exc:  # noqa: BLE001
             self._check_cancel()
+            if thinking and _is_thinking_error(exc):
+                logger.warning("DeepSeek lehnt Nachdenken in diesem Gespraech ab - weiter ohne: %s", exc)
+                self._thinking_off = True
+                return self._one_turn(on_text, tool_choice, retried=retried)
             # Kontext voll (sehr viele/grosse Dateien gelesen): alte Werkzeug-Ausgaben
             # kuerzen und einmal neu versuchen, statt bei jedem "weiter" erneut zu scheitern.
             if not retried and _is_context_error(exc) and self._shrink_old_tool_outputs():
@@ -161,9 +211,10 @@ class DeepSeekProvider(LLMProvider):
             logger.error("DeepSeek-Fehler: %s", exc)
             if on_text:
                 on_text(f"\n[DeepSeek-Fehler: {exc}]")
-            return (None, None)
+            return (None, None, None)
 
         text_parts: list[str] = []
+        reasoning_parts: list[str] = []
         # tool_calls nach Index sammeln (Fragmente kommen verteilt an).
         tool_acc: dict[int, dict[str, str]] = {}
 
@@ -178,6 +229,8 @@ class DeepSeekProvider(LLMProvider):
                 if getattr(chunk.choices[0], "finish_reason", None):
                     self._finish_reason = chunk.choices[0].finish_reason
                 delta = chunk.choices[0].delta
+                if getattr(delta, "reasoning_content", None):
+                    reasoning_parts.append(delta.reasoning_content)
                 if getattr(delta, "content", None):
                     text_parts.append(delta.content)
                     if on_text:
@@ -198,13 +251,13 @@ class DeepSeekProvider(LLMProvider):
             logger.error("DeepSeek-Streamfehler: %s", exc)
             if on_text:
                 on_text(f"\n[DeepSeek-Streamfehler: {exc}]")
-            return (None, None)
+            return (None, None, None)
 
         finally:
             self._active_stream = None
 
         tool_calls = [tool_acc[i] for i in sorted(tool_acc) if tool_acc[i]["name"]]
-        return ("".join(text_parts), tool_calls)
+        return ("".join(text_parts), tool_calls, "".join(reasoning_parts) if thinking else None)
 
     def _track_usage(self, usage: Any) -> None:
         if not usage:
@@ -214,9 +267,9 @@ class DeepSeekProvider(LLMProvider):
         prompt = getattr(usage, "prompt_tokens", 0) or 0
         if hit is None and miss is None:
             # Kein Cache-Detail -> alles als voller Input werten.
-            self.usage.add(input_full=prompt, output=getattr(usage, "completion_tokens", 0) or 0)
+            self._count(input_full=prompt, output=getattr(usage, "completion_tokens", 0) or 0)
             return
-        self.usage.add(
+        self._count(
             input_full=miss or 0,
             cache_hit=hit or 0,
             output=getattr(usage, "completion_tokens", 0) or 0,
@@ -255,7 +308,7 @@ class DeepSeekProvider(LLMProvider):
     def history_chars(self) -> int:
         total = 0
         for m in self.messages[1:]:
-            total += len(m.get("content") or "")
+            total += len(m.get("content") or "") + len(m.get("reasoning_content") or "")
             for tc in m.get("tool_calls") or []:
                 total += len(tc["function"]["arguments"] or "")
         return total
@@ -272,6 +325,7 @@ class DeepSeekProvider(LLMProvider):
                 ],
                 max_tokens=max_tokens,
                 stream=False,
+                extra_body={"thinking": {"type": "disabled"}},
             )
             self._track_usage(getattr(resp, "usage", None))
             return (resp.choices[0].message.content or "").strip()
@@ -291,6 +345,7 @@ class DeepSeekProvider(LLMProvider):
                 ],
                 max_tokens=4000,
                 stream=False,
+                extra_body={"thinking": {"type": "disabled"}},
             )
             self._track_usage(getattr(resp, "usage", None))
             if getattr(resp.choices[0], "finish_reason", "stop") == "length":
@@ -311,6 +366,13 @@ class DeepSeekProvider(LLMProvider):
 
 _SHRUNK_NOTE = "\n…(aeltere Ausgabe gekuerzt, weil der Kontext voll war - bei Bedarf neu lesen)"
 _CONTEXT_ERROR_HINTS = ("context length", "context_length", "maximum context", "too many tokens", "too long")
+
+
+def _is_thinking_error(exc: Exception) -> bool:
+    """400 wegen fehlendem/ungueltigem Denk-Text (reasoning_content) bzw. Denk-Parametern."""
+    status = getattr(exc, "status_code", None)
+    text = str(exc).lower()
+    return status in (400, 422) and ("reasoning" in text or "thinking" in text)
 
 
 def _is_context_error(exc: Exception) -> bool:

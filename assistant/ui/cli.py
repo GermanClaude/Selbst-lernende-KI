@@ -27,6 +27,8 @@ Sonderbefehle (mit '/' beginnen):
   /aussehen [zuruecksetzen] - Aussehen der App anzeigen bzw. zuruecksetzen
   /name <Name> [= Bedeutung] - der KI einen anderen Namen geben
   /gehirn [deepseek|claude] - Gehirn zeigen bzw. wechseln (Schluessel: einfach in den Chat einfuegen)
+  /modell [name]      - Modell zeigen bzw. waehlen (z.B. /modell sonnet, /modell flash)
+  /denken [stufe]     - wie gruendlich die KI nachdenkt: schnell, ausgewogen, gruendlich ...
   /app                - zur App wechseln (eigenes Fenster statt Terminal)
   /verknuepfung       - Symbol fuer die App auf den Desktop legen
   /erlauben alles     - nie mehr nachfragen, alles erlauben (dauerhaft)
@@ -413,6 +415,59 @@ class CLI:
             print(_c(f"{mark} {info['name']}: {info['info']} ({state})", CYAN))
         print(_c("Wechseln: /gehirn deepseek  bzw.  /gehirn claude. Neuer Schluessel: einfach einfuegen.", GREY))
 
+    def _split_provider(self, args: list[str]) -> tuple[str, list[str]]:
+        """'/modell deepseek pro' -> ('deepseek', ['pro']); ohne Gehirn-Name: das aktive."""
+        if args and args[0].lower() in ("claude", "anthropic", "deepseek"):
+            return ("deepseek" if args[0].lower() == "deepseek" else "claude"), args[1:]
+        return self.config.active_provider, args
+
+    def _apply_model_choice(self, provider: str, model: str | None = None, denken: str | None = None) -> None:
+        from ..modelle import waehle
+
+        try:
+            result = waehle(self.config, provider, model=model, denken=denken)
+        except Exception as exc:  # noqa: BLE001 - z.B. settings.toml schreibgeschuetzt
+            print(_c(f"Konnte die Einstellung nicht speichern: {exc}", YELLOW))
+            return
+        if not result["ok"]:
+            print(_c(result["message"], YELLOW))
+            return
+        (self.tool_ctx.extra.get("on_model") or self.brain.model_changed)()
+        where = "" if provider == self.config.active_provider else " (gilt, sobald du dieses Gehirn nutzt)"
+        print(_c(f"Eingestellt: {result['message']}{where}", GREEN))
+
+    def _model_command(self, args: list[str]) -> None:
+        from ..modelle import MODELLE, kurzbeschreibung
+        from ..schluessel import PROVIDERS
+
+        provider, args = self._split_provider(args)
+        if args:
+            self._apply_model_choice(provider, model=" ".join(args))
+            return
+        current = self.config.deepseek.model if provider == "deepseek" else self.config.claude.model
+        print(_c(f"\nModelle fuer {PROVIDERS[provider]['name']}:", BOLD))
+        for m in MODELLE[provider]:
+            mark = "->" if m["id"] == current else "  "
+            print(_c(f"{mark} {m['kurz']:<7} {m['name']}: {m['info']} (Tempo: {m['tempo']})", CYAN))
+        print(_c(f"Jetzt: {kurzbeschreibung(self.config, provider)}. Wechseln z.B.: /modell "
+                 f"{MODELLE[provider][1]['kurz']}  -  Denk-Tiefe: /denken", GREY))
+
+    def _think_command(self, args: list[str]) -> None:
+        from ..modelle import DENKTIEFEN, aktuelle_denktiefe, modell_name
+
+        provider, args = self._split_provider(args)
+        if args:
+            self._apply_model_choice(provider, denken=" ".join(args))
+            return
+        current = aktuelle_denktiefe(self.config, provider)
+        model = self.config.deepseek.model if provider == "deepseek" else self.config.claude.model
+        print(_c(f"\nDenk-Tiefe fuer {modell_name(provider, model)}:", BOLD))
+        for value, name, info in DENKTIEFEN[provider]:
+            mark = "->" if value == current else "  "
+            print(_c(f"{mark} {name:<16} {info}", CYAN))
+        print(_c("Aendern z.B.: /denken schnell  bzw.  /denken gruendlich. Schneller antworten = weniger "
+                 "nachdenken; fuer schwere Aufgaben lieber gruendlich.", GREY))
+
     def _open_in_editor(self, name: str) -> None:
         path = self.config.project_root / "config" / name
         try:
@@ -643,6 +698,10 @@ class CLI:
                 print(_c(KEY_HINT, CYAN))
         elif base == "/gehirn":
             self._brain_command(cmd.split()[1:])
+        elif base in ("/modell", "/model", "/modelle"):
+            self._model_command(cmd.split()[1:])
+        elif base in ("/denken", "/denktiefe", "/effort"):
+            self._think_command(cmd.split()[1:])
         elif base == "/terminal":
             print(_c("Du bist schon im Terminal. In die App: /app", CYAN))
         elif base in ("/tutorial", "/tour"):
@@ -918,10 +977,13 @@ class CLI:
     def _print_status(self) -> None:
         p = self.config.permissions
         print(_c("\nStatus:", BOLD))
-        print(f"  Provider:        {self.config.active_provider}")
-        print(f"  Modell:          {self.config.active_model}")
-        if self.config.active_provider == "claude":
-            print(f"  Denk-Tiefe:      effort={self.config.claude.effort}")
+        from ..modelle import aktuelle_denktiefe, denktiefe_name, modell_name
+
+        provider = self.config.active_provider
+        level = aktuelle_denktiefe(self.config)
+        print(f"  Provider:        {provider}")
+        print(f"  Modell:          {modell_name(provider, self.config.active_model)} ({self.config.active_model})")
+        print(f"  Denk-Tiefe:      {denktiefe_name(provider, level)} ({level})")
         print(f"  Sparmodus:       {'AN' if self.config.economy.aktiv else 'aus'}")
         print(f"  Arbeitsordner:   {self.config.workspace_path}")
         print(f"  Safe Mode:       {'AN (gefaehrliche Aktionen gesperrt)' if p.safe_mode else 'AUS'}")
@@ -935,12 +997,14 @@ class CLI:
         print(f"  Schluessel-Datei: {env_path} ({'gefunden' if env_path.is_file() else 'FEHLT'})")
 
     def _print_banner(self) -> None:
+        from ..modelle import kurzbeschreibung
+
         name = self.config.ki.name
         meaning = self.config.ki.bedeutung.strip()
         print(_c(f"\n=== {name}{' - ' + meaning if meaning else ' - deine lernfaehige KI'} ===", BOLD))
         print(
             _c(
-                f"Gehirn: {self.config.active_provider} ({self.config.active_model})"
+                f"Gehirn: {self.config.active_provider} ({kurzbeschreibung(self.config)})"
                 + ("  |  Sparmodus AN" if self.config.economy.aktiv else ""),
                 GREY,
             )

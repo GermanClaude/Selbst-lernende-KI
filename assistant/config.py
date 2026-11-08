@@ -20,7 +20,7 @@ except ModuleNotFoundError:  # pragma: no cover - Fallback fuer 3.10
     import tomli as tomllib  # type: ignore
 
 DEFAULT_MODEL = "claude-opus-5-5"
-DEFAULT_DEEPSEEK_MODEL = "deepseek-chat"
+DEFAULT_DEEPSEEK_MODEL = "deepseek-flash"
 
 
 class ConfigError(Exception):
@@ -95,7 +95,8 @@ class ProviderSettings:
 @dataclass
 class ClaudeSettings:
     model: str = DEFAULT_MODEL
-    effort: str = "high"
+    # Denk-Tiefe: low (schnell) | medium (ausgewogen) | high | xhigh | max (sehr gruendlich)
+    effort: str = "medium"
     max_tokens: int = 32000
     server_side_fallback: bool = False
 
@@ -103,6 +104,8 @@ class ClaudeSettings:
 @dataclass
 class DeepSeekSettings:
     model: str = DEFAULT_DEEPSEEK_MODEL
+    # Nachdenken vor der Antwort: aus (schnell) | low | high | max (gruendlich)
+    denken: str = "aus"
     base_url: str = "https://api.deepseek.com"
     max_tokens: int = 8192  # kleiner = grosse Dateien brechen beim Schreiben ab
     temperature: float = 0.6
@@ -146,13 +149,14 @@ class EconomySettings:
 
 @dataclass
 class PriceSettings:
-    # US-Dollar pro 1 Mio. Token. Bei Preisaenderung einfach hier anpassen.
+    # US-Dollar pro 1 Mio. Token - nur fuer Modelle, die assistant/modelle.py nicht kennt
+    # (die bekannten haben dort ihre eigenen Preise).
     claude_input: float = 4.0
     claude_cache_hit: float = 0.2
     claude_output: float = 20.0
-    deepseek_input: float = 0.28
-    deepseek_cache_hit: float = 0.028
-    deepseek_output: float = 0.42
+    deepseek_input: float = 0.15
+    deepseek_cache_hit: float = 0.003
+    deepseek_output: float = 0.6
     usd_zu_eur: float = 0.92
 
     def for_provider(self, provider: str) -> tuple[float, float, float]:
@@ -288,9 +292,18 @@ class Config:
         path.mkdir(parents=True, exist_ok=True)
         return path.resolve()
 
-    def cost_estimate(self, input_full: int, cache_hit: int, output: int) -> tuple[float, float]:
-        """Schaetzt die Kosten (USD, EUR) fuer die gegebenen Token-Zahlen."""
-        in_price, hit_price, out_price = self.prices.for_provider(self.active_provider)
+    def cost_estimate(self, input_full: int, cache_hit: int, output: int,
+                      provider: str | None = None, model: str | None = None) -> tuple[float, float]:
+        """Schaetzt die Kosten (USD, EUR) fuer die gegebenen Token-Zahlen.
+
+        Bekannte Modelle haben ihre eigenen Preise (assistant/modelle.py); fuer andere
+        gelten die Werte aus [preise]."""
+        from .modelle import preise
+
+        provider = provider or self.active_provider
+        if model is None:
+            model = self.deepseek.model if provider == "deepseek" else self.claude.model
+        in_price, hit_price, out_price = preise(provider, model) or self.prices.for_provider(provider)
         usd = (input_full * in_price + cache_hit * hit_price + output * out_price) / 1_000_000
         return (usd, usd * self.prices.usd_zu_eur)
 
@@ -451,6 +464,10 @@ def load_config(project_root: Path | None = None) -> Config:
             deepseek.model = os.environ["KI_MODEL"]
         else:
             claude.model = os.environ["KI_MODEL"]
+    # Abgeschaltete DeepSeek-Namen (deepseek-chat/-reasoner) auf die aktuellen umstellen.
+    from .modelle import normalisiere_deepseek
+
+    normalisiere_deepseek(deepseek, denken_gesetzt="denken" in raw.get("deepseek", {}))
 
     cfg = Config(
         provider=provider,

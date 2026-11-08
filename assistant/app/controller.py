@@ -27,6 +27,7 @@ from ..anzeige import schoen
 from ..cancel import Abgebrochen
 from ..config import Config, save_setting, toml_string
 from ..logging_setup import get_logger
+from ..modelle import kurzbeschreibung
 from ..permissions import Risk
 from ..ui.cli import CLI, JARVIS_HINT, KEY_HINT, _is_exit_phrase
 from ..voice import VoiceOutput
@@ -63,6 +64,8 @@ COMMANDS = [
     ("/sprache", "Stand der Spracheingabe"),
     ("/sprache einrichten", "Spracheingabe installieren"),
     ("/gehirn", "DeepSeek oder Claude - Schluessel einfach in den Chat einfuegen"),
+    ("/modell", "Modell waehlen - schnell oder besonders stark"),
+    ("/denken", "wie gruendlich die KI nachdenkt (schnell ... maximal)"),
     ("/terminal", "zur Terminal-Version wechseln"),
     ("/hilfe", "alle Befehle"),
     ("/beenden", "App schliessen"),
@@ -112,6 +115,7 @@ class AppController(CLI):
         self._live_setup_failed = False
         self._speaker = None
         self.tool_ctx.extra["on_appearance"] = lambda: self._event({"type": "appearance"})
+        self.tool_ctx.extra["on_model"] = self._model_changed
         # Sphaere: reagiert auf deine Stimme beim Mikrofon-Knopf / F2
         self.voice_capture.on_level = lambda value: self._event({"type": "mic", "level": value})
 
@@ -139,6 +143,7 @@ class AppController(CLI):
             "version": __version__,
             "provider": self.config.active_provider,
             "model": self.config.active_model,
+            "model_name": schoen(kurzbeschreibung(self.config)),
             "busy": self.busy,
             "auto_confirm": bool(self.permissions.settings.auto_confirm),
             "safe_mode": bool(self.permissions.settings.safe_mode),
@@ -473,7 +478,37 @@ class AppController(CLI):
         info = describe(self.config)
         for item in info["providers"]:
             item["name"], item["info"] = schoen(item["name"]), schoen(item["info"])
+            item["model_name"] = schoen(item["model_name"])
+        info["aktuell"] = schoen(info["aktuell"])
+        for group in info["modelle"].values():
+            for entry in group["modelle"] + group["denktiefen"]:
+                for k in ("name", "info", "tempo", "preis"):
+                    if entry.get(k):
+                        entry[k] = schoen(entry[k])
         return info
+
+    def _model_changed(self) -> None:
+        self.brain.model_changed()
+        self._state_changed()
+
+    def choose_model(self, data: dict) -> dict:
+        """Modell und/oder Denk-Tiefe waehlen (gilt ab der naechsten Anfrage, Gespraech bleibt)."""
+        from ..modelle import waehle
+
+        provider = str(data.get("provider") or "").lower() or None
+        model = str(data.get("model") or "").strip() or None
+        denken = str(data.get("denken") or "").strip() or None
+        if not model and not denken:
+            return {"ok": False, "error": "Bitte ein Modell oder eine Denk-Tiefe angeben."}
+        try:
+            result = waehle(self.config, provider, model=model, denken=denken)
+        except Exception as exc:  # noqa: BLE001 - z.B. settings.toml nicht beschreibbar
+            logger.warning("Modell-Wahl: %s", exc)
+            return {"ok": False, "error": schoen(f"Konnte die Einstellung nicht speichern: {exc}")}
+        if not result["ok"]:
+            return {"ok": False, "error": schoen(result["message"])}
+        self._model_changed()
+        return {"ok": True, "message": schoen(result["message"]), "setup": self.setup_info()}
 
     def setup_save(self, data: dict) -> dict:
         """Schluessel pruefen und speichern, Gehirn waehlen."""
