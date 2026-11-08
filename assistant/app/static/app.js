@@ -1184,12 +1184,14 @@
     micBtn.classList.toggle('warn-dot', !!s.voice_problem);
     micBtn.title = s.voice_problem
       ? 'Spracheingabe: ' + s.voice_problem
-      : 'Sprechen – gedrückt halten oder kurz drücken (F2)';
+      : 'Sprechen – gedrückt halten oder kurz drücken (F2)' + (s.voice_autosend === true ? ' · sendet sofort' : '');
 
-    // Update in der Kopfzeile
-    const upd = s.update && s.update.new ? String(s.update.new) : '';
-    byId('tb-update').hidden = !upd;
-    byId('tb-update-text').textContent = upd ? 'Update ' + upd : '';
+    // Update: Anzeige in der Seitenleiste ("Auf dem neuesten Stand") und Knopf in der Kopfzeile
+    onUpdateState();
+    const newV = newVersion();
+    byId('tb-update').hidden = !newV;
+    byId('tb-update-text').textContent = newV ? 'Update ' + newV : '';
+    byId('tb-update').title = newV ? 'Update auf ' + newV + ' installieren (/update)' : '';
 
     renderAlerts();
     commands = Array.isArray(s.commands) ? s.commands.filter((c) => c && typeof c.cmd === 'string') : [];
@@ -1212,7 +1214,12 @@
   const WHEELS_SUB = {
     an: 'fragt vor Änderungen, nur Arbeitsordner',
     aus: 'darf am ganzen PC alles ohne Fragen',
-    teilweise: 'teilweise – eigene Einstellungen',
+    teilweise: 'Teilweise – klicken zum Wählen',
+  };
+  const WHEELS_TIP = {
+    an: 'Stützräder sind dran – klicken zum Abnehmen',
+    aus: 'Stützräder sind ab – klicken zum Anlegen',
+    teilweise: 'Stützräder teilweise – klicken zum Auswählen (anlegen oder abnehmen)',
   };
   const WHEELS_BADGE = { an: 'An', aus: 'Abgenommen', teilweise: 'Teilweise' };
 
@@ -1227,16 +1234,24 @@
     const val = (key) => (own(pendingVal, key) ? !!pendingVal[key] : !!s[key]);
     for (const id of ['sw-erlauben', 'sec-sw-erlauben']) setSwitch(byId(id), val('auto_confirm'));
     setSwitch(byId('sw-vorlesen'), val('speak'));
+    // "Gesprochenes sofort senden" (nur, wenn die KI den Schalter kennt)
+    byId('row-sofort').hidden = typeof s.voice_autosend !== 'boolean';
+    setSwitch(byId('sw-sofort'), val('voice_autosend'));
+    byId('sub-sofort').textContent = val('voice_autosend')
+      ? 'nach dem Loslassen von Mikrofon/F2 – ohne Enter'
+      : 'erst prüfen, dann Enter';
     const w = wheelsState();
     const row = document.querySelector('.switch-row[data-toggle="stuetzraeder"]');
     row.hidden = !w;
     row.dataset.state = w;
     byId('sec-wheels').dataset.state = w || 'teilweise';
     byId('sec-wheels').hidden = !w; // aeltere KI ohne Stuetzraeder
+    row.title = WHEELS_TIP[w] || '';
     for (const id of ['sw-stuetzraeder', 'sec-sw-stuetzraeder']) {
       const b = byId(id);
       setSwitch(b, w === 'an');
       b.classList.toggle('mixed', w === 'teilweise');
+      b.title = WHEELS_TIP[w] || '';
     }
     if (w) byId('sub-stuetzraeder').textContent = WHEELS_SUB[w];
     const n = kiName();
@@ -1244,7 +1259,7 @@
     byId('sec-wheels-text').textContent = w === 'an'
       ? 'Sind dran: ' + n + ' fragt vor jeder Änderung und bleibt im Arbeitsordner.'
       : w === 'aus' ? 'Sind ab: ' + n + ' darf am ganzen PC alles ohne Rückfrage.'
-        : 'Teilweise: Einzelne Schutzfunktionen sind anders eingestellt. Einschalten macht alles wieder sicher.';
+        : 'Teilweise: Einzelne Schutzfunktionen sind anders eingestellt. Klick auf den Schalter – dann kannst du sie ganz anlegen oder ganz abnehmen.';
     byId('sec-title').textContent = 'Was ' + n + ' ohne Nachfrage darf';
     const facts = byId('sec-facts');
     facts.replaceChildren();
@@ -1284,7 +1299,8 @@
       }
       box.append(a);
     };
-    if (s.update && s.update.new) {
+    // aeltere KI ohne Update-Anzeige: Hinweis als Karte (sonst steht es oben bei der Version)
+    if (s.update && s.update.new && !updStatus()) {
       add('update', 'download', 'Update verfügbar', 'Version ' + s.update.new + ' ist bereit.', 'Jetzt aktualisieren', '/update');
     }
     if (s.api_key_missing) {
@@ -1295,7 +1311,7 @@
       add('warn', 'power', 'Automatisch gestartet', 'Ich wurde automatisch gestartet – ' + s.started_by + '.',
         'Autostart prüfen', '/autostart');
     }
-    byId('menu-dot').hidden = !box.childElementCount;
+    byId('menu-dot').hidden = !box.childElementCount && !newVersion();
   }
 
   function setBusy(b) {
@@ -1336,19 +1352,23 @@
   }
 
   // Schalter (Seitenleiste und Reiter "Sicherheit")
-  const TOGGLES = { erlauben: 'auto_confirm', vorlesen: 'speak', stuetzraeder: 'stuetzraeder' };
+  const TOGGLES = {
+    erlauben: 'auto_confirm', vorlesen: 'speak', stuetzraeder: 'stuetzraeder', sofort_senden: 'voice_autosend',
+  };
   async function toggleSetting(name) {
     const key = pick(TOGGLES, name);
     if (!key || ended || pendingToggle[key]) return;
     let value;
     if (key === 'stuetzraeder') {
-      value = state.stuetzraeder !== 'an'; // aus/teilweise -> an (sofort); an -> ab (erst warnen)
-      if (!value) {
-        pendingToggle[key] = true; // waehrend der Warnung kein zweiter Klick
-        const ok = await wheelsWarning();
-        pendingToggle[key] = false;
-        if (!ok || ended) return;
-      }
+      // aus -> an (sofort); an -> ab (erst warnen); teilweise -> Auswahl: anlegen / abnehmen (mit Warnung)
+      pendingToggle[key] = true; // waehrend Auswahl/Warnung kein zweiter Klick
+      if (state.stuetzraeder === 'teilweise') {
+        const choice = await wheelsChoice();
+        value = choice === 'an' ? true : choice === 'aus' && await wheelsWarning() ? false : null;
+      } else if (state.stuetzraeder === 'an') value = await wheelsWarning() ? false : null;
+      else value = true;
+      pendingToggle[key] = false;
+      if (value === null || ended) return;
     } else value = !state[key];
     pendingToggle[key] = true;
     pendingVal[key] = value;
@@ -1366,6 +1386,10 @@
       toast(value ? 'Stützräder sind dran – ich frage vor Änderungen.' : 'Stützräder sind ab – ich darf jetzt alles ohne Rückfrage.',
         value ? 'ok' : 'info', 4200);
     }
+    if (r.ok && key === 'voice_autosend') {
+      toast(value ? 'Gesprochenes schicke ich jetzt sofort ab – ohne Enter.'
+        : 'Gesprochenes landet wieder erst im Eingabefeld – Enter schickt es ab.', 'ok');
+    }
   }
   for (const row of document.querySelectorAll('[data-toggle]')) {
     row.addEventListener('click', () => toggleSetting(row.dataset.toggle));
@@ -1379,6 +1403,173 @@
     b.addEventListener('click', () => { closeSidebar(); send(b.dataset.cmd); });
   }
   byId('tb-update').addEventListener('click', () => send('/update'));
+
+  // =====================================================================
+  // Update-Anzeige in der Seitenleiste ("Auf dem neuesten Stand")
+  //  state.update_status = {state: aktuell|neu|pruefe|unbekannt|aus, current, latest, checked, error}
+  //  "Jetzt pruefen" -> POST /api/update (prueft nur), Ergebnis kommt als state-Ereignis.
+  // =====================================================================
+  const UPD_STATES = new Set(['aktuell', 'neu', 'pruefe', 'unbekannt', 'aus']);
+  const upd = {
+    local: false,  // Klick auf "Jetzt pruefen": schon "Pruefe …" zeigen, bis der Server es bestaetigt
+    manual: false, // vom Nutzer ausgeloest -> Ergebnis als Meldung
+    saw: false,    // Server hat "pruefe" gemeldet
+    timer: 0,
+  };
+
+  /** Update-Stand vom Server (null = aeltere KI ohne Anzeige). */
+  function updStatus() {
+    const us = state.update_status;
+    if (!us || typeof us !== 'object') return null;
+    const st = String(us.state || '');
+    return {
+      state: UPD_STATES.has(st) ? st : 'unbekannt',
+      current: String(us.current || state.version || ''),
+      latest: us.latest ? String(us.latest) : '',
+      checked: us.checked ? String(us.checked) : '',
+      error: us.error ? String(us.error) : '',
+    };
+  }
+
+  /** Neuere Version, die installiert werden kann ('' = keine). */
+  function newVersion() {
+    if (state.update && state.update.new) return String(state.update.new);
+    const us = updStatus();
+    return us && us.state === 'neu' ? us.latest || '?' : '';
+  }
+
+  /** "2026-11-08T01:00:00" (lokale Zeit) -> Date oder null. */
+  function parseWhen(v) {
+    const d = v ? new Date(v) : null;
+    return d && !Number.isNaN(d.getTime()) ? d : null;
+  }
+
+  function relTime(d) {
+    const min = Math.floor((Date.now() - d.getTime()) / 60000);
+    if (min < 1) return 'gerade eben';
+    if (min < 60) return 'vor ' + min + ' Min.';
+    const hrs = Math.floor(min / 60);
+    if (hrs < 24) return 'vor ' + hrs + ' Std.';
+    const days = Math.round(hrs / 24);
+    if (days <= 1) return 'gestern';
+    if (days < 7) return 'vor ' + days + ' Tagen';
+    return 'am ' + d.toLocaleDateString('de-DE');
+  }
+
+  function renderUpdate() {
+    const box = byId('sb-upd');
+    const us = updStatus();
+    box.hidden = !us;
+    if (!us) return;
+    const st = upd.local ? 'pruefe' : us.state;
+    const when = parseWhen(us.checked);
+    const whenText = when ? 'geprüft ' + relTime(when) : '';
+    const whenFull = when ? 'Zuletzt geprüft ' + relTime(when) + ' (' +
+      when.toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' }) + ').' : '';
+    const failed = !!us.error && st !== 'pruefe' && st !== 'neu';
+    let ic = 'refresh';
+    let title = 'Noch nicht geprüft';
+    let sub = 'Version ' + us.current;
+    let tip = 'Du hast Version ' + us.current + '.';
+    let btn = 'check';
+    if (st === 'aktuell') {
+      ic = 'checkCircle';
+      title = 'Auf dem neuesten Stand';
+      sub = whenText || sub;
+      tip = 'Version ' + us.current + ' ist die neueste.' + (whenFull ? '\n' + whenFull : '');
+    } else if (st === 'neu') {
+      const v = us.latest || newVersion();
+      ic = 'download';
+      title = v && v !== '?' ? 'Update auf ' + v + ' verfügbar' : 'Update verfügbar';
+      sub = 'du hast ' + us.current;
+      tip = 'Neue Version ' + v + ' – du hast ' + us.current + '.' + (whenFull ? '\n' + whenFull : '');
+      btn = 'install';
+    } else if (st === 'pruefe') {
+      ic = '';
+      title = 'Prüfe …';
+      sub = 'schaue nach einer neuen Version';
+      tip = '';
+      btn = '';
+    } else if (st === 'aus') {
+      ic = 'pause';
+      title = 'Automatische Updates aus';
+      sub = whenText || 'nur auf Wunsch';
+      tip = 'Ich schaue nicht von selbst nach neuen Versionen.' + (whenFull ? '\n' + whenFull : '');
+    }
+    if (failed) {
+      ic = 'alertCircle';
+      title = 'Prüfen hat nicht geklappt';
+      sub = 'Version ' + us.current;
+      tip = 'Prüfen hat nicht geklappt: ' + us.error + (whenFull ? '\n' + whenFull : '');
+    }
+    box.dataset.state = st;
+    box.classList.toggle('err', failed);
+    box.title = tip;
+    // nur Geaendertes neu setzen: kein erneutes Vorlesen (role=status), Spinner laeuft weiter
+    const icEl = byId('upd-ic');
+    if (icEl.dataset.ic !== (ic || 'spin')) {
+      icEl.dataset.ic = ic || 'spin';
+      icEl.replaceChildren(ic ? icon(ic) : h('span', 'spinner'));
+    }
+    if (byId('upd-title').textContent !== title) byId('upd-title').textContent = title;
+    if (byId('upd-sub').textContent !== sub) byId('upd-sub').textContent = sub;
+    const b = byId('upd-btn');
+    b.hidden = !btn;
+    b.dataset.act = btn;
+    b.disabled = ended;
+    b.className = 'btn small upd-btn ' + (btn === 'install' ? 'primary' : 'secondary');
+    b.textContent = btn === 'install' ? 'Installieren' : 'Jetzt prüfen';
+    b.title = btn === 'install' ? 'Update installieren (/update)' : 'Jetzt nach einer neuen Version schauen';
+  }
+
+  /** Neuer Stand vom Server: Anzeige erneuern; nach "Jetzt pruefen" das Ergebnis melden. */
+  function onUpdateState() {
+    const us = updStatus();
+    if (us && us.state === 'pruefe') {
+      upd.saw = true;
+      upd.local = false;
+    } else if (us && upd.manual && upd.saw) {
+      upd.manual = false;
+      upd.local = false;
+      if (us.error) toast('Prüfen hat nicht geklappt: ' + us.error, 'error', 6500);
+      else if (us.state === 'neu') toast('Update auf ' + (us.latest || newVersion()) + ' verfügbar – „Installieren“ holt es.', 'ok', 5000);
+      else toast('Du hast die neueste Version (' + us.current + ').', 'ok');
+    }
+    renderUpdate();
+  }
+
+  async function checkUpdateNow() {
+    const us = updStatus();
+    if (!us || ended || upd.local || us.state === 'pruefe') return;
+    upd.manual = true;
+    upd.saw = false;
+    upd.local = true;
+    renderUpdate();
+    const r = await post('/api/update', { action: 'check' });
+    if (!r.ok) {
+      upd.local = false;
+      upd.manual = false;
+      renderUpdate();
+      toast(r.error || 'Prüfen hat nicht geklappt.', 'error');
+      return;
+    }
+    // Falls das "pruefe"-Ereignis ausbleibt (Verbindung weg): nicht ewig "Prüfe …" zeigen
+    clearTimeout(upd.timer);
+    upd.timer = setTimeout(() => {
+      if (!upd.local) return;
+      upd.local = false;
+      upd.manual = false;
+      renderUpdate();
+    }, 20000);
+  }
+
+  byId('upd-btn').addEventListener('click', (e) => {
+    if (e.currentTarget.dataset.act === 'install') {
+      closeSidebar();
+      send('/update');
+    } else checkUpdateNow();
+  });
+  setInterval(() => { if (!byId('sb-upd').hidden) renderUpdate(); }, 30000); // "vor 5 Min." aktuell halten
   const newChat = () => { closeSidebar(); send('/neu'); };
   byId('sb-new').addEventListener('click', newChat);
   byId('tb-new').addEventListener('click', newChat);
@@ -2358,9 +2549,10 @@
     if (recording) {
       byId('voice-label').textContent = 'Aufnahme';
       byId('voice-time').textContent = fmtTime(Date.now() - voice.t0);
+      const done = autosendOn() ? 'senden' : 'fertig';
       byId('voice-help').textContent = voice.mode === 'toggle' || voice.phase === 'remote'
-        ? 'Nochmal drücken (oder F2) = fertig · Esc bricht ab'
-        : 'Loslassen = fertig · Esc bricht ab';
+        ? 'Nochmal drücken (oder F2) = ' + done + ' · Esc bricht ab'
+        : 'Loslassen = ' + done + ' · Esc bricht ab';
       bar.querySelector('.rec-dot').hidden = false;
       bar.querySelector('.rec-spin').hidden = true;
     } else if (recognizing) {
@@ -2437,7 +2629,26 @@
     if (!r.ok) { toast(r.error || 'Die Spracherkennung hat nicht geklappt.', 'error', 5000); return; }
     const text = String(r.text || '').trim();
     if (!text) { toast('Ich habe nichts verstanden – versuch es noch einmal.'); focusInput(); return; }
-    appendToInput(text);
+    voiceText(text);
+  }
+
+  /** Schalter "Gesprochenes sofort senden" (waehrend des Umschaltens schon der neue Wert). */
+  function autosendOn() {
+    return own(pendingVal, 'voice_autosend') ? !!pendingVal.voice_autosend : state.voice_autosend === true;
+  }
+
+  /** Erkannter Text (Mikrofon-Knopf/F2): gleich senden (Schalter an) oder ins Eingabefeld setzen. */
+  function voiceText(text) {
+    if (!autosendOn() || ended) { appendToInput(text); return; }
+    if (busy) {
+      appendToInput(text);
+      toast('Ich arbeite noch – Enter, wenn ich fertig bin.');
+      return;
+    }
+    // schon getippter Text bleibt vorne – alles zusammen geht raus
+    const typed = input.value.replace(/\s+$/, '');
+    send(typed ? typed + ' ' + text : text, true);
+    focusInput();
   }
 
   async function voiceCancel(quiet) {
@@ -2504,7 +2715,8 @@
       if (voice.phase === 'remote' || voice.phase === 'remote-rec') voiceReset();
       if (quiet) return;
       if (ev.error) toast(String(ev.error), 'error', 5000);
-      else if (ev.text) appendToInput(ev.text);
+      // Aufnahme aus einem anderen Fenster: mit "sofort senden" schickt jenes Fenster den Text ab
+      else if (ev.text && !autosendOn()) appendToInput(ev.text);
     }
   }
 
@@ -3775,13 +3987,14 @@
   function confirmDialog(opts) {
     if (confirmState) closeConfirm(false);
     return new Promise((resolve) => {
-      confirmState = { resolve, back: document.activeElement };
+      confirmState = { resolve, back: document.activeElement, raw: !!opts.raw };
       byId('cdialog').className = 'dialog cdialog ' + (opts.cls || 'risk-none');
       byId('cd-icon').replaceChildren(icon(opts.icon || 'alert'));
       byId('cd-title').textContent = opts.title || '';
       byId('cd-risk').textContent = opts.risk || '';
       byId('cd-text').replaceChildren(opts.body || '');
       byId('cd-ok').textContent = opts.ok || 'OK';
+      byId('cd-ok').hidden = opts.ok === null; // Auswahl: die Knoepfe stehen im Text
       byId('cd-cancel').textContent = opts.cancel || 'Abbrechen';
       cmodal.hidden = false;
       updateInert();
@@ -3800,7 +4013,7 @@
     else if (!smodal.hidden) sdialog.focus();
     else if (!pmodal.hidden) panel.focus();
     else focusInput();
-    st.resolve(!!result);
+    st.resolve(st.raw ? result : !!result);
   }
   byId('cd-ok').addEventListener('click', () => closeConfirm(true));
   byId('cd-cancel').addEventListener('click', () => closeConfirm(false));
@@ -3830,6 +4043,45 @@
     return confirmDialog({
       cls: 'risk-wheels', icon: 'shieldOff', title: 'Stützräder abnehmen?', risk: 'Voller Zugriff auf deinen PC',
       body, ok: 'Stützräder abnehmen', cancel: 'Abbrechen',
+    });
+  }
+
+  /** Stuetzraeder "teilweise": was gerade gilt – anlegen, abnehmen oder abbrechen. Ergebnis 'an' | 'aus' | false. */
+  function wheelsChoice() {
+    const n = kiName();
+    const s = state;
+    const body = document.createDocumentFragment();
+    body.append(h('p', null, 'Ein Teil des Schutzes ist an, ein Teil aus. Gerade gilt:'));
+    const facts = h('ul', 'cd-facts');
+    for (const [good, ic, k, v] of [
+      [!s.auto_confirm, s.auto_confirm ? 'zap' : 'checkCircle', 'Rückfragen', s.auto_confirm ? n + ' fragt nicht nach' : n + ' fragt nach'],
+      [!s.full_access, s.full_access ? 'monitor' : 'folder', 'Zugriff', s.full_access ? 'ganzer PC' : 'nur Arbeitsordner'],
+      [!!s.safe_mode, s.safe_mode ? 'shield' : 'shieldOff', 'Sicherer Modus', s.safe_mode ? 'an' : 'aus'],
+    ]) {
+      const li = h('li', good ? 'good' : 'bad');
+      const t = h('span', 'cdf-text');
+      t.append(h('span', 'cdf-k', k), h('span', 'cdf-v', v));
+      li.append(icon(ic), t);
+      facts.append(li);
+    }
+    const ask = h('p', 'cd-ask', 'Was möchtest du?');
+    const choices = h('div', 'cd-choices');
+    for (const [cls, ic, title, sub, val] of [
+      ['safe', 'shield', 'Anlegen – sicher', 'fragt vor Änderungen, nur Arbeitsordner, sicherer Modus an', 'an'],
+      ['free', 'shieldOff', 'Abnehmen – volle Rechte', 'ganzer PC, ohne Rückfrage – vorher kommt eine Warnung', 'aus'],
+    ]) {
+      const b = h('button', 'cd-choice ' + cls);
+      b.type = 'button';
+      const t = h('span', 'cdc-text');
+      t.append(h('span', 'cdc-title', title), h('span', 'cdc-sub', sub));
+      b.append(icon(ic, 'cdc-ic'), t, icon('chevronRight', 'cdc-chev'));
+      b.addEventListener('click', () => closeConfirm(val));
+      choices.append(b);
+    }
+    body.append(facts, ask, choices);
+    return confirmDialog({
+      cls: 'risk-moderate wheels-choice', icon: 'shield', title: 'Stützräder: teilweise', risk: 'Gemischte Einstellung',
+      body, ok: null, cancel: 'Abbrechen', raw: true,
     });
   }
 

@@ -196,6 +196,46 @@ button:disabled { cursor: default; }
 .sb-meaning b, .id-meaning b { color: var(--accent-text); font-weight: 750; }
 .sb-head .sb-close { display: none; }
 
+/* Update-Anzeige ("Auf dem neuesten Stand") direkt unter Name und Version.
+   Zeile 1: Symbol + Titel, Zeile 2: Untertitel + Knopf ("Jetzt prüfen" / "Installieren"). */
+.sb-upd {
+  display: grid; align-items: center;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  grid-template-areas: "ic title title" "ic sub btn";
+  column-gap: 8px; row-gap: 3px;
+  margin-top: calc(-8px * var(--density));
+  padding: 8px 8px 8px 10px;
+  border: 1px solid var(--border); border-radius: calc(var(--radius) * 0.833);
+  background: var(--surface);
+}
+.upd-text { display: contents; }
+.upd-ic { grid-area: ic; align-self: start; display: grid; place-items: center; width: 20px; height: 20px; color: var(--text-3); }
+.upd-ic .ic { width: 18px; height: 18px; }
+.upd-ic .spinner { width: 14px; height: 14px; color: var(--accent); }
+.upd-title {
+  grid-area: title; min-width: 0;
+  font-size: calc(13px * var(--font-scale)); font-weight: 650; line-height: 20px; color: var(--text);
+  overflow-wrap: anywhere;
+}
+.upd-sub {
+  grid-area: sub; min-width: 0;
+  font-size: calc(11.5px * var(--font-scale)); line-height: 1.35; color: var(--text-3);
+  overflow-wrap: anywhere;
+}
+.sb-upd .btn.upd-btn {
+  grid-area: btn;
+  padding: 3px 9px; font-size: calc(12px * var(--font-scale)); white-space: nowrap;
+  border-radius: calc(var(--radius) * 0.667);
+}
+.sb-upd[data-state="aktuell"] { background: var(--ok-soft); border-color: var(--ok-border); }
+.sb-upd[data-state="aktuell"] .upd-ic, .sb-upd[data-state="aktuell"] .upd-title { color: var(--ok); }
+.sb-upd[data-state="neu"] { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 38%, transparent); }
+.sb-upd[data-state="neu"] .upd-ic, .sb-upd[data-state="neu"] .upd-title { color: var(--accent-text); }
+.sb-upd[data-state="pruefe"] .upd-title, .sb-upd[data-state="aus"] .upd-title { color: var(--text-2); }
+.sb-upd[data-state="aus"] { background: var(--surface-2); }
+.sb-upd.err { background: var(--warn-soft); border-color: var(--warn-border); }
+.sb-upd.err .upd-ic, .sb-upd.err .upd-title { color: var(--warn); }
+
 .sb-actions { display: flex; flex-direction: column; gap: 8px; }
 .sb-new {
   display: flex; align-items: center; justify-content: center; gap: 8px;
@@ -1492,6 +1532,12 @@ kbd {
 .switch-row.wheels[data-state="aus"] .switch-sub { color: var(--danger); }
 .switch.mixed { background: color-mix(in srgb, #f59e0b 72%, var(--border-strong)); }
 .switch.mixed .knob { transform: translateX(8px); }
+/* Mittel-Zustand "teilweise": Strich im Knopf (wie ein halb gesetztes Haekchen) */
+.switch.mixed .knob::after {
+  content: ""; position: absolute; left: 4px; right: 4px; top: 7px; height: 2px;
+  border-radius: 1px; background: #b45309;
+}
+.switch-row.wheels[data-state="teilweise"] .switch-sub { color: var(--warn); }
 .switch:disabled { opacity: .6; }
 
 /* ---------- Jarvis-Knopf (Kopfzeile) ---------- */
@@ -1896,6 +1942,43 @@ kbd {
 .cd-note { display: flex; align-items: center; gap: 8px; color: var(--text-2); font-size: calc(13.5px * var(--font-scale)); }
 .cd-note .ic { width: 16px; height: 16px; color: var(--ok); }
 @media (max-width: 520px) { .cd-caps { grid-template-columns: minmax(0, 1fr); } .cd-caps li { flex-direction: row; align-items: center; } }
+
+/* Stuetzraeder "teilweise": Auswahl anlegen / abnehmen */
+.dialog.wheels-choice .dlg-icon { background: var(--warn-soft); color: var(--warn); }
+.cd-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0; padding: 0; list-style: none; }
+.cd-facts li {
+  display: flex; align-items: flex-start; gap: 8px; min-width: 0;
+  padding: 9px 10px; border-radius: calc(var(--radius) * 0.833);
+  border: 1px solid var(--border); background: var(--surface-2);
+}
+.cd-facts .ic { width: 17px; height: 17px; margin-top: 1px; }
+.cd-facts li.good .ic { color: var(--ok); }
+.cd-facts li.bad .ic { color: var(--danger); }
+.cdf-text { display: flex; flex-direction: column; min-width: 0; }
+.cdf-k { font-size: calc(11px * var(--font-scale)); font-weight: 650; letter-spacing: .04em; text-transform: uppercase; color: var(--text-3); }
+.cdf-v { font-size: calc(13.5px * var(--font-scale)); font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
+.cd-text .cd-ask { font-weight: 600; }
+.cd-text .cd-facts + .cd-ask { margin-top: 14px; }
+.cd-choices { display: flex; flex-direction: column; gap: 8px; }
+.cd-choice {
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  padding: 11px 12px; text-align: left;
+  border: 1px solid var(--border-strong); border-radius: calc(var(--radius) * 0.917);
+  background: var(--surface); color: var(--text);
+  transition: background .15s, border-color .15s;
+}
+.cd-choice .cdc-ic { display: grid; place-items: center; flex: none; width: 34px; height: 34px; border-radius: calc(var(--radius) * 0.75); }
+.cd-choice .cdc-ic svg { width: 19px; height: 19px; }
+.cd-choice.safe .cdc-ic { background: var(--ok-soft); color: var(--ok); }
+.cd-choice.free .cdc-ic { background: var(--danger-soft); color: var(--danger); }
+.cdc-text { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.cdc-title { font-size: calc(14.5px * var(--font-scale)); font-weight: 650; }
+.cdc-sub { font-size: calc(12.5px * var(--font-scale)); color: var(--text-2); line-height: 1.35; }
+.cd-choice .cdc-chev { flex: none; width: 16px; height: 16px; color: var(--text-3); }
+.cd-choice.safe:hover { background: var(--ok-soft); border-color: var(--ok-border); }
+.cd-choice.free:hover { background: var(--danger-soft); border-color: var(--danger-border); }
+.cd-choice:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (max-width: 520px) { .cd-facts { grid-template-columns: minmax(0, 1fr); } .cd-facts li { align-items: center; } }
 
 /* ---------- Reiter "Sicherheit" ---------- */
 .sec-card {

@@ -25,6 +25,16 @@
       <button class="icon-btn sb-close" id="sb-close" type="button" aria-label="Seitenleiste schließen" data-icon="x"></button>
     </div>
 
+    <!-- Update-Anzeige: "Auf dem neuesten Stand" / "Update verfügbar" -->
+    <div class="sb-upd" id="sb-upd" data-state="unbekannt" hidden>
+      <span class="upd-ic" id="upd-ic" aria-hidden="true"></span>
+      <span class="upd-text">
+        <span class="upd-title" id="upd-title" role="status">Noch nicht geprüft</span>
+        <span class="upd-sub" id="upd-sub"></span>
+      </span>
+      <button class="btn small secondary upd-btn" id="upd-btn" type="button">Jetzt prüfen</button>
+    </div>
+
     <div class="sb-actions">
       <button class="sb-new" id="sb-new" type="button" title="Neues Gespräch beginnen (/neu)"><span data-icon="plus"></span>Neues Gespräch</button>
       <button class="sb-profile" id="sb-profile" type="button" aria-haspopup="dialog" data-tour="profil">
@@ -74,6 +84,14 @@
         </div>
         <button class="switch" id="sw-vorlesen" type="button" role="switch" aria-checked="false"
                 aria-labelledby="lbl-vorlesen" aria-describedby="sub-vorlesen"><span class="knob"></span></button>
+      </div>
+      <div class="switch-row" data-toggle="sofort_senden" id="row-sofort" hidden>
+        <div class="switch-text">
+          <span class="switch-title" id="lbl-sofort">Gesprochenes sofort senden</span>
+          <span class="switch-sub" id="sub-sofort">erst prüfen, dann Enter</span>
+        </div>
+        <button class="switch" id="sw-sofort" type="button" role="switch" aria-checked="false"
+                aria-labelledby="lbl-sofort" aria-describedby="sub-sofort"><span class="knob"></span></button>
       </div>
     </section>
 
