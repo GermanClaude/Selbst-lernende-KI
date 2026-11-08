@@ -82,6 +82,13 @@ def parse_version(text: str) -> tuple[int, ...]:
     return tuple(int(n) for n in re.findall(r"\d+", core)) or (0,)
 
 
+def exe_flavor(path) -> str:
+    """'app' fuer KI-App.exe, 'terminal' fuer KI.exe - auch wenn Windows die Datei beim
+    Herunterladen umbenannt hat ('KI-App (1).exe', 'KI (2).exe')."""
+    stem = re.sub(r"\s*\(\d+\)$", "", Path(str(path)).stem).strip().lower()
+    return "app" if stem.endswith("app") else "terminal"
+
+
 def is_newer(candidate: str, current: str) -> bool:
     return parse_version(candidate) > parse_version(current)
 
@@ -246,11 +253,11 @@ class Updater:
         if not remote or not is_newer(remote, self.current):
             return None
         assets = release.get("assets", [])
-        # Jedes Programm holt sich SEINE Datei (KI.exe bzw. KI-App.exe).
-        asset = next((a for a in assets if str(a.get("name", "")).lower() == self.exe_path.name.lower()), None)
-        if asset is None and self.exe_path.name.lower() == "ki.exe":
-            asset = next((a for a in assets if str(a.get("name", "")).lower().endswith(".exe")
-                          and "app" not in str(a.get("name", "")).lower()), None)
+        # Jedes Programm holt sich SEINE Datei (KI.exe bzw. KI-App.exe) - auch wenn es lokal
+        # "KI-App (1).exe" heisst. Ersetzt wird immer die eigene Datei (Name bleibt).
+        flavor = exe_flavor(self.exe_path)
+        asset = next((a for a in assets if str(a.get("name", "")).lower().endswith(".exe")
+                      and exe_flavor(a.get("name", "")) == flavor), None)
         if asset is None:
             return None
         notes = release.get("body") or ""

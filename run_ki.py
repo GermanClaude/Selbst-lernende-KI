@@ -44,9 +44,18 @@ def _ensure_runtime_dir() -> None:
     os.chdir(root)
 
 
+_WINDOWED = sys.stdout is None and sys.stdin is None  # beim Start gemerkt: Programm ohne Konsole
+
+
 def _is_app_exe() -> bool:
-    """KI-App.exe = dasselbe Programm, aber gleich als App (ohne Konsole)."""
-    return getattr(sys, "frozen", False) and Path(sys.executable).stem.lower() == "ki-app"
+    """KI-App.exe = dasselbe Programm, aber gleich als App (ohne Konsole). Auch wenn Windows
+    sie beim Herunterladen 'KI-App (1).exe' genannt hat - und jede .exe ohne Konsole."""
+    if not getattr(sys, "frozen", False):
+        return False
+    import re
+
+    stem = re.sub(r"\s*\(\d+\)$", "", Path(sys.executable).stem).strip().lower()
+    return stem.endswith("app") or _WINDOWED
 
 
 def _open_console() -> None:
