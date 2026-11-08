@@ -304,6 +304,9 @@ def run_native_window(server, ctl, title: str, storage: Path, on_quit_holder: di
         logger.warning("Programmfenster ging nicht: %s", exc, exc_info=True)
         on_quit_holder.pop("close", None)
         return False
+    if on_quit_holder.get("beendet"):
+        logger.info("App: Programmfenster geschlossen (gewollt)")
+        return True
     if on_quit_holder.pop("leer", False) or not server.hub.ever_connected:
         # Das Fenster hat die Oberflaeche nie geladen (z.B. WebView2 kaputt) - nicht still beenden!
         logger.warning("App: Oberflaeche wurde im Programmfenster nie geladen (gezeigt=%s)", shown.is_set())
@@ -347,6 +350,24 @@ def _selftest(webview, window, shown: threading.Event, server, holder: dict) -> 
         logger.warning("Selbsttest: Fenster liess sich nicht schliessen: %s", exc)
 
 
+def _crashed_last_time(info: Path) -> bool:
+    """Liegt noch app.json vom letzten Programmfenster da, dessen Prozess nicht mehr laeuft?
+    Dann ist das Fenster damals hart abgestuerzt (sonst raeumt die App app.json weg)."""
+    try:
+        data = json.loads(info.read_text(encoding="utf-8"))
+        pid = int(data.get("pid", 0))
+    except (OSError, ValueError, TypeError):
+        return False
+    if data.get("fenster") != "programm" or not pid or pid == os.getpid():
+        return False
+    try:
+        from ..selbststart import _pid_alive, _process_table
+
+        return not _pid_alive(pid, _process_table())
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def run_app(config, started_by: str | None = None, browser: bool = False) -> int:
     """Startet Server + Fenster; kehrt zurueck, wenn das Fenster geschlossen ist.
 
@@ -362,6 +383,8 @@ def run_app(config, started_by: str | None = None, browser: bool = False) -> int
 
     def on_quit(code: int) -> None:
         result["code"] = code
+        holder["beendet"] = True  # gewollt (z.B. Neustart nach Update) - kein Fensterfehler
+        logger.info("App: wird beendet (Code %s)", code)
         quit_now.set()
         close = holder.get("close")
         if close:
@@ -372,6 +395,13 @@ def run_app(config, started_by: str | None = None, browser: bool = False) -> int
 
     ctl.on_quit = on_quit
     info = _info_file(root)
+    if not browser and _crashed_last_time(info):
+        logger.warning("App: der letzte Start ist abgestuerzt - biete das Browser-Fenster an")
+        if sys.platform == "win32" and ask_yes_no(
+            "Beim letzten Mal ist das App-Fenster abgestuerzt.\n\nDiesmal lieber im Browser-Fenster oeffnen?\n"
+            "(Nein = das Programmfenster nochmal versuchen)"
+        ):
+            browser = True
     try:
         info.parent.mkdir(parents=True, exist_ok=True)
         info.write_text(json.dumps({"pid": os.getpid(), "url": server.url, "fenster": "programm"}),
@@ -416,6 +446,11 @@ def run_app(config, started_by: str | None = None, browser: bool = False) -> int
 def _browser_fallback(server, ctl, root: Path, quit_now: threading.Event, holder: dict | None = None) -> None:
     """Ersatz: Edge/Chrome im App-Modus; endet, wenn kein Fenster mehr verbunden ist."""
     logger.info("App: Ersatz-Fenster im Browser")
+    try:  # ein zweiter Start oeffnet dann ein weiteres Browser-Fenster statt "schon offen"
+        _info_file(root).write_text(json.dumps({"pid": os.getpid(), "url": server.url, "fenster": "browser"}),
+                                    encoding="utf-8")
+    except OSError:
+        pass
     open_window(server.url, root / "data" / "browser-fenster")
     if holder is None or not holder.get("started"):
         ctl.startup()

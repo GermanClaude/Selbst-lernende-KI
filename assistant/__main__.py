@@ -30,7 +30,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--app", action="store_true", help="Als App in einem eigenen Fenster starten")
     parser.add_argument("--terminal", action="store_true", help="Im Terminal starten (Standard)")
     parser.add_argument("--browser", action="store_true", help="App im Browser-Fenster statt Programmfenster")
-    args = parser.parse_args(argv)
+    # Unbekanntes (z.B. eine Datei auf KI-App.exe gezogen) wird ignoriert statt still abzubrechen.
+    args, _unknown = parser.parse_known_args(argv)
     app_mode = args.app and not args.terminal
 
     if app_mode and getattr(sys, "frozen", False) and sys.platform == "win32":
