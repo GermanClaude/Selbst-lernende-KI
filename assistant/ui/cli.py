@@ -1331,5 +1331,10 @@ class _TerminalLiveHost:
 
     def wait(self, timeout: float = 30.0) -> None:
         if self.worker is not None and self.worker.is_alive():
+            if self._leaving():  # "Tschuess" mitten in einer Antwort: die Bitte noch erledigen
+                print(_c("\n[Ich mache das noch fertig …]", GREY))
+                self.worker.join(300)
+                if not self.worker.is_alive():
+                    return
             self.cli.brain.provider.cancel()
             self.worker.join(timeout)

@@ -409,10 +409,14 @@ def test_goodbyes_and_staying_are_told_apart():
     from assistant.live import is_goodbye
 
     for text in ("Tschüss", "Tschüss Nova!", "Danke, tschüss", "Ciao", "Bis dann", "Auf Wiedersehen",
-                 "okay bis später", "Gute Nacht"):
+                 "okay bis später", "Gute Nacht", "Alles klar, tschüss", "Danke Nova, tschüss",
+                 "Tschüss Nova, bis später", "Vielen Dank, tschüss", "Super, danke, bis dann", "Danke dir, ciao",
+                 "Ich bin jetzt weg, tschüss"):
         assert is_goodbye(text), text
     for text in ("Chat-Modus", "Ich geh zurück zum Chat", "Ich bin weg, ordne bitte meine Notizen",
-                 "Bis morgen um acht erinnern", "Das Ende vom Film", "Ja", "Stopp", "Jarvis aus"):
+                 "Bis morgen um acht erinnern", "Das Ende vom Film", "Ja", "Stopp", "Jarvis aus",
+                 "Bis dann mache ich das", "Ciao heißt hallo auf Italienisch?", "Was heißt ciao?",
+                 "Bis gleich, ich hol Kaffee", "Nein, bis morgen", "Bis morgen früh", "Bis Montag"):
         assert not is_goodbye(text), text
 
 

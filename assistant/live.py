@@ -819,6 +819,7 @@ class LiveLoop:
         self.pending: str | None = None
         self.spoke = 0                # so oft hast du wirklich etwas gesagt (kein Echo, kein Geraeusch)
         self.recognizing = False      # Gesagtes wird gerade (langsam) erkannt
+        self.last_said: tuple[float, str] = (0.0, "")  # (Zeit, Satz) - Novas letzter Satz
         self.exit_reason = ""         # "bye" (Tschuess/beenden) oder "chat" (zurueck in den Chat)
         self.hearing = False          # du sprichst gerade
         self.speaking = False         # Nova spricht (oder hat noch etwas in der Warteschlange)
@@ -886,7 +887,8 @@ class LiveLoop:
             self.ear.stop()
             if self.speaking:
                 self.voice_out.stop()
-            if self.turn_active:
+            # "Tschuess" mitten in einer Antwort: die Bitte wird noch erledigt (nur nicht mehr vorgelesen).
+            if self.turn_active and self.exit_reason != "bye":
                 self.host.cancel_turn(False)
             self._state("off", error=self.error)
 
@@ -980,7 +982,16 @@ class LiveLoop:
             self._carry_on()
             self._idle_state()
             return
-        goodbye = is_goodbye(text)
+        at, said = self.last_said
+        asked = said.rstrip().endswith("?") and time.monotonic() - at < 60
+        goodbye = is_goodbye(text, after_question=asked)
+        if goodbye:
+            ask = self.host.pending_ask()
+            if ask and self.ask_said_at is not None and started >= self.ask_said_at - 0.6:
+                value = voice_choice(text, [o for o in ask.get("options", [])])
+                if value:  # "Ja, tschuess": erst die Rueckfrage beantworten, dann gehen
+                    self.ask_text = self.ask_said_at = None
+                    self.host.answer_ask(ask["id"], value)
         if goodbye or self.host.is_exit(text):
             # "Tschuess"/"Ciao"/"Bis dann" heisst: ich gehe. "Chat-Modus"/"Jarvis aus"/"Beenden"
             # heisst: ich bleibe, nur ohne Sprache.
@@ -1060,9 +1071,11 @@ class LiveLoop:
     def _is_echo(self, text: str) -> bool:
         """Hat das Mikrofon nur Nova selbst gehoert (Lautsprecher)?"""
         words = _words(text)
+        now = time.monotonic()
+        if len(words) == 1 and words[0] in _GOODBYE_WORDS:  # "Ciao!" - hat Nova das gerade selbst gesagt?
+            return any(now - at < 5 and words[0] in said for at, said in self.recent)
         if len(words) < 2:
             return False
-        now = time.monotonic()
         heard = set()
         for at, said in self.recent:
             if now - at < 20:
@@ -1184,6 +1197,7 @@ class LiveLoop:
         if sentence == self.ask_text:
             self.ask_said_at = now  # ab jetzt kann die Antwort kommen
         self.recent.append((now, set(_words(sentence))))
+        self.last_said = (now, sentence)
         self.speak_until = max(self.speak_until, now) + 0.3 + 0.085 * len(sentence)
         if not self.speaking:
             self.speaking = True
@@ -1228,27 +1242,37 @@ class LiveLoop:
 _GOODBYES = (("tschuess",), ("tschüss",), ("tschüs",), ("tschues",), ("tschau",), ("ciao",), ("bye",),
              ("bis", "dann"), ("bis", "spaeter"), ("bis", "später"), ("bis", "gleich"), ("bis", "morgen"),
              ("bis", "bald"), ("auf", "wiedersehen"), ("gute", "nacht"), ("machs", "gut"), ("mach", "s", "gut"))
-_GOODBYE_FILLERS = {"danke", "okay", "ok", "ja", "also", "gut", "so", "dann", "na", "schön", "schoen"}
+_GOODBYE_WORDS = {p[0] for p in _GOODBYES if len(p) == 1}
+# Hoeflichkeit und Fuellwoerter rund um einen Abschied ("Alles klar, danke dir, tschuess Nova")
+_POLITE = {"danke", "dank", "vielen", "dir", "euch", "okay", "ok", "ja", "also", "gut", "so", "na", "und",
+           "alles", "klar", "super", "prima", "perfekt", "klasse", "toll", "schön", "schoen", "nova", "dann",
+           "liebe", "lieber", "freundin", "freund", "chef", "erstmal", "erst", "mal", "jetzt", "ich", "bin", "weg"}
+_TIME_WORDS = {"früh", "frueh", "mittag", "abend", "nachmittag", "vormittag", "um", "ab", "zum", "bis", "uhr"}
+_NOT_GOODBYE = {"nein", "nicht", "kein", "keine", "was", "wie", "warum", "heißt", "heisst", "sagt", "frag",
+                "frage", "chat"}
 
 
-def is_goodbye(text: str) -> bool:
-    """Ein kurzer Abschied ("Tschuess Nova", "Danke, ciao", "Bis dann") - ich gehe. Keine Bitte
-    ("Ich bin weg, ordne meine Notizen" geht an die KI) und nichts mit "Chat" (da bleibe ich)."""
+def is_goodbye(text: str, after_question: bool = False) -> bool:
+    """Ein kurzer Abschied ("Tschuess Nova", "Alles klar, danke, bis dann") - ich gehe. Keine Bitte
+    ("Ich bin weg, ordne meine Notizen" geht an die KI), nichts mit "Chat" (da bleibe ich), und
+    nach einer Frage von Nova ist "Bis morgen" eine Antwort, kein Abschied."""
     words = re.findall(r"[a-zäöüß]+", (text or "").lower())
-    if not words or len(words) > 5 or "chat" in words:
+    if not words or len(words) > 7 or any(w in _NOT_GOODBYE for w in words):
         return False
-    return _goodbye_words(words)
-
-
-def _goodbye_words(words: list[str]) -> bool:
-    while words and words[0] in _GOODBYE_FILLERS:
-        words = words[1:]
-    for phrase in _GOODBYES:
-        if tuple(words[:len(phrase)]) == phrase:
-            rest = words[len(phrase):]
-            # danach hoechstens ein Name ("Tschuess Nova") oder noch ein Abschied ("Ciao, bis morgen")
-            return len(rest) <= 1 or _goodbye_words(rest)
-    return False
+    found, unknown, i = False, 0, 0
+    while i < len(words):
+        phrase = next((p for p in _GOODBYES if tuple(words[i:i + len(p)]) == p), None)
+        if phrase:
+            if phrase[0] == "bis" and (after_question or (i + len(phrase) < len(words)
+                                                          and words[i + len(phrase)] in _TIME_WORDS)):
+                return False  # "Bis morgen frueh" / Antwort auf "Bis wann ...?"
+            found = True
+            i += len(phrase)
+            continue
+        if words[i] not in _POLITE:
+            unknown += 1  # hoechstens ein fremdes Wort (z.B. ein Name)
+        i += 1
+    return found and unknown <= 1
 
 
 def staying(live) -> bool:

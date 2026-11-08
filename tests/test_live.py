@@ -790,3 +790,79 @@ def test_stop_button_counts_as_you_being_there():
     before = loop.spoke
     loop._on_hush(None)
     assert loop.spoke == before + 1
+
+
+def _goodbye_loop():
+    from assistant.live import LiveLoop
+
+    class Host:
+        def __init__(self):
+            self.answers, self.cancelled = [], 0
+            self.ask = None
+
+        def event(self, e): pass
+        def busy(self): return False
+        def is_exit(self, text): return False
+        def pending_ask(self): return self.ask
+        def answer_ask(self, ask_id, value): self.answers.append((ask_id, value))
+        def cancel_turn(self, drop): self.cancelled += 1
+
+        def start_turn(self, text):
+            self.sent = text
+            return True
+
+    class Voice:
+        def idle(self): return True
+        def stop(self): pass
+        def say(self, *a): pass
+        def begin(self, *a): pass
+
+    class Ear:
+        live = True
+        def start(self): pass
+        def stop(self): pass
+        def set_nova_speaking(self, v): pass
+
+    host = Host()
+    loop = LiveLoop(host, Voice(), SimpleNamespace(pause=0.6, unterbrechen=True), ear=Ear())
+    return loop, host
+
+
+def test_yes_goodbye_answers_the_question_first_then_leaves():
+    from assistant.live import Utterance
+
+    loop, host = _goodbye_loop()
+    host.ask = {"id": "q1", "options": ["einmal", "immer", "nein"]}
+    loop.ask_text = "Neu anlegen?"
+    loop.ask_said_at = time.monotonic() - 2
+    loop._on_utterance(Utterance("Ja, tschüss", b"", 0.5))
+    assert host.answers and host.answers[0][1] == "einmal"
+    assert loop.stop_event.is_set() and loop.exit_reason == "bye"
+
+
+def test_goodbye_during_an_answer_lets_the_request_finish():
+    loop, host = _goodbye_loop()
+    loop.turn_active = True
+    loop.exit_reason = "bye"
+    loop.stop_event.set()
+    loop.run()
+    assert host.cancelled == 0  # die Bitte wird noch erledigt
+    loop, host = _goodbye_loop()
+    loop.turn_active = True
+    loop.exit_reason = "chat"
+    loop.stop_event.set()
+    loop.run()
+    assert host.cancelled == 1
+
+
+def test_novas_own_ciao_is_an_echo_and_bis_morgen_answers_a_question():
+    from assistant.live import Utterance, is_goodbye
+
+    loop, host = _goodbye_loop()
+    loop.recent.append((time.monotonic(), {"auf", "italienisch", "sagt", "man", "ciao"}))
+    assert loop._is_echo("Ciao")
+    assert not loop._is_echo("Tschüss")
+    assert is_goodbye("Bis morgen") and not is_goodbye("Bis morgen", after_question=True)
+    loop.last_said = (time.monotonic(), "Bis wann brauchst du die Zusammenfassung?")
+    loop._on_utterance(Utterance("Bis morgen", b"", 0.5))
+    assert not loop.stop_event.is_set() and host.sent == "Bis morgen"  # geht als Antwort an die KI
