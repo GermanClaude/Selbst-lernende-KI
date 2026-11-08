@@ -107,7 +107,8 @@ class HandyKamera:
         self._kanal: sig.Kanal | None = None
         self._pc = None
         self._dc = None
-        self._geraet: str | None = None
+        self._geraet: str | None = None          # erst gebunden, wenn eine Verbindung steht
+        self._versuch_geraet: str | None = None  # Handy des laufenden Verbindungsversuchs
         self._frist = 0.0
         self._war_verbunden = False
         self._verbunden_seit: float | None = None
@@ -158,6 +159,7 @@ class HandyKamera:
                                        sig.code_anzeige(code) if code else None)
             self._zustand, self._schritt, self._fehler = "wartet", "wartet_auf_handy", None
             self._geraet, self._war_verbunden, self._verbunden_seit = None, False, None
+            self._versuch_geraet = None
             self._frist = float(kopplung.ablauf)
             self._frame, self._cache, self.bilder, self.verworfene_kandidaten = None, None, 0, 0
             bereit = threading.Event()
@@ -366,13 +368,21 @@ class HandyKamera:
             sdp = daten.get("sdp")
             if not isinstance(sdp, str) or not sdp or len(sdp) > MAX_SDP or not geraet:
                 return
-            if self._geraet and geraet != self._geraet:
+            if self._zustand == "verbunden":
+                # Laufende Verbindung nie per Relais uebernehmen lassen (auch nicht vom selben Geraet):
+                # erst wenn sie getrennt/gescheitert ist, darf ein neues Angebot kommen.
+                log.info("Angebot w\u00e4hrend einer laufenden Verbindung abgewiesen")
+                await self._sende("fehler", {"grund": "noch-verbunden", "g": geraet})
+                return
+            gebunden = self._geraet or (self._versuch_geraet if self._pc is not None else None)
+            if gebunden and geraet != gebunden:
                 log.info("Zweites Handy abgewiesen (eine Kopplung = ein Handy)")
                 await self._sende("besetzt", {"g": geraet})
                 return
-            self._geraet = geraet
+            self._versuch_geraet = geraet
             await self._verbinden(sdp)
-        elif nachricht.typ == "tschuess" and geraet == self._geraet:
+        elif (nachricht.typ == "tschuess" and self._zustand != "verbunden"
+              and geraet in (self._geraet, self._versuch_geraet)):
             await self._getrennt("Am Handy beendet.")
 
     async def _verbinden(self, sdp_angebot: str) -> None:
@@ -382,7 +392,7 @@ class HandyKamera:
         self.verworfene_kandidaten += verworfen
         log.info("Angebot vom Handy: %d LAN-Kandidat(en), %d verworfen", behalten, verworfen)
         if behalten == 0:
-            await self._sende("fehler", {"grund": "kein-lan", "g": self._geraet})
+            await self._sende("fehler", {"grund": "kein-lan", "g": self._versuch_geraet})
             self._setze_fehler(WLAN_HINWEIS)
             return
         self._schritt = "verbindet"
@@ -407,17 +417,17 @@ class HandyKamera:
             await pc.setLocalDescription(await pc.createAnswer())
         except Exception as exc:  # noqa: BLE001 - z.B. kein gemeinsamer Codec
             log.warning("Angebot vom Handy nicht verwendbar (%s)", type(exc).__name__)
-            await self._sende("fehler", {"grund": "angebot", "g": self._geraet})
+            await self._sende("fehler", {"grund": "angebot", "g": self._versuch_geraet})
             self._setze_fehler("Das Handy-Video passt nicht zu Nova (Codec). Bitte einen anderen Browser versuchen.")
             await self._schliesse_pc()
             return
         antwort, behalten, _ = self._filtere(pc.localDescription.sdp)
         if behalten == 0:
-            await self._sende("fehler", {"grund": "pc-kein-lan", "g": self._geraet})
+            await self._sende("fehler", {"grund": "pc-kein-lan", "g": self._versuch_geraet})
             self._setze_fehler("Dieser PC hat keine Adresse im Heimnetz (WLAN/LAN).")
             await self._schliesse_pc()
             return
-        await self._sende("antwort", {"sdp": antwort, "g": self._geraet})
+        await self._sende("antwort", {"sdp": antwort, "g": self._versuch_geraet})
         asyncio.ensure_future(self._verbinden_aufpassen(pc))
 
     def _filtere(self, sdp: str) -> tuple[str, int, int]:
@@ -443,6 +453,7 @@ class HandyKamera:
                 return
             with self._sperre:
                 self._zustand, self._schritt, self._fehler = "verbunden", "verbunden", None
+                self._geraet = self._versuch_geraet  # ab jetzt gehoert die Kopplung diesem Handy
                 self._war_verbunden = True
                 self._verbunden_seit = self._uhr()
             log.info("Handy-Kamera verbunden")

@@ -836,7 +836,7 @@ class CLI:
         return True
 
     def _sehen_command(self, args: list[str]) -> None:
-        from ..sehen.einstellungen import QUELLEN
+        from ..sehen.einstellungen import QUELLEN, regeln_aus
 
         sub = (args[0].lower() if args else "status")
         if sub in ("status", "zustand"):
@@ -868,6 +868,18 @@ class CLI:
             return
         wunsch = sub if sub in QUELLEN else (args[1].lower() if len(args) > 1 and args[1].lower() in QUELLEN
                                              else None)
+        if wunsch is None and self.sehen.aktiv:  # "/sehen an", obwohl es laeuft: nichts umwerfen
+            print("Live-Sehen ist schon an. " + self._sehen_status_text().split("\n", 1)[0])
+            return
+        if (wunsch or regeln_aus(self.config.sehen).quelle) == "handy":
+            # Handy nie versteckt koppeln: immer mit QR-Code (Terminal) bzw. Dialog (App)
+            if self.sehen.aktiv and "handy" in self.sehen.quellen:
+                print("Die Handy-Kamera ist schon an. Neu koppeln: /sehen handy")
+                return
+            if self.sehen.braucht_zustimmung() and not self._sehen_zustimmung():
+                return
+            self._sehen_handy()
+            return
         if wunsch:
             try:
                 save_setting(self.config.project_root, "sehen", "quelle", toml_string(wunsch))

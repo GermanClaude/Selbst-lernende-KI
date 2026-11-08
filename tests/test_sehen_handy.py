@@ -290,3 +290,112 @@ def test_terminal_sehen_handy_zeigt_qr_link_und_code(tmp_path, capsys, monkeypat
     finally:
         cli.sehen.aus()
         cli.memory.close()
+
+
+# -- Pruefbefunde: nie versteckt koppeln, Pause waehrend des Koppelns, nicht unter der Sperre stoppen -----
+def test_kein_verstecktes_koppeln_ohne_qr(dienst):
+    from assistant.sehen.dienst import HANDY_PER_QR
+
+    d = dienst()
+    assert d.an("handy") == (False, HANDY_PER_QR) and d.handys == [] and not d.aktiv
+    d.config.sehen.quelle = "handy"
+    assert d.an() == (False, HANDY_PER_QR) and d.handys == []
+    d.bildschirm_moeglich = True
+    d.auge_fabrik = lambda e: type("A", (), {"start": lambda s: None, "senden": lambda s, b: None,
+                                             "lies": lambda s, t=0.1: None, "lebt": lambda s: True,
+                                             "stop": lambda s, w=2.0: None})()
+    assert d.an("bildschirm")[0]
+    assert d.an("handy") == (False, HANDY_PER_QR) and d.aktiv and d.quellen == {"bildschirm"}  # bleibt, wie es war
+    d.aus()
+
+
+def test_pause_waehrend_des_koppelns_stoppt_die_neue_kopplung(dienst):
+    d = dienst()
+    d.handy_koppeln()
+    erste = d.handys[0]
+
+    class Langsam(FakeHandy):
+        def start(self):
+            d.pausiert = True              # waehrend das Handy startet, drueckst du Pause
+            return super().start()
+
+    d.handy_fabrik = lambda: d.handys.append(Langsam()) or d.handys[-1]
+    fehler = d._handy_neu()
+    assert "Pause" in fehler and d.handys[1].gestoppt == 1 and d._handy is None and erste.gestoppt == 1
+
+
+def test_handy_wird_nie_unter_der_sperre_gestoppt(dienst):
+    import threading
+
+    d = dienst()
+    d.handy_koppeln()
+    frei = []
+
+    def stop():
+        t = threading.Thread(target=lambda: frei.append(d._lock.acquire(timeout=0.5) and (d._lock.release() or True)))
+        t.start()
+        t.join()
+
+    d.handys[0].stop = stop
+    d.handys[0].zustand = "verbunden"
+    ok, _text = d.an("webcam")               # keine Webcam da -> nichts an, verbundenes Handy wird beendet
+    assert not ok and frei == [True]
+
+
+def test_start_mit_quelle_handy_koppelt_nicht_versteckt(tmp_path, capsys):
+    from assistant.ui.cli import CLI
+
+    cfg = load_config(tmp_path)
+    cfg.update.modus = "aus"
+    cfg.anthropic_api_key = "sk-ant-test-schluessel"
+    cfg.provider.aktiv = "claude"
+    cli = CLI(cfg)
+    try:
+        cli.sehen.handy_fabrik = lambda: pytest.fail("versteckte Kopplung")
+        cli.sehen.zustimmen()
+        cfg.sehen.aktiv, cfg.sehen.quelle = True, "handy"
+        cli._sehen_beim_start()
+        assert "/sehen handy" in capsys.readouterr().out and not cli.sehen.aktiv
+    finally:
+        cli.memory.close()
+
+
+def test_sehen_an_handy_zeigt_den_qr_code(tmp_path, capsys, monkeypatch):
+    from assistant.ui.cli import CLI
+
+    cfg = load_config(tmp_path)
+    cfg.update.modus = "aus"
+    cfg.anthropic_api_key = "sk-ant-test-schluessel"
+    cfg.provider.aktiv = "claude"
+    cli = CLI(cfg)
+    try:
+        cli.sehen.zustimmen()
+        cli.sehen.handy_fabrik = FakeHandy
+        monkeypatch.setattr("assistant.kamera.qr.qr_text", lambda link: "##QR##\n")
+        cli._handle_command("/sehen an handy")
+        out = capsys.readouterr().out
+        assert "##QR##" in out and CODE in out and cli.sehen.quellen == {"handy"}
+        cli._handle_command("/sehen an")
+        assert "schon an" in capsys.readouterr().out
+    finally:
+        cli.sehen.aus()
+        cli.memory.close()
+
+
+def test_app_start_mit_quelle_handy_nur_hinweis(tmp_path):
+    from assistant.app.controller import AppController
+
+    cfg = load_config(tmp_path)
+    cfg.update.modus = "aus"
+    cfg.anthropic_api_key = "sk-ant-test-schluessel"
+    cfg.provider.aktiv = "claude"
+    ctl = AppController(cfg, lambda e: None)
+    try:
+        ctl.sehen.handy_fabrik = lambda: pytest.fail("versteckte Kopplung")
+        ctl.sehen.zustimmen()
+        cfg.sehen.aktiv, cfg.sehen.quelle = True, "handy"
+        ctl._sehen_beim_start()
+        assert not ctl.sehen.aktiv and any("/sehen handy" in m["text"] for m in ctl.history)
+        assert ctl.sehen_api({"aktion": "an", "quelle": "handy"})["ok"] is False
+    finally:
+        ctl.shutdown()

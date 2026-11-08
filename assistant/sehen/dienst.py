@@ -238,6 +238,9 @@ class SehDienst:
         if self.braucht_zustimmung():
             return False, "zustimmung"
         handy_verbunden = self._handy is not None and self._handy_status().get("zustand") == "verbunden"
+        gewuenscht = (wunsch or regeln_aus(self.config.sehen).quelle or "auto").lower()
+        if gewuenscht == "handy" and not handy_koppeln and not handy_verbunden:
+            return False, HANDY_PER_QR  # nie eine versteckte Kopplung - und das Laufende bleibt, wie es ist
         if self.aktiv:
             self._aufraeumen(*self._ausschalten_gesperrt(handy_behalten=handy_verbunden))
         with self._lock:

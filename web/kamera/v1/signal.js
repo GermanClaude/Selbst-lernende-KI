@@ -288,8 +288,83 @@
     }
   }
 
+  // -- Nur LAN (wie ist_lan_adresse / filtere_sdp in signal.py) ---------------------------
+  function ipv4Bytes(text) {
+    const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(text);
+    if (!m) return null;
+    const b = m.slice(1).map((t) => (t.length > 1 && t[0] === "0" ? NaN : Number(t)));
+    return b.every((x) => x >= 0 && x <= 255) ? b : null;
+  }
+  function ipv6Bytes(text) {
+    if (!/^[0-9A-Fa-f:.]+$/.test(text) || text.split("::").length > 2) return null;
+    let v4 = null;
+    let s = text;
+    if (s.indexOf(".") >= 0) { // z.B. ::ffff:192.168.0.2
+      const i = s.lastIndexOf(":");
+      v4 = ipv4Bytes(s.slice(i + 1));
+      if (!v4) return null;
+      s = s.slice(0, i + 1);
+      if (!s.endsWith("::")) s = s.slice(0, -1);
+    }
+    const ziel = v4 ? 6 : 8;
+    const teile = (x) => (x === "" ? [] : x.split(":"));
+    const h = s.split("::");
+    let gruppen;
+    if (h.length === 2) {
+      const l = teile(h[0]), r = teile(h[1]);
+      const fehlt = ziel - l.length - r.length;
+      if (fehlt < 1) return null;
+      gruppen = l.concat(new Array(fehlt).fill("0"), r);
+    } else {
+      gruppen = teile(s);
+      if (gruppen.length !== ziel) return null;
+    }
+    const out = [];
+    for (const g of gruppen) {
+      if (!/^[0-9A-Fa-f]{1,4}$/.test(g)) return null;
+      const n = parseInt(g, 16);
+      out.push(n >> 8, n & 255);
+    }
+    return v4 ? out.concat(v4) : out;
+  }
+  /** RFC1918, 169.254/16, fc00::/7, fe80::/10 oder mDNS-Name (*.local). Alles andere: nein. */
+  function istLanAdresse(adresse) {
+    let a = String(adresse || "").trim().replace(/^\[/, "").replace(/\]$/, "");
+    if (a.toLowerCase().endsWith(".local")) return /^[A-Za-z0-9-]{1,63}\.local$/.test(a);
+    a = a.split("%")[0];
+    const v4 = ipv4Bytes(a);
+    if (v4) {
+      return v4[0] === 10 || (v4[0] === 172 && v4[1] >= 16 && v4[1] <= 31) || (v4[0] === 192 && v4[1] === 168)
+        || (v4[0] === 169 && v4[1] === 254);
+    }
+    const v6 = ipv6Bytes(a);
+    if (!v6) return false;
+    const gemappt = v6.slice(0, 10).every((x) => x === 0) && v6[10] === 255 && v6[11] === 255;
+    if (gemappt) return istLanAdresse(v6.slice(12).join("."));
+    return (v6[0] & 0xfe) === 0xfc || (v6[0] === 0xfe && (v6[1] & 0xc0) === 0x80);
+  }
+  /** Eine "candidate:"-Zeile: nur Host-Kandidaten mit LAN-Adresse. */
+  function kandidatErlaubt(zeile, pruefung) {
+    const teile = String(zeile || "").trim().split(/\s+/);
+    if (teile.length < 8 || teile[6] !== "typ") return false;
+    return teile[7] === "host" && (pruefung || istLanAdresse)(teile[4]);
+  }
+  /** Entfernt Kandidaten außerhalb des LANs -> {sdp, behalten, verworfen}. */
+  function filtereSdp(sdp, pruefung) {
+    let behalten = 0, verworfen = 0;
+    const zeilen = [];
+    for (const zeile of String(sdp || "").replace(/\r\n/g, "\n").split("\n")) {
+      if (zeile.indexOf("a=candidate:") === 0) {
+        if (kandidatErlaubt(zeile.slice(2), pruefung)) behalten += 1;
+        else { verworfen += 1; continue; }
+      }
+      zeilen.push(zeile);
+    }
+    return { sdp: zeilen.join("\r\n").replace(/[\r\n]+$/, "") + "\r\n", behalten, verworfen };
+  }
+
   global.NovaSignal = {
     PROTOKOLL, MAX_TEXT, SignalFehler, RelayFehler, b64u, b64uDekodieren, leseKopplung, kopplungAusLink,
-    packen, entpacken, Kanal, codeNormalisieren, codeKopplung, NtfyRelay,
+    packen, entpacken, Kanal, codeNormalisieren, codeKopplung, NtfyRelay, istLanAdresse, kandidatErlaubt, filtereSdp,
   };
 })(typeof globalThis !== "undefined" ? globalThis : this);
