@@ -416,9 +416,9 @@
       listening: { amp: 0.026, speed: 0.55, breathe: 0.04, rate: 1.7, gain: 0.6, glow: 0.55, bright: 0, spin: 0, ring: 0, wander: 0, talk: 0, hue: 0, warn: 0 },
       hearing: { amp: 0.045, speed: 1.15, breathe: 0.012, rate: 2, gain: 1.2, glow: 0.9, bright: 0.1, spin: 0, ring: 0, wander: 0, talk: 0, hue: -46, warn: 0 },
       recognizing: { amp: 0.03, speed: 0.9, breathe: 0.02, rate: 2, gain: 0.25, glow: 0.62, bright: 0.04, spin: 1, ring: 0, wander: 0, talk: 0, hue: -18, warn: 0 },
-      thinking: { amp: 0.036, speed: 0.78, breathe: 0.035, rate: 2.1, gain: 0.2, glow: 0.74, bright: 0.12, spin: 0, ring: 0, wander: 1, talk: 0, hue: 40, warn: 0 },
-      working: { amp: 0.036, speed: 0.88, breathe: 0.035, rate: 2.1, gain: 0.2, glow: 0.78, bright: 0.12, spin: 0, ring: 1, wander: 1, talk: 0, hue: 62, warn: 0 },
-      writing: { amp: 0.032, speed: 0.72, breathe: 0.03, rate: 1.8, gain: 0.2, glow: 0.7, bright: 0.07, spin: 0, ring: 0, wander: 0.45, talk: 0, hue: 18, warn: 0 },
+      thinking: { amp: 0.036, speed: 0.78, breathe: 0.035, rate: 2.1, gain: 0.2, glow: 0.74, bright: 0.12, spin: 0, ring: 0, wander: 1, talk: 0, hue: 30, warn: 0 },
+      working: { amp: 0.036, speed: 0.88, breathe: 0.035, rate: 2.1, gain: 0.2, glow: 0.78, bright: 0.12, spin: 0, ring: 1, wander: 1, talk: 0, hue: 46, warn: 0 },
+      writing: { amp: 0.032, speed: 0.72, breathe: 0.03, rate: 1.8, gain: 0.2, glow: 0.7, bright: 0.07, spin: 0, ring: 0, wander: 0.45, talk: 0, hue: 12, warn: 0 },
       speaking: { amp: 0.04, speed: 1, breathe: 0.02, rate: 1.8, gain: 0.1, glow: 0.88, bright: 0.08, spin: 0, ring: 0, wander: 0, talk: 1, hue: -62, warn: 0 },
       asking: { amp: 0.03, speed: 0.6, breathe: 0.11, rate: 3.1, gain: 0.2, glow: 0.74, bright: 0.04, spin: 0, ring: 0, wander: 0, talk: 0, hue: 0, warn: 1 },
     };
@@ -428,12 +428,12 @@
       normal: { sp: 1, am: 1, ki: 1 },
       lebhaft: { sp: 1.45, am: 1.6, ki: 1.35 },
     };
-    const look = { mode: 'sphaere', color: '', motion: 'normal', hue: 243, sat: 1, shift: 1, light: true, sp: 1, am: 1, ki: 1 };
+    const look = { mode: 'sphaere', color: '', motion: 'normal', hue: 243, sat: 1, shift: 1, spread: 1, light: true, sp: 1, am: 1, ki: 1 };
     const S = {
       P: Object.assign({}, PRESET.idle), T: PRESET.idle, mood: 'idle',
       t: 0, tb: 0, tw: 0, ph: 0, lvl: 0, lvlT: 0, lvlAt: 0, prevLvl: 0,
       talkL: false, talkS: false, talkEnv: 0, kick: 0, pulseAt: 0, flinch: 0, flinchV: 0, flash: 0,
-      err: 0, errV: 0, ripples: [], lastRipple: 0, e: 0, hue: 243, sat: 1, still: false,
+      err: 0, errV: 0, ripples: [], lastRipple: 0, e: 0, hue: 243, sat: 1, spread: 1,
     };
     const slots = new Map();   // Platz-Element -> Sphaere
     const byCanvas = new Map(); // Leinwand -> Sphaere
@@ -521,17 +521,18 @@
       const light = !s.dark && look.light;
       const sat = M.sat;
       const hue = M.hue;
+      const hs = M.spread; // wie weit die Farben im Inneren auseinanderlaufen
       const R = R0 * (1 + Math.min(0.34, e * 0.42 * b) + M.flinch * Math.min(b, 1.4));
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.globalCompositeOperation = 'source-over';
       ctx.clearRect(0, 0, W, H);
 
-      // 1. Leuchten (hell: zarter, dafuer ein weicher Schatten)
-      const ga = light ? 0.55 : 1;
-      let g = ctx.createRadialGradient(cx, cy, R * 0.45, cx, cy, Math.min(half, R0 * (2.2 + e * 0.6 * b)));
-      g.addColorStop(0, hsla(hue, 90 * sat, light ? 58 : 62, (0.4 * P.glow + 0.3 * e) * ga));
-      g.addColorStop(0.45, hsla(hue + 24, 88 * sat, 58, (0.13 * P.glow + 0.12 * e) * ga));
-      g.addColorStop(1, hsla(hue + 30, 85 * sat, 56, 0));
+      // 1. Leuchten (hell: zarter, dafuer ein weicher, farbiger Schatten)
+      const ga = light ? 0.6 : 1;
+      let g = ctx.createRadialGradient(cx, cy, R * 0.7, cx, cy, Math.min(half, R0 * (2.25 + e * 0.6 * b)));
+      g.addColorStop(0, hsla(hue + 6 * hs, 92 * sat, light ? 60 : 64, (0.42 * P.glow + 0.32 * e) * ga));
+      g.addColorStop(0.35, hsla(hue + 20 * hs, 90 * sat, 60, (0.16 * P.glow + 0.14 * e) * ga));
+      g.addColorStop(1, hsla(hue + 30 * hs, 85 * sat, 56, 0));
       ctx.fillStyle = g;
       ctx.fillRect(0, 0, W, H);
       if (M.flash > 0.02) {
@@ -543,11 +544,12 @@
       }
       if (light) {
         ctx.save();
-        ctx.translate(cx, cy + R * 0.8);
-        ctx.scale(1, 0.34);
-        g = ctx.createRadialGradient(0, 0, 0, 0, 0, R * 1.05);
-        g.addColorStop(0, hsla(hue + 22, 55 * sat, 26, 0.32));
-        g.addColorStop(1, hsla(hue + 22, 55 * sat, 26, 0));
+        ctx.translate(cx, cy + R * 0.86);
+        ctx.scale(1, 0.3);
+        g = ctx.createRadialGradient(0, 0, 0, 0, 0, R * 1.0);
+        g.addColorStop(0, hsla(hue + 24 * hs, 60 * sat, 30, 0.36));
+        g.addColorStop(0.6, hsla(hue + 24 * hs, 60 * sat, 34, 0.12));
+        g.addColorStop(1, hsla(hue + 24 * hs, 60 * sat, 34, 0));
         ctx.fillStyle = g;
         ctx.fillRect(-R * 1.1, -R * 1.1, R * 2.2, R * 2.2);
         ctx.restore();
@@ -560,48 +562,73 @@
         ctx.beginPath();
         ctx.arc(cx, cy, R0 * (1.04 + k * 0.75), 0, TAU);
         ctx.lineWidth = Math.max(0.6 * dpr, R0 * 0.0085 * (1 + 1.6 * (1 - k)));
-        ctx.strokeStyle = hsla(hue + rp.shift, 90 * sat, light ? 52 : 72, rp.s * (1 - k) * (1 - k) * 0.55);
+        ctx.strokeStyle = hsla(hue + rp.shift * hs, 90 * sat, light ? 52 : 72, rp.s * (1 - k) * (1 - k) * 0.55);
         ctx.stroke();
       }
 
-      // 3. Koerper
+      // 3. Koerper: tiefer Verlauf, das Licht wandert beim Nachdenken
       const amp = P.amp * (0.7 + e * 1.6) * look.am * (1 + (b - 1) * 0.6);
       outline(ctx, s.n, cx, cy, R, amp, M.tb);
-      const wx = cx + (Math.cos(M.tw * 0.8) * 0.34 * P.wander - 0.22 * (1 - P.wander)) * R;
-      const wy = cy + (Math.sin(M.tw * 1.1) * 0.3 * P.wander - 0.27 * (1 - P.wander)) * R;
-      const lift = P.bright * 7 + M.kick * 5;
-      const dk = light ? 4 : 0;
-      g = ctx.createRadialGradient(wx, wy, R * 0.04, cx, cy, R * 1.08);
-      g.addColorStop(0, hsla(hue - 10, 96 * sat, 86 + lift * 0.5, 1));
-      g.addColorStop(0.3, hsla(hue - 2, 92 * sat, 68 + lift - dk, 1));
-      g.addColorStop(0.76, hsla(hue + 20, 84 * sat, 54 - dk, 1));
-      g.addColorStop(1, hsla(hue + 32, 80 * sat, 40 - dk, 1));
+      const wx = cx + (Math.cos(M.tw * 0.8) * 0.34 * P.wander - 0.2 * (1 - P.wander)) * R;
+      const wy = cy + (Math.sin(M.tw * 1.1) * 0.3 * P.wander - 0.26 * (1 - P.wander)) * R;
+      const lift = P.bright * 7 + M.kick * 6;
+      const dk = light ? 3 : 0;
+      g = ctx.createRadialGradient(wx, wy, R * 0.02, cx + R * 0.06, cy + R * 0.08, R * 1.1);
+      g.addColorStop(0, hsla(hue - 14 * hs, 95 * sat, 80 + lift * 0.6, 1));
+      g.addColorStop(0.28, hsla(hue - 4 * hs, 90 * sat, 64 + lift - dk, 1));
+      g.addColorStop(0.68, hsla(hue + 16 * hs, 84 * sat, 48 - dk, 1));
+      g.addColorStop(1, hsla(hue + 30 * hs, 82 * sat, 30 - dk, 1));
       ctx.fillStyle = g;
       ctx.fill();
 
-      // 4. innere Lichter (wirbeln), Fehler-Schimmer, Schatten, Glanz – nur in der Kugel
+      // 4. im Inneren: wirbelnde Lichter, Fehler-Schimmer, Volumen, Gegenlicht am Rand, Glanz
       ctx.save();
       ctx.clip();
       ctx.globalCompositeOperation = 'lighter';
       const tl = M.tb;
-      lobe(ctx, cx + Math.cos(tl * 0.63 + 1) * R * 0.32, cy + Math.sin(tl * 0.81) * R * 0.28, R * 0.75,
-        hsla(hue - 50, 94 * sat, 62, 0.4 + 0.3 * e));
-      lobe(ctx, cx + Math.cos(tl * 0.47 + 3.4) * R * 0.36, cy + Math.sin(tl * 0.59 + 2) * R * 0.32, R * 0.68,
-        hsla(hue + 64, 90 * sat, 62, 0.32 + 0.24 * e));
+      lobe(ctx, cx + Math.cos(tl * 0.63 + 1) * R * 0.34, cy + Math.sin(tl * 0.81) * R * 0.3, R * 0.72,
+        hsla(hue - 52 * hs, 96 * sat, 58, 0.34 + 0.3 * e));
+      lobe(ctx, cx + Math.cos(tl * 0.47 + 3.4) * R * 0.38, cy + Math.sin(tl * 0.59 + 2) * R * 0.34, R * 0.66,
+        hsla(hue + 58 * hs, 92 * sat, 60, 0.28 + 0.26 * e));
+      lobe(ctx, cx + Math.cos(tl * 0.36 + 5.1) * R * 0.18, cy + Math.sin(tl * 0.44 + 4) * R * 0.2, R * 0.5,
+        hsla(hue - 18 * hs, 100 * sat, 72, 0.16 + 0.22 * e + M.kick * 0.18));
       ctx.globalCompositeOperation = 'source-over';
       if (M.errV > 0.02) {
         ctx.fillStyle = 'hsla(354,86%,54%,' + (0.5 * M.errV).toFixed(3) + ')';
         ctx.fillRect(cx - R * 1.4, cy - R * 1.4, R * 2.8, R * 2.8);
       }
-      g = ctx.createRadialGradient(cx - R * 0.28, cy - R * 0.34, R * 0.25, cx, cy, R * 1.12);
+      // Volumen: unten rechts dunkler
+      g = ctx.createRadialGradient(cx - R * 0.3, cy - R * 0.36, R * 0.2, cx, cy, R * 1.1);
       g.addColorStop(0, 'rgba(0,0,0,0)');
-      g.addColorStop(1, light ? 'rgba(10,8,40,0.34)' : 'rgba(6,7,22,0.42)');
+      g.addColorStop(0.7, light ? 'rgba(14,8,48,0.08)' : 'rgba(6,6,24,0.1)');
+      g.addColorStop(1, light ? 'rgba(14,8,48,0.36)' : 'rgba(6,6,24,0.48)');
       ctx.fillStyle = g;
       ctx.fillRect(cx - R * 1.4, cy - R * 1.4, R * 2.8, R * 2.8);
-      lobe(ctx, cx - R * 0.36, cy - R * 0.42, R * 0.5, 'rgba(255,255,255,0.4)');
+      // Gegenlicht: feine, helle Sichel am Rand unten rechts (wie Glas)
+      ctx.globalCompositeOperation = 'lighter';
+      g = ctx.createRadialGradient(cx - R * 0.1, cy - R * 0.13, R * 0.97, cx - R * 0.1, cy - R * 0.13, R * 1.15);
+      g.addColorStop(0, hsla(hue - 40 * hs, 100 * sat, 70, 0));
+      g.addColorStop(0.5, hsla(hue - 40 * hs, 100 * sat, 72, 0.08));
+      g.addColorStop(1, hsla(hue - 40 * hs, 100 * sat, 78, 0.34 + 0.2 * P.glow));
+      ctx.fillStyle = g;
+      ctx.fillRect(cx - R * 1.4, cy - R * 1.4, R * 2.8, R * 2.8);
+      ctx.globalCompositeOperation = 'source-over';
+      // Glanz: weich und breit, dazu ein klarer Lichtpunkt
+      lobe(ctx, cx - R * 0.34, cy - R * 0.42, R * 0.56, 'rgba(255,255,255,0.32)');
+      ctx.save();
+      ctx.translate(cx - R * 0.38, cy - R * 0.46);
+      ctx.rotate(-0.7);
+      ctx.scale(1, 0.62);
+      g = ctx.createRadialGradient(0, 0, 0, 0, 0, R * 0.2);
+      g.addColorStop(0, 'rgba(255,255,255,0.85)');
+      g.addColorStop(0.45, 'rgba(255,255,255,0.35)');
+      g.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(-R * 0.2, -R * 0.2, R * 0.4, R * 0.4);
+      ctx.restore();
       ctx.restore();
       ctx.lineWidth = Math.max(0.5 * dpr, R0 * 0.0052);
-      ctx.strokeStyle = light ? hsla(hue + 24, 60 * sat, 32, 0.22) : 'rgba(255,255,255,0.16)';
+      ctx.strokeStyle = light ? hsla(hue + 24 * hs, 60 * sat, 30, 0.2) : hsla(hue - 30 * hs, 80 * sat, 82, 0.18);
       ctx.stroke();
 
       // 5. Kreisen (erkennt Sprache)
@@ -633,7 +660,7 @@
         ctx.translate(cx, cy);
         ctx.lineWidth = lw;
         if (!s.small) ctx.setLineDash([1.6 * dpr, 7 * dpr]);
-        ctx.strokeStyle = hsla(hue + 20, 85 * sat, l, (s.small ? 0.22 : 0.5) * P.ring);
+        ctx.strokeStyle = hsla(hue + 20 * hs, 85 * sat, l, (s.small ? 0.22 : 0.5) * P.ring);
         ctx.beginPath();
         ctx.arc(0, 0, rr, 0, TAU);
         ctx.stroke();
@@ -643,9 +670,9 @@
           // Schweif hinter dem Lichtpunkt
           const tail = 1.8;
           const cg = ctx.createConicGradient(ba - tail, 0, 0);
-          cg.addColorStop(0, hsla(hue + 20, 95 * sat, l, 0));
-          cg.addColorStop(tail / TAU, hsla(hue + 20, 95 * sat, l, 0.85 * P.ring));
-          cg.addColorStop(tail / TAU + 0.002, hsla(hue + 20, 95 * sat, l, 0));
+          cg.addColorStop(0, hsla(hue + 20 * hs, 95 * sat, l, 0));
+          cg.addColorStop(tail / TAU, hsla(hue + 20 * hs, 95 * sat, l, 0.85 * P.ring));
+          cg.addColorStop(tail / TAU + 0.002, hsla(hue + 20 * hs, 95 * sat, l, 0));
           ctx.strokeStyle = cg;
           ctx.lineWidth = lw * 1.5;
           ctx.lineCap = 'round';
@@ -653,9 +680,9 @@
           ctx.arc(0, 0, rr, ba - tail, ba);
           ctx.stroke();
         }
-        ctx.fillStyle = hsla(hue + 20, 95 * sat, light ? 52 : 86, 0.95 * P.ring);
+        ctx.fillStyle = hsla(hue + 20 * hs, 95 * sat, light ? 52 : 86, 0.95 * P.ring);
         if (!s.small) {
-          ctx.shadowColor = hsla(hue + 20, 95 * sat, 70, 0.9 * P.ring);
+          ctx.shadowColor = hsla(hue + 20 * hs, 95 * sat, 70, 0.9 * P.ring);
           ctx.shadowBlur = 10 * dpr;
         }
         ctx.beginPath();
@@ -713,6 +740,7 @@
       S.errV = S.err > 0 ? S.err * (0.62 + 0.38 * Math.sin(S.t * 38)) : 0;
       S.hue = mixHue(hue, 354, S.errV * 0.85);
       S.sat = look.sat + (1 - look.sat) * Math.max(P.warn, S.errV);
+      S.spread = look.spread * (1 - 0.55 * Math.max(P.warn, S.errV));
     }
 
     function ripple(life, strength, shift) {
@@ -841,26 +869,29 @@
         look.sat = 1;
       }
       // Indigo: volle Farbwechsel wie im Jarvis-Modus; eigene Farben behalten ihren Charakter
-      look.shift = Math.abs(mixHue(look.hue, 243, 1) - look.hue) < 25 && !own ? 1 : 0.6;
+      const indigo = Math.abs(mixHue(look.hue, 243, 1) - look.hue) < 25 && !own;
+      look.shift = indigo ? 1 : 0.6;
+      // Farbverlauf im Inneren: beim Indigo bunt (wie im Jarvis-Modus), eigene Farben bleiben bei sich
+      look.spread = indigo ? 1 : own ? 0.38 : 0.55;
       const m = pick(MOTION, look.motion) || MOTION.normal;
       look.sp = m.sp;
       look.am = m.am;
       look.ki = m.ki;
       root.style.setProperty('--orb-a', hsla(look.hue, 86 * look.sat, 64, 1));
-      root.style.setProperty('--orb-b', hsla(look.hue + 30, 78 * look.sat, 42, 1));
+      root.style.setProperty('--orb-b', hsla(look.hue + 30 * look.spread, 78 * look.sat, 42, 1));
     }
 
     function stillState() {
       const P = Object.assign({}, PRESET.idle);
       return {
-        P, e: 0.03, hue: look.hue, sat: look.sat, flinch: 0, flash: 0, errV: 0, kick: 0, ripples: [],
+        P, e: 0.03, hue: look.hue, sat: look.sat, spread: look.spread, flinch: 0, flash: 0, errV: 0, kick: 0, ripples: [],
         t: 0, tb: 2.3, tw: 0,
       };
     }
 
     function makeStill() {
       if (!canvasOk) return;
-      const key = look.hue.toFixed(1) + '|' + look.sat.toFixed(2) + '|' + (look.light ? 'l' : 'd');
+      const key = look.hue.toFixed(1) + '|' + look.sat.toFixed(2) + '|' + look.spread + '|' + (look.light ? 'l' : 'd');
       if (key === stillKey) return;
       const px = 140 * 2;
       const w = Math.round(px * F);
@@ -908,6 +939,7 @@
       if (document.hidden) { if (raf) cancelAnimationFrame(raf); raf = 0; } else { dirty = true; wake(); }
     });
     root.classList.add('orb-on');
+    root.dataset.nova = 'idle';
     if (reduce) root.classList.add('orb-calm');
 
     return {
@@ -926,6 +958,7 @@
         if (m === S.mood) return;
         S.mood = m;
         S.T = PRESET[m];
+        root.dataset.nova = m; // auch fuer eigenes CSS: :root[data-nova="thinking"] …
         dirty = true;
         wake();
       },
@@ -1280,6 +1313,7 @@
     else if (voice.phase === 'recording' || voice.phase === 'starting' || voice.phase === 'remote') { s = 'rec'; t = 'Hört zu …'; }
     else if (voice.phase === 'stopping' || voice.phase === 'remote-rec') { s = 'busy'; t = 'Erkennt Sprache …'; }
     else if (busy) { s = 'busy'; t = 'Arbeitet …'; }
+    else if (speakingOn) { s = 'busy'; t = 'Liest vor …'; }
     st.dataset.s = s;
     byId('status-text').textContent = t;
   }
@@ -1440,7 +1474,8 @@
     requestAnimationFrame(() => {
       scrollQueued = false;
       if (stick) {
-        scroller.scrollTop = scroller.scrollHeight;
+        // Begruessung (noch kein Gespraech): oben anfangen, damit die Sphaere zu sehen ist
+        scroller.scrollTop = emptyEl.hidden ? scroller.scrollHeight : 0;
         lastTop = scroller.scrollTop;
       }
     });
@@ -4765,6 +4800,442 @@
   });
 
   // =====================================================================
+  // Gehirn & Schluessel – Einrichtung in der App (eigenes Fenster und Reiter "Gehirn")
+  // Der Schluessel geht NUR an /api/setup: nie in den Chat, nie in localStorage, nie
+  // ins Protokoll. Nach dem Speichern (und beim Schliessen) wird das Feld geleert.
+  // =====================================================================
+  const smodal = byId('smodal');
+  const sdialog = byId('sdialog');
+  const setupEl = byId('setup');
+  const suInput = byId('su-input');
+  const suGo = byId('su-go');
+  const SU_FALLBACK = [
+    { id: 'deepseek', name: 'DeepSeek', info: 'sehr günstig, gut für jeden Tag', url: 'https://platform.deepseek.com/api_keys' },
+    { id: 'claude', name: 'Claude (Anthropic)', info: 'sehr stark, teurer', url: 'https://console.anthropic.com/settings/keys' },
+  ];
+  const SU_TOPUP = { deepseek: 'https://platform.deepseek.com/top_up', claude: 'https://console.anthropic.com/settings/billing' };
+  const SU_ICON = { deepseek: 'zap', claude: 'sparkles' };
+  const su = {
+    where: '',          // '' | 'modal' | 'pane'
+    welcome: false, data: null, sel: '', loading: false, gen: 0, reqGen: 0, checking: false, result: null,
+    note: '', closeTimer: 0, focusBack: null, autoShown: false, lastProv: null, lastMissing: null,
+  };
+  const suShort = (p) => String(p && p.name ? p.name : p || '').replace(/\s*\(.*\)\s*$/, '') || 'KI';
+  const suSel = () => (su.data ? su.data.providers.find((p) => p.id === su.sel) || null : null);
+  const suVisible = () => (su.where === 'modal' && !smodal.hidden) ||
+    (su.where === 'pane' && !pmodal.hidden && profTab === 'gehirn');
+
+  function normSetup(d) {
+    if (!d || typeof d !== 'object' || Array.isArray(d)) return null;
+    const list = (Array.isArray(d.providers) ? d.providers : []).filter((p) => p && typeof p === 'object').map((p) => {
+      const id = str(p.id).trim().toLowerCase();
+      const fb = SU_FALLBACK.find((x) => x.id === id);
+      const url = str(p.url).trim();
+      return {
+        id,
+        name: str(p.name).trim().slice(0, 60) || (fb ? fb.name : id),
+        info: str(p.info).trim().slice(0, 120) || (fb ? fb.info : ''),
+        url: /^https:\/\/[^\s"'<>\\]+$/.test(url) ? url : fb ? fb.url : '',
+        hasKey: p.has_key === true,
+        hint: str(p.key_hint).trim().slice(0, 40),
+      };
+    }).filter((p) => /^[a-z0-9_-]{1,30}$/.test(p.id));
+    if (!list.length) return null;
+    return { provider: str(d.provider).trim().toLowerCase(), providers: list, missing: d.key_missing === true };
+  }
+
+  /** Ohne Antwort vom Server: die beiden bekannten Gehirne (aus dem Zustand). */
+  function fallbackSetup() {
+    const cur = String(state.provider || '').toLowerCase() === 'deepseek' ? 'deepseek' : 'claude';
+    return {
+      provider: cur,
+      providers: SU_FALLBACK.map((p) => Object.assign({}, p, { hasKey: p.id === cur && state.api_key_missing === false, hint: '' })),
+      missing: state.api_key_missing === true,
+    };
+  }
+
+  function suDefaultSel() {
+    const d = su.data;
+    if (!d) return '';
+    const cur = d.providers.find((p) => p.id === d.provider);
+    if (cur && cur.hasKey) return cur.id;
+    const withKey = d.providers.find((p) => p.hasKey);
+    if (withKey) return withKey.id;
+    return (d.providers.find((p) => p.id === 'deepseek') || cur || d.providers[0]).id; // empfohlen
+  }
+
+  // ---------- Oeffnen / Schliessen ----------
+  function openSetup(welcome) {
+    closeSidebar();
+    closeCmdPop();
+    if (ended) return;
+    if (!pmodal.hidden) { showTab('gehirn', true); return; } // Profil-Fenster offen: dort der Reiter
+    if (!smodal.hidden) { suFocus(); return; }
+    su.focusBack = document.activeElement;
+    su.welcome = !!welcome;
+    su.result = null;
+    su.note = '';
+    su.sel = '';
+    clearTimeout(su.closeTimer);
+    mountSetup('modal');
+    smodal.hidden = false;
+    updateInert();
+    loadSetup();
+    moodSync();
+    requestAnimationFrame(suFocus);
+  }
+
+  function closeSetup() {
+    if (smodal.hidden) return;
+    clearTimeout(su.closeTimer);
+    clearKey();
+    smodal.hidden = true;
+    su.where = '';
+    su.result = null;
+    updateInert();
+    moodSync();
+    const back = su.focusBack;
+    su.focusBack = null;
+    if (!modal.hidden || !cmodal.hidden) return;
+    if (jv.open) { jvEl.focus(); return; }
+    if (back && back !== document.body && document.contains(back) && !back.closest('[inert]')) back.focus();
+    if (document.activeElement !== back) focusInput();
+  }
+
+  /** Schluessel aus dem Feld nehmen (nach dem Speichern, beim Schliessen). */
+  function clearKey() {
+    suInput.value = '';
+    showKey(false);
+    su.note = '';
+  }
+
+  function suFocus() {
+    if (!suVisible()) return;
+    const p = suSel();
+    if (su.where === 'modal' && (!p || !p.hasKey || su.welcome)) suInput.focus();
+    else if (su.where === 'modal') sdialog.focus();
+  }
+
+  function mountSetup(where) {
+    const host = where === 'pane' ? byId('pane-gehirn') : sdialog;
+    if (setupEl.parentElement !== host) host.append(setupEl);
+    su.where = where;
+    if (where === 'pane') su.welcome = false;
+    setupEl.classList.toggle('in-pane', where === 'pane');
+    renderSetup();
+  }
+
+  async function loadSetup() {
+    const gen = ++su.gen;
+    if (!su.data) { su.loading = true; renderSetup(); }
+    const d = normSetup(await getJson('/api/setup'));
+    if (gen !== su.gen) return;
+    su.loading = false;
+    su.data = d || su.data || fallbackSetup();
+    if (!su.sel || !su.data.providers.some((p) => p.id === su.sel)) su.sel = suDefaultSel();
+    renderSetup();
+  }
+
+  /** Aus applyState: beim ersten Start ohne Schluessel begruessen; offenes Fenster aktuell halten. */
+  function setupState(prov, missing) {
+    const changed = su.lastProv !== null && (su.lastProv !== prov || su.lastMissing !== missing);
+    su.lastProv = prov;
+    su.lastMissing = missing;
+    if (changed && suVisible() && !su.checking) loadSetup();
+    if (missing && !su.autoShown && !ended) {
+      su.autoShown = true;
+      setTimeout(() => {
+        const free = modal.hidden && cmodal.hidden && pmodal.hidden && smodal.hidden && !jv.open && !tour.open;
+        if (free && !ended && state.api_key_missing === true) openSetup(true);
+      }, 300);
+    }
+  }
+
+  // ---------- Darstellen ----------
+  function renderSetup() {
+    const n = kiName();
+    const d = su.data;
+    const pane = su.where === 'pane';
+    setupEl.classList.toggle('welcome', su.welcome);
+    byId('su-hero').hidden = !su.welcome;
+    byId('su-ic').hidden = su.welcome;
+    byId('su-title').textContent = su.welcome ? 'Hallo! Ich bin ' + n + '.' : 'Gehirn & Schlüssel';
+    byId('su-sub').textContent = su.welcome
+      ? 'Damit ich denken kann, brauche ich einen Schlüssel für mein Gehirn. Das dauert nur eine Minute.'
+      : 'Womit ' + n + ' denkt – und der passende Schlüssel dafür.';
+    byId('su-close').hidden = pane;
+    byId('su-later').hidden = pane;
+    byId('su-later').textContent = su.welcome ? 'Später' : 'Abbrechen';
+    byId('su-loading').hidden = !(su.loading && !d);
+    if (d && !su.sel) su.sel = suDefaultSel();
+    const box = byId('su-provs');
+    box.replaceChildren();
+    if (d) for (const p of d.providers) box.append(suCard(p, d));
+    const p = suSel();
+    const where = byId('su-where');
+    where.hidden = !p || !p.url;
+    if (p && p.url) {
+      where.href = p.url;
+      where.title = 'Öffnet die Seite von ' + suShort(p) + ' im Browser';
+    }
+    suInput.readOnly = su.checking;
+    renderSteps(p);
+    renderSuHint();
+    renderSuGo();
+    renderSuResult();
+  }
+
+  function suCard(p, d) {
+    const on = p.id === su.sel;
+    const b = h('button', 'su-prov sp-' + p.id + (on ? ' selected' : ''));
+    b.type = 'button';
+    b.setAttribute('role', 'radio');
+    b.setAttribute('aria-checked', on ? 'true' : 'false');
+    b.tabIndex = on ? 0 : -1;
+    b.disabled = su.checking;
+    b.dataset.id = p.id;
+    const ic = h('span', 'sp-ic');
+    ic.append(icon(pick(SU_ICON, p.id) || 'sparkles'));
+    const main = h('span', 'sp-main');
+    const top = h('span', 'sp-top');
+    top.append(h('span', 'sp-name', p.name));
+    if (p.id === 'deepseek') top.append(h('span', 'sp-badge rec', 'Empfohlen'));
+    if (p.id === d.provider) top.append(h('span', 'sp-badge now', 'aktiv'));
+    main.append(top);
+    if (p.info) main.append(h('span', 'sp-info', p.info));
+    const k = h('span', 'sp-key' + (p.hasKey ? ' ok' : ''));
+    k.append(icon(p.hasKey ? 'checkCircle' : 'key'),
+      h('span', null, p.hasKey ? 'Schlüssel gespeichert' + (p.hint ? ' (' + p.hint + ')' : '') : 'noch kein Schlüssel'));
+    main.append(k);
+    const chk = h('span', 'sp-check');
+    chk.append(icon('check'));
+    b.append(ic, main, chk);
+    b.addEventListener('click', () => suPick(p.id, false));
+    return b;
+  }
+
+  function suPick(id, keyboard) {
+    if (su.checking || id === su.sel) return;
+    su.sel = id;
+    su.note = '';
+    su.result = null;
+    renderSetup();
+    if (keyboard) {
+      const card = [...byId('su-provs').children].find((c) => c.dataset.id === id);
+      if (card) card.focus();
+    }
+  }
+  byId('su-provs').addEventListener('keydown', (e) => arrowRadio(e, byId('su-provs'), (b) => suPick(b.dataset.id, true)));
+
+  function renderSteps(p) {
+    const ol = byId('su-steps');
+    ol.replaceChildren();
+    if (!p) return;
+    const li = (...parts) => {
+      const l = h('li');
+      l.append(...parts);
+      ol.append(l);
+    };
+    const b = (t) => h('b', null, t);
+    let page = 'Seite von ' + suShort(p);
+    if (p.url) {
+      page = h('a', null, page);
+      page.href = p.url;
+      page.target = '_blank';
+      page.rel = 'noopener';
+    }
+    li('Öffne die ', page, ' und melde dich an.');
+    li('Klicke auf ', b('„Create new API key“'), '.');
+    li('Kopiere den Schlüssel und füge ihn hier oben ein.');
+    if (p.id === 'deepseek') li('Lade unter ', b('„Top up“'), ' etwas Guthaben auf – ohne Guthaben kann ich nicht antworten.');
+    else if (p.id === 'claude') li('Guthaben (Credits) lädst du unter ', b('„Billing“'), ' auf.');
+  }
+
+  /** Was der Knopf gerade tut: neuen Schluessel pruefen oder nur das Gehirn wechseln. */
+  function suAction() {
+    const p = suSel();
+    if (!p || !su.data) return null;
+    const key = suInput.value.trim();
+    if (key) return { label: 'Prüfen & speichern', body: { provider: p.id, api_key: key } };
+    if (p.hasKey && p.id !== su.data.provider) return { label: 'Zu ' + suShort(p) + ' wechseln', body: { provider: p.id } };
+    return null;
+  }
+
+  function renderSuHint() {
+    const el = byId('su-hint');
+    const p = suSel();
+    const v = suInput.value.trim();
+    let text = 'Wird nur auf deinem PC gespeichert – nie im Chat.';
+    let cls = '';
+    if (su.note) { text = su.note; cls = 'note'; }
+    else if (v && !/^sk-/.test(v)) { text = 'Ein Schlüssel beginnt normalerweise mit „sk-“.'; cls = 'warn'; }
+    else if (!v && p && p.hasKey) text = 'Schon gespeichert. Zum Ersetzen einfach einen neuen Schlüssel einfügen.';
+    el.className = 'su-hint' + (cls ? ' ' + cls : '');
+    el.textContent = text;
+  }
+
+  function renderSuGo() {
+    const act = suAction();
+    suGo.disabled = su.checking || !act;
+    suGo.setAttribute('aria-busy', su.checking ? 'true' : 'false');
+    if (su.checking) suGo.replaceChildren(h('span', 'spinner'), h('span', null, 'Prüfe …'));
+    else suGo.replaceChildren(h('span', null, act ? act.label : 'Prüfen & speichern'));
+  }
+
+  function renderSuResult() {
+    const box = byId('su-result');
+    box.replaceChildren();
+    const r = su.result;
+    box.hidden = !r;
+    if (!r) return;
+    box.className = 'su-result ' + (r.ok ? 'ok' : 'error');
+    box.setAttribute('role', r.ok ? 'status' : 'alert');
+    const ic = h('span', 'sr-ic');
+    ic.append(icon(r.ok ? 'checkCircle' : 'alertCircle'));
+    const body = h('div', 'sr-body');
+    body.append(h('div', 'sr-title', r.ok ? (su.welcome ? 'Geschafft – ich kann denken!' : 'Gespeichert') : 'Das hat nicht geklappt'),
+      h('div', 'sr-text', r.text));
+    const btns = h('div', 'sr-btns');
+    if (r.ok && su.welcome && su.where === 'modal') {
+      const go = h('button', 'btn primary', 'Los geht’s!');
+      go.type = 'button';
+      go.id = 'su-start';
+      go.addEventListener('click', closeSetup);
+      btns.append(go);
+    }
+    if (!r.ok && r.kind === 'balance') {
+      const a = h('a', 'btn small primary');
+      a.append(icon('external'), h('span', null, 'Guthaben aufladen'));
+      a.href = pick(SU_TOPUP, r.provider) || SU_TOPUP.deepseek;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      btns.append(a);
+    }
+    if (!r.ok && (r.kind === 'network' || r.kind === 'server') && r.withKey) {
+      const f = h('button', 'btn small secondary', 'Trotzdem speichern');
+      f.type = 'button';
+      f.title = 'Ohne Prüfung speichern – falls gerade nur die Verbindung hakt';
+      f.addEventListener('click', () => suSubmit(true));
+      btns.append(f);
+    }
+    if (btns.childElementCount) body.append(btns);
+    box.append(ic, body);
+  }
+
+  // ---------- Pruefen & speichern ----------
+  async function suSubmit(force) {
+    const act = suAction();
+    if (!act || su.checking) return;
+    const body = Object.assign({}, act.body);
+    if (force) body.force = true;
+    const prov = body.provider;
+    su.checking = true;
+    su.result = null;
+    clearTimeout(su.closeTimer);
+    renderSetup();
+    moodSync();
+    const gen = ++su.reqGen;
+    const r = await post('/api/setup', body);
+    if (gen !== su.reqGen) return;
+    su.checking = false;
+    const visible = suVisible();
+    if (r.ok) {
+      clearKey();
+      const d = normSetup(r.setup);
+      if (d) su.data = d;
+      su.sel = suDefaultSel();
+      su.result = { ok: true, text: str(r.message).trim() || 'Gespeichert.' };
+      sphere.settle();
+      if (!visible) toast(su.result.text, 'ok', 4500);
+      else if (su.where === 'modal') su.closeTimer = setTimeout(closeSetup, su.welcome ? 2800 : 1600);
+    } else {
+      su.result = {
+        ok: false, kind: str(r.kind), provider: prov, withKey: !!body.api_key,
+        text: str(r.error).trim() || 'Der Schlüssel konnte nicht gespeichert werden.',
+      };
+      sphere.flicker();
+      if (!visible) toast(su.result.text, 'error', 5000);
+    }
+    renderSetup();
+    moodSync();
+    if (!visible) return;
+    if (r.ok && byId('su-start')) byId('su-start').focus();
+    else if (!r.ok) {
+      const btn = byId('su-result').querySelector('.btn');
+      (btn || suInput).focus();
+    }
+  }
+
+  function showKey(on) {
+    suInput.type = on ? 'text' : 'password';
+    const b = byId('su-eye');
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    b.setAttribute('aria-label', on ? 'Schlüssel verbergen' : 'Schlüssel anzeigen');
+    b.title = on ? 'Schlüssel verbergen' : 'Schlüssel anzeigen';
+    b.replaceChildren(icon(on ? 'eyeOff' : 'eye'));
+  }
+
+  /** Eingefuegter Schluessel passt zum anderen Gehirn? (sk-ant-… = Claude) – dann umschalten. */
+  function suDetect() {
+    const v = suInput.value.trim();
+    if (v.length < 20 || !su.data) return;
+    const want = /^sk-ant-/.test(v) ? 'claude' : /^sk-/.test(v) ? 'deepseek' : '';
+    const p = want && su.data.providers.find((x) => x.id === want);
+    if (!p || want === su.sel) return;
+    su.sel = want;
+    su.note = 'Das ist ein Schlüssel für ' + suShort(p) + ' – ich habe „' + p.name + '“ ausgewählt.';
+    renderSetup();
+  }
+
+  suInput.addEventListener('input', () => {
+    su.note = '';
+    if (su.result) { su.result = null; renderSuResult(); }
+    suDetect();
+    renderSuHint();
+    renderSuGo();
+  });
+  suInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); suSubmit(false); }
+  });
+  byId('su-eye').addEventListener('click', () => showKey(suInput.type === 'password'));
+  suGo.addEventListener('click', () => suSubmit(false));
+  byId('su-close').addEventListener('click', closeSetup);
+  byId('su-later').addEventListener('click', closeSetup);
+  smodal.addEventListener('mousedown', (e) => { if (e.target === smodal && !su.checking) closeSetup(); });
+  function setupKey(e) {
+    if (e.key === 'Escape') { e.preventDefault(); closeSetup(); return; }
+    if (e.key === 'F2') { e.preventDefault(); return; }
+    if (e.key === 'Tab') trapTab(e, sdialog);
+  }
+  byId('sb-brain').addEventListener('click', () => openSetup(false));
+  byId('key-bar-btn').addEventListener('click', () => openSetup(true));
+
+  // ---------- Terminal-Version ----------
+  byId('sb-terminal').addEventListener('click', async () => {
+    closeSidebar();
+    if (ended) return;
+    const ok = await confirmDialog({
+      icon: 'terminal', title: 'Terminal-Version öffnen?', risk: 'Wechsel ins Terminal',
+      body: h('p', null, 'Die App schließt sich und ' + kiName() + ' öffnet sich im Terminal – dasselbe Gedächtnis.'),
+      ok: 'Öffnen', cancel: 'Abbrechen',
+    });
+    if (ok && !ended) send('/terminal');
+  });
+
+  // ---------- Grosse Sphaere im leeren Zustand: antippen = Jarvis-Modus ----------
+  const heroEl = byId('hero');
+  heroEl.addEventListener('click', () => startJarvis());
+  heroEl.addEventListener('pointerenter', () => sphere.kick(0.5));
+  heroEl.addEventListener('focus', () => sphere.kick(0.4));
+  /** Als Buchstabe (Aussehen "avatar: buchstabe") ist die Kachel wie frueher nur ein Bild. */
+  function syncHero() {
+    const on = sphere.mode === 'sphaere';
+    heroEl.tabIndex = on ? 0 : -1;
+    if (on) heroEl.removeAttribute('aria-hidden'); else heroEl.setAttribute('aria-hidden', 'true');
+    byId('hero-cap').hidden = !on;
+  }
+
+  // =====================================================================
   // Globale Tasten
   // =====================================================================
   document.addEventListener('keydown', (e) => {
@@ -5113,6 +5584,7 @@
         speakingOn = ev.on === true;
         sphere.talk('server', speakingOn);
         moodSync();
+        updateStatus();
         break;
       case 'say':
         onSay(ev);
@@ -5137,6 +5609,9 @@
   }
 
   // Start
+  // Novas Sphaeren an ihren Plaetzen (Seitenleiste, Kopfzeile, Begruessung, Profil, Tour, Einrichtung)
+  for (const el of document.querySelectorAll('[data-orb]')) sphere.slot(el, { live: el.dataset.orb !== 'still' });
+  syncHero();
   autosize();
   setBusy(false);
   setConnected(false);
