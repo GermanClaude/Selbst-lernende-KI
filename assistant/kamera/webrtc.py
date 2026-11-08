@@ -20,8 +20,13 @@ Eigenheiten:
     Nichts wird gespeichert oder aufgezeichnet.
   * Keine STUN-/TURN-Server. Kandidaten der Gegenseite (und eigene) ausserhalb des LANs werden
     verworfen (siehe signal.filtere_sdp); nach dem Verbinden wird das gewaehlte Paar nochmals geprueft.
-  * Genau ein Handy pro Kopplung (an seiner Geraete-ID erkannt). Bricht die Verbindung ab, darf
-    dasselbe Handy innerhalb von ``wiederverbinden_s`` ein neues Angebot schicken.
+  * Genau ein Handy pro Kopplung (an seiner Geraete-ID erkannt). Gebunden wird erst, wenn eine
+    Verbindung wirklich steht - ein gescheiterter Versuch sperrt die Kopplung nicht. Waehrend eine
+    Verbindung laeuft, wird JEDES neue Angebot abgelehnt ("noch-verbunden"; kein Uebernehmen per
+    Relais). Erst wenn sie getrennt/gescheitert ist, darf dasselbe Handy innerhalb von
+    ``wiederverbinden_s`` neu anbieten.
+  * Die Handy-Seite prueft ihrerseits Novas Antwort (nur LAN-Kandidaten) und vor dem ersten Bild
+    das gewaehlte Adresspaar per getStats() - erst dann haengt sie die Kameraspur an.
   * aiortc und av werden erst in start() geladen - fehlen sie, kommt ein deutscher Hinweis.
 """
 from __future__ import annotations

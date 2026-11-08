@@ -239,13 +239,24 @@ def test_code_nachricht_enthaelt_kopplung():
 
 
 # -- LAN-Filter ----------------------------------------------------------------------------
-@pytest.mark.parametrize("adresse,ok", [
+# Gemeinsame Faelle fuer Python (hier) und signal.js (test_kamera_web.py, per Node).
+LAN_FAELLE = [
     ("192.168.1.5", True), ("10.0.0.1", True), ("172.16.5.4", True), ("172.31.255.1", True),
     ("169.254.10.1", True), ("fd00::1", True), ("fe80::1%eth0", True), ("abcd1234-5678.local", True),
     ("172.32.0.1", False), ("8.8.8.8", False), ("100.64.1.1", False), ("127.0.0.1", False),
     ("2003:e3::1", False), ("::1", False), ("::ffff:8.8.8.8", False), ("::ffff:192.168.0.2", True),
     ("evil.example.com", False), ("", False), ("a.b.local", False),
-])
+    ("[fd00::1]", True), ("fc00::", True), ("fbff::1", False), ("febf::1", True), ("fec0::1", False),
+    ("FD12:3456:789A::1", True), ("::ffff:10.0.0.1", True), ("::ffff:c0a8:1", True), ("::192.168.0.1", False),
+    ("192.168.1.5%eth0", True), (" 10.0.0.1 ", True), ("1.2.3.04", False), ("256.1.1.1", False),
+    ("10.0.0", False), ("10.0.0.1.5", False), ("fe80::1::2", False), ("fd00:::1", False),
+    ("1:2:3:4:5:6:7:8:9", False), ("fd00:1:2:3:4:5:6:7", True), ("fd00:1:2:3:4:5:6:7:8", False),
+    ("fd0g::1", False), ("x.LOCAL", False), ("ABCD.local", True), ("::", False), ("0.0.0.0", False),
+    ("fd00::1:2:3:4:5:6:7", False), ("fd00:0:0:0:0:0:192.168.0.1", True),
+]
+
+
+@pytest.mark.parametrize("adresse,ok", LAN_FAELLE)
 def test_lan_adresse(adresse, ok):
     assert sig.ist_lan_adresse(adresse) is ok
 

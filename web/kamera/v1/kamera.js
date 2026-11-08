@@ -627,6 +627,10 @@
       }
     });
     window.addEventListener("pagehide", () => { sendeDc({ t: "stopp" }); });
+    // Neuer QR-Link im schon offenen Tab ändert nur das Fragment – dann sauber neu laden.
+    window.addEventListener("hashchange", () => {
+      if ((location.hash || "").indexOf("p=") >= 0) { sendeDc({ t: "stopp" }); location.reload(); }
+    });
 
     let gekoppelt = false;
     try {
