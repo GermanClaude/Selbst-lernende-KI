@@ -401,6 +401,44 @@ def _lies_begrenzt(resp: Any, grenze: int) -> bytes:
     return data
 
 
+def _adresse_intern(host: str) -> bool:
+    """Zeigt die Adresse ins eigene Netz (PC, Router, LAN)? Dann nicht laden - auch nicht ueber
+    eine Weiterleitung. Nicht pruefbar = sicherheitshalber ja."""
+    import ipaddress
+
+    host = (host or "").strip().rstrip(".").lower()
+    if not host or "\\" in host or not host.isascii():
+        return True
+    try:
+        return not ipaddress.ip_address(host).is_global
+    except ValueError:
+        pass
+    if host == "localhost" or "." not in host or host.endswith(
+            (".local", ".lan", ".internal", ".localhost", ".home", ".box", ".arpa")):
+        return True
+    return _dns_intern(host)
+
+
+def _dns_intern(host: str) -> bool:
+    import ipaddress
+    import socket
+
+    try:
+        infos = socket.getaddrinfo(host, 443, proto=socket.IPPROTO_TCP)
+    except (OSError, UnicodeError, ValueError):
+        return True
+    for info in infos:
+        try:
+            ip = ipaddress.ip_address(str(info[4][0]).split("%", 1)[0])
+        except ValueError:
+            return True
+        if ip.version == 6 and ip.ipv4_mapped:
+            ip = ip.ipv4_mapped
+        if not ip.is_global:
+            return True
+    return not infos
+
+
 def _bild_holen(http: Any, img: Any) -> bytes:
     """Fertiges Bild von AI Horde: https-Download (R2) oder Base64. Nie http oder andere Schemata."""
     if not isinstance(img, str) or not img.strip():
@@ -416,7 +454,8 @@ def _bild_holen(http: Any, img: Any) -> bytes:
     url = img
     for _sprung in range(4):
         teile = urlsplit(url)
-        if teile.scheme != "https" or not teile.hostname or "@" in teile.netloc:
+        if (teile.scheme != "https" or not teile.hostname or "@" in teile.netloc
+                or _adresse_intern(teile.hostname)):
             raise GeneratorFehler("AI Horde hat eine unsichere Bild-Adresse geliefert - nicht geladen.")
         resp = http.get(url, timeout=_TIMEOUT_BILD, stream=True, allow_redirects=False)
         try:

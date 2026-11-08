@@ -973,11 +973,16 @@ class CLI:
             user_text = user_text.strip()
             if not user_text:
                 continue
-            from ..schluessel import find_key
+            from ..schluessel import CLOUDFLARE_HINWEIS, find_cloudflare_token, find_key
 
             key = find_key(user_text)
             if key and not user_text.startswith("/"):
                 self._setup_key(key)  # Schluessel eingefuegt: einrichten - geht NIE an die KI
+                continue
+            if not user_text.startswith("/") and find_cloudflare_token(user_text):
+                print(_c(CLOUDFLARE_HINWEIS.replace("Gehirn & Schl\u00fcssel\u201c \u2192 \u201eBilder",
+                                                    "Gehirn & Schl\u00fcssel\u201c (App) \u2192 \u201eBilder")
+                         + " Im Terminal: CLOUDFLARE_AI_API_KEY und CLOUDFLARE_ACCOUNT_ID in die .env.", YELLOW))
                 continue
             bilder: list = []
             if user_text.split()[0].lower() in ("/bild", "/bilder"):

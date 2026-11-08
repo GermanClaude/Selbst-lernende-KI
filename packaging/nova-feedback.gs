@@ -43,12 +43,14 @@ function doPost(e) {
     }
 
     var gesamt = 0;
-    var anhaenge = (d.images || []).slice(0, MAX_BILDER).map(function (bild, i) {
+    var anhaenge = [];
+    (d.images || []).slice(0, MAX_BILDER).forEach(function (bild) {
       var bytes = Utilities.base64Decode(String(bild.data || ''));
       gesamt += bytes.length;
-      var mime = /^image\/(png|jpeg|gif|webp)$/.test(bild.mime) ? bild.mime : 'image/jpeg';
-      var name = String(bild.name || ('bild' + (i + 1) + '.jpg')).replace(/[^\w.\- ]+/g, '_').slice(0, 80);
-      return Utilities.newBlob(bytes, mime, name);
+      var typ = bildTyp(bytes);  // Typ nur an den Bytes erkennen, Name selbst vergeben
+      if (typ) {
+        anhaenge.push(Utilities.newBlob(bytes, typ.mime, 'bild' + (anhaenge.length + 1) + '.' + typ.endung));
+      }
     });
     if (gesamt > MAX_BILDER_BYTES) {
       return antwort({ok: false, fehler: 'zu_gross'});
@@ -88,6 +90,17 @@ function doPost(e) {
   } finally {
     try { lock.releaseLock(); } catch (ignored) {}
   }
+}
+
+/** Nur echte Bilder als Anhang (PNG, JPEG, GIF, WebP) - alles andere wird weggelassen. */
+function bildTyp(b) {
+  function ist(i, wert) { return b.length > i && ((b[i] + 256) % 256) === wert; }
+  if (ist(0, 0x89) && ist(1, 0x50) && ist(2, 0x4E) && ist(3, 0x47)) return {mime: 'image/png', endung: 'png'};
+  if (ist(0, 0xFF) && ist(1, 0xD8) && ist(2, 0xFF)) return {mime: 'image/jpeg', endung: 'jpg'};
+  if (ist(0, 0x47) && ist(1, 0x49) && ist(2, 0x46) && ist(3, 0x38)) return {mime: 'image/gif', endung: 'gif'};
+  if (ist(0, 0x52) && ist(1, 0x49) && ist(2, 0x46) && ist(3, 0x46) &&
+      ist(8, 0x57) && ist(9, 0x45) && ist(10, 0x42) && ist(11, 0x50)) return {mime: 'image/webp', endung: 'webp'};
+  return null;
 }
 
 function antwort(objekt) {

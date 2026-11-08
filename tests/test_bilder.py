@@ -102,3 +102,10 @@ def test_files_and_placeholders(tmp_path):
     assert saved.name == "abc.png" and saved.read_bytes() == b.data
     with pytest.raises(BildFehler, match="nicht gefunden"):
         bilder.aus_datei(tmp_path / "fehlt.png")
+
+
+def test_decompression_bombs_are_refused_before_unpacking(monkeypatch):
+    monkeypatch.setattr(bilder, "MAX_PIXEL", 100 * 100)
+    with pytest.raises(BildFehler, match="Pixel"):
+        bilder.vorbereiten(_png(200, 200), "bombe.png")
+    assert bilder.vorbereiten(_png(90, 90), "ok.png").breite == 90

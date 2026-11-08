@@ -21,6 +21,7 @@ from pathlib import Path
 ERLAUBT = {"image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp"}
 MAX_EINGANG = 25 * 1024 * 1024      # so gross darf ein Bild hoechstens ankommen
 MAX_AUSGANG = 5 * 1024 * 1024       # so gross darf es nach dem Verkleinern hoechstens sein
+MAX_PIXEL = 40_000_000            # mehr Pixel = Verdacht auf "Bild-Bombe"
 MAX_SEITE = 3000                    # keine Seite laenger (Claude: strengere Grenze ab 20 Bildern)
 STANDARD_KANTE = 1568
 _NAME_OK = re.compile(r"[^A-Za-z0-9._ \-]+")
@@ -109,7 +110,13 @@ def vorbereiten(data: bytes, name: str | None = None, max_kante: int = STANDARD_
                              "oder einen Ausschnitt nehmen.")
         return Bild(sauberer_name(name, mime), mime, data)
     try:
-        bild = Image.open(io.BytesIO(data))
+        bild = Image.open(io.BytesIO(data), formats=["PNG", "JPEG", "GIF", "WEBP"])
+    except Exception as exc:  # noqa: BLE001 - kaputte Datei
+        raise BildFehler("Das Bild ist besch\u00e4digt und l\u00e4sst sich nicht \u00f6ffnen.") from exc
+    # Vor dem Entpacken: winzige Datei, riesiges Bild ("Bild-Bombe") sonst Gigabytes im Speicher.
+    if bild.size[0] * bild.size[1] > MAX_PIXEL:
+        raise BildFehler("Das Bild hat zu viele Pixel (h\u00f6chstens 40 Megapixel).")
+    try:
         bild.seek(0)  # GIF: nur das erste Bild
         bild.load()
     except Exception as exc:  # noqa: BLE001 - kaputte Datei

@@ -35,8 +35,11 @@ Das musst du **einmal** am PC machen (ca. 10 Minuten):
    E-Mail-Adresse nicht.
 7. Test: die URL im Browser öffnen. Es muss `{"ok":true,"dienst":"nova-feedback"}`
    erscheinen.
-8. Empfehlung: in Gmail einen Filter anlegen. Betreff enthält „[Nova-Feedback]“ → „Nie als
-   Spam einstufen“ und Label „Nova-Feedback“.
+8. Empfehlung: in Gmail einen Filter anlegen. Betreff enthält „[Nova-Feedback]“ → Label
+   „Nova-Feedback“. (Bitte **nicht** „Nie als Spam einstufen“ wählen – die Adresse der Web-App
+   ist öffentlich, so bleibt Googles Spamschutz aktiv.)
+9. Antworten an Nutzer: Wenn jemand eine Kontakt-Adresse angegeben hat, sieht er beim
+   Antworten deine Adresse. Wer das nicht möchte, antwortet von einer anderen Adresse.
 
 **Später etwas am Skript ändern:** „Bereitstellen“ → „Bereitstellungen verwalten“ →
 Stift-Symbol → Version „Neue Version“ → „Bereitstellen“. Die URL bleibt gleich.

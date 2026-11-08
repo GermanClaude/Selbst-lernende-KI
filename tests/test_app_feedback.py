@@ -410,3 +410,30 @@ def test_cloudflare_settings_check_their_input(app, tmp_path, cf_env):
     # "cloudflare" ohne Zugang: gespeichert, aber ehrlich gesagt, dass AI Horde malt
     raw = _req(server, "/api/bilder/einstellen", {"anbieter": "cloudflare"})[1]
     assert raw["ok"] and "noch nicht eingerichtet" in raw["message"] and raw["bilder"]["aktiv"] == "AI Horde"
+
+
+def test_feedback_from_the_window_never_reads_file_paths(fb_app, tmp_path):
+    post = Post()
+    server = fb_app(post=post)
+    geheim = tmp_path / "privat.png"
+    geheim.write_bytes(_png())
+    for images in ([str(geheim)], [{"name": "x.png", "data": str(geheim)}], [{"name": "x", "data": "\\\\server\\a.png"}]):
+        body = _req(server, "/api/feedback", {"text": "x", "images": images})[1]
+        assert body["ok"] is False and "nicht richtig an" in body["error"]
+    assert post.calls == []
+
+
+def test_upload_folder_stays_small(tmp_path):
+    import os
+
+    from assistant.app.controller import uploads_begrenzen
+
+    for i in range(6):
+        p = tmp_path / f"{i:016x}.png"
+        p.write_bytes(b"x" * 100)
+        os.utime(p, (1000 + i, 1000 + i))
+    (tmp_path / "fremd.txt").write_text("bleibt")
+    assert uploads_begrenzen(tmp_path, max_dateien=4) == 2
+    rest = sorted(p.name for p in tmp_path.iterdir())
+    assert rest[:4] == [f"{i:016x}.png" for i in range(2, 6)] and "fremd.txt" in rest
+    assert uploads_begrenzen(tmp_path, max_dateien=10, max_bytes=250) == 2

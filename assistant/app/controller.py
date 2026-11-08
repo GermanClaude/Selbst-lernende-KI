@@ -322,6 +322,10 @@ class AppController(CLI):
             return {"ok": False, "error": "Die Bilder kamen nicht richtig an."}
         if not text and not images:
             return {"ok": False, "error": "Leere Nachricht"}
+        from ..schluessel import CLOUDFLARE_HINWEIS, find_cloudflare_token
+
+        if not text.startswith("/") and find_cloudflare_token(text):
+            return {"ok": False, "error": CLOUDFLARE_HINWEIS}
         if images and _mask_key(text)[0].startswith("/"):
             return {"ok": False, "error": schoen("Befehle (mit / am Anfang) und Schluessel bitte ohne Bilder "
                                                  "schicken.")}
@@ -400,6 +404,11 @@ class AppController(CLI):
                 logger.warning("Bild nicht gespeichert: %s", type(exc).__name__)
                 raise BildFehler("Das Bild lie\u00df sich nicht speichern (ist die Festplatte voll?).") from exc
             anzeigen.append({"url": f"/api/bild/h/{pfad.name}", "name": bild.name})
+        try:
+            alte_uploads_loeschen(ordner)
+            uploads_begrenzen(ordner)
+        except OSError:
+            pass
         return fertig, anzeigen
 
     def upload_dir(self) -> Path:
@@ -1115,6 +1124,11 @@ class AppController(CLI):
         images = data.get("images")
         if images is not None and not isinstance(images, list):
             return {"ok": False, "status": "abgelehnt", "error": "Die Bilder kamen nicht richtig an."}
+        # Aus dem Fenster nur eingebettete Bilder - nie Dateipfade (sonst liest die Anfrage beliebige
+        # Dateien, unter Windows auch \\server\freigabe).
+        if images and not all(isinstance(e, dict) and isinstance(e.get("data"), str)
+                              and e["data"].strip().lower().startswith("data:image/") for e in images):
+            return {"ok": False, "status": "abgelehnt", "error": "Die Bilder kamen nicht richtig an."}
         contact = data.get("contact")
         if not self._feedback_lock.acquire(blocking=False):  # Doppelklick: nur EINE Sendung
             return {"ok": False, "status": "abgelehnt", "error": "Dein Feedback wird gerade schon gesendet."}
@@ -1467,6 +1481,34 @@ def _mask_key(text: str) -> tuple[str, str | None]:
     if key:
         return text, text.replace(key, mask(key))
     return text, None
+
+
+def uploads_begrenzen(ordner: Path, max_dateien: int = 1000, max_bytes: int = 500 * 1024 * 1024) -> int:
+    """Hochgeladene Bilder: hoechstens so viele/so gross - die aeltesten zuerst weg -> Anzahl."""
+    from ..bildgenerator import DATEINAME_MUSTER
+
+    if not Path(ordner).is_dir():
+        return 0
+    dateien = []
+    for pfad in Path(ordner).iterdir():
+        try:
+            if pfad.is_file() and DATEINAME_MUSTER.match(pfad.name):
+                st = pfad.stat()
+                dateien.append((st.st_mtime, st.st_size, pfad))
+        except OSError:
+            continue
+    dateien.sort()
+    gesamt = sum(groesse for _t, groesse, _p in dateien)
+    weg = 0
+    while dateien and (len(dateien) > max_dateien or gesamt > max_bytes):
+        _t, groesse, pfad = dateien.pop(0)
+        try:
+            pfad.unlink()
+            weg += 1
+        except OSError:
+            pass
+        gesamt -= groesse
+    return weg
 
 
 def alte_uploads_loeschen(ordner: Path, tage: int = _UPLOAD_TAGE, jetzt: float | None = None) -> int:

@@ -997,3 +997,43 @@ def test_werkzeug_bleibt_in_der_sandbox(tmp_path, netz):
     out, err = build_registry().execute(ctx, "bild_erstellen", {"beschreibung": "a dog"})
     assert err and "Arbeitsordner" in out
     assert not http.calls and not list(aussen.iterdir())
+
+
+@pytest.fixture(autouse=True)
+def _kein_echtes_dns(monkeypatch):
+    # Testadressen (r2.example.com ...) gibt es nicht wirklich - DNS-Pruefung hier ueberspringen.
+    monkeypatch.setattr(bg, "_dns_intern", lambda host: False)
+
+
+@pytest.mark.parametrize("adresse", ["https://localhost/x.png", "https://192.168.0.1:8443/x.png",
+                                     "https://127.0.0.1/x.png", "https://router/x.png",
+                                     "https://nas.local/x.png", "https://[::1]/x.png"])
+def test_image_download_never_reaches_the_home_network(adresse):
+    class Http:
+        def get(self, url, **kw):
+            raise AssertionError(f"haette {url} nicht laden duerfen")
+
+    with pytest.raises(bg.GeneratorFehler, match="unsichere"):
+        bg._bild_holen(Http(), adresse)
+
+
+def test_redirect_into_the_home_network_is_refused():
+    class Antwort:
+        status_code = 302
+        headers = {"Location": "https://10.0.0.5/geheim.png"}
+
+        def close(self):
+            pass
+
+    class Http:
+        def __init__(self):
+            self.urls = []
+
+        def get(self, url, **kw):
+            self.urls.append(url)
+            return Antwort()
+
+    http = Http()
+    with pytest.raises(bg.GeneratorFehler, match="unsichere"):
+        bg._bild_holen(http, "https://r2.example.com/a.webp")
+    assert http.urls == ["https://r2.example.com/a.webp"]
