@@ -244,6 +244,31 @@ class SehenSettings:
 
 
 @dataclass
+class SpielSettings:
+    # Spielmodus: Nova spielt ein Einzelspieler-Spiel selbst (Maus/Tastatur nur im Spielfenster).
+    # "normal" = du bist dabei, "nacht" = Spiel-AFK (laenger, ohne Fragen, mit Bericht am Morgen).
+    max_stunden: float = 2.0
+    max_euro: float = 1.0
+    max_schritte: int = 300              # hoechstens so viele Zuege (ein Zug = ansehen, handeln, laufen lassen)
+    nacht_max_stunden: float = 10.0
+    nacht_max_euro: float = 5.0
+    nacht_max_schritte: int = 3000
+    laufen_sekunden: float = 10.0        # so lange laeuft das Spiel zwischen zwei Zuegen weiter
+    max_aktionen_pro_zug: int = 6        # Werkzeug-Schritte (spiel_aktion ...) pro Zug
+    stopp_taste: str = "Strg+Alt+Umschalt+P"  # weltweite Not-Aus-Taste
+    screenshots_speichern: bool = True   # 3-5 Bilder des Spielfensters fuer den Bericht (workspace/spiele)
+    erlaubte_spiele: list = field(default_factory=lambda: ["manor_lords"])
+    quickload_erlaubt: bool = False      # im Notfall den letzten Spielstand laden (nur wenn das Spiel eine Taste hat)
+    max_kante: int = 1280                # Bild an die KI: laengste Seite in Pixeln
+    raster: bool = True                  # duennes Koordinaten-Raster ins Bild (hilft beim Zielen)
+    warten_auf_spiel_sekunden: int = 300  # Spielfenster nicht vorne: so lange warten, dann Schluss
+    neustart_nach_zuegen: int = 8        # danach frisches Gespraech aus Ziel + Tagebuch (spart Kosten)
+    bei_mausbewegung_stoppen: bool = True  # bewegst du die Maus, haelt Nova an
+    einverstanden_am: str = ""           # wann du dem Spielmodus zugestimmt hast (leer = noch nie)
+    einverstanden_fuer: str = ""         # fuer welches Gehirn
+
+
+@dataclass
 class MemorySettings:
     db_path: str = "data/memory.sqlite3"
     max_facts_in_context: int = 60
@@ -344,6 +369,7 @@ class Config:
     afk: AfkSettings = field(default_factory=AfkSettings)
     bilder: BilderSettings = field(default_factory=BilderSettings)
     sehen: SehenSettings = field(default_factory=SehenSettings)
+    spiel: SpielSettings = field(default_factory=SpielSettings)
     feedback: FeedbackSettings = field(default_factory=FeedbackSettings)
     cloudflare_api_key: str | None = None  # Bildgenerator (optional, eigener Gratis-Schluessel)
     cloudflare_account_id: str | None = None
@@ -600,6 +626,7 @@ def load_config(project_root: Path | None = None) -> Config:
         afk=_merge(AfkSettings(), raw.get("afk", {})),
         bilder=_merge(BilderSettings(), raw.get("bilder", {})),
         sehen=_merge(SehenSettings(), raw.get("sehen", {})),
+        spiel=_merge(SpielSettings(), raw.get("spiel", {})),
         feedback=_merge(FeedbackSettings(), raw.get("feedback", {})),
         cloudflare_api_key=os.environ.get("CLOUDFLARE_AI_API_KEY") or None,
         cloudflare_account_id=os.environ.get("CLOUDFLARE_ACCOUNT_ID") or None,
