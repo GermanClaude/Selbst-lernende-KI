@@ -58,6 +58,8 @@
   const ICONS = {
     send: '<path d="M12 19V5"/><path d="m5 12 7-7 7 7"/>',
     stop: '<rect x="6" y="6" width="12" height="12" rx="2.5" fill="currentColor" stroke="none"/>',
+    queue: '<path d="M4 6h12M4 12h8M4 18h8"/><path d="M18 13v8M14 17h8"/>',
+    clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.2 2"/>',
     mic: '<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M19 10v1a7 7 0 0 1-14 0v-1"/><path d="M12 18v4"/>',
     menu: '<path d="M4 6h16M4 12h16M4 18h16"/>',
     x: '<path d="M18 6 6 18M6 6l12 12"/>',
@@ -1052,6 +1054,7 @@
   const jvEl = byId('jarvis');
   const tourEl = byId('tour');
   const cmodal = byId('cmodal');
+  const amodal = byId('amodal'); // AFK-Modus starten ("Ich bin weg")
   const jv = {
     open: false, starting: false, cancelStart: false, closing: false, closeTimer: 0, closeWaiters: [], left: false,
     leaveTimer: 0, openedAt: 0, state: 'starting', label: '', labelTimer: 0, working: false,
@@ -1069,6 +1072,8 @@
   const emptyEl = byId('empty');
   const input = byId('input');
   const sendBtn = byId('send-btn');
+  const stopBtn = byId('stop-btn');
+  const hintNow = byId('hint-now');
   const micBtn = byId('mic-btn');
   const composer = byId('composer');
 
@@ -1157,14 +1162,22 @@
     byId('sb-provider').textContent = (s.provider_name ? String(s.provider_name) : '') ||
       pick(PROVIDERS, prov.toLowerCase()) || prov || '–';
     byId('sb-provider').title = byId('sb-provider').textContent;
-    byId('sb-model').textContent = keyMissing ? 'Schlüssel fehlt – hier einrichten' : s.model || '–';
-    byId('sb-model').title = keyMissing ? '' : s.model || '';
+    // Modell fuer Menschen ("Claude Opus 5.5 - ausgewogen"), sonst die rohe Kennung
+    const modelId = s.model == null ? '' : String(s.model).trim();
+    const modelName = (s.model_name == null ? '' : String(s.model_name).trim()) || modelId;
+    const modelTip = modelName ? 'Modell & Denk-Tiefe: ' + modelName +
+      (modelId && modelId !== modelName ? ' (' + modelId + ')' : '') + ' – klicken zum Ändern' : '';
+    byId('sb-model').textContent = keyMissing ? 'Schlüssel fehlt – hier einrichten' : modelName || '–';
+    byId('sb-model').title = keyMissing ? '' : modelTip;
     byId('sb-brain').classList.toggle('nokey', keyMissing);
     byId('tab-gehirn').classList.toggle('nokey', keyMissing);
     byId('key-bar').hidden = !keyMissing || ended;
-    setupState(prov, keyMissing);
-    byId('tb-model-text').textContent = s.model || '';
-    byId('tb-model').hidden = !s.model;
+    setupState(prov, keyMissing, modelId + '|' + modelName);
+    const chip = byId('tb-model');
+    byId('tb-model-text').textContent = modelName;
+    chip.hidden = !modelName;
+    chip.title = modelTip;
+    chip.setAttribute('aria-label', modelTip || 'Modell & Denk-Tiefe');
 
     // Kosten
     byId('sb-eur').textContent = fmtEur(s.eur);
@@ -1196,6 +1209,8 @@
     renderAlerts();
     commands = Array.isArray(s.commands) ? s.commands.filter((c) => c && typeof c.cmd === 'string') : [];
     setBusy(!!s.busy);
+    renderQueue();
+    renderAfk();
     profileNames();
     updateEmpty();
     // Jarvis-Modus laeuft beim Server (z.B. zweites Fenster, Neuverbinden), Fenster zeigt ihn nicht – oder umgekehrt
@@ -1315,18 +1330,16 @@
     byId('menu-dot').hidden = !box.childElementCount && !newVersion();
   }
 
+  // Senden geht immer – auch waehrend die KI arbeitet: dann kommt die Nachricht in die
+  // Warteschlange (Enter) oder unterbricht die laufende Antwort (Strg+Enter). Anhalten hat
+  // einen eigenen Knopf ("Stopp", Esc).
   function setBusy(b) {
     busy = !!b;
-    sendBtn.classList.toggle('stop', busy);
-    sendBtn.replaceChildren(icon(busy ? 'stop' : 'send'));
-    if (busy) {
-      sendBtn.append(h('span', null, 'Stopp'));
-      sendBtn.setAttribute('aria-label', 'Antwort anhalten (Esc)');
-      sendBtn.title = 'Antwort anhalten (Esc)';
-    } else {
-      sendBtn.setAttribute('aria-label', 'Senden (Enter)');
-      sendBtn.title = 'Senden (Enter)';
-    }
+    // Fokus liegt auf "Stopp", der gleich verschwindet -> zurueck ins Eingabefeld
+    const refocus = document.activeElement === stopBtn && (!busy || ended);
+    stopBtn.hidden = !busy || ended;
+    if (refocus) focusInput();
+    byId('hint').classList.toggle('busy', busy);
     updateSendBtn();
     updateStatus();
     tourBusy(busy);
@@ -1335,7 +1348,17 @@
   }
 
   function updateSendBtn() {
-    sendBtn.disabled = ended || (!busy && !input.value.trim());
+    const has = !!input.value.trim();
+    sendBtn.disabled = ended || !has;
+    hintNow.disabled = ended || !has;
+    const mode = busy ? 'queue' : 'send';
+    if (sendBtn.dataset.mode === mode) return;
+    sendBtn.dataset.mode = mode;
+    sendBtn.replaceChildren(icon(mode));
+    const tip = busy ? 'In die Warteschlange (Enter) – kommt dran, sobald ich fertig bin. Strg+Enter: unterbrechen & senden'
+      : 'Senden (Enter)';
+    sendBtn.title = tip;
+    sendBtn.setAttribute('aria-label', busy ? 'In die Warteschlange (Enter). Strg+Enter: unterbrechen und sofort senden' : tip);
   }
 
   function updateStatus() {
@@ -1750,7 +1773,12 @@
     else if (msgs.childElementCount) jumpBtn.hidden = false;
   }
   jumpBtn.addEventListener('click', () => { jumpBtn.hidden = true; toBottom(true); });
-  if (window.ResizeObserver) new ResizeObserver(() => { if (stick) toBottom(); }).observe(msgs);
+  if (window.ResizeObserver) {
+    // auch wenn der Chat selbst kleiner wird (z.B. Warteliste/Eingabefeld darunter waechst)
+    const ro = new ResizeObserver(() => { if (stick) toBottom(); });
+    ro.observe(msgs);
+    ro.observe(scroller);
+  }
 
   // =====================================================================
   // Chat-Elemente
@@ -1796,7 +1824,7 @@
     else if (vp === 'stopping' || vp === 'remote-rec') m = 'recognizing';
     else if (su.checking) m = 'thinking';
     else if (speakingOn) m = 'speaking';
-    else if (busy || reply) m = rs.phase || 'thinking';
+    else if (reply || (busy && !afkResting())) m = rs.phase || 'thinking';
     sphere.mood(m);
   }
 
@@ -1980,6 +2008,7 @@
     tastatur_tippen: ['keyboard', 'Tippen'],
     tastenkombination: ['keyboard', 'Tastenkombination'],
     agent_beauftragen: ['bot', 'Agent beauftragen'],
+    abwesenheit: ['moon', 'AFK-Modus'],
   };
   function toolInfo(name) {
     const n = String(name || 'werkzeug');
@@ -2309,7 +2338,8 @@
     return text.split(key).join(maskKey(key));
   }
 
-  async function send(text, fromInput) {
+  /** interrupt: die laufende Antwort anhalten und diese Nachricht sofort beantworten (Strg+Enter). */
+  async function send(text, fromInput, interrupt) {
     text = String(text || '').trim();
     if (!text || ended) return false;
     // /jarvis und /tutorial oeffnen die Ansichten direkt im Fenster (nicht senden)
@@ -2325,16 +2355,18 @@
       if (low === '/jarvis') startJarvis(); else startTour();
       return true;
     }
-    if (busy) {
-      toast('Ich arbeite noch an der letzten Nachricht – „Stopp“ oder Esc hält sie an.');
-      return false;
-    }
     // Schluessel: Blase nur gekuerzt (wie das Echo) und nicht fuer Pfeil hoch merken
     const masked = keyShown(text);
     const shown = masked || text;
-    const row = addUser(shown);
-    const p = { text: shown, row, t: Date.now() };
-    pendingSent.push(p);
+    // Arbeitet die KI noch, wartet die Nachricht – ihre Blase kommt erst, wenn sie drankommt
+    // (Ereignis "user"). Sonst gleich anzeigen.
+    let row = null;
+    let p = null;
+    if (!busy) {
+      row = addUser(shown);
+      p = { text: shown, row, t: Date.now() };
+      pendingSent.push(p);
+    }
     if (!masked) rememberOwn(text);
     recallIdx = -1;
     if (fromInput) {
@@ -2342,17 +2374,38 @@
       autosize();
       closeCmdPop();
     }
-    toBottom(true);
-    const r = await post('/api/send', { text });
+    if (row) toBottom(true);
+    const r = await post('/api/send', { text, interrupt: !!interrupt });
     if (!r.ok) {
-      const k = pendingSent.indexOf(p);
-      if (k >= 0) pendingSent.splice(k, 1);
-      row.remove();
-      updateEmpty();
+      if (p) {
+        const k = pendingSent.indexOf(p);
+        if (k >= 0) pendingSent.splice(k, 1);
+        row.remove();
+        updateEmpty();
+      }
       if (fromInput && !input.value) { input.value = text; autosize(); }
       toast(r.error || 'Senden hat nicht geklappt.', 'error');
       return false;
     }
+    if (r.queued) {
+      // Die KI war doch beschaeftigt: die Nachricht wartet. Eine schon gezeigte Blase wieder
+      // wegnehmen (ausser ihr Echo kam schon – dann ist sie bereits dran).
+      const k = p ? pendingSent.indexOf(p) : -1;
+      if (k >= 0) {
+        pendingSent.splice(k, 1);
+        row.remove();
+        updateEmpty();
+      }
+      if (!p || k >= 0) {
+        queuedOwn.push(shown);
+        if (queuedOwn.length > 40) queuedOwn.shift();
+      }
+      if (r.interrupt && r.id != null) {
+        qs.now.add(String(r.id)); // kommt gleich – nicht mit "Jetzt"/"✕" anbieten
+        renderQueue();
+      }
+    }
+    if (r.afk_ended) afkBack(); // du bist zurueck: Band zeigt "Willkommen zurueck", bis state.afk weg ist
     return true;
   }
 
@@ -2397,7 +2450,10 @@
     const k = pendingSent.findIndex((p) => p.text === t);
     if (k >= 0) { pendingSent.splice(k, 1); return; }
     addUser(t);
-    rememberOwn(t);
+    // eigene wartende Nachricht kommt dran: schon fuer Pfeil hoch gemerkt
+    const q = queuedOwn.indexOf(t);
+    if (q >= 0) queuedOwn.splice(q, 1);
+    else rememberOwn(t);
   }
 
   async function stop() {
@@ -2405,10 +2461,144 @@
     if (!r.ok) toast(r.error || 'Anhalten hat nicht geklappt.', 'error');
   }
 
-  sendBtn.addEventListener('click', () => {
-    if (busy) stop();
-    else send(input.value, true);
+  sendBtn.addEventListener('click', (e) => {
+    send(input.value, true, e.ctrlKey || e.metaKey);
+    focusInput();
   });
+  stopBtn.addEventListener('click', () => stop());
+  hintNow.addEventListener('click', () => {
+    send(input.value, true, true);
+    focusInput();
+  });
+
+  // =====================================================================
+  // Warteschlange (state.queue): Nachrichten, die warten, bis die KI fertig ist
+  //  "Jetzt" = POST /api/queue {action:"now", id} (unterbricht die laufende Antwort),
+  //  "✕" = {action:"remove", id}, "Alle entfernen" = {action:"clear"}.
+  // =====================================================================
+  const queuedOwn = [];  // eigene wartende Nachrichten (fuer Pfeil hoch schon gemerkt)
+  const qs = {
+    now: new Set(),      // "Jetzt" gedrueckt / Strg+Enter: kommt gleich
+    removing: new Set(), // "✕" / "Alle entfernen" gedrueckt: schon ausblenden
+    sig: '',
+  };
+  const qBox = byId('queue');
+  const qList = byId('q-list');
+  const qClear = byId('q-clear');
+
+  function queueAll() {
+    const list = Array.isArray(state.queue) ? state.queue : [];
+    return list.filter((it) => it && typeof it === 'object' && it.id != null)
+      .map((it) => ({ id: String(it.id), text: String(it.text == null ? '' : it.text) }));
+  }
+
+  function renderQueue() {
+    const all = queueAll();
+    // Merker aufraeumen: was nicht mehr wartet, braucht keinen mehr
+    const ids = new Set(all.map((it) => it.id));
+    for (const set of [qs.now, qs.removing]) for (const id of set) if (!ids.has(id)) set.delete(id);
+    const items = ended ? [] : all.filter((it) => !qs.removing.has(it.id));
+    const sig = JSON.stringify([items, [...qs.now]]);
+    if (sig === qs.sig) return;
+    qs.sig = sig;
+    // Fokus in der Liste merken (gleicher Knopf derselben Nachricht, sonst der Nachbar)
+    const ae = document.activeElement;
+    let fId = null;
+    let fAct = '';
+    let fIdx = -1;
+    if (ae && qBox.contains(ae)) {
+      const li = ae.closest('[data-qid]');
+      fId = li ? li.dataset.qid : null;
+      fAct = ae.dataset.qact || (ae === qClear ? 'clear' : '');
+      fIdx = li ? [...qList.children].indexOf(li) : -1;
+    }
+    qList.replaceChildren();
+    items.forEach((it, k) => {
+      const one = it.text.replace(/\s+/g, ' ').trim() || '…';
+      const short = one.length > 60 ? one.slice(0, 59) + '…' : one;
+      const going = qs.now.has(it.id);
+      const li = h('li', 'q-item' + (going ? ' going' : ''));
+      li.dataset.qid = it.id;
+      const txt = h('span', 'q-text', one);
+      txt.title = it.text.length > 600 ? it.text.slice(0, 599) + '…' : it.text;
+      li.append(h('span', 'q-num', String(k + 1)), txt);
+      if (going) {
+        const g = h('span', 'q-going');
+        g.append(h('span', 'spinner'), h('span', null, 'kommt gleich …'));
+        li.append(g);
+      } else {
+        const now = h('button', 'q-btn q-now', 'Jetzt');
+        now.type = 'button';
+        now.dataset.qact = 'now';
+        now.title = 'Jetzt senden – unterbricht die laufende Antwort';
+        now.setAttribute('aria-label', 'Jetzt senden (unterbricht die laufende Antwort): ' + short);
+        const del = h('button', 'q-btn q-del');
+        del.type = 'button';
+        del.dataset.qact = 'remove';
+        del.append(icon('x'));
+        del.title = 'Entfernen – wird nicht gesendet';
+        del.setAttribute('aria-label', 'Entfernen: ' + short);
+        li.append(now, del);
+      }
+      qList.append(li);
+    });
+    byId('q-title').textContent = 'Wartet (' + items.length + ')';
+    qClear.hidden = items.length < 2;
+    qBox.hidden = !items.length; // der Chat bleibt unten (ResizeObserver am Chat)
+    // Fokus wiederherstellen
+    if (fId !== null || fAct === 'clear') {
+      let target = null;
+      const li = fId !== null ? qList.querySelector('[data-qid="' + CSS.escape(fId) + '"]') : null;
+      if (li) target = li.querySelector('[data-qact="' + fAct + '"]') || li.querySelector('button');
+      if (!target && fAct === 'clear' && !qClear.hidden) target = qClear;
+      if (!target && qList.children.length) {
+        const n = qList.children[Math.min(Math.max(fIdx, 0), qList.children.length - 1)];
+        target = n.querySelector('[data-qact="' + fAct + '"]') || n.querySelector('button');
+      }
+      if (target) target.focus();
+      else if (qBox.contains(ae) || !document.activeElement || document.activeElement === document.body) focusInput();
+    }
+  }
+
+  async function queueAct(action, id) {
+    if (ended) return;
+    const ids = action === 'clear' ? queueAll().map((it) => it.id) : [id];
+    const set = action === 'now' ? qs.now : qs.removing;
+    for (const x of ids) set.add(x);
+    renderQueue();
+    const body = action === 'clear' ? { action } : { action, id: Number.isFinite(Number(id)) ? Number(id) : id };
+    const r = await post('/api/queue', body);
+    if (!r.ok) {
+      for (const x of ids) set.delete(x);
+      qs.sig = '';
+      renderQueue();
+      toast(r.error || 'Das hat nicht geklappt.', 'error');
+    }
+  }
+
+  qList.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-qact]');
+    const li = b && b.closest('[data-qid]');
+    if (li) queueAct(b.dataset.qact, li.dataset.qid);
+  });
+  qClear.addEventListener('click', () => queueAct('clear'));
+
+  /** Ereignis "queue_returned": nach "Stopp" kommen die wartenden Nachrichten zurueck ins Feld. */
+  function onQueueReturned(text) {
+    const t = String(text == null ? '' : text).replace(/^\s+|\s+$/g, '');
+    if (!t || ended) return;
+    const v = input.value.replace(/^\s+|\s+$/g, '');
+    // zuerst die zurueckgekommenen (frueher geschrieben), dann das, was schon im Feld stand
+    input.value = v ? t + '\n' + v : t;
+    autosize();
+    recallIdx = -1;
+    closeCmdPop();
+    if (focusInput()) {
+      input.setSelectionRange(input.value.length, input.value.length);
+      input.scrollTop = input.scrollHeight;
+    }
+    toast('Wartende Nachrichten sind zurück im Feld', 'info', 4200);
+  }
 
   for (const b of document.querySelectorAll('[data-prompt]')) {
     b.addEventListener('click', () => send(b.dataset.prompt));
@@ -2426,7 +2616,7 @@
   /** Eingabefeld fokussieren – aber nie einem offenen Dialog den Fokus wegnehmen. */
   function focusInput() {
     if (!modal.hidden) { askFocusBack = input; return false; }
-    if (!pmodal.hidden || ended || jv.open || !cmodal.hidden || !smodal.hidden) return false;
+    if (!pmodal.hidden || ended || jv.open || !cmodal.hidden || !smodal.hidden || !amodal.hidden) return false;
     input.focus();
     return true;
   }
@@ -2535,7 +2725,8 @@
     }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      send(input.value, true);
+      // Strg+Enter: laufende Antwort unterbrechen und gleich das hier beantworten
+      send(input.value, true, e.ctrlKey || e.metaKey);
       return;
     }
     // Pfeil hoch/runter: eigene letzte Nachrichten
@@ -2689,11 +2880,7 @@
   /** Erkannter Text (Mikrofon-Knopf/F2): gleich senden (Schalter an) oder ins Eingabefeld setzen. */
   function voiceText(text) {
     if (!autosendOn() || ended) { appendToInput(text); return; }
-    if (busy) {
-      appendToInput(text);
-      toast('Ich arbeite noch – Enter, wenn ich fertig bin.');
-      return;
-    }
+    // (arbeitet die KI noch, kommt es in die Warteschlange)
     // schon getippter Text bleibt vorne – alles zusammen geht raus
     const typed = input.value.replace(/\s+$/, '');
     send(typed ? typed + ' ' + text : text, true);
@@ -2838,11 +3025,13 @@
     const profOpen = !pmodal.hidden;
     const jvOpen = jv.open;
     const setupOpen = !smodal.hidden;
-    app.inert = askOpen || confOpen || profOpen || jvOpen || setupOpen;
+    const afkOpen = !amodal.hidden;
+    app.inert = askOpen || confOpen || profOpen || jvOpen || setupOpen || afkOpen;
     pmodal.inert = askOpen || confOpen || jvOpen || setupOpen; // Jarvis liegt ueber dem Profil-Fenster
     smodal.inert = askOpen || confOpen || jvOpen;
     jvEl.inert = askOpen || confOpen;             // Rueckfragen liegen ueber Jarvis
-    tourEl.inert = askOpen || confOpen || profOpen || jvOpen || setupOpen;
+    tourEl.inert = askOpen || confOpen || profOpen || jvOpen || setupOpen || afkOpen;
+    amodal.inert = askOpen || confOpen; // Rueckfragen liegen ueber dem AFK-Dialog
     modal.inert = confOpen;
     // Sphaeren hinter dem obersten grossen Fenster nicht weiter zeichnen
     sphere.scope(setupOpen ? smodal : profOpen ? pmodal : null);
@@ -5216,7 +5405,8 @@
   const su = {
     where: '',          // '' | 'modal' | 'pane'
     welcome: false, data: null, sel: '', loading: false, gen: 0, reqGen: 0, checking: false, result: null,
-    note: '', closeTimer: 0, focusBack: null, autoShown: false, lastProv: null, lastMissing: null,
+    note: '', closeTimer: 0, focusBack: null, autoShown: false, lastProv: null, lastMissing: null, lastModel: null,
+    jump: '',           // 'modell' = nach dem Laden zum Bereich "Modell & Denk-Tiefe" springen
   };
   const suShort = (p) => String(p && p.name ? p.name : p || '').replace(/\s*\(.*\)\s*$/, '') || 'KI';
   const suSel = () => (su.data ? su.data.providers.find((p) => p.id === su.sel) || null : null);
@@ -5236,10 +5426,38 @@
         url: /^https:\/\/[^\s"'<>\\]+$/.test(url) ? url : fb ? fb.url : '',
         hasKey: p.has_key === true,
         hint: str(p.key_hint).trim().slice(0, 40),
+        modelName: str(p.model_name).trim().slice(0, 80),
       };
     }).filter((p) => /^[a-z0-9_-]{1,30}$/.test(p.id));
     if (!list.length) return null;
-    return { provider: str(d.provider).trim().toLowerCase(), providers: list, missing: d.key_missing === true };
+    return {
+      provider: str(d.provider).trim().toLowerCase(), providers: list, missing: d.key_missing === true,
+      modelle: normModelle(d.modelle, list.map((p) => p.id)),
+    };
+  }
+
+  /** "modelle" aus /api/setup: je Gehirn {model, denken, models:[{id,name,info,tempo,preis}], depths:[{id,name,info}]}.
+      Fehlt es (aeltere KI), bleibt der Bereich "Modell & Denk-Tiefe" einfach weg. */
+  function normModelle(raw, ids) {
+    const out = Object.create(null);
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+    const items = (arr, keys) => {
+      const seen = new Set();
+      return (Array.isArray(arr) ? arr : []).filter((x) => x && typeof x === 'object').map((x) => {
+        const o = { id: str(x.id).trim() };
+        for (const k of keys) o[k] = str(x[k]).trim().slice(0, 140);
+        if (!o.name) o.name = o.id;
+        return o;
+      }).filter((o) => /^[A-Za-z0-9][A-Za-z0-9._-]{0,60}$/.test(o.id) && !seen.has(o.id) && seen.add(o.id)).slice(0, 12);
+    };
+    for (const id of ids) {
+      const g = pick(raw, id);
+      if (!g || typeof g !== 'object' || Array.isArray(g)) continue;
+      const models = items(g.modelle, ['name', 'info', 'tempo', 'preis']);
+      const depths = items(g.denktiefen, ['name', 'info']);
+      if (models.length || depths.length) out[id] = { model: str(g.model).trim(), denken: str(g.denken).trim(), models, depths };
+    }
+    return out;
   }
 
   /** Ohne Antwort vom Server: die beiden bekannten Gehirne (aus dem Zustand). */
@@ -5263,17 +5481,24 @@
   }
 
   // ---------- Oeffnen / Schliessen ----------
-  function openSetup(welcome) {
+  /** jump 'modell': gleich beim Bereich "Modell & Denk-Tiefe" des aktiven Gehirns oeffnen. */
+  function openSetup(welcome, jump) {
     closeSidebar();
     closeCmdPop();
     if (ended) return;
-    if (!pmodal.hidden) { showTab('gehirn', true); return; } // Profil-Fenster offen: dort der Reiter
+    su.jump = jump === 'modell' && !welcome ? 'modell' : '';
+    const active = String(state.provider || '').toLowerCase();
+    if (!pmodal.hidden) { // Profil-Fenster offen: dort der Reiter
+      if (su.jump && !su.checking) su.sel = active;
+      showTab('gehirn', !su.jump);
+      return;
+    }
     if (!smodal.hidden) { suFocus(); return; }
     su.focusBack = document.activeElement;
     su.welcome = !!welcome;
     su.result = null;
     su.note = '';
-    su.sel = '';
+    su.sel = su.jump ? active : '';
     clearTimeout(su.closeTimer);
     mountSetup('modal');
     smodal.hidden = false;
@@ -5309,6 +5534,9 @@
 
   function suFocus() {
     if (!suVisible()) return;
+    if (su.jump) { if (su.data && !su.loading) suJump(); return; } // sonst nach dem Laden
+    const ae = document.activeElement;
+    if (ae && ae !== sdialog && setupEl.contains(ae)) return; // schon drin (z.B. nach dem Sprung)
     const p = suSel();
     if (su.where === 'modal' && (!p || !p.hasKey || su.welcome)) suInput.focus();
     else if (su.where === 'modal') sdialog.focus();
@@ -5332,13 +5560,17 @@
     su.data = d || su.data || fallbackSetup();
     if (!su.sel || !su.data.providers.some((p) => p.id === su.sel)) su.sel = suDefaultSel();
     renderSetup();
+    if (su.jump) suJump();
   }
 
-  /** Aus applyState: beim ersten Start ohne Schluessel begruessen; offenes Fenster aktuell halten. */
-  function setupState(prov, missing) {
-    const changed = su.lastProv !== null && (su.lastProv !== prov || su.lastMissing !== missing);
+  /** Aus applyState: beim ersten Start ohne Schluessel begruessen; offenes Fenster aktuell halten
+      (auch wenn das Modell anderswo gewechselt wurde, z.B. per /modell im Chat). */
+  function setupState(prov, missing, modelSig) {
+    const changed = su.lastProv !== null &&
+      (su.lastProv !== prov || su.lastMissing !== missing || su.lastModel !== modelSig);
     su.lastProv = prov;
     su.lastMissing = missing;
+    su.lastModel = modelSig;
     if (changed && suVisible() && !su.checking) loadSetup();
     if (missing && !su.autoShown && !ended) {
       su.autoShown = true;
@@ -5367,8 +5599,14 @@
     byId('su-loading').hidden = !(su.loading && !d);
     if (d && !su.sel) su.sel = suDefaultSel();
     const box = byId('su-provs');
+    const ae = document.activeElement;
+    const focusId = ae && box.contains(ae) ? ae.dataset.id : '';
     box.replaceChildren();
     if (d) for (const p of d.providers) box.append(suCard(p, d));
+    if (focusId) {
+      const card = [...box.children].find((c) => c.dataset.id === focusId);
+      if (card) card.focus({ preventScroll: true });
+    }
     const p = suSel();
     const where = byId('su-where');
     where.hidden = !p || !p.url;
@@ -5377,6 +5615,7 @@
       where.title = 'Öffnet die Seite von ' + suShort(p) + ' im Browser';
     }
     suInput.readOnly = su.checking;
+    renderModel();
     renderSteps(p);
     renderSuHint();
     renderSuGo();
@@ -5401,6 +5640,12 @@
     if (p.id === d.provider) top.append(h('span', 'sp-badge now', 'aktiv'));
     main.append(top);
     if (p.info) main.append(h('span', 'sp-info', p.info));
+    const mName = smShownName(p);
+    if (mName) {
+      const m = h('span', 'sp-model');
+      m.append(icon('cpu'), h('span', null, mName));
+      main.append(m);
+    }
     const k = h('span', 'sp-key' + (p.hasKey ? ' ok' : ''));
     k.append(icon(p.hasKey ? 'checkCircle' : 'key'),
       h('span', null, p.hasKey ? 'Schlüssel gespeichert' : 'noch kein Schlüssel'));
@@ -5425,6 +5670,235 @@
     }
   }
   byId('su-provs').addEventListener('keydown', (e) => arrowRadio(e, byId('su-provs'), (b) => suPick(b.dataset.id, true)));
+
+  // ---------- Modell & Denk-Tiefe (je Gehirn; speichert sofort ueber /api/modell) ----------
+  // Gezeigt wird der Bereich fuer das oben ausgewaehlte Gehirn. Ist es nicht das aktive, ist er
+  // leicht abgeschwaecht: die Auswahl gilt, sobald dieses Gehirn benutzt wird.
+  const sm = {
+    want: Object.create(null),   // Gehirn -> {model, denken}: gewaehlt, aber noch nicht bestaetigt
+    busy: Object.create(null),   // Gehirn -> true, solange eine Anfrage laeuft
+    timer: Object.create(null),  // Gehirn -> Verzoegerung (Pfeiltasten: erst speichern, wenn man stehen bleibt)
+    toastEl: null,               // letzte Meldung "Eingestellt: …" (eine neue ersetzt sie)
+  };
+  function smToast(text, kind, ms) {
+    if (sm.toastEl) sm.toastEl.remove();
+    toast(text, kind, ms);
+    sm.toastEl = byId('toasts').lastElementChild;
+  }
+  const smGroup = (pid) => (su.data && su.data.modelle ? pick(su.data.modelle, pid) || null : null);
+  /** Was gerade gewaehlt ist (die noch nicht bestaetigte Auswahl hat Vorrang). */
+  function smCur(pid) {
+    const g = smGroup(pid);
+    const w = pick(sm.want, pid);
+    return { model: w ? w.model : g ? g.model : '', denken: w ? w.denken : g ? g.denken : '' };
+  }
+  const smFind = (list, id) => list.find((x) => x.id === id) || null;
+  /** Anzeige-Name fuer die Gehirn-Karte, z.B. "Claude Sonnet 5.5 - schnell". */
+  function smShownName(p) {
+    const g = smGroup(p.id);
+    if (!g || !pick(sm.want, p.id)) return p.modelName;
+    const c = smCur(p.id);
+    const m = smFind(g.models, c.model);
+    const t = smFind(g.depths, c.denken);
+    return (m ? m.name : c.model) + (t ? ' - ' + t.name : '');
+  }
+
+  function renderModel() {
+    const sec = byId('su-model');
+    const body = byId('su-body');
+    // Reihenfolge: normal gleich nach der Gehirn-Wahl; bei der Begruessung zuerst der Schluessel
+    const before = su.welcome ? null : body.querySelector('.su-key');
+    if (before ? sec.nextElementSibling !== before : body.lastElementChild !== sec) body.insertBefore(sec, before);
+    const p = suSel();
+    const g = p ? smGroup(p.id) : null;
+    sec.hidden = !g;
+    byId('su-input-label').textContent = (g && !su.welcome ? '3' : '2') + '. Schlüssel einfügen';
+    byId('su-model-label').textContent = (su.welcome ? '3' : '2') + '. Modell & Denk-Tiefe';
+    if (!g) return;
+    const ae = document.activeElement;
+    const focusKey = ae && sec.contains(ae) ? ae.dataset.sm || '' : '';
+    const name = suShort(p);
+    const active = p.id === su.data.provider;
+    sec.classList.toggle('inactive', !active);
+    sec.dataset.provider = p.id;
+    byId('sm-for').textContent = active ? 'für ' + name + ' · aktiv' : 'für ' + name;
+    byId('sm-inactive').hidden = active;
+    byId('sm-inactive-text').textContent = name + ' ist gerade nicht aktiv – die Auswahl gilt, sobald du dieses Gehirn nutzt.';
+    byId('sm-saving').hidden = !pick(sm.busy, p.id);
+    const cur = smCur(p.id);
+
+    // Modell-Kacheln
+    const tiles = byId('sm-models');
+    tiles.setAttribute('aria-label', 'Modell für ' + name);
+    tiles.replaceChildren();
+    const hasModel = g.models.some((m) => m.id === cur.model);
+    g.models.forEach((m, i) => {
+      const on = m.id === cur.model;
+      const b = h('button', 'sm-tile' + (on ? ' selected' : ''));
+      b.type = 'button';
+      b.setAttribute('role', 'radio');
+      b.setAttribute('aria-checked', on ? 'true' : 'false');
+      b.tabIndex = on || (!hasModel && i === 0) ? 0 : -1;
+      b.dataset.id = m.id;
+      b.dataset.sm = 'model:' + m.id;
+      b.append(h('span', 'sm-name', m.name));
+      if (m.info) b.append(h('span', 'sm-info', m.info));
+      if (m.tempo || m.preis) { // "Tempo: … · Preis" – umbrechen lieber am Trenner als mitten im Preis
+        const meta = h('span', 'sm-meta');
+        if (m.tempo) meta.append(h('span', null, 'Tempo: ' + m.tempo + (m.preis ? ' ·' : '')), m.preis ? ' ' : '');
+        if (m.preis) meta.append(h('span', null, m.preis));
+        b.append(meta);
+      }
+      const chk = h('span', 'sp-check');
+      chk.append(icon('check'));
+      b.append(chk);
+      b.addEventListener('click', () => smPick(p.id, 'model', m.id, false));
+      tiles.append(b);
+    });
+    tiles.hidden = !g.models.length;
+    byId('sm-models-label').hidden = !g.models.length;
+
+    // Denk-Tiefe als Segment-Leiste
+    const seg = byId('sm-depth');
+    seg.setAttribute('aria-label', 'Denk-Tiefe für ' + name);
+    seg.replaceChildren();
+    const hasDepth = g.depths.some((t) => t.id === cur.denken);
+    g.depths.forEach((t, i) => {
+      const on = t.id === cur.denken;
+      const b = h('button', 'segctl-btn sm-seg', t.name);
+      b.type = 'button';
+      b.setAttribute('role', 'radio');
+      b.setAttribute('aria-checked', on ? 'true' : 'false');
+      b.tabIndex = on || (!hasDepth && i === 0) ? 0 : -1;
+      if (t.info) b.title = t.info;
+      b.dataset.id = t.id;
+      b.dataset.sm = 'depth:' + t.id;
+      b.addEventListener('click', () => smPick(p.id, 'denken', t.id, false));
+      seg.append(b);
+    });
+    seg.hidden = !g.depths.length;
+    byId('sm-depth-label').hidden = !g.depths.length;
+    const info = byId('sm-depth-info');
+    const t = smFind(g.depths, cur.denken);
+    info.replaceChildren();
+    if (t) info.append(h('b', null, t.name), t.info ? ': ' + t.info : '');
+    info.hidden = !t;
+
+    if (focusKey) {
+      const el = [...sec.querySelectorAll('[data-sm]')].find((x) => x.dataset.sm === focusKey);
+      if (el) el.focus({ preventScroll: true });
+    }
+  }
+
+  function smPick(pid, kind, id, keyboard) {
+    if (!smGroup(pid)) return;
+    const cur = smCur(pid);
+    if (cur[kind] === id) return;
+    sm.want[pid] = Object.assign({}, cur, { [kind]: id });
+    renderModel();
+    renderSuCardsOnly();
+    clearTimeout(pick(sm.timer, pid));
+    sm.timer[pid] = setTimeout(() => { delete sm.timer[pid]; smSave(pid); }, keyboard ? 450 : 0);
+  }
+
+  /** Nur die Gehirn-Karten neu (zeigen das gewaehlte Modell), Fokus bleibt. */
+  function renderSuCardsOnly() {
+    const box = byId('su-provs');
+    if (!su.data || !box.childElementCount) return;
+    for (const c of box.children) {
+      const p = su.data.providers.find((x) => x.id === c.dataset.id);
+      const line = p && c.querySelector('.sp-model > span:last-child');
+      if (line) line.textContent = smShownName(p);
+    }
+  }
+
+  /** Auswahl an die KI schicken – immer nur eine Anfrage je Gehirn, die neueste Auswahl gewinnt. */
+  async function smSave(pid) {
+    if (pick(sm.busy, pid)) return; // laeuft schon – danach wird nachgezogen
+    const w = pick(sm.want, pid);
+    if (!w) return;
+    const g = smGroup(pid);
+    if (g && g.model === w.model && g.denken === w.denken) { // wieder beim alten angekommen
+      delete sm.want[pid];
+      renderModel();
+      renderSuCardsOnly();
+      return;
+    }
+    sm.busy[pid] = true;
+    renderModel();
+    const body = { provider: pid };
+    if (w.model) body.model = w.model;
+    if (w.denken) body.denken = w.denken;
+    const r = await post('/api/modell', body);
+    delete sm.busy[pid];
+    const latest = pick(sm.want, pid);
+    const newer = latest && (latest.model !== w.model || latest.denken !== w.denken);
+    const brain = su.data && su.data.providers.find((p) => p.id === pid);
+    if (r.ok) {
+      su.gen++; // eine noch laufende (aeltere) Abfrage von /api/setup zaehlt nicht mehr
+      const d = normSetup(r.setup);
+      if (d) {
+        su.data = d;
+        if (!d.providers.some((p) => p.id === su.sel)) su.sel = suDefaultSel();
+      } else if (g) {
+        g.model = w.model;
+        g.denken = w.denken;
+        loadSetup();
+      }
+      if (newer) {
+        if (!pick(sm.timer, pid)) smSave(pid);
+      } else {
+        delete sm.want[pid];
+        let msg = str(r.message).trim() || 'Gespeichert.';
+        if (su.data && pid !== su.data.provider && brain) msg += ' Gilt, sobald du ' + suShort(brain) + ' nutzt.';
+        smToast('Eingestellt: ' + msg, 'ok', /Achtung/.test(msg) ? 6500 : 4000);
+      }
+    } else {
+      // nichts geaendert: zurueck zur gespeicherten Auswahl
+      delete sm.want[pid];
+      clearTimeout(pick(sm.timer, pid));
+      delete sm.timer[pid];
+      let err = str(r.error).trim() || 'Das hat nicht geklappt.';
+      if (!/[.!?]$/.test(err)) err += '.';
+      smToast(err + ' Die Einstellung bleibt, wie sie war.', 'error', 6000);
+    }
+    if (su.data) renderSetup();
+  }
+
+  for (const [gid, kind] of [['sm-models', 'model'], ['sm-depth', 'denken']]) {
+    const group = byId(gid);
+    group.addEventListener('keydown', (e) => {
+      const pid = byId('su-model').dataset.provider;
+      if (e.key === 'Home' || e.key === 'End') { // erste/letzte Wahl
+        const items = [...group.querySelectorAll('[role="radio"]')];
+        if (!items.length || !items.includes(document.activeElement)) return;
+        e.preventDefault();
+        const b = e.key === 'Home' ? items[0] : items[items.length - 1];
+        b.focus();
+        smPick(pid, kind, b.dataset.id, true);
+        return;
+      }
+      arrowRadio(e, group, (b) => smPick(pid, kind, b.dataset.id, true));
+    });
+  }
+
+  /** Zum Bereich "Modell & Denk-Tiefe" springen (Klick auf das Modell in Kopfzeile/Seitenleiste). */
+  function suJump() {
+    if (!su.jump || !suVisible()) return;
+    su.jump = '';
+    const sec = byId('su-model');
+    if (sec.hidden) { suFocus(); return; }
+    const scroller = su.where === 'pane' ? byId('pn-body') : byId('su-body');
+    const box = scroller.getBoundingClientRect();
+    const r = sec.getBoundingClientRect();
+    if (r.top < box.top || r.bottom > box.bottom) scroller.scrollTop += r.top - box.top - 8;
+    const tile = sec.querySelector('.sm-tile[tabindex="0"]') || sec.querySelector('[role="radio"][tabindex="0"]');
+    if (tile) tile.focus({ preventScroll: true });
+    sec.classList.remove('flash');
+    void sec.offsetWidth; // Animation neu starten
+    sec.classList.add('flash');
+    setTimeout(() => sec.classList.remove('flash'), 1400);
+  }
 
   function renderSteps(p) {
     const ol = byId('su-steps');
@@ -5606,7 +6080,9 @@
     if (e.key === 'F2') { e.preventDefault(); return; }
     if (e.key === 'Tab') trapTab(e, sdialog);
   }
-  byId('sb-brain').addEventListener('click', () => openSetup(false));
+  // Gehirn-Karte und Modell in der Kopfzeile: beim Modell-Bereich oeffnen (ohne Schluessel: beim Schluessel)
+  byId('sb-brain').addEventListener('click', () => openSetup(false, state.api_key_missing === true ? '' : 'modell'));
+  byId('tb-model').addEventListener('click', () => openSetup(false, 'modell'));
   byId('key-bar-btn').addEventListener('click', () => openSetup(true));
 
   // ---------- Terminal-Version ----------
@@ -5640,6 +6116,7 @@
   document.addEventListener('keydown', (e) => {
     if (!cmodal.hidden) { confirmKey(e); return; }
     if (askCur && !modal.hidden) { modalKey(e); return; }
+    if (!amodal.hidden) { afkKey(e); return; }
     if (jv.open) { jarvisKey(e); return; }
     if (!smodal.hidden) { setupKey(e); return; }
     if (!pmodal.hidden) { profileKey(e); return; }
@@ -5683,7 +6160,7 @@
   let resyncCount = 0;
   let helloCount = 0;
   const FLOW = new Set(['user', 'start', 'thinking', 'chunk', 'tool', 'agent', 'info', 'done', 'stopped', 'error',
-    'notice', 'reset', 'retract']);
+    'notice', 'reset', 'retract', 'afk_report']);
 
   function setConnected(ok) {
     connected = ok;
@@ -5720,6 +6197,7 @@
     if (!smodal.hidden) closeSetup();
     byId('key-bar').hidden = true;
     if (confirmState) closeConfirm(false);
+    if (!amodal.hidden) { afk.back = null; amodal.hidden = true; }
     if (jv.open) closeJarvisView();
     ttsStop();
     endClosing();
@@ -5745,6 +6223,8 @@
     renderUpdate(); // Knopf aus
     closeCmdPop();
     setBusy(false);
+    renderQueue(); // Warteliste weg
+    renderAfk();   // AFK-Band weg
     updateEmpty();
   }
 
@@ -5790,8 +6270,10 @@
       const r = new Reply();
       r.text(text);
       r.finish('done');
-    } else if (m.role === 'notice') addCard(m.level, text);
-    else if (m.role === 'error') addError(text);
+    } else if (m.role === 'notice') {
+      if (m.level === 'afk') addAfkNotice(text); // AFK-Schritt (Trennzeile) oder Bericht (Karte)
+      else addCard(m.level, text);
+    } else if (m.role === 'error') addError(text);
   }
 
   async function loadHistory(isResync) {
@@ -5828,7 +6310,7 @@
       histBuilding = false;
     }
     if (keep) { msgs.append(keep.row); reply = keep; }
-    else if (wasBusy) ensureReply();
+    else if (wasBusy && !afkRunning()) ensureReply();
     historyReady = true;
     // Der Anfang der laufenden Antwort fehlt evtl. -> nach ihrem Ende den Verlauf neu laden
     resyncOnEnd = wasBusy;
@@ -5955,10 +6437,17 @@
         break;
       case 'notice':
         if (/Live-Mitschrift/i.test(String(ev.text || '')) && jv.live === false) jvSetupInfo(String(ev.text), ev.level);
-        addCard(ev.level, String(ev.text || ''));
+        if (ev.level === 'afk') addAfkNotice(String(ev.text || ''));
+        else addCard(ev.level, String(ev.text || ''));
+        break;
+      case 'afk_report':
+        onAfkReport(ev);
         break;
       case 'retract':
         onRetract();
+        break;
+      case 'queue_returned':
+        onQueueReturned(ev.text);
         break;
       case 'reset':
         clearChat();
