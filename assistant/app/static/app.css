@@ -470,16 +470,18 @@ button:disabled { cursor: default; }
 .status[data-s="rec"] .status-dot { background: #ef4444; animation: pulse-dot 1s ease-in-out infinite; }
 .status[data-s="off"] .status-dot { background: #ef4444; }
 .status[data-s="off"] { color: var(--danger); }
-.tb-actions { display: flex; align-items: center; gap: 8px; flex: none; }
+/* Wird es eng (z.B. mit "Update verfuegbar"), wird nur der Modell-Chip schmaler (mit "…") */
+.tb-actions { display: flex; align-items: center; gap: 8px; flex: 0 1 auto; min-width: 0; }
+.tb-actions > * { flex-shrink: 0; }
 .model-chip {
-  display: inline-flex; align-items: center; gap: 6px;
-  max-width: 260px; min-width: 0; padding: 4px 10px;
+  display: inline-flex; align-items: center; gap: 6px; flex: 0 1 auto;
+  max-width: 260px; min-width: 44px; padding: 4px 10px;
   border: 1px solid var(--border); border-radius: 999px;
   font-family: inherit; font-size: calc(12.5px * var(--font-scale)); color: var(--text-2); background: var(--surface);
   white-space: nowrap; cursor: pointer;
   transition: border-color .15s, color .15s, background .15s;
 }
-.model-chip[hidden] { display: none; }
+.model-chip[hidden], .topbar.tight .model-chip { display: none; }
 .model-chip:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); color: var(--text); background: var(--surface-2); }
 .model-chip:focus-visible { border-radius: 999px; }
 .model-chip .ic { width: 13px; height: 13px; flex: none; color: var(--accent-text); }
@@ -971,7 +973,7 @@ button:disabled { cursor: default; }
 .stop-btn { padding: 0 14px 0 12px; background: var(--text); color: var(--bg); font-weight: 600; font-size: calc(14px * var(--font-scale)); }
 .stop-btn:hover { background: var(--danger); color: #fff; }
 .stop-btn .ic { width: 15px; height: 15px; }
-.send-btn[data-mode="queue"] .ic { width: 20px; height: 20px; }
+.send-btn[data-mode="queue"] .ic, .send-btn[data-mode="afkpending"] .ic { width: 20px; height: 20px; }
 
 .composer-hint {
   display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 4px 14px;
@@ -1005,6 +1007,10 @@ kbd {
 .composer-hint.busy .h-now { display: inline-block; }
 .composer-hint .h-now:hover:not(:disabled) { color: var(--accent-text); background: var(--accent-soft); }
 .composer-hint .h-now:disabled { cursor: default; }
+/* AFK-Modus laeuft: Enter = "ich bin zurueck" (die Nachricht wartet nicht) */
+.composer-hint .h-afk { display: none; }
+.composer-hint.afk .h-idle, .composer-hint.afk .h-busy, .composer-hint.afk .h-now { display: none; }
+.composer-hint.afk .h-afk { display: inline; }
 
 /* Warteschlange (ueber der Eingabe): "Wartet (2)" mit "Jetzt" / "✕" je Nachricht */
 .queue {
@@ -2386,9 +2392,16 @@ kbd {
 }
 .sm-inactive[hidden] { display: none; }
 .sm-inactive .ic { width: 15px; height: 15px; flex: none; margin-top: 2px; color: var(--info); }
-.sm-body { transition: opacity .15s; }
-.su-model.inactive .sm-body { opacity: .62; }
-.su-model.inactive .sm-body:hover, .su-model.inactive .sm-body:focus-within { opacity: .9; }
+/* Nicht aktives Gehirn: leicht abgeschwaecht ueber gestrichelte Rahmen – die Schrift behaelt ihre
+   Farben (die Knoepfe bleiben bedienbar, also voller Kontrast) */
+.su-model.inactive .sm-tile { border-style: dashed; box-shadow: none; }
+.su-model.inactive .sm-tile:hover { border-style: solid; }
+.su-model.inactive .sm-tile.selected {
+  border-color: color-mix(in srgb, var(--accent) 65%, var(--border-strong));
+  background: var(--surface); box-shadow: none;
+}
+.su-model.inactive .segctl.sm-depth { outline: 1.5px dashed var(--border-strong); outline-offset: -1.5px; }
+.su-model.inactive .sm-seg[aria-checked="true"] { box-shadow: 0 0 0 1px var(--border-strong); }
 .sm-sub { margin: 12px 0 6px; font-size: calc(13px * var(--font-scale)); font-weight: 650; color: var(--text-2); }
 .sm-sub[hidden] { display: none; }
 .sm-models { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
@@ -2627,6 +2640,9 @@ a.btn { text-decoration: none; }
 /* ---------- Schmale Fenster ---------- */
 @media (max-width: 1040px) {
   :root { --sidebar-w: 256px; }
+}
+@media (min-width: 801px) {
+  .tb-main { flex: 1 0 auto; } /* der Status ("Arbeitet …") bleibt sichtbar, der Chip gibt nach */
 }
 @media (max-width: 800px) {
   .app { grid-template-columns: minmax(0, 1fr); }

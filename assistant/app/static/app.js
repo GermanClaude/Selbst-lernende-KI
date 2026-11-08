@@ -1178,6 +1178,7 @@
     chip.hidden = !modelName;
     chip.title = modelTip;
     chip.setAttribute('aria-label', modelTip || 'Modell & Denk-Tiefe');
+    fitTopbar();
 
     // Kosten
     byId('sb-eur').textContent = fmtEur(s.eur);
@@ -1360,14 +1361,28 @@
     const has = !!input.value.trim();
     sendBtn.disabled = ended || !has;
     hintNow.disabled = ended || !has;
-    const mode = busy ? 'queue' : 'send';
+    // AFK-Modus laeuft: jede Nachricht heisst "ich bin zurueck" (sie wartet nicht);
+    // startet er gleich, wartet sie – und der AFK-Modus startet dann nicht
+    const away = ended ? '' : afkRunning() ? 'afk' : busy && state.afk_pending === true ? 'afkpending' : '';
+    byId('hint').classList.toggle('afk', away === 'afk');
+    const mode = away || (busy ? 'queue' : 'send');
     if (sendBtn.dataset.mode === mode) return;
     sendBtn.dataset.mode = mode;
-    sendBtn.replaceChildren(icon(mode));
-    const tip = busy ? 'In die Warteschlange (Enter) – kommt dran, sobald ich fertig bin. Strg+Enter: unterbrechen & senden'
-      : 'Senden (Enter)';
+    sendBtn.replaceChildren(icon(mode === 'afk' ? 'send' : mode === 'afkpending' ? 'queue' : mode));
+    let tip = 'Senden (Enter)';
+    let label = tip;
+    if (mode === 'afk') {
+      tip = 'Senden (Enter) – du bist zurück: der AFK-Modus endet und ich antworte dir gleich';
+      label = 'Senden (Enter) – du bist zurück, der AFK-Modus endet';
+    } else if (mode === 'afkpending') {
+      tip = 'In die Warteschlange (Enter) – kommt dran, sobald ich fertig bin; der AFK-Modus startet dann nicht. Strg+Enter: unterbrechen & senden';
+      label = 'In die Warteschlange (Enter), der AFK-Modus startet dann nicht. Strg+Enter: unterbrechen und sofort senden';
+    } else if (mode === 'queue') {
+      tip = 'In die Warteschlange (Enter) – kommt dran, sobald ich fertig bin. Strg+Enter: unterbrechen & senden';
+      label = 'In die Warteschlange (Enter). Strg+Enter: unterbrechen und sofort senden';
+    }
     sendBtn.title = tip;
-    sendBtn.setAttribute('aria-label', busy ? 'In die Warteschlange (Enter). Strg+Enter: unterbrechen und sofort senden' : tip);
+    sendBtn.setAttribute('aria-label', label);
   }
 
   function updateStatus() {
@@ -1651,7 +1666,7 @@
     } else checkUpdateNow();
   });
   setInterval(() => { if (!byId('sb-upd').hidden) renderUpdate(); }, 30000); // "vor 5 Min." aktuell halten
-  const newChat = () => { closeSidebar(); send('/neu'); };
+  const newChat = () => { closeSidebar(); if (!afkBlocksNew()) send('/neu'); };
   byId('sb-new').addEventListener('click', newChat);
   byId('tb-new').addEventListener('click', newChat);
   byId('sb-profile').addEventListener('click', () => openProfile());
@@ -1787,6 +1802,20 @@
     const ro = new ResizeObserver(() => { if (stick) toBottom(); });
     ro.observe(msgs);
     ro.observe(scroller);
+  }
+
+  // Kopfzeile: der Modell-Chip wird bei Platzmangel schmaler (CSS, mit "…"). Reicht es selbst dafuer
+  // nicht (z.B. "Update verfuegbar" + grosse Schrift + "Arbeitet …"), faellt er weg – der Modellname
+  // steht auch auf der Gehirn-Karte in der Seitenleiste. Nie waagerecht scrollen.
+  const topbarEl = document.querySelector('.topbar');
+  function fitTopbar() {
+    if (!topbarEl) return;
+    topbarEl.classList.remove('tight');
+    if (topbarEl.scrollWidth > topbarEl.clientWidth + 1) topbarEl.classList.add('tight');
+  }
+  if (window.ResizeObserver && topbarEl) {
+    const tro = new ResizeObserver(() => fitTopbar());
+    for (const el of [topbarEl, byId('status'), byId('tb-update'), byId('tb-new'), byId('tb-jarvis')]) if (el) tro.observe(el);
   }
 
   // =====================================================================
@@ -2364,6 +2393,8 @@
       if (low === '/jarvis') startJarvis(); else startTour();
       return true;
     }
+    // "/neu" waehrend AFK: erst der Bericht (sonst loescht das neue Gespraech ihn ungesehen)
+    if (/^\/neu(\s|$)/.test(low) && afkBlocksNew()) return false;
     // Schluessel: Blase nur gekuerzt (wie das Echo) und nicht fuer Pfeil hoch merken
     const masked = keyShown(text);
     const shown = masked || text;
@@ -2408,9 +2439,15 @@
       if (!p || k >= 0) {
         queuedOwn.push(shown);
         if (queuedOwn.length > 40) queuedOwn.shift();
+        // Schluessel: der Server gibt ihn nach "Stopp" nie zurueck (er geht nie ueber die Ereignisse) –
+        // den Text nur hier im Fenster merken, damit er dann nicht spurlos verschwindet
+        if (masked && r.id != null) {
+          ownKeys.set(String(r.id), { raw: text, shown });
+          if (ownKeys.size > 20) ownKeys.delete(ownKeys.keys().next().value);
+        }
       }
       if (r.interrupt && r.id != null) {
-        qs.now.add(String(r.id)); // kommt gleich – nicht mit "Jetzt"/"✕" anbieten
+        qs.now.set(String(r.id), Date.now()); // kommt gleich – nicht mit "Jetzt"/"✕" anbieten
         renderQueue();
       }
     }
@@ -2454,6 +2491,9 @@
 
   function onUserEcho(text) {
     const t = String(text || '').trim();
+    queueStarted();
+    // eigener wartender Schluessel ist dran (wird jetzt eingerichtet): nicht mehr merken
+    for (const [id, o] of ownKeys) if (o.shown === t) { ownKeys.delete(id); break; }
     // aeltere Eintraege (ohne Echo) aufraeumen
     while (pendingSent.length && Date.now() - pendingSent[0].t > 60000) pendingSent.shift();
     const k = pendingSent.findIndex((p) => p.text === t);
@@ -2466,8 +2506,35 @@
   }
 
   async function stop() {
+    const keyIds = queueAll().map((it) => it.id).filter((id) => ownKeys.has(id));
     const r = await post('/api/stop', {});
-    if (!r.ok) toast(r.error || 'Anhalten hat nicht geklappt.', 'error');
+    if (!r.ok) { toast(r.error || 'Anhalten hat nicht geklappt.', 'error'); return; }
+    // wartende Schluessel kommen vom Server nicht zurueck: kurz auf das Echo warten (war er schon dran?),
+    // sonst lokal wieder ins Feld
+    if (keyIds.length) setTimeout(() => keysBack(keyIds), 700);
+  }
+
+  function keysBack(ids) {
+    const waiting = new Set(queueAll().map((it) => it.id));
+    const raws = [];
+    for (const id of ids) {
+      const o = ownKeys.get(id);
+      if (!o || waiting.has(id)) continue;
+      ownKeys.delete(id);
+      raws.push(o.raw);
+    }
+    if (!raws.length || ended) return;
+    const v = input.value.replace(/^\s+|\s+$/g, '');
+    input.value = (v ? v + '\n' : '') + raws.join('\n');
+    autosize();
+    recallIdx = -1;
+    closeCmdPop();
+    if (focusInput()) {
+      input.setSelectionRange(input.value.length, input.value.length);
+      input.scrollTop = input.scrollHeight;
+    }
+    toast(raws.length > 1 ? 'Deine Schlüssel sind noch nicht eingerichtet – sie stehen wieder im Feld. Zum Einrichten einfach senden.'
+      : 'Dein Schlüssel ist noch nicht eingerichtet – er steht wieder im Feld. Zum Einrichten einfach senden.', 'info', 6500);
   }
 
   sendBtn.addEventListener('click', (e) => {
@@ -2486,10 +2553,13 @@
   //  "✕" = {action:"remove", id}, "Alle entfernen" = {action:"clear"}.
   // =====================================================================
   const queuedOwn = [];  // eigene wartende Nachrichten (fuer Pfeil hoch schon gemerkt)
+  const ownKeys = new Map(); // Warteschlangen-Nummer -> {raw, shown}: eigener wartender Schluessel (nur lokal)
   const qs = {
-    now: new Set(),      // "Jetzt" gedrueckt / Strg+Enter: kommt gleich
+    now: new Map(),      // Nummer -> Zeitpunkt: "Jetzt" gedrueckt / Strg+Enter: kommt gleich
     removing: new Set(), // "✕" / "Alle entfernen" gedrueckt: schon ausblenden
     sig: '',
+    startAt: 0,          // wann zuletzt eine Nachricht drankam (Ereignis "user")
+    timer: 0,
   };
   const qBox = byId('queue');
   const qList = byId('q-list');
@@ -2505,9 +2575,12 @@
     const all = queueAll();
     // Merker aufraeumen: was nicht mehr wartet, braucht keinen mehr
     const ids = new Set(all.map((it) => it.id));
-    for (const set of [qs.now, qs.removing]) for (const id of set) if (!ids.has(id)) set.delete(id);
+    for (const set of [qs.now, qs.removing]) for (const id of [...set.keys()]) if (!ids.has(id)) set.delete(id);
     const items = ended ? [] : all.filter((it) => !qs.removing.has(it.id));
-    const sig = JSON.stringify([items, [...qs.now]]);
+    // "kommt gleich …" (ohne Knoepfe) nur fuer die erste wartende Nachricht – und nur, solange sie
+    // wirklich gleich kommt (siehe queueGoing)
+    const goingId = items.length && queueGoing(items[0].id) ? items[0].id : null;
+    const sig = JSON.stringify([items, goingId]);
     if (sig === qs.sig) return;
     qs.sig = sig;
     // Fokus in der Liste merken (gleicher Knopf derselben Nachricht, sonst der Nachbar)
@@ -2525,7 +2598,7 @@
     items.forEach((it, k) => {
       const one = it.text.replace(/\s+/g, ' ').trim() || '…';
       const short = one.length > 60 ? one.slice(0, 59) + '…' : one;
-      const going = qs.now.has(it.id);
+      const going = it.id === goingId;
       const li = h('li', 'q-item' + (going ? ' going' : ''));
       li.dataset.qid = it.id;
       const txt = h('span', 'q-text', one);
@@ -2572,17 +2645,38 @@
   async function queueAct(action, id) {
     if (ended) return;
     const ids = action === 'clear' ? queueAll().map((it) => it.id) : [id];
-    const set = action === 'now' ? qs.now : qs.removing;
-    for (const x of ids) set.add(x);
+    for (const x of ids) {
+      if (action === 'now') qs.now.set(x, Date.now());
+      else qs.removing.add(x);
+    }
     renderQueue();
     const body = action === 'clear' ? { action } : { action, id: Number.isFinite(Number(id)) ? Number(id) : id };
     const r = await post('/api/queue', body);
     if (!r.ok) {
-      for (const x of ids) set.delete(x);
+      for (const x of ids) (action === 'now' ? qs.now : qs.removing).delete(x);
       qs.sig = '';
       renderQueue();
       toast(r.error || 'Das hat nicht geklappt.', 'error');
+    } else if (action !== 'now') for (const x of ids) ownKeys.delete(x); // bewusst entfernt
+  }
+
+  /** Kommt diese (vorne wartende) Nachricht wirklich gleich? Hat nach dem "Jetzt"/Strg+Enter (oder
+   *  kurz davor) eine ANDERE Nachricht angefangen und diese wartet danach immer noch, kommt sie erst
+   *  nach jener dran (z.B. zweimal schnell Strg+Enter) – dann wieder "Jetzt"/"✕" anbieten. */
+  function queueGoing(id) {
+    const t = qs.now.get(id);
+    if (t == null) return false;
+    if (qs.startAt && qs.startAt > t - 250 && Date.now() - qs.startAt > 1500) {
+      qs.now.delete(id);
+      return false;
     }
+    return true;
+  }
+  /** Ereignis "user": eine Nachricht ist dran – gleich pruefen, ob die naechste noch "kommt gleich" ist. */
+  function queueStarted() {
+    qs.startAt = Date.now();
+    clearTimeout(qs.timer);
+    qs.timer = setTimeout(() => { qs.sig = ''; renderQueue(); }, 1600);
   }
 
   qList.addEventListener('click', (e) => {
@@ -2711,6 +2805,8 @@
     // Rueckfrage kam, waehrend der Dialog offen war: danach nicht auf den (versteckten) Dialog zurueck
     if (askFocusBack && amodal.contains(askFocusBack)) askFocusBack = back;
     if (!modal.hidden) { dialog.focus(); return; }
+    if (!cmodal.hidden) return;
+    if (jv.open) { jvEl.focus(); return; } // Jarvis kam waehrend des Dialogs (z.B. aus einem anderen Fenster)
     if (back && back !== document.body && document.contains(back) && !back.closest('[inert]') &&
         back.offsetParent !== null) back.focus();
     else focusInput();
@@ -2736,8 +2832,14 @@
       return;
     }
     afkSending(false);
+    if (!r.ok && (afkRunning() || state.afk_pending === true)) { // inzwischen anderswo gestartet
+      renderAfk(); // schliesst den Dialog (mit Hinweis)
+      return;
+    }
     if (!r.ok) {
-      afkErr.replaceChildren(icon('alertCircle'), h('span', null, r.error || 'Der AFK-Modus konnte nicht starten.'));
+      let err = String(r.error || '').trim() || 'Der AFK-Modus konnte nicht starten.';
+      if (/^Der AFK-Modus laeuft schon\.?$/.test(err)) err = 'Der AFK-Modus läuft schon.';
+      afkErr.replaceChildren(icon('alertCircle'), h('span', null, err));
       afkErr.hidden = false;
       afkTask.focus();
       return;
@@ -2764,7 +2866,11 @@
   const afkTooSoon = (e) => !!(e && e.detail) && (e.detail > 1 || performance.now() - afk.at < 400);
   byId('afk-go').addEventListener('click', (e) => { if (!afkTooSoon(e)) submitAfk(); });
   byId('afk-cancel').addEventListener('click', () => closeAfk());
-  amodal.addEventListener('mousedown', (e) => { if (e.target === amodal && !afkTooSoon(e)) closeAfk(); });
+  amodal.addEventListener('mousedown', (e) => {
+    if (e.target !== amodal) return;
+    e.preventDefault(); // Fokus bleibt im Dialog (auch beim ignorierten zweiten Klick eines Doppelklicks)
+    if (!afkTooSoon(e)) closeAfk();
+  });
   byId('afk-btn').addEventListener('click', () => openAfk());
   byId('sb-afk').addEventListener('click', () => {
     if (afkRunning() || state.afk_pending === true) { closeSidebar(); afkStop(); }
@@ -2814,6 +2920,13 @@
       afk.endingSince = null;
       afk.base = null;
     }
+    // AFK kam anderswo in Gang (anderes Fenster, Nova selbst): den offenen Dialog hier schliessen –
+    // "Los geht's" ginge nicht mehr bzw. wuerde die Wahl des anderen Starts ueberschreiben.
+    // (Der eigene Start schliesst ihn selbst: waehrenddessen ist afk.sending gesetzt.)
+    if (show && !amodal.hidden && !afk.sending) {
+      closeAfk();
+      toast(pending ? 'Der AFK-Modus startet schon gleich.' : 'Der AFK-Modus läuft schon.', 'info');
+    }
     const n = kiName();
     const job = a ? String(a.auftrag || '').trim() : '';
     // Knoepfe "Ich bin weg" (neben dem Feld und in der Seitenleiste)
@@ -2830,6 +2943,7 @@
     app.classList.toggle('afk-on', !!a && !ended);
 
     afkBand.hidden = !show;
+    updateSendBtn(); // Senden-Knopf und Hinweis: waehrend AFK heisst Enter "ich bin zurueck"
     if (!show) {
       clearInterval(afk.timer);
       afk.timer = 0;
@@ -2904,6 +3018,17 @@
     if (!afkRunning()) return;
     afk.endingSince = state.afk.since;
     renderAfk();
+  }
+
+  /** "Neues Gespraech" waehrend AFK: das wuerde den Bericht gleich wieder loeschen, bevor man ihn
+   *  sieht. Stattdessen AFK beenden (der Bericht kommt) – danach geht ein neues Gespraech. */
+  function afkBlocksNew() {
+    if (!afkRunning() || ended) return false;
+    const ending = afk.endingSince !== null && afk.endingSince === state.afk.since;
+    if (!ending) afkStop();
+    toast(ending ? 'Einen Moment – gleich kommt dein Bericht. Danach kannst du ein neues Gespräch beginnen.'
+      : 'AFK-Modus beendet – hier ist erst dein Bericht. Danach kannst du ein neues Gespräch beginnen.', 'info', 6000);
+    return true;
   }
 
   /** "Ich bin zurueck" (laeuft) bzw. "Abbrechen" (startet gleich): POST /api/afk {action:"stop"}. */
@@ -3485,7 +3610,7 @@
     app.inert = askOpen || confOpen || profOpen || jvOpen || setupOpen || afkOpen;
     pmodal.inert = askOpen || confOpen || jvOpen || setupOpen; // Jarvis liegt ueber dem Profil-Fenster
     smodal.inert = askOpen || confOpen || jvOpen;
-    jvEl.inert = askOpen || confOpen;             // Rueckfragen liegen ueber Jarvis
+    jvEl.inert = askOpen || confOpen || afkOpen;  // Rueckfragen und der AFK-Dialog liegen ueber Jarvis
     tourEl.inert = askOpen || confOpen || profOpen || jvOpen || setupOpen || afkOpen;
     amodal.inert = askOpen || confOpen; // Rueckfragen liegen ueber dem AFK-Dialog
     modal.inert = confOpen;
@@ -3650,6 +3775,7 @@
   let profTab = 'charakter';
   let panelState = 'loading';      // loading | error | ready
   let profFocusBack = null;
+  let profOpenedAt = 0; // wann das Profil-Fenster aufging (Doppelklick-Schutz)
   let profSaving = false;
   let profError = '';
   let savedNote = false;
@@ -3701,6 +3827,7 @@
     if (!pmodal.hidden) { if (tab) showTab(tab, true); return; }
     profFocusBack = document.activeElement;
     pmodal.hidden = false;
+    profOpenedAt = performance.now();
     updateInert();
     profError = '';
     savedNote = false;
@@ -4223,6 +4350,7 @@
   }
 
   function startNewConversation() {
+    if (afkBlocksNew()) return;
     if (busy) { toast('Ich arbeite noch – ein neues Gespräch geht, sobald ich fertig bin.'); return; }
     closeProfile();
     send('/neu');
@@ -4232,7 +4360,13 @@
   byId('pn-save-new').addEventListener('click', () => saveProfile(true));
   byId('pn-close').addEventListener('click', requestClose);
   byId('pn-retry').addEventListener('click', loadProfile);
-  pmodal.addEventListener('mousedown', (e) => { if (e.target === pmodal) requestClose(); });
+  pmodal.addEventListener('mousedown', (e) => {
+    if (e.target !== pmodal) return;
+    e.preventDefault(); // Fokus bleibt im Fenster
+    // zweiter Klick eines Doppelklicks auf den Ausloeser (z.B. "Profil") schliesst nicht gleich wieder
+    if (e.detail > 1 || performance.now() - profOpenedAt < 400) return;
+    requestClose();
+  });
   byId('pc-discard').addEventListener('click', closeProfile);
   byId('pc-back').addEventListener('click', () => { hideConfirm(); byId('pn-save').focus(); });
   byId('pc-save').addEventListener('click', async () => {
@@ -4724,7 +4858,11 @@
   }
   byId('cd-ok').addEventListener('click', (e) => { if (!confirmTooSoon(e)) closeConfirm(true); });
   byId('cd-cancel').addEventListener('click', (e) => { if (!confirmTooSoon(e)) closeConfirm(false); });
-  cmodal.addEventListener('mousedown', (e) => { if (e.target === cmodal && !confirmTooSoon(e)) closeConfirm(false); });
+  cmodal.addEventListener('mousedown', (e) => {
+    if (e.target !== cmodal) return;
+    e.preventDefault(); // Fokus bleibt im Dialog (auch beim ignorierten zweiten Klick eines Doppelklicks)
+    if (!confirmTooSoon(e)) closeConfirm(false);
+  });
   function confirmKey(e) {
     if (e.key === 'Escape') { e.preventDefault(); closeConfirm(false); return; }
     if (e.key === 'F2') { e.preventDefault(); return; }
@@ -5360,7 +5498,8 @@
     if (tour.open) tourPause(true);
     orb.setState(jv.state, false);
     orb.start();
-    requestAnimationFrame(() => { if (jv.open && modal.hidden && cmodal.hidden) jvEl.focus(); });
+    // ein offener Dialog darueber (Rueckfrage, Bestaetigung, AFK) behaelt den Fokus – danach kommt er zu Jarvis
+    requestAnimationFrame(() => { if (jv.open && modal.hidden && cmodal.hidden && amodal.hidden) jvEl.focus(); });
   }
 
   function closeJarvisView() {
@@ -5387,8 +5526,11 @@
     if (tour.open) tourPause(false);
     const back = jv.focusBack;
     jv.focusBack = null;
-    if (modal.hidden && cmodal.hidden && pmodal.hidden && smodal.hidden) {
-      if (back && back !== document.body && document.contains(back) && !back.closest('[inert]')) back.focus();
+    if (!amodal.hidden && modal.hidden && cmodal.hidden) { // AFK-Dialog liegt obenauf: dort bleiben
+      if (!amodal.contains(document.activeElement)) afkTask.focus();
+    } else if (modal.hidden && cmodal.hidden && pmodal.hidden && smodal.hidden) {
+      if (back && back !== document.body && document.contains(back) && !back.closest('[inert]') &&
+          back.offsetParent !== null) back.focus();
       else focusInput();
     } else if (!smodal.hidden && modal.hidden) sdialog.focus();
     else if (!pmodal.hidden && modal.hidden) panel.focus();
@@ -5863,6 +6005,8 @@
     welcome: false, data: null, sel: '', loading: false, gen: 0, reqGen: 0, checking: false, result: null,
     note: '', closeTimer: 0, focusBack: null, autoShown: false, lastProv: null, lastMissing: null, lastModel: null,
     jump: '',           // 'modell' = nach dem Laden zum Bereich "Modell & Denk-Tiefe" springen
+    openedAt: 0,        // wann das Fenster aufging (Doppelklick auf den Ausloeser schliesst es nicht gleich)
+    refreshTimer: 0, pointer: false,
   };
   const suShort = (p) => String(p && p.name ? p.name : p || '').replace(/\s*\(.*\)\s*$/, '') || 'KI';
   const suSel = () => (su.data ? su.data.providers.find((p) => p.id === su.sel) || null : null);
@@ -5958,6 +6102,7 @@
     clearTimeout(su.closeTimer);
     mountSetup('modal');
     smodal.hidden = false;
+    su.openedAt = performance.now();
     updateInert();
     loadSetup();
     moodSync();
@@ -5990,7 +6135,11 @@
 
   function suFocus() {
     if (!suVisible()) return;
-    if (su.jump) { if (su.data && !su.loading) suJump(); return; } // sonst nach dem Laden
+    if (su.jump) { // springen erst mit dem frischen Stand (sonst nach dem Laden); bis dahin im Fenster
+      if (su.data && !su.loading) suJump();
+      else if (su.where === 'modal' && !sdialog.contains(document.activeElement)) sdialog.focus();
+      return;
+    }
     const ae = document.activeElement;
     if (ae && ae !== sdialog && setupEl.contains(ae)) return; // schon drin (z.B. nach dem Sprung)
     const p = suSel();
@@ -6009,7 +6158,8 @@
 
   async function loadSetup() {
     const gen = ++su.gen;
-    if (!su.data) { su.loading = true; renderSetup(); }
+    su.loading = true; // (auch mit alten Daten: ein Sprung zum Modell wartet auf den frischen Stand)
+    if (!su.data) renderSetup();
     const d = normSetup(await getJson('/api/setup'));
     if (gen !== su.gen) return;
     su.loading = false;
@@ -6028,6 +6178,9 @@
     su.lastMissing = missing;
     su.lastModel = modelSig;
     if (changed && suVisible() && !su.checking) loadSetup();
+    // Auch das NICHT aktive Gehirn kann anderswo geaendert worden sein (anderes Fenster) – das sieht
+    // man am Zustand nicht: offenes Fenster nach jedem Zustand kurz darauf frisch laden.
+    else if (suVisible()) suRefreshSoon();
     if (missing && !su.autoShown && !ended) {
       su.autoShown = true;
       setTimeout(() => {
@@ -6036,6 +6189,22 @@
       }, 300);
     }
   }
+
+  /** Offenes Fenster frisch laden – aber nicht mitten in einem Klick, waehrend geprueft wird oder
+      eine eigene Modell-Wahl unterwegs ist (deren Antwort bringt den Stand ohnehin mit). */
+  function suRefreshSoon(ms) {
+    clearTimeout(su.refreshTimer);
+    su.refreshTimer = setTimeout(() => {
+      if (!suVisible() || su.checking || ended) return;
+      if (su.pointer || Object.keys(sm.busy).length || Object.keys(sm.timer).length) { suRefreshSoon(400); return; }
+      loadSetup();
+    }, ms == null ? 450 : ms);
+  }
+  setupEl.addEventListener('pointerdown', () => { su.pointer = true; });
+  for (const t of ['pointerup', 'pointercancel']) window.addEventListener(t, () => { su.pointer = false; }, true);
+  // zurueck in dieses Fenster (z.B. nach einer Aenderung im anderen): Stand auffrischen
+  window.addEventListener('focus', () => { if (suVisible()) suRefreshSoon(0); });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && suVisible()) suRefreshSoon(0); });
 
   // ---------- Darstellen ----------
   function renderSetup() {
@@ -6051,7 +6220,6 @@
       : 'Womit ' + n + ' denkt – und der passende Schlüssel dafür.';
     byId('su-close').hidden = pane;
     byId('su-later').hidden = pane;
-    byId('su-later').textContent = su.welcome ? 'Später' : 'Abbrechen';
     byId('su-loading').hidden = !(su.loading && !d);
     if (d && !su.sel) su.sel = suDefaultSel();
     const box = byId('su-provs');
@@ -6282,9 +6450,11 @@
     }
     sm.busy[pid] = true;
     renderModel();
+    // Nur schicken, was wirklich geaendert wurde: eine reine Denk-Tiefen-Wahl laesst das Modell
+    // unangetastet (auch ein eigenes aus settings.toml und eines, das ein anderes Fenster gerade gewaehlt hat).
     const body = { provider: pid };
-    if (w.model) body.model = w.model;
-    if (w.denken) body.denken = w.denken;
+    if (w.model && (!g || w.model !== g.model)) body.model = w.model;
+    if (w.denken && (!g || w.denken !== g.denken)) body.denken = w.denken;
     const r = await post('/api/modell', body);
     delete sm.busy[pid];
     const latest = pick(sm.want, pid);
@@ -6295,6 +6465,7 @@
       const d = normSetup(r.setup);
       if (d) {
         su.data = d;
+        su.loading = false;
         if (!d.providers.some((p) => p.id === su.sel)) su.sel = suDefaultSel();
       } else if (g) {
         g.model = w.model;
@@ -6319,6 +6490,7 @@
       smToast(err + ' Die Einstellung bleibt, wie sie war.', 'error', 6000);
     }
     if (su.data) renderSetup();
+    if (su.jump && !su.loading) suJump();
   }
 
   for (const [gid, kind] of [['sm-models', 'model'], ['sm-depth', 'denken']]) {
@@ -6405,6 +6577,14 @@
 
   function renderSuGo() {
     const act = suAction();
+    // Modell & Denk-Tiefe sind schon gespeichert: ohne Schluessel im Feld / Wechsel gibt es nichts
+    // mehr zu bestaetigen -> nur "Schliessen" (ein "Abbrechen" wuerde nichts rueckgaengig machen).
+    const idle = !act && !su.checking && !su.welcome;
+    const later = byId('su-later');
+    later.textContent = su.welcome ? 'Später' : idle ? 'Schließen' : 'Abbrechen';
+    const hadFocus = document.activeElement === suGo;
+    suGo.hidden = idle;
+    if (hadFocus && idle) (later.hidden ? suInput : later).focus({ preventScroll: true }); // Knopf verschwindet
     suGo.disabled = su.checking || !act;
     suGo.setAttribute('aria-busy', su.checking ? 'true' : 'false');
     if (su.checking) suGo.replaceChildren(h('span', 'spinner'), h('span', null, 'Prüfe …'));
@@ -6530,7 +6710,13 @@
   suGo.addEventListener('click', () => suSubmit(false));
   byId('su-close').addEventListener('click', closeSetup);
   byId('su-later').addEventListener('click', closeSetup);
-  smodal.addEventListener('mousedown', (e) => { if (e.target === smodal && !su.checking) closeSetup(); });
+  /** Maus-Klick zu kurz nach dem Oeffnen oder Teil eines Doppelklicks (z.B. auf den Modell-Chip)? */
+  const suTooSoon = (e) => !!(e && e.detail) && (e.detail > 1 || performance.now() - su.openedAt < 400);
+  smodal.addEventListener('mousedown', (e) => {
+    if (e.target !== smodal) return;
+    e.preventDefault(); // Fokus bleibt im Fenster
+    if (!su.checking && !suTooSoon(e)) closeSetup();
+  });
   function setupKey(e) {
     if (e.key === 'Escape') { e.preventDefault(); closeSetup(); return; }
     if (e.key === 'F2') { e.preventDefault(); return; }
@@ -6613,6 +6799,7 @@
   let histGen = 0;           // nur die neueste Verlaufs-Ladung zaehlt
   let flushing = false;      // gepufferte Ereignisse werden gerade nachgespielt
   let resyncOnEnd = false;   // nach dem Ende der laufenden Antwort den Verlauf neu laden
+  let resyncWait = false;    // ... sobald der Server ruhig ist (keine Antwort laeuft, nichts wartet)
   let resyncCount = 0;
   let helloCount = 0;
   const FLOW = new Set(['user', 'start', 'thinking', 'chunk', 'tool', 'agent', 'info', 'done', 'stopped', 'error',
@@ -6735,6 +6922,7 @@
   async function loadHistory(isResync) {
     const gen = ++histGen;
     if (!isResync) resyncCount = 0;
+    resyncWait = false;
     loadingHistory = true;
     buffered = [];
     const data = await getJson('/api/history');
@@ -6809,6 +6997,16 @@
     if (!(resyncOnEnd || flushing)) return;
     resyncOnEnd = false;
     if (resyncCount >= 2) return;
+    // Nicht sofort: mit der Warteschlange beginnt die naechste Runde genau jetzt – ihre Ereignisse
+    // stuenden sonst schon im Verlauf UND kaemen noch einmal live. Erst laden, wenn der Server ruhig ist.
+    resyncWait = true;
+    resyncIfQuiet();
+  }
+  /** Aus "done"/"state": Verlauf nachladen, sobald keine Antwort mehr laeuft und nichts mehr wartet. */
+  function resyncIfQuiet() {
+    if (!resyncWait || loadingHistory || ended) return;
+    if (state.busy === true || queueAll().length) return;
+    resyncWait = false;
     resyncCount++;
     setTimeout(() => loadHistory(true), 0);
   }
@@ -6831,6 +7029,7 @@
         break;
       case 'state':
         applyState(ev.state);
+        resyncIfQuiet();
         break;
       case 'user':
         onUserEcho(ev.text);
@@ -6908,6 +7107,7 @@
       case 'reset':
         clearChat();
         resyncOnEnd = false;
+        resyncWait = false;
         updateEmpty();
         toBottom(true);
         break;
