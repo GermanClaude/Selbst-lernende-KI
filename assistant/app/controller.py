@@ -828,7 +828,10 @@ class AppController(CLI):
         if not self.config.api_key:
             print("Dafuer brauche ich erst einen Schluessel (Gehirn & Schluessel).")
             return
-        if self._afk_request(" ".join(args)):
+        from ..abwesend import budget_abtrennen
+
+        budget, auftrag = budget_abtrennen(" ".join(args))  # /afk 0,30€ ...
+        if self._afk_request(auftrag, budget=budget):
             print("AFK-Modus vorgemerkt - geht gleich los. Zurueck? Einfach eine Nachricht schreiben.")
         else:
             print("AFK-Modus nicht gestartet - du hast ja schon weitergeschrieben.")

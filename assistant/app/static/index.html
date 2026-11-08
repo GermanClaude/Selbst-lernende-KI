@@ -616,6 +616,14 @@
       <div class="afk-pick">
         <span class="field-label" id="afk-bud-label">Budget <span class="opt">höchstens, für mein Denken</span></span>
         <div class="segctl afk-seg" id="afk-bud" role="radiogroup" aria-labelledby="afk-bud-label"></div>
+        <label class="afk-own" id="afk-bud-ownbox" hidden>
+          <span class="afk-own-label">Eigener Betrag</span>
+          <input class="input afk-own-input" id="afk-bud-own" type="text" inputmode="decimal" maxlength="8"
+                 autocomplete="off" placeholder="z. B. 0,30" aria-describedby="afk-bud-hint">
+          <span class="afk-own-unit">€</span>
+        </label>
+        <p class="afk-hint" id="afk-bud-hint">Mit DeepSeek reichen meist wenige Cent, mit Claude (vor allem Opus) wird es schneller teurer.</p>
+        <p class="afk-hint" id="afk-bud-free" hidden>Mit Ollama kostet es nichts – das Budget spielt dann keine Rolle.</p>
       </div>
       <div class="afk-info" id="afk-info">
         <p class="ai-row yes"><span data-icon="checkCircle"></span><span><b>Ich darf in der Zeit:</b> lesen, im Internet suchen, neue Dateien im Arbeitsordner anlegen.</span></p>

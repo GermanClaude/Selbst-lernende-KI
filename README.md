@@ -377,8 +377,9 @@ habt – und handelt so, wie du es nach allem, was sie über dich weiß, wollen 
   zusammengebaute Internet-Adressen aufrufen. Solche Schritte schreibt sie als
   **Vorschlag** auf. Nachgefragt wird in der Zeit nie – es ist ja niemand da.
   Anweisungen, die auf Webseiten oder in Dateien stehen, befolgt sie nicht.
-- **Grenzen**: höchstens 2 Stunden, ca. 1 € und 12 Schritte (in der App beim Start
-  wählbar, sonst in `config/settings.toml` unter `[afk]`).
+- **Grenzen**: höchstens 2 Stunden, ca. 1 € und 12 Schritte. In der App wählst du Dauer und
+  Budget beim Start (auch einen eigenen Betrag, z. B. 0,30 €), im Terminal z. B.
+  `/afk 0,30€ <Auftrag>`; Standardwerte in `config/settings.toml` unter `[afk]`.
 - **Zurück**: einfach eine Nachricht schreiben (im Terminal: Strg+C). Du bekommst einen
   Bericht mit Ergebnissen, Vorschlägen zum Freigeben und offenen Fragen.
 
@@ -433,7 +434,7 @@ stoppt die Steuerung sofort.
 | `/sprache einrichten` | Spracheingabe installieren |
 | `/sprache vorlesen` | Antworten vorlesen an/aus |
 | `/jarvis` | Jarvis-Modus: einfach reden, live (zurück: „Chat-Modus“ sagen) |
-| `/afk [Auftrag]` | AFK-Modus: Nova arbeitet allein weiter (zurück: Nachricht bzw. Strg+C) |
+| `/afk [Betrag] [Auftrag]` | AFK-Modus: Nova arbeitet allein weiter, z. B. `/afk 0,30€ …` (zurück: Nachricht bzw. Strg+C) |
 | `/modell [name]` | Modell zeigen bzw. wählen (z.B. `/modell sonnet`, `/modell deepseek pro`) |
 | `/bild <Pfad> [Frage]` | Bild anhängen (ohne Pfad: aus der Zwischenablage) |
 | `/feedback` | Feedback & Bewertung an den Entwickler schicken |

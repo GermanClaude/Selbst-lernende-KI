@@ -11,7 +11,8 @@ class AbwesenheitTool(Tool):
     description = (
         "AFK-Modus: allein weiterarbeiten, waehrend dein Mensch weg ist. aktion 'start' NUR, wenn er sagt, "
         "dass er jetzt weg/AFK/laenger nicht da ist und du solange weitermachen sollst (auftrag = woran, "
-        "falls genannt; minuten = wie lange, falls genannt) - der Modus beginnt nach deiner Antwort; sag ihm "
+        "falls genannt; minuten = wie lange, falls genannt; euro = Hoechstbetrag in Euro, falls genannt, z.B. "
+        "0.3 fuer '30 Cent') - der Modus beginnt nach deiner Antwort; sag ihm "
         "kurz, was du vorhast. Waehrend des AFK-Modus: 'notiz' (Zwischenergebnis), 'vorschlag' (etwas, das "
         "du nicht allein tun darfst - z.B. loeschen, ueberschreiben, ausfuehren, verschicken, kaufen), 'frage' "
         "(an ihn, wenn er zurueck ist), 'fertig' (alles Sinnvolle erledigt; text = kurze Zusammenfassung)."
@@ -23,11 +24,13 @@ class AbwesenheitTool(Tool):
             "text": {"type": "string"},
             "auftrag": {"type": "string"},
             "minuten": {"type": "integer"},
+            "euro": {"type": "number"},
         },
         "required": ["aktion"],
     }
 
-    def run(self, ctx: ToolContext, aktion: str, text: str = "", auftrag: str = "", minuten: int = 0) -> str:
+    def run(self, ctx: ToolContext, aktion: str, text: str = "", auftrag: str = "", minuten: int = 0,
+            euro: float = 0) -> str:
         session: AfkSession | None = ctx.extra.get("afk_session")
         active = session is not None and not session.ended
         if aktion == "start":
@@ -37,7 +40,7 @@ class AbwesenheitTool(Tool):
             if starter is None:
                 return "Der AFK-Modus geht hier nicht."
             ctx.permissions.require(Risk.SAFE, "AFK-Modus vormerken")
-            if starter(auftrag or text, minuten or None) is False:
+            if starter(auftrag or text, minuten or None, euro if euro and euro > 0 else None) is False:
                 return ("Nicht vorgemerkt: Dein Mensch hat inzwischen schon weitergeschrieben - er ist also noch da. "
                         "Kuemmere dich um seine Nachricht; den AFK-Modus kann er jederzeit neu starten.")
             return ("Vorgemerkt: Nach dieser Antwort beginnt der AFK-Modus. Sag deinem Menschen kurz, woran du "

@@ -181,6 +181,22 @@ class AfkSession:
         return "\n".join(lines)
 
 
+_BETRAG = re.compile(r"^\s*(\d{1,3}(?:[.,]\d{1,2})?)\s*(?:€|eur\b|euro\b)\s*", re.I)
+_CENT = re.compile(r"^\s*(\d{1,4})\s*(?:ct\b|cent\b)\s*", re.I)
+
+
+def budget_abtrennen(text: str) -> tuple[float | None, str]:
+    """'/afk 0,30€ recherchiere ...' -> (0.3, 'recherchiere ...'). Auch '30 Cent', '2 Euro'."""
+    text = str(text or "")
+    treffer = _BETRAG.match(text)
+    if treffer:
+        return float(treffer.group(1).replace(",", ".")), text[treffer.end():].strip()
+    treffer = _CENT.match(text)
+    if treffer:
+        return int(treffer.group(1)) / 100, text[treffer.end():].strip()
+    return None, text.strip()
+
+
 def settings_session(settings, auftrag: str = "", minutes: int | None = None, budget: float | None = None,
                      start_eur: float = 0.0) -> AfkSession:
     """Neue Sitzung mit den Grenzen aus [afk] (oder den Werten aus der App)."""
