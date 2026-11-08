@@ -16,7 +16,7 @@
   <!-- Seitenleiste -->
   <aside class="sidebar" id="sidebar" aria-label="Seitenleiste">
     <div class="sb-head">
-      <div class="avatar lg ai-avatar" aria-hidden="true">K</div>
+      <div class="avatar lg ai-avatar" data-orb="live" aria-hidden="true"><span class="av-l">K</span></div>
       <div class="sb-id">
         <div class="sb-name" id="sb-name">KI</div>
         <div class="sb-meaning" id="sb-meaning" hidden></div>
@@ -37,11 +37,11 @@
     <div class="sb-alerts" id="sb-alerts" aria-live="polite"></div>
 
     <div class="sb-cards">
-      <div class="sb-card">
-        <div class="sb-label"><span data-icon="sparkles"></span>Gehirn</div>
-        <div class="sb-value" id="sb-provider">–</div>
-        <div class="sb-sub mono" id="sb-model">–</div>
-      </div>
+      <button class="sb-card sb-brain" id="sb-brain" type="button" aria-haspopup="dialog" title="Gehirn &amp; Schlüssel einstellen">
+        <span class="sb-label"><span data-icon="sparkles"></span>Gehirn<span class="sb-edit">Ändern<span data-icon="chevronRight"></span></span></span>
+        <span class="sb-value" id="sb-provider">–</span>
+        <span class="sb-sub mono" id="sb-model">–</span>
+      </button>
       <div class="sb-card">
         <div class="sb-label"><span data-icon="coins"></span>Kosten</div>
         <div class="sb-value big num" id="sb-eur">≈ 0,00 €</div>
@@ -87,6 +87,7 @@
       <button class="sb-btn" type="button" data-cmd="/versionen"><span data-icon="history"></span>Versionen</button>
       <button class="sb-btn" type="button" data-cmd="/autostart"><span data-icon="power"></span>Autostart prüfen</button>
       <button class="sb-btn" type="button" data-cmd="/hilfe"><span data-icon="help"></span>Hilfe</button>
+      <button class="sb-btn" type="button" id="sb-terminal" aria-haspopup="dialog"><span data-icon="terminal"></span>Terminal-Version öffnen</button>
     </nav>
 
     <div class="sb-foot" id="sb-foot"><span data-icon="shield"></span><span id="sb-foot-text">Läuft lokal auf deinem PC</span></div>
@@ -99,6 +100,7 @@
       <button class="icon-btn menu-btn" id="menu-btn" type="button" aria-label="Menü öffnen"
               aria-controls="sidebar" aria-expanded="false" data-icon="menu"><span class="menu-dot" id="menu-dot" hidden></span></button>
       <div class="tb-main">
+        <div class="avatar ai-avatar tb-avatar" data-orb="live" aria-hidden="true"><span class="av-l">K</span></div>
         <span class="tb-name" id="tb-name">KI</span>
         <span class="status" id="status" data-s="connecting" role="status">
           <span class="status-dot" aria-hidden="true"></span><span id="status-text">Verbinde …</span>
@@ -125,7 +127,10 @@
       <div class="chat-inner">
         <!-- Leerer Zustand -->
         <div class="empty" id="empty" hidden>
-          <div class="avatar xl ai-avatar" aria-hidden="true">K</div>
+          <button class="hero" id="hero" type="button" aria-label="Jarvis-Modus starten" title="Tippe mich an, um mit mir zu reden">
+            <span class="avatar ai-avatar hero-av" data-orb="live" aria-hidden="true"><span class="av-l">K</span></span>
+          </button>
+          <span class="hero-cap" id="hero-cap" aria-hidden="true"><span data-icon="mic"></span>Tippe mich an, um mit mir zu reden</span>
           <h1 id="empty-title">Hallo!</h1>
           <div class="empty-meaning" id="empty-meaning" hidden></div>
           <p id="empty-text">Frag mich etwas, gib mir eine Aufgabe – oder halte <kbd>F2</kbd> gedrückt und sprich mit mir.</p>
@@ -165,6 +170,11 @@
       <div class="composer-inner">
         <button class="jump" id="jump" type="button" hidden><span data-icon="arrowDown"></span>Neueste Nachrichten</button>
         <div class="cmd-pop" id="cmd-pop" role="listbox" aria-label="Befehle" hidden></div>
+        <div class="key-bar" id="key-bar" role="status" hidden>
+          <span data-icon="key"></span>
+          <span class="kb-text">Schlüssel fehlt – ohne ihn kann ich nicht denken.</span>
+          <button class="btn small primary" id="key-bar-btn" type="button">Jetzt einrichten</button>
+        </div>
         <div class="composer" id="composer" data-tour="eingabe">
           <label class="sr-only" for="input">Nachricht</label>
           <textarea id="input" rows="1" placeholder="Schreib eine Nachricht …" autocomplete="off" spellcheck="true"
@@ -212,7 +222,7 @@
 <div class="pmodal" id="pmodal" hidden>
   <div class="panel" id="panel" role="dialog" aria-modal="true" aria-labelledby="pn-title" aria-describedby="pn-sub" tabindex="-1">
     <header class="pn-head">
-      <div class="avatar lg ai-avatar" aria-hidden="true">K</div>
+      <div class="avatar lg ai-avatar" data-orb="live" aria-hidden="true"><span class="av-l">K</span></div>
       <div class="pn-titles">
         <h2 class="pn-title" id="pn-title">Charakter &amp; Profil</h2>
         <p class="pn-sub" id="pn-sub">Wie deine KI sein soll – und was sie über dich weiß</p>
@@ -227,6 +237,7 @@
       <button class="pn-tab" type="button" role="tab" id="tab-werte" data-tab="werte" aria-controls="pane-werte" aria-selected="false" tabindex="-1"><span data-icon="scale"></span><span>Werte</span><i class="tab-dot" aria-hidden="true"></i></button>
       <button class="pn-tab" type="button" role="tab" id="tab-gedaechtnis" data-tab="gedaechtnis" aria-controls="pane-gedaechtnis" aria-selected="false" tabindex="-1"><span data-icon="brain"></span><span>Gedächtnis</span><span class="tab-count" id="tab-mem-count"></span></button>
       <button class="pn-tab" type="button" role="tab" id="tab-sicherheit" data-tab="sicherheit" aria-controls="pane-sicherheit" aria-selected="false" tabindex="-1"><span data-icon="shield"></span><span>Sicherheit</span></button>
+      <button class="pn-tab" type="button" role="tab" id="tab-gehirn" data-tab="gehirn" aria-controls="pane-gehirn" aria-selected="false" tabindex="-1"><span data-icon="sparkles"></span><span>Gehirn</span><i class="tab-dot warn" aria-hidden="true"></i></button>
     </div>
 
     <div class="pn-body" id="pn-body">
@@ -242,7 +253,7 @@
           <div class="pn-sec-head"><h3 class="pn-h">Name</h3></div>
           <div class="identity">
             <div class="id-card" aria-hidden="true">
-              <div class="avatar xl" id="pf-avatar">K</div>
+              <div class="avatar xl ai-avatar" id="pf-avatar" data-orb="live" data-own-letter><span class="av-l">K</span></div>
               <div class="id-name" id="pf-name-preview">KI</div>
               <div class="id-meaning" id="pf-meaning-preview" hidden></div>
             </div>
@@ -298,7 +309,7 @@
           <div class="style-list" id="style-list"></div>
         </div>
         <div class="style-preview" id="style-preview" aria-live="polite">
-          <div class="avatar ai-avatar" aria-hidden="true">K</div>
+          <div class="avatar ai-avatar" data-orb="still" aria-hidden="true"><span class="av-l">K</span></div>
           <div class="sp-col">
             <span class="sp-label">Vorschau</span>
             <div class="sp-bubble" id="style-preview-text"></div>
@@ -391,6 +402,9 @@
           <div class="sec-facts" id="sec-facts" aria-live="polite"></div>
         </div>
       </section>
+
+      <!-- 7. Gehirn & Schluessel (gleicher Inhalt wie das Einrichtungsfenster) -->
+      <section class="pane" id="pane-gehirn" role="tabpanel" aria-labelledby="tab-gehirn" hidden></section>
     </div>
 
     <footer class="pn-foot">
@@ -421,7 +435,7 @@
   <div class="jv-aurora" aria-hidden="true"><i class="a1"></i><i class="a2"></i><i class="a3"></i></div>
   <header class="jv-top">
     <div class="jv-brand">
-      <div class="avatar ai-avatar" aria-hidden="true">K</div>
+      <div class="avatar ai-avatar" aria-hidden="true"><span class="av-l">K</span></div>
       <h2 class="jv-title" id="jv-title"><span id="jv-name">KI</span><span class="sr-only"> – Jarvis-Modus</span></h2>
       <span class="jv-live" id="jv-live" hidden><i aria-hidden="true"></i>LIVE</span>
     </div>
@@ -452,6 +466,7 @@
   <div class="tour-spot" id="tour-spot" hidden></div>
   <div class="tour-card" id="tour-card" role="dialog" aria-modal="false" aria-labelledby="tour-title" aria-describedby="tour-text" tabindex="-1">
     <div class="tc-head">
+      <span class="avatar ai-avatar tour-av" data-orb="live" aria-hidden="true"><span class="av-l">K</span></span>
       <span class="tour-step" id="tour-step">Schritt 1 von 1</span>
       <button class="tour-end" id="tour-end" type="button" title="Tour beenden (Esc)">Tour beenden</button>
     </div>
@@ -482,6 +497,51 @@
     <div class="dlg-foot">
       <button class="btn ghost" id="cd-cancel" type="button">Abbrechen</button>
       <button class="btn primary" id="cd-ok" type="button">OK</button>
+    </div>
+  </div>
+</div>
+
+<!-- Gehirn & Schluessel (Einrichtung) -->
+<div class="modal smodal" id="smodal" hidden>
+  <div class="sdialog" id="sdialog" role="dialog" aria-modal="true" aria-labelledby="su-title" aria-describedby="su-sub" tabindex="-1">
+    <div class="setup" id="setup">
+      <header class="su-head">
+        <div class="su-hero" id="su-hero" hidden>
+          <span class="avatar ai-avatar su-av" data-orb="live" aria-hidden="true"><span class="av-l">K</span></span>
+        </div>
+        <div class="su-ic" id="su-ic" aria-hidden="true"><span data-icon="key"></span></div>
+        <div class="su-titles">
+          <h2 class="su-title" id="su-title">Gehirn &amp; Schlüssel</h2>
+          <p class="su-sub" id="su-sub">Womit ich denke – und der passende Schlüssel</p>
+        </div>
+        <button class="icon-btn su-x" id="su-close" type="button" aria-label="Schließen" title="Schließen (Esc)" data-icon="x"></button>
+      </header>
+      <div class="su-body" id="su-body">
+        <div class="su-loading" id="su-loading" hidden><span class="spinner" aria-hidden="true"></span><span>Lade …</span></div>
+        <div class="su-label" id="su-provs-label">1. Wähle mein Gehirn</div>
+        <div class="su-provs" id="su-provs" role="radiogroup" aria-labelledby="su-provs-label"></div>
+        <div class="su-key">
+          <div class="su-key-top">
+            <label class="su-label" for="su-input" id="su-input-label">2. Schlüssel einfügen</label>
+            <a class="su-where" id="su-where" href="#" target="_blank" rel="noopener"><span data-icon="external"></span>Wo bekomme ich den?</a>
+          </div>
+          <div class="su-field">
+            <span class="su-field-ic" data-icon="key"></span>
+            <input class="input su-input" id="su-input" type="password" autocomplete="off" spellcheck="false"
+                   autocapitalize="off" autocorrect="off" data-lpignore="true" data-1p-ignore placeholder="sk-…" aria-describedby="su-hint">
+            <button class="su-eye" id="su-eye" type="button" aria-label="Schlüssel anzeigen" aria-pressed="false" title="Schlüssel anzeigen" data-icon="eye"></button>
+          </div>
+          <div class="su-hint" id="su-hint"></div>
+        </div>
+        <ol class="su-steps" id="su-steps" aria-label="So bekommst du den Schlüssel"></ol>
+        <div class="su-result" id="su-result" role="status" aria-live="polite" hidden></div>
+      </div>
+      <footer class="su-foot">
+        <span class="su-env" id="su-env"><span data-icon="shield"></span><span>Bleibt nur auf deinem PC</span></span>
+        <span class="su-gap"></span>
+        <button class="btn ghost su-later" id="su-later" type="button">Später</button>
+        <button class="btn primary su-go" id="su-go" type="button"><span class="su-go-text" id="su-go-text">Prüfen &amp; speichern</span></button>
+      </footer>
     </div>
   </div>
 </div>
