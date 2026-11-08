@@ -53,7 +53,7 @@ class AnthropicProvider(LLMProvider):
             "max_tokens": self.config.claude.max_tokens,
             "system": self.system_prompt,
             "messages": self.messages,
-            "tools": self.registry.specs(),
+            "tools": self._werkzeuge(),
             "tool_choice": {"type": "auto"},
             # "summarized": waehrend des Nachdenkens kommen weiter Daten - sonst wirkt eine
             # lange Denkpause wie eine tote Verbindung (Zeitlimit) und Strg+C reagiert spaet.
@@ -66,6 +66,20 @@ class AnthropicProvider(LLMProvider):
         if not allow_tools:
             kwargs["tool_choice"] = {"type": "none"}  # z.B. Abschlussbericht eines Agenten
         return kwargs
+
+    def _werkzeuge(self) -> list[dict[str, Any]]:
+        specs = self.registry.specs()
+        if getattr(self, "_ohne_strikt", False):
+            for sp in specs:
+                sp.pop("strict", None)
+        return specs
+
+    @staticmethod
+    def _schema_abgelehnt(exc: Exception) -> bool:
+        """Lehnt Claude die Werkzeug-Beschreibungen ab (Grenzen fuer "strict")?"""
+        text = str(getattr(exc, "message", "") or exc).lower()
+        return getattr(exc, "status_code", None) == 400 and (
+            "strict" in text or "optional parameters" in text or "grammar" in text)
 
     def _open_stream(self, kwargs: dict[str, Any]):
         # Haiku hat keinen Ersatz bei Ablehnungen - dort wuerde der Parameter abgelehnt.
@@ -215,6 +229,13 @@ class AnthropicProvider(LLMProvider):
                             emitted = True
                     return stream.get_final_message()
             except anthropic.APIStatusError as exc:
+                if (attempt == 1 and not emitted and self._schema_abgelehnt(exc)
+                        and not getattr(self, "_ohne_strikt", False)):
+                    # Neue Grenze der API? Dann fuer diese Sitzung ohne "strict" weiter,
+                    # statt jede Antwort scheitern zu lassen.
+                    logger.warning("Werkzeug-Schema abgelehnt, weiter ohne strict: %s", exc)
+                    self._ohne_strikt = True
+                    continue
                 self._error_status = getattr(exc, "status_code", None)
                 logger.error("API-Fehler: %s", exc)
                 if on_text:
