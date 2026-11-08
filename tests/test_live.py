@@ -768,3 +768,25 @@ def test_long_even_speech_is_not_cut_by_the_rising_noise_floor():
     speech = [_block(random.randint(2000, 4000)) if random.random() > 0.05 else quiet for _ in range(200)]
     seen, _ = _run_ear([quiet] * 12 + speech + [quiet] * 16, "utterance", pause=0.6, max_seconds=40.0)
     assert [d for k, d in seen if k == "utterance"][0].seconds > 9.5
+
+
+def test_stop_button_counts_as_you_being_there():
+    from assistant.live import LiveLoop
+
+    class Host:
+        def event(self, e): pass
+        def busy(self): return False
+
+    class Voice:
+        def idle(self): return True
+        def stop(self): pass
+
+    class Ear:
+        live = True
+        def start(self): pass
+        def stop(self): pass
+
+    loop = LiveLoop(Host(), Voice(), SimpleNamespace(pause=0.6, unterbrechen=True), ear=Ear())
+    before = loop.spoke
+    loop._on_hush(None)
+    assert loop.spoke == before + 1

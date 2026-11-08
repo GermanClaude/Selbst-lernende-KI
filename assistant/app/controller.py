@@ -355,6 +355,9 @@ class AppController(CLI):
                     self._front += 1
                     if self.busy:
                         self.brain.provider.cancel()
+                        if self._afk_pending is not None:  # du klickst gerade -> du bist da
+                            self._afk_pending = None
+                            self._afk_dropped = True
             else:
                 return {"ok": False, "error": f"Unbekannte Aktion '{action}'."}
         if action == "now" and self.busy:
@@ -949,6 +952,8 @@ class AppController(CLI):
             self._state_changed()
             return {"ok": True, "live": factory is not None}
         if self._live is not None:
+            # Knopf "Chat-Modus"/Fenster schliessen: du bleibst am PC (wie gesagtes "Chat-Modus")
+            self._live.exit_reason = self._live.exit_reason or "chat"
             self._live.stop()
         self._state_changed()
         return {"ok": True}

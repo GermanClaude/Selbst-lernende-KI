@@ -952,3 +952,28 @@ def test_afk_button_pressed_after_stop_still_starts(app):
         assert not any(e["type"] == "notice" and "nicht gestartet" in e["text"] for e in events)
     finally:
         tool.run = original
+
+
+def test_now_button_and_chat_mode_button_mean_you_stay(app):
+    import threading
+    from types import SimpleNamespace
+
+    server = app(_slow_script(3), safe_mode=False, auto_confirm=True)
+    ctl = server.controller
+    _req(server, "/api/send", {"text": "eins"})
+    _events_until(server, "tool")
+    _req(server, "/api/send", {"text": "zwei"})
+    _req(server, "/api/afk", {"action": "start"})
+    item = _req(server, "/api/state")[1]["queue"][0]
+    _req(server, "/api/queue", {"action": "now", "id": item["id"]})
+    events = _events_until(server, "done")
+    assert any(e["type"] == "notice" and "nicht gestartet" in e["text"] for e in events)
+    time.sleep(0.3)
+    assert not _req(server, "/api/state")[1]["afk_pending"]
+
+    fake = SimpleNamespace(exit_reason="", stop_event=threading.Event())
+    fake.stop = fake.stop_event.set
+    ctl._live = fake
+    ctl.jarvis("stop")
+    assert fake.exit_reason == "chat"
+    ctl._live = None

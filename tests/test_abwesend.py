@@ -403,3 +403,33 @@ def test_saying_stop_or_chat_mode_while_nova_says_goodbye_keeps_you_here():
                                      live.stop_event.set())).start()  # "Tschuess"
     assert wait_until_quiet(live, threading.Event(), timeout=5) is True
     assert is_goodbye("Tschüss!") and is_goodbye("ciao, bis morgen") and not is_goodbye("Chat-Modus")
+
+
+def test_goodbyes_and_staying_are_told_apart():
+    from assistant.live import is_goodbye
+
+    for text in ("Tschüss", "Tschüss Nova!", "Danke, tschüss", "Ciao", "Bis dann", "Auf Wiedersehen",
+                 "okay bis später", "Gute Nacht"):
+        assert is_goodbye(text), text
+    for text in ("Chat-Modus", "Ich geh zurück zum Chat", "Ich bin weg, ordne bitte meine Notizen",
+                 "Bis morgen um acht erinnern", "Das Ende vom Film", "Ja", "Stopp", "Jarvis aus"):
+        assert not is_goodbye(text), text
+
+
+def test_slow_recognition_and_the_stop_button_mean_you_are_here():
+    import threading
+    import time as _t
+    from types import SimpleNamespace
+
+    from assistant.live import wait_until_quiet
+
+    live = SimpleNamespace(stop_event=threading.Event(), turn=1, turn_active=False, speaking=False,
+                           hearing=False, recognizing=True, pending=None, spoke=0, exit_reason="")
+
+    def recognized():
+        _t.sleep(0.4)
+        live.pending = "Moment, ich bin doch noch da"
+        live.recognizing = False
+
+    threading.Thread(target=recognized).start()
+    assert wait_until_quiet(live, threading.Event(), timeout=5) is False  # nicht "still" waehrend des Erkennens
