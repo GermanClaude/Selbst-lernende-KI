@@ -4,6 +4,26 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.9.0 – 2026-11-08
+
+**Live-Sehen: Nova sieht mit**
+- Auf Wunsch schaut Nova auf deinen **Bildschirm** und – in der App – durch deine **Webcam**.
+  Ein schnelles „Auge“ auf deinem PC merkt in Sekundenbruchteilen, wenn sich etwas tut
+  (z. B. eine Fehlermeldung, ein neues Fenster, neuer Text), und weckt Nova nur, wenn es
+  wichtig ist. Sie meldet sich dann im Chat (oder per Stimme im Jarvis-Modus).
+- Einschalten: Schalter in der Seitenleiste oder `/sehen an` (`/sehen aus`, `/sehen pause`,
+  `/sehen bildschirm|webcam|beides`). Beim ersten Mal fragt Nova um Erlaubnis – und wieder,
+  wenn du das Gehirn wechselst.
+- Solange sie hinschaut, siehst du immer das Band **„Nova sieht zu“**. Pause: F4 in der App
+  oder **Strg+Alt+Umschalt+S** überall. Du kannst auch sagen „Schau weg“.
+- **Privat bleibt privat:** Passwortfelder, Passwort-Manager, private Browserfenster und Novas
+  eigenes Fenster sieht sie nicht; Kontonummern und Schlüssel werden unkenntlich gemacht.
+  Was sie sieht, kommt nicht ins Langzeitgedächtnis und wird nicht gespeichert.
+- **Kosten im Griff:** standardmäßig höchstens 20 Weckungen und 0,30 € pro Stunde
+  (einstellbar unter `[sehen]`). Mit Ollama kostenlos.
+- Gut zu wissen: Das Bildschirm-Sehen gibt es (vorerst) nur unter Windows. Bitte probier es
+  aus und sag Bescheid, wenn etwas nicht klappt – es ist ganz neu.
+
 ## 0.8.1 – 2026-11-08
 
 - **AFK-Modus: eigenes Budget.** Im Dialog „Ich bin weg“ kannst du jetzt unter „Eigener“
