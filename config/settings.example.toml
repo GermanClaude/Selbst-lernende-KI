@@ -114,6 +114,20 @@ pause_sekunden = 20    # Pause zwischen zwei Schritten
 max_werkzeug_schritte = 25  # Werkzeug-Schritte innerhalb eines Arbeitsschritts
 
 
+[bilder]
+# Bildgenerator: "auto" = Cloudflare, wenn Schluessel da (CLOUDFLARE_AI_API_KEY und
+# CLOUDFLARE_ACCOUNT_ID in der .env), sonst AI Horde (kostenlos, ohne Anmeldung, mit Wartezeit).
+anbieter = "auto"
+max_bilder_pro_nachricht = 10
+max_kantenlaenge = 1568   # hochgeladene Bilder werden auf diese Groesse verkleinert (spart Kosten)
+
+
+[feedback]
+nachfragen = true               # nach ca. einer Stunde und dann alle paar Tage freundlich nachfragen
+erste_nachfrage_minuten = 60
+nachfrage_alle_tage = 12
+
+
 [memory]
 db_path = "data/memory.sqlite3"
 max_facts_in_context = 60
