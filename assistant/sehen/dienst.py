@@ -29,6 +29,8 @@ logger = get_logger()
 
 QUELLEN_NAMEN = {"bildschirm": "Bildschirm", "webcam": "Webcam", "handy": "Handy-Kamera"}
 KAMERA_ARTEN = ("webcam", "handy")  # Quellen mit Kamerabild (letztes Bild nur im Speicher)
+HANDY_PER_QR = ("Die Handy-Kamera koppelst du mit /sehen handy (bzw. \u201eHandy\u201c in der App) \u2013 "
+                "dann zeige ich dir den QR-Code.")
 HANDY_HINWEIS = ("So klappt es: Handy und PC im selben WLAN (kein G\u00e4ste-WLAN), Handy am Ladekabel, "
                  "Bildschirm an lassen. Fragt die Windows-Firewall nach, \u201ePrivate Netzwerke\u201c erlauben. "
                  "Steht dein WLAN in Windows auf \u201e\u00d6ffentlich\u201c, blockiert Windows die Verbindung "
@@ -229,8 +231,10 @@ class SehDienst:
         self._auge.senden(("pause",) if ruhig else ("weiter",))
 
     # -- Ein / Aus ---------------------------------------------------------------------------
-    def an(self, wunsch: str | None = None) -> tuple[bool, str]:
-        """Live-Sehen einschalten (nur mit Zustimmung). -> (ok, Text fuer den Menschen)."""
+    def an(self, wunsch: str | None = None, handy_koppeln: bool = False) -> tuple[bool, str]:
+        """Live-Sehen einschalten (nur mit Zustimmung). -> (ok, Text fuer den Menschen).
+        Eine NEUE Handy-Kopplung startet nur mit handy_koppeln=True (dann wird der QR-Code gezeigt) -
+        nie versteckt (z.B. beim Start mit quelle = "handy" oder /sehen an handy)."""
         if self.braucht_zustimmung():
             return False, "zustimmung"
         handy_verbunden = self._handy is not None and self._handy_status().get("zustand") == "verbunden"
@@ -242,11 +246,17 @@ class SehDienst:
             sieht = bool(self.sieht_bilder())
             quellen, hinweis = waehle_quellen(wunsch, bool(self.kamera.vorhanden), self.bildschirm_moeglich, sieht,
                                               handy_verbunden=handy_verbunden)
+            if "handy" in quellen and not handy_koppeln and not handy_verbunden:
+                quellen, hinweis = set(), HANDY_PER_QR
             if not quellen:
                 alt_handy = self._handy_abbauen()
-                if alt_handy is not None:
-                    self._handy_stoppen(alt_handy)
-                return False, hinweis or "Live-Sehen geht hier nicht."
+            else:
+                alt_handy = None
+        if not quellen:
+            if alt_handy is not None:
+                self._handy_stoppen(alt_handy)  # ausserhalb der Sperre (kann dauern)
+            return False, hinweis or "Live-Sehen geht hier nicht."
+        with self._lock:
             self.wunsch = wunsch
             self.quellen = quellen
             self._regel = Weckregel(regeln.min_abstand, regeln.max_pro_stunde, self._euro_grenze())
@@ -518,7 +528,7 @@ class SehDienst:
                 f"Die Handy-Kamera startet nicht ({type(exc).__name__}).")
             return text
         with self._lock:
-            if not self.aktiv or "handy" not in self.quellen:  # inzwischen aus
+            if not self.aktiv or "handy" not in self.quellen or not self.darf_melden():  # inzwischen aus/Pause/AFK
                 aus_handy = handy
             else:
                 aus_handy = None
@@ -526,7 +536,8 @@ class SehDienst:
                 self._handy_pumpen()
         if aus_handy is not None:
             self._handy_stoppen(aus_handy)
-            return "Live-Sehen ist inzwischen aus."
+            return ("Live-Sehen ist inzwischen aus." if not self.aktiv
+                    else "Ich schaue gerade nicht hin (Pause/AFK) \u2013 die Handy-Kamera bleibt aus.")
         return ""
 
     def _handy_nimm(self, data: bytes) -> None:
@@ -542,7 +553,7 @@ class SehDienst:
         if self.braucht_zustimmung():
             return {"ok": False, "zustimmung": True, "error": "Bitte erst zustimmen."}
         if not self.aktiv or "handy" not in self.quellen:
-            ok, text = self.an("handy")
+            ok, text = self.an("handy", handy_koppeln=True)
             if not ok:
                 return {"ok": False, "error": text}
         else:

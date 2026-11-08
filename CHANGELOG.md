@@ -4,6 +4,22 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.10.0 – 2026-11-08
+
+**Dein Handy als Kamera**
+- Keine Webcam am PC? Dann nimm dein Handy: `/sehen handy` eingeben (oder in der App im
+  Band „Nova sieht zu“ auf **„Handy-Kamera …“** tippen). Nova zeigt einen **QR-Code** –
+  mit der Handy-Kamera scannen, „Kamera starten“ antippen, Kamera erlauben. Fertig.
+- Klappt mit **iPhone und Android**, ohne App aus dem Store. Die Kamera-Seite kannst du auf
+  den Startbildschirm legen; zum Koppeln geht dann auch der 8-stellige Code.
+- Das Bild geht **direkt im Heim-WLAN** vom Handy zum PC. Beim Verbinden hilft ein
+  Vermittlungsdienst, der aber nichts mitlesen kann – alles ist verschlüsselt.
+- Es gelten dieselben Regeln wie bei Live-Sehen: Erlaubnis, „Nova sieht zu“ (auch am
+  Handy), Pause/Aus beenden die Handy-Kamera sofort, Kostengrenze.
+- Tipps: Handy und PC im selben WLAN, Handy ans Ladekabel, Bildschirm anlassen. Fragt
+  Windows nach der Firewall, „Private Netzwerke“ erlauben.
+- Ganz neu – bitte ausprobieren und Bescheid sagen, ob es bei dir verbindet.
+
 ## 0.9.0 – 2026-11-08
 
 **Live-Sehen: Nova sieht mit**

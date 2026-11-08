@@ -347,6 +347,8 @@ neuer Text) und weckt Nova nur, wenn es wichtig ist.
   eigenes Fenster und alles unter `[sehen] ausnahmen`. Nichts wird gespeichert.
 - Grenzen (einstellbar unter `[sehen]`): höchstens 20 Weckungen und 0,30 € pro Stunde.
   Was Nova sieht, geht an das gewählte Gehirn – mit Ollama bleibt alles auf deinem PC.
+- **Handy als Kamera:** `/sehen handy` zeigt einen QR-Code – mit dem Handy (iPhone oder
+  Android) scannen, „Kamera starten“, fertig. Handy und PC müssen im selben WLAN sein.
 - Source-Nutzer: einmal `/sehen einrichten` (installiert die nötigen Pakete).
 
 ## Bilder: zeigen und erstellen lassen
