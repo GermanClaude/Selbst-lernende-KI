@@ -130,12 +130,16 @@ jobs:
           Copy-Item dist/KI-App.exe $neu3
           $running = Start-Process -FilePath $t3 -WorkingDirectory $dir3 -PassThru -WindowStyle Hidden
           Start-Sleep -Seconds 8
-          $p3 = Start-Process -FilePath $helper -ArgumentList @('--update-einspielen', "`"$neu3`"", "`"$t3`"", '1', '--version') -PassThru
+          # eigener Helfer: den aus Teil 1 hat die neu gestartete KI (richtig) schon aufgeraeumt
+          $helper3 = Join-Path $env:TEMP 'ki-update-selbsttest3.exe'
+          Copy-Item dist/KI-App.exe $helper3
+          $p3 = Start-Process -FilePath $helper3 -ArgumentList @('--update-einspielen', "`"$neu3`"", "`"$t3`"", '1', '--version') -PassThru
           if (-not $p3.WaitForExit(180000)) { Stop-Process -Id $p3.Id -Force; throw 'Update-Helfer haengt (gesperrt)' }
           Stop-Process -Id $running.Id -Force -ErrorAction SilentlyContinue
           Start-Sleep -Seconds 3
           $log3 = Join-Path $dir3 'logs/update.log'
           if (Test-Path $log3) { Get-Content $log3 }
+          Write-Host "Helfer-Exitcode (gesperrt): $($p3.ExitCode)"
           $ok3 = (Get-FileHash $t3).Hash -eq (Get-FileHash dist/KI-App.exe).Hash
           Write-Host "Gesperrte Datei: neue Version drin: $ok3 | .alt vorhanden: $(Test-Path "$t3.alt")"
           if (-not $ok3) { throw 'Der Ausweichweg (Umbenennen) hat nicht funktioniert' }
