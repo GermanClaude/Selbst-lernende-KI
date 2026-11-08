@@ -22,13 +22,13 @@ ABOUT_FILE = "ueber_mich.json"
 
 # Felder fuer "Ueber mich": (Schluessel, Beschriftung, Beispiel)
 ABOUT_FIELDS = [
-    ("name", "Mein Name", "z.B. Nathanael"),
-    ("anrede", "So soll sie mich nennen", "z.B. Nate, Chef, beim Vornamen"),
-    ("alter", "Alter", "z.B. 17"),
-    ("wohnort", "Wohnort", "z.B. Bielefeld"),
-    ("beruf", "Schule / Beruf", "z.B. Ausbildung zum Fachinformatiker"),
-    ("interessen", "Hobbys & Interessen", "z.B. Programmieren, Gaming, SCP"),
-    ("projekte", "Meine Projekte", "z.B. ein SCP-Spiel, eine Website"),
+    ("name", "Mein Name", "z.B. Alex"),
+    ("anrede", "So soll sie mich nennen", "z.B. beim Vornamen, Chef, Kumpel"),
+    ("alter", "Alter", "freiwillig"),
+    ("wohnort", "Wohnort", "freiwillig, z.B. fuer Wetter und Termine"),
+    ("beruf", "Schule / Beruf", "z.B. Schule, Studium, Ausbildung, Buero"),
+    ("interessen", "Hobbys & Interessen", "z.B. Musik, Sport, Kochen"),
+    ("projekte", "Meine Projekte", "z.B. eine Website, ein Spiel, ein Umzug"),
     ("wichtig", "Was mir wichtig ist", "z.B. ehrliche Antworten, schnelle Hilfe"),
     ("nicht", "Was sie NIE tun soll", "z.B. ohne Fragen Dateien loeschen"),
     ("sonstiges", "Sonst noch", "alles, was sie wissen soll"),

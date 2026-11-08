@@ -61,7 +61,7 @@ def test_erlauben_command(tmp_path, monkeypatch):
 
 def test_game_start_bat_is_not_the_ki(tmp_path):
     ki = tmp_path / "KI"
-    game = ki / "workspace" / "scp-spiel"
+    game = ki / "workspace" / "mein-spiel"
     game.mkdir(parents=True)
     assert not starts_the_ki(f'start "" "{game}/start.bat"', ki)
     assert not starts_the_ki("start.bat", ki, cwd=game)          # im Spielordner

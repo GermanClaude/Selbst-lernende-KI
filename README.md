@@ -261,7 +261,7 @@ Profil“**, im Terminal mit Befehlen:
 |--------|---------|
 | `/charakter` | Charaktere zeigen; `/charakter butler` wählt einen (freundlich, sachlich, butler, mentor, kumpel, kreativ, coach) |
 | `/stil` | z.B. `/stil anrede Sie`, `/stil laenge kurz`, `/stil humor viel`, `/stil emojis an` |
-| `/ueber-mich` | was Nova über dich weiß; ändern z.B. `/ueber-mich projekte = SCP-Spiel` |
+| `/ueber-mich` | was Nova über dich weiß; ändern z.B. `/ueber-mich projekte = meine Website` |
 | `/werte bearbeiten` | deine Regeln für Nova im Editor öffnen |
 | `/neu` | neues Gespräch – Änderungen gelten sofort |
 

@@ -250,10 +250,10 @@ def test_profile_api_and_memory_management(app, tmp_path):
     status, prof = _req(server, "/api/profile")
     assert prof["name"] == "Nova" and len(prof["characters"]) >= 5 and prof["about_fields"]
     status, body = _req(server, "/api/profile", {"character": "mentor", "style": {"anrede": "Sie"},
-                                                  "about": {"name": "Nate", "projekte": "SCP-Spiel"}})
+                                                  "about": {"name": "Alex", "projekte": "Website"}})
     assert body["ok"] and body["profile"]["character"] == "mentor"
     cfg = load_config(tmp_path)
-    assert cfg.style.anrede == "Sie" and cfg.about["projekte"] == "SCP-Spiel"
+    assert cfg.style.anrede == "Sie" and cfg.about["projekte"] == "Website"
     assert "Mentor" in (tmp_path / "config" / "persona.md").read_text(encoding="utf-8")
     status, mem = _req(server, "/api/memory", {"action": "add", "content": "Mag dunkles Design"})
     assert mem["ok"] and mem["facts"][0]["content"] == "Mag dunkles Design"
