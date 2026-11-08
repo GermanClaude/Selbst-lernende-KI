@@ -120,7 +120,7 @@
   /** Dateiname fuer den Server/das Modell: ohne Pfad und Steuerzeichen, passende Endung. */
   function dateiName(name, mime) {
     let n = String(name == null ? '' : name).split(/[\\/]/).pop();
-    n = n.replace(/[\u0000-\u001f\u007f"<>|:*?]/g, '').replace(/\s+/g, ' ').trim();
+    n = n.replace(/\s+/g, ' ').replace(/[\u0000-\u001f\u007f"<>|:*?]/g, '').trim();
     let base = n.replace(/\.[A-Za-z0-9]{1,5}$/, '').trim();
     if (!base || /^image$/i.test(base)) base = 'bild';
     if (base.length > 80) base = base.slice(0, 80).trim();
@@ -130,7 +130,7 @@
   /** Name zum Anzeigen (kurz, ohne Steuerzeichen); sonst der Dateiname aus der Adresse. */
   function anzeigeName(name, url) {
     let n = String(name == null ? '' : name).split(/[\\/]/).pop();
-    n = n.replace(/[\u0000-\u001f\u007f]/g, '').replace(/\s+/g, ' ').trim();
+    n = n.replace(/\s+/g, ' ').replace(/[\u0000-\u001f\u007f]/g, '').trim();
     if (!n && url) n = String(url).split(/[?#]/)[0].split('/').pop() || '';
     if (n.length > 120) n = n.slice(0, 119) + '…';
     return n || 'Bild';

@@ -2914,12 +2914,14 @@
     });
   }
 
-  function loadImg(src) {
+  /** Bild dekodieren; meldet es sich nie (kaputte Datei), gilt es nach 20 s als unlesbar. */
+  function loadImg(src, ms) {
     return new Promise((resolve, reject) => {
       const img = new Image();
+      const timer = setTimeout(() => { img.onload = img.onerror = null; img.src = ''; reject(new BildFehler('bild')); }, ms || 20000);
       img.decoding = 'async';
-      img.onload = () => resolve(img);
-      img.onerror = () => reject(new BildFehler('bild'));
+      img.onload = () => { clearTimeout(timer); resolve(img); };
+      img.onerror = () => { clearTimeout(timer); reject(new BildFehler('bild')); };
       img.src = src;
     });
   }
