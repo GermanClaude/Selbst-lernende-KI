@@ -20,7 +20,7 @@ from pathlib import Path
 
 ERLAUBT = {"image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp"}
 MAX_EINGANG = 25 * 1024 * 1024      # so gross darf ein Bild hoechstens ankommen
-MAX_AUSGANG = 5 * 1024 * 1024       # so gross darf es nach dem Verkleinern hoechstens sein
+MAX_AUSGANG = 5 * 1024 * 1024 * 3 // 4 - 4096  # danach hoechstens so gross (Claude: 5 MB als Base64)
 MAX_PIXEL = 40_000_000            # mehr Pixel = Verdacht auf "Bild-Bombe"
 MAX_SEITE = 3000                    # keine Seite laenger (Claude: strengere Grenze ab 20 Bildern)
 STANDARD_KANTE = 1568
@@ -106,7 +106,7 @@ def vorbereiten(data: bytes, name: str | None = None, max_kante: int = STANDARD_
     Image, ImageOps = _pillow()
     if Image is None:
         if len(data) > MAX_AUSGANG:
-            raise BildFehler("Das Bild ist zu gro\u00df (h\u00f6chstens 5 MB). Tipp: kleiner speichern "
+            raise BildFehler("Das Bild ist zu gro\u00df (h\u00f6chstens etwa 3,5 MB). Tipp: kleiner speichern "
                              "oder einen Ausschnitt nehmen.")
         return Bild(sauberer_name(name, mime), mime, data)
     try:
@@ -139,6 +139,9 @@ def vorbereiten(data: bytes, name: str | None = None, max_kante: int = STANDARD_
     if faktor < 1.0:
         bild = bild.resize((max(1, round(breite * faktor)), max(1, round(hoehe * faktor))), Image.LANCZOS)
     neu_mime, neu = _kodieren(bild, Image, bevorzugt=mime)
+    while len(neu) > MAX_AUSGANG and max(bild.size) > 256:  # z.B. grosses transparentes PNG
+        bild = bild.resize((max(1, round(bild.size[0] * 0.75)), max(1, round(bild.size[1] * 0.75))), Image.LANCZOS)
+        neu_mime, neu = _kodieren(bild, Image, bevorzugt=mime)
     if len(neu) > MAX_AUSGANG:
         raise BildFehler("Das Bild ist auch verkleinert noch zu gro\u00df.")
     return Bild(sauberer_name(name, neu_mime), neu_mime, neu, bild.size[0], bild.size[1])

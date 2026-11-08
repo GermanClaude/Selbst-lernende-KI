@@ -357,6 +357,9 @@ class CLI:
         mark_done(self.config.project_root)
 
     # -- Bilder: anhaengen (/bild) und erzeugte Bilder zeigen ------------------------
+    def _bildpfad_hinweis(self, pfad: str) -> None:
+        print(_c("Bild mitschicken: /bild <pfad> [frage]  - z.B. /bild " + pfad + " Was ist das?", CYAN))
+
     def _bild_command(self, args: str) -> tuple[list, str] | None:
         """'/bild <pfad> [pfad ...] [frage]' -> (Bilder, Frage). Ohne Pfad: Zwischenablage.
         None = nichts zu senden (Hinweis ist schon ausgegeben)."""
@@ -990,6 +993,10 @@ class CLI:
                 if parsed is None:
                     continue
                 bilder, user_text = parsed
+                if find_key(user_text) or find_cloudflare_token(user_text):
+                    print(_c("Schl\u00fcssel bitte nicht als Frage mitschicken \u2013 sie gehen nie an die KI. "
+                             "Einrichten: einfach den Schl\u00fcssel allein einf\u00fcgen.", YELLOW))
+                    continue
             else:  # auch "/home/ich/foto.png" (Linux/macOS: Datei ins Terminal gezogen)
                 try:
                     bilder = self._nur_bildpfade(user_text) or []
@@ -1150,8 +1157,7 @@ class CLI:
         elif base in ("/bild", "/bilder"):
             self._bild_hilfe()  # im Terminal faengt _loop /bild vorher ab
         elif _bildpfad(cmd.split()[0], self._bild_basis()):  # "/home/ich/foto.png Was ist das?"
-            print(_c("Bild mitschicken: /bild <pfad> [frage]  - z.B. /bild " + cmd.split()[0] + " Was ist das?",
-                     CYAN))
+            self._bildpfad_hinweis(cmd.split()[0])
         else:
             print(_c(f"Unbekannter Befehl: {base}. /hilfe zeigt alle.", YELLOW))
         return False

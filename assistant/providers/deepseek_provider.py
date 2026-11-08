@@ -107,6 +107,8 @@ class DeepSeekProvider(LLMProvider):
                     # wurde nie beantwortet); sonst scheitert jede weitere Anfrage am selben Bild.
                     del self.messages[start:]
                     self._bild_turn = None
+                    if on_text:
+                        on_text("\n" + BILD_ABGELEHNT)  # sonst sieht man nur den rohen API-Fehler
                     return BILD_ABGELEHNT
                 return "Es gab ein Problem bei der Verbindung zu DeepSeek."
             if text:

@@ -3213,7 +3213,7 @@
 
   chatTray = makeTray({
     box: byId('att-tray'), list: byId('att-list'), count: byId('att-count'), err: byId('att-err'), clearBtn: byId('att-clear'),
-    max: () => HL.MAX_CHAT, kante: HL.MAX_KANTE, gesamt: HL.CHAT_GESAMT,
+    max: () => Math.max(1, Math.min(HL.MAX_CHAT, Number(state.max_bilder) || HL.MAX_CHAT)), kante: HL.MAX_KANTE, gesamt: HL.CHAT_GESAMT,
     tooBig: 'Die Bilder sind zusammen zu groß – entferne ein Bild oder schick sie in zwei Nachrichten.',
     onChange: () => { updateSendBtn(); keepBottom(); },
     focusEmpty: () => focusInput(),

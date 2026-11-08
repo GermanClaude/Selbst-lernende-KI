@@ -170,6 +170,7 @@ class AppController(CLI):
             "model": self.config.active_model,
             "model_name": schoen(kurzbeschreibung(self.config)),
             "busy": self.busy,
+            "max_bilder": max(1, int(self.config.bilder.max_bilder_pro_nachricht or 10)),
             "queue": [{"id": item["id"], "text": item["shown"] or item["text"],
                        "images": list(item.get("images") or [])} for item in list(self._queue)],
             "afk": self._afk.status() if self._afk is not None else None,
@@ -1060,6 +1061,9 @@ class AppController(CLI):
             self._event({"type": "open", "what": "jarvis"})
         else:
             print(result.get("error") or "Der Jarvis-Modus ging nicht.")
+
+    def _bildpfad_hinweis(self, pfad: str) -> None:
+        print("Bilder bitte \u00fcber die B\u00fcroklammer, mit Strg+V oder durch Hineinziehen anh\u00e4ngen.")
 
     def _tutorial_terminal(self) -> None:
         self._event({"type": "open", "what": "tutorial"})

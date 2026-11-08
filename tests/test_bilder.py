@@ -109,3 +109,14 @@ def test_decompression_bombs_are_refused_before_unpacking(monkeypatch):
     with pytest.raises(BildFehler, match="Pixel"):
         bilder.vorbereiten(_png(200, 200), "bombe.png")
     assert bilder.vorbereiten(_png(90, 90), "ok.png").breite == 90
+
+
+def test_base64_size_stays_under_claudes_limit():
+    import os
+
+    rauschen = PIL.frombytes("RGBA", (1400, 1100), os.urandom(1400 * 1100 * 4))  # nicht komprimierbar
+    buf = io.BytesIO()
+    rauschen.save(buf, "PNG")
+    assert len(buf.getvalue()) > bilder.MAX_AUSGANG
+    b = bilder.vorbereiten(buf.getvalue(), "gross.png")
+    assert len(b.b64()) <= 5 * 1024 * 1024
