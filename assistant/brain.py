@@ -67,19 +67,32 @@ class Brain:
     def cost(self) -> tuple[float, float]:
         return self.provider.cost()
 
-    def respond(self, user_text: str, on_text: StreamFn | None = None) -> str:
+    def cost_now_eur(self) -> float:
+        """Kosten dieser Sitzung in EUR - inklusive gerade laufender Agenten (fuer AFK-Grenzen)."""
+        total = self.cost()[1]
+        for child in list(getattr(self.provider, "_children", [])):
+            try:
+                total += child.cost()[1]
+            except Exception:  # noqa: BLE001
+                pass
+        return total
+
+    def respond(self, user_text: str, on_text: StreamFn | None = None, max_tool_rounds: int | None = None,
+                auto_continue: int | None = None) -> str:
         """Antwortet; erreicht die KI ihr Schritt-Limit, arbeitet sie (bis zu
-        'automatisch_weiter' mal) von selbst weiter, statt anzuhalten."""
+        'automatisch_weiter' mal) von selbst weiter, statt anzuhalten. Der AFK-Modus begrenzt
+        beides (max_tool_rounds, auto_continue), damit ein Schritt nicht ausufert."""
         self._on_text = on_text
         conv = self.config.conversation
-        extra = max(0, int(conv.automatisch_weiter or 0))
+        extra = max(0, int(conv.automatisch_weiter or 0) if auto_continue is None else int(auto_continue))
+        rounds_limit = conv.max_werkzeug_runden if max_tool_rounds is None else max_tool_rounds
         parts: list[str] = []
         text = user_text
         for part in range(extra + 1):
             answer = self.provider.respond(
                 text,
                 on_text=on_text,
-                max_tool_rounds=conv.max_werkzeug_runden,
+                max_tool_rounds=rounds_limit,
                 announce_limit=(part == extra),
             )
             parts.append(answer)

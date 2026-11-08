@@ -81,6 +81,13 @@ def test_costs_follow_the_model(tmp_path):
     night = datetime(2026, 11, 9, 20, 0, tzinfo=timezone.utc)
     assert preise("deepseek", "deepseek-flash", peak)[2] == 2 * preise("deepseek", "deepseek-flash", night)[2]
     assert preise("claude", "unbekannt") is None
+    assert preise("claude", "claude-haiku-5-5", prompt_tokens=150_000) == (0.5, 0.05, 2.5)  # lange Anfrage
+
+
+def test_odd_settings_never_crash_the_start(tmp_path):
+    cfg = _settings(tmp_path, '[claude]\nmodel = 5\neffort = true\n[deepseek]\nmodel = 7\ndenken = true\n')
+    assert (cfg.claude.model, cfg.claude.effort) == ("claude-opus-5-5", "medium")
+    assert (cfg.deepseek.model, cfg.deepseek.denken) == ("deepseek-flash", "high")
 
 
 def _ds(tmp_path, streams):
@@ -188,7 +195,7 @@ def test_claude_uses_chosen_model_and_depth_and_cost(tmp_path):
     cfg = load_config(tmp_path)
     mem = Memory(tmp_path / "m.sqlite3")
     pm = PermissionManager(cfg.permissions, tmp_path, confirm_fn=lambda m, r: True)
-    usage = SimpleNamespace(input_tokens=1_000_000, output_tokens=0, cache_read_input_tokens=0,
+    usage = SimpleNamespace(input_tokens=50_000, output_tokens=0, cache_read_input_tokens=0,
                             cache_creation_input_tokens=0)
     client = _RecordingClaude(usage)
     prov = AnthropicProvider(cfg, "SYS", build_registry(), ToolContext(permissions=pm, memory=mem), client=client)
@@ -202,7 +209,7 @@ def test_claude_uses_chosen_model_and_depth_and_cost(tmp_path):
     assert "fallbacks" not in first  # Haiku kennt keinen Ersatz bei Ablehnungen
     assert second["model"] == "claude-opus-5-5" and second.get("fallbacks") == "default"
     usd, _ = prov.cost()
-    assert round(usd, 4) == 4.1  # 1 Mio. Token Haiku (0,10 $) + 1 Mio. Token Opus (4 $)
+    assert round(usd, 4) == 0.205  # 50.000 Token Haiku (0,005 $) + 50.000 Token Opus (0,20 $)
     mem.close()
 
 

@@ -432,9 +432,7 @@ class CLI:
     def _afk_terminal(self, auftrag: str = "", minutes: int | None = None, budget: float | None = None) -> None:
         from ..abwesend import run_session, settings_session
 
-        session = settings_session(self.config.afk, auftrag, minutes, budget, start_eur=self.brain.cost()[1])
-        self.tool_ctx.extra["afk_session"] = session
-        self.permissions.begin_away()
+        session = settings_session(self.config.afk, auftrag, minutes, budget, start_eur=self.brain.cost_now_eur())
         cost = f"{session.max_eur:.2f}".replace(".", ",")
         print(_c(f"\n[AFK-Modus] Ich arbeite allein weiter - hoechstens {session.max_minutes} Min. und ca. "
                  f"{cost} EUR." + (f" Auftrag: {session.auftrag}" if session.auftrag else ""), BOLD))
@@ -442,11 +440,13 @@ class CLI:
                  "Vorschlag auf. Zurueck? Strg+C druecken.", GREY))
 
         def one_round(prompt: str) -> None:
+            self.brain.provider.cancel_event.clear()
             print(_c(f"\n--- AFK - Schritt {session.rounds} ---", GREY))
             print(_c(f"{self.config.ki.name}: ", CYAN), end="", flush=True)
             snapshot = self.brain.provider.history_snapshot()
             try:
-                self.brain.respond(prompt, on_text=self._emit)
+                self.brain.respond(prompt, on_text=self._emit, max_tool_rounds=session.max_tool_rounds,
+                                   auto_continue=0)
             except KeyboardInterrupt:
                 self.brain.provider.abort_turn(snapshot, prompt)
                 raise
@@ -455,7 +455,9 @@ class CLI:
             print()
 
         try:
-            run_session(session, one_round, cost_eur=lambda: self.brain.cost()[1])
+            self.tool_ctx.extra["afk_session"] = session
+            self.permissions.begin_away()
+            run_session(session, one_round, cost_eur=self.brain.cost_now_eur, cancel=self.brain.provider.cancel)
         except Exception as exc:  # noqa: BLE001 - zurueck in den normalen Chat
             logger.exception("AFK-Modus")
             print(_c(f"\n[AFK-Modus beendet: {exc}]", YELLOW))
@@ -649,14 +651,17 @@ class CLI:
             from ..abwesend import model_text_for
 
             back, self._afk_return = self._afk_return, None
+            self._afk_pending = None
             try:
                 answer = self.brain.respond(model_text_for(user_text, back=back), on_text=self._emit)
             except KeyboardInterrupt:
+                self._afk_pending = None  # angehalten -> doch nicht weg
                 self.thinking.stop()
                 self.brain.provider.abort_turn(snapshot, user_text)
                 print(_c("\n[Angehalten. Schreib einfach weiter - z.B. was sie anders machen soll.]", YELLOW))
                 continue
             except Exception as exc:  # noqa: BLE001 - ein Fehler darf die Sitzung nicht beenden
+                self._afk_pending = None
                 self.thinking.stop()
                 logger.exception("Fehler bei der Antwort")
                 self.brain.provider.abort_turn(snapshot, user_text)

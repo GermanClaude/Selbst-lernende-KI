@@ -234,7 +234,7 @@ class LLMProvider(ABC):
     def _count(self, input_full: int = 0, cache_hit: int = 0, output: int = 0) -> None:
         """Verbrauch zaehlen - mit dem Preis des Modells, das gerade eingestellt ist
         (wer mitten im Gespraech das Modell wechselt, bekommt trotzdem stimmige Kosten)."""
-        usd, _eur = self.config.cost_estimate(input_full, cache_hit, output, provider=self.name)
+        usd, _eur = self.config.cost_estimate(input_full, cache_hit, output, provider=self.name, per_request=True)
         self.usage.add(input_full=input_full, cache_hit=cache_hit, output=output, usd=usd)
 
     def cost(self) -> tuple[float, float]:

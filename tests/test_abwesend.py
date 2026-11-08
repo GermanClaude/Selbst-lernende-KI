@@ -21,7 +21,7 @@ def test_away_rules_are_strict_and_never_ask(tmp_path):
     old.write_text("wichtig", encoding="utf-8")
     pm.begin_away()
     assert pm.check(Risk.SAFE, "lesen").allowed
-    assert pm.check(Risk.MODERATE, "neue Datei").allowed
+    assert not pm.check(Risk.MODERATE, "Aussehen aendern").allowed   # nur Datei-Aktionen nach check_path_write
     assert not pm.check(Risk.DANGEROUS, "loeschen").allowed
     assert not pm.check_shell("dir").allowed
     assert not pm.confirm_always("Autostart").allowed
@@ -29,8 +29,12 @@ def test_away_rules_are_strict_and_never_ask(tmp_path):
     assert not pm.check_path_write(tmp_path / "aussen.txt").allowed     # nur im Arbeitsordner
     new = tmp_path / "ws" / "entwurf.txt"
     assert pm.check_path_write(new).allowed
+    assert pm.check(Risk.MODERATE, "Neu anlegen").allowed             # genau diese Datei-Aktion
+    assert not pm.check(Risk.MODERATE, "noch etwas").allowed          # Freigabe gilt nur einmal
     new.write_text("x", encoding="utf-8")
     assert pm.check_path_write(new).allowed                           # eigene neue Datei: weiter bearbeiten
+    with pytest.raises(PermissionError_):
+        pm.resolve_path(str(tmp_path / ".env"))                       # lesen nur im Arbeitsordner
     assert not asked
     pm.end_away()
     assert pm.check_path_write(old).allowed and pm.check(Risk.DANGEROUS, "x").allowed
@@ -56,6 +60,10 @@ def test_tools_respect_the_away_rules(tmp_path):
         reg.get("datei_loeschen").run(ctx, pfad="alt.txt")
     assert (ws / "alt.txt").exists()
     assert "Nicht" in reg.get("gehirn_einstellen").run(ctx, aktion="setzen", denken="maximal")
+    assert "Nicht" in reg.get("vergessen").run(ctx, id=1)
+    with pytest.raises(PermissionError_):
+        reg.get("app_anpassen").run(ctx, aktion="zuruecksetzen")
+    assert "einfache Adressen" in reg.get("web_abrufen").run(ctx, url="https://x.example/?geheim=sk-123")
     tool = reg.get("abwesenheit")
     tool.run(ctx, aktion="notiz", text="Recherche fertig")
     tool.run(ctx, aktion="vorschlag", text="alt.txt loeschen")
@@ -92,6 +100,22 @@ def test_session_stops_at_its_limits():
         raise KeyboardInterrupt
 
     assert run_session(s, interrupted, cost_eur=lambda: 0.0) == "zurueck"
+
+
+def test_watchdog_stops_an_expensive_step_in_the_middle():
+    import threading
+
+    spent, cancelled = [0.0], threading.Event()
+
+    def runaway(prompt):  # ein Schritt, der immer weiter Geld ausgibt, bis er angehalten wird
+        while not cancelled.is_set():
+            spent[0] += 0.05
+            time.sleep(0.01)
+        raise KeyboardInterrupt  # so endet eine angehaltene Antwort
+
+    s = AfkSession(max_rounds=10, max_eur=0.5, pause_seconds=0)
+    assert run_session(s, runaway, cost_eur=lambda: spent[0], cancel=cancelled.set, watch_interval=0.02) == "budget"
+    assert s.rounds == 1 and not s.stop_event.is_set() and spent[0] < 1.5
 
 
 def test_settings_and_hints():

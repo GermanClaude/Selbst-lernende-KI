@@ -25,7 +25,7 @@ CLAUDE_MODELLE = [
      "preis": (2.0, 0.2, 10.0)},
     {"id": "claude-haiku-5-5", "name": "Claude Haiku 5.5", "kurz": "haiku",
      "info": "blitzschnell und sehr guenstig - fuer einfache Sachen", "tempo": "sehr schnell",
-     "preis": (0.1, 0.01, 0.5)},
+     "preis": (0.1, 0.01, 0.5), "preis_lang": (0.5, 0.05, 2.5), "lang_ab": 100_000},
     {"id": "claude-fable-5-1", "name": "Claude Fable 5.1", "kurz": "fable",
      "info": "das staerkste Claude - fuer sehr schwere Aufgaben, langsamer und teurer",
      "tempo": "langsam", "preis": (10.0, 0.25, 50.0)},
@@ -104,9 +104,27 @@ def kurzbeschreibung(config, provider: str | None = None) -> str:
     return f"{modell_name(provider, model)} - {denktiefe_name(provider, aktuelle_denktiefe(config, provider))}"
 
 
+def normalisiere_claude(claude) -> None:
+    """Unsinnige Werte aus settings.toml (z.B. Zahl statt Text) nicht abstuerzen lassen."""
+    from .config import DEFAULT_MODEL
+
+    if not isinstance(claude.model, str) or not _MODELL_ID.match(claude.model.strip().lower()):
+        claude.model = DEFAULT_MODEL
+    claude.model = claude.model.strip()
+    effort = str(claude.effort or "").strip().lower()
+    claude.effort = effort if effort in [w for w, _, _ in DENKTIEFEN["claude"]] else "medium"
+
+
 def normalisiere_deepseek(deepseek, denken_gesetzt: bool) -> None:
     """Alte, abgeschaltete DeepSeek-Namen auf die aktuellen umstellen (nur im Speicher)."""
-    old = (deepseek.model or "").strip().lower()
+    from .config import DEFAULT_DEEPSEEK_MODEL
+
+    if not isinstance(deepseek.model, str) or not _MODELL_ID.match(deepseek.model.strip().lower()):
+        deepseek.model = DEFAULT_DEEPSEEK_MODEL
+    deepseek.model = deepseek.model.strip()
+    if not isinstance(deepseek.denken, str):
+        deepseek.denken = "high" if deepseek.denken is True else "aus"
+    old = deepseek.model.lower()
     if old in ALTE_DEEPSEEK_NAMEN:
         new, denken = ALTE_DEEPSEEK_NAMEN[old]
         deepseek.model = new
@@ -115,8 +133,8 @@ def normalisiere_deepseek(deepseek, denken_gesetzt: bool) -> None:
     deepseek.denken = _deepseek_stufe(deepseek.denken) or "aus"
 
 
-def _deepseek_stufe(wert: str | None) -> str | None:
-    wert = (wert or "").strip().lower()
+def _deepseek_stufe(wert) -> str | None:
+    wert = str(wert or "").strip().lower()
     if wert in ("aus", "low", "high", "max"):
         return wert
     # Claude-Stufen und Synonyme sinnvoll uebersetzen (DeepSeek kennt nur low/high/max)
@@ -126,20 +144,25 @@ def _deepseek_stufe(wert: str | None) -> str | None:
 
 def deepseek_denken(config, override: str | None = None) -> str:
     """Welche Denk-Stufe DeepSeek jetzt nutzt. 'override' kommt vom Live-Modus (Claude-Stufe):
-    dort zaehlt Tempo - 'low' heisst bei DeepSeek: gar nicht erst nachdenken."""
+    dort zaehlt Tempo - deshalb bewusst eine Stufe schneller als sonst ('low' = gar nicht
+    erst nachdenken, 'medium' = kurz)."""
     if override:
         return {"low": "aus", "medium": "low", "high": "high", "xhigh": "high", "max": "max"}.get(
             override, _deepseek_stufe(override) or config.deepseek.denken)
     return _deepseek_stufe(config.deepseek.denken) or "aus"
 
 
-def preise(provider: str, model_id: str, now: datetime | None = None) -> tuple[float, float, float] | None:
-    """(Input, Cache-Treffer, Output) in USD pro 1 Mio. Token - oder None (unbekanntes Modell)."""
+def preise(provider: str, model_id: str, now: datetime | None = None,
+           prompt_tokens: int = 0) -> tuple[float, float, float] | None:
+    """(Input, Cache-Treffer, Output) in USD pro 1 Mio. Token - oder None (unbekanntes Modell).
+    prompt_tokens: Groesse EINER Anfrage (Haiku kostet bei sehr langen Anfragen mehr)."""
     info = modell_info(provider, model_id)
     if not info:
         return None
     if provider == "deepseek" and _spitzenzeit(now):
         return info["preis_spitze"]
+    if "lang_ab" in info and prompt_tokens > info["lang_ab"]:
+        return info["preis_lang"]
     return info["preis"]
 
 

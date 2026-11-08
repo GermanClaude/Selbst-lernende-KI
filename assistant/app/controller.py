@@ -275,7 +275,7 @@ class AppController(CLI):
             self.busy = True
             self._live_turn = live
             self._drop_turn = False
-        self.brain.provider.cancel_event.clear()
+            self.brain.provider.cancel_event.clear()  # unter der Sperre: ein Stopp gleich danach zaehlt
         threading.Thread(target=self._work, args=(text, None, model_text, shown), name="ki-antwort",
                          daemon=True).start()
         return True, ""
@@ -301,11 +301,17 @@ class AppController(CLI):
                         return {"ok": False, "error": "Die Warteschlange ist voll - warte kurz oder halte mich an."}
                     else:
                         self._queue.append(item)
+                    dropped = self._afk_pending is not None  # du schreibst noch -> du bist ja da
+                    self._afk_pending = None
                     if back:
                         afk.stop_event.set()
+                    if back or interrupt:
+                        self.brain.provider.cancel()  # unter der Sperre: trifft sicher die laufende Antwort
             if busy:
                 if back or interrupt:
-                    self._cancel_current()
+                    self._cancel_rest()
+                if dropped:
+                    self._notice("AFK-Modus nicht gestartet - du bist ja noch da.", "afk")
                 self._state_changed()
                 return {"ok": True, "queued": True, "id": item["id"], "interrupt": bool(back or interrupt),
                         "afk_ended": back}
@@ -328,36 +334,66 @@ class AppController(CLI):
                 self._queue.remove(item)
                 if action == "now":
                     self._queue.insert(0, item)
+                    if self.busy:
+                        self.brain.provider.cancel()
             else:
                 return {"ok": False, "error": f"Unbekannte Aktion '{action}'."}
         if action == "now" and self.busy:
-            self._cancel_current()
+            self._cancel_rest()
         self._state_changed()
         return {"ok": True}
 
     def _cancel_current(self) -> None:
         """Nur die laufende Antwort anhalten (die Warteschlange bleibt)."""
+        self.brain.provider.cancel()
+        self._cancel_rest()
+
+    def _cancel_rest(self) -> None:
+        """Alles ausser dem Modell-Abbruch: Sprachmodus still, offene Rueckfragen, Vorlesen."""
         if self._live is not None:
             self._live.hush()
-        self.brain.provider.cancel()
         for waiter in list(self._asks.values()):
             waiter["event"].set()
         self.voice_out.stop()
 
     def _next_job_locked(self) -> dict | None:
-        """Was als Naechstes drankommt (unter self._lock aufrufen)."""
+        """Was als Naechstes drankommt (unter self._lock aufrufen). Setzt das Abbruch-Signal
+        hier zurueck - ein Stopp/Unterbrechen danach trifft sicher die neue Aufgabe."""
         if self._closing:
             return None
-        if self._afk_pending is not None and not self._queue:
-            job, self._afk_pending = {"afk": self._afk_pending}, None
-            return job
         if self._queue:
+            self._afk_pending = None  # es wird noch geschrieben -> du bist da
+            self.brain.provider.cancel_event.clear()
             return {"message": self._queue.pop(0)}
+        if self._afk_pending is not None:
+            request, self._afk_pending = self._afk_pending, None
+            self.brain.provider.cancel_event.clear()
+            return {"afk": self._new_afk_session_locked(request)}
         return None
+
+    def _new_afk_session_locked(self, request: dict):
+        """AFK-Sitzung sofort sichtbar machen (unter self._lock): eine Nachricht, die jetzt kommt,
+        heisst schon 'zurueck'."""
+        from ..abwesend import settings_session
+
+        session = settings_session(self.config.afk, request.get("auftrag", ""), request.get("minutes"),
+                                   request.get("budget"), start_eur=self.brain.cost_now_eur())
+        self._afk = session
+        self.tool_ctx.extra["afk_session"] = session
+        return session
+
+    def _release(self) -> None:
+        """Arbeit fertig (ausser _work): naechste Aufgabe beginnen oder frei geben."""
+        with self._lock:
+            job = self._next_job_locked()
+            if job is None:
+                self.busy = False
+        self._state_changed()
+        if job is not None:
+            self._start_job(job)
 
     def _start_job(self, job: dict) -> None:
         """Naechste Aufgabe beginnen - self.busy ist dabei schon True."""
-        self.brain.provider.cancel_event.clear()
         if "afk" in job:
             target, args = self._work, (None, lambda: self._run_afk(job["afk"]))
         else:
@@ -371,7 +407,7 @@ class AppController(CLI):
             if self.busy:
                 return
             self.busy = True
-        self.brain.provider.cancel_event.clear()
+            self.brain.provider.cancel_event.clear()
         threading.Thread(target=self._work, args=(None, fn), name="ki-hintergrund", daemon=True).start()
 
     def _work(self, text: str | None, fn: Callable[[], Any] | None = None, model_text: str | None = None,
@@ -429,7 +465,8 @@ class AppController(CLI):
             self._state_changed()  # neuer Name gleich in der Seitenleiste
         return self.exit_code if quit_now else None
 
-    def _answer(self, text: str, model_text: str | None = None, as_notice: bool = False) -> None:
+    def _answer(self, text: str, model_text: str | None = None, as_notice: bool = False,
+                max_tool_rounds: int | None = None) -> None:
         entry = {"role": "user", "text": text}
         if as_notice:  # AFK-Schritt: keine Sprechblase "von dir"
             self._notice(text, "afk")
@@ -441,7 +478,11 @@ class AppController(CLI):
         self._answer_parts: list[str] = []
         snapshot = self.brain.provider.history_snapshot()
         try:
-            answer = self.brain.respond(model_text or text, on_text=self._emit)
+            if as_notice:  # AFK-Schritt: begrenzt, kein automatisches Weiterarbeiten
+                answer = self.brain.respond(model_text or text, on_text=self._emit,
+                                            max_tool_rounds=max_tool_rounds, auto_continue=0)
+            else:
+                answer = self.brain.respond(model_text or text, on_text=self._emit)
         except KeyboardInterrupt:  # Stopp-Knopf (Abgebrochen) - oder Strg+C im Hintergrund
             drop, self._drop_turn = self._drop_turn, False
             if drop and self.brain.provider.drop_turn(snapshot, model_text or text):
@@ -482,7 +523,8 @@ class AppController(CLI):
             self._afk_pending = None
             if self._afk is not None:
                 self._afk.stop_event.set()
-        self._cancel_current()
+            self.brain.provider.cancel()
+        self._cancel_rest()
         if waiting:
             texts = [item["text"] for item in waiting if not item["shown"]]  # Schluessel nie zurueck
             if texts:
@@ -505,8 +547,9 @@ class AppController(CLI):
                 running, self._afk_pending = self._afk, None
                 if running is not None:
                     running.stop_event.set()
+                    self.brain.provider.cancel()
             if running is not None:
-                self._cancel_current()
+                self._cancel_rest()
             self._state_changed()
             return {"ok": True}
         if action != "start":
@@ -521,44 +564,45 @@ class AppController(CLI):
                 return {"ok": False, "error": "Der AFK-Modus laeuft schon."}
             if self.busy:
                 self._afk_pending = request  # nach der laufenden Antwort
-                start_now = False
+                job = None
             else:
                 self.busy = True
-                start_now = True
-        if start_now:
-            self._start_job({"afk": request})
+                self.brain.provider.cancel_event.clear()
+                job = {"afk": self._new_afk_session_locked(request)}
+        if job is not None:
+            self._start_job(job)
         self._state_changed()
-        return {"ok": True, "started": start_now}
+        return {"ok": True, "started": job is not None}
 
-    def _run_afk(self, request: dict) -> None:
-        from ..abwesend import run_session, settings_session
-
-        if self._jarvis_active():
-            self._live.stop()  # allein arbeiten heisst: nicht mithoeren und nichts vorlesen
-        session = settings_session(self.config.afk, request.get("auftrag", ""), request.get("minutes"),
-                                   request.get("budget"), start_eur=self.brain.cost()[1])
-        with self._lock:
-            self._afk = session
-        self.tool_ctx.extra["afk_session"] = session
-        self.permissions.begin_away()
-        task = f"Auftrag: {session.auftrag}" if session.auftrag else "Ich mache mit dem weiter, woran wir zuletzt gearbeitet haben."
-        cost = f"{session.max_eur:.2f}".replace(".", ",")
-        self._notice(f"AFK-Modus an - ich arbeite allein weiter (hoechstens {session.max_minutes} Min., ca. "
-                     f"{cost} EUR). {task} Ich loesche, ueberschreibe, verschicke und starte dabei nichts - "
-                     "das schreibe ich dir als Vorschlag auf. Zurueck? Einfach eine Nachricht schreiben.", "afk")
-        self._state_changed()
-
-        def one_round(prompt: str) -> None:
-            if session.stop_event.is_set():
-                return
-            self.brain.provider.cancel_event.clear()
-            self._answer(f"AFK – Schritt {session.rounds}", model_text=prompt, as_notice=True)
+    def _run_afk(self, session) -> None:
+        from ..abwesend import run_session
 
         try:
-            run_session(session, one_round, cost_eur=lambda: self.brain.cost()[1], on_update=self._state_changed)
+            if self._jarvis_active():
+                self._live.stop()  # allein arbeiten heisst: nicht mithoeren und nichts vorlesen
+            self.permissions.begin_away()
+            task = (f"Auftrag: {session.auftrag}" if session.auftrag
+                    else "Ich mache mit dem weiter, woran wir zuletzt gearbeitet haben.")
+            cost = f"{session.max_eur:.2f}".replace(".", ",")
+            self._notice(f"AFK-Modus an - ich arbeite allein weiter (hoechstens {session.max_minutes} Min., ca. "
+                         f"{cost} EUR). {task} Ich loesche, ueberschreibe, verschicke und starte dabei nichts - "
+                         "das schreibe ich dir als Vorschlag auf. Zurueck? Einfach eine Nachricht schreiben.", "afk")
+            self._state_changed()
+
+            def one_round(prompt: str) -> None:
+                self.brain.provider.cancel_event.clear()  # erst zuruecksetzen, dann pruefen (kein Rennen)
+                if session.stop_event.is_set():
+                    return
+                self._answer(f"AFK \u2013 Schritt {session.rounds}", model_text=prompt, as_notice=True,
+                             max_tool_rounds=session.max_tool_rounds)
+
+            run_session(session, one_round, cost_eur=self.brain.cost_now_eur, on_update=self._state_changed,
+                        cancel=self.brain.provider.cancel)
         finally:
             self.permissions.end_away()
             self.tool_ctx.extra.pop("afk_session", None)
+            if not session.ended:
+                session.ended = "fehler"
             report = session.report()
             with self._lock:
                 self._afk = None
@@ -735,9 +779,7 @@ class AppController(CLI):
             self._notice(message)
             return {"ok": True, "message": schoen(message), "setup": self.setup_info()}
         finally:
-            with self._lock:
-                self.busy = False
-            self._state_changed()
+            self._release()
 
     # In der App oeffnen /jarvis und /tutorial die Ansichten im Fenster (statt der Terminal-Versionen).
     def _jarvis_terminal(self) -> None:

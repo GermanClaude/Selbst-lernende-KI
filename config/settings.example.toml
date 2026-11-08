@@ -111,6 +111,7 @@ max_minuten = 120      # hoechstens so lange
 max_euro = 1.0         # hoechstens so viel Kosten (ca.)
 max_schritte = 12      # hoechstens so viele Arbeitsschritte
 pause_sekunden = 20    # Pause zwischen zwei Schritten
+max_werkzeug_schritte = 25  # Werkzeug-Schritte innerhalb eines Arbeitsschritts
 
 
 [memory]

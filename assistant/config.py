@@ -173,6 +173,7 @@ class AfkSettings:
     max_euro: float = 1.0
     max_schritte: int = 12
     pause_sekunden: float = 20.0
+    max_werkzeug_schritte: int = 25  # Werkzeug-Schritte innerhalb eines Arbeitsschritts
 
 
 @dataclass
@@ -303,7 +304,8 @@ class Config:
         return path.resolve()
 
     def cost_estimate(self, input_full: int, cache_hit: int, output: int,
-                      provider: str | None = None, model: str | None = None) -> tuple[float, float]:
+                      provider: str | None = None, model: str | None = None,
+                      per_request: bool = False) -> tuple[float, float]:
         """Schaetzt die Kosten (USD, EUR) fuer die gegebenen Token-Zahlen.
 
         Bekannte Modelle haben ihre eigenen Preise (assistant/modelle.py); fuer andere
@@ -313,7 +315,9 @@ class Config:
         provider = provider or self.active_provider
         if model is None:
             model = self.deepseek.model if provider == "deepseek" else self.claude.model
-        in_price, hit_price, out_price = preise(provider, model) or self.prices.for_provider(provider)
+        size = input_full + cache_hit if per_request else 0
+        in_price, hit_price, out_price = (preise(provider, model, prompt_tokens=size)
+                                          or self.prices.for_provider(provider))
         usd = (input_full * in_price + cache_hit * hit_price + output * out_price) / 1_000_000
         return (usd, usd * self.prices.usd_zu_eur)
 
@@ -475,9 +479,10 @@ def load_config(project_root: Path | None = None) -> Config:
         else:
             claude.model = os.environ["KI_MODEL"]
     # Abgeschaltete DeepSeek-Namen (deepseek-chat/-reasoner) auf die aktuellen umstellen.
-    from .modelle import normalisiere_deepseek
+    from .modelle import normalisiere_claude, normalisiere_deepseek
 
     normalisiere_deepseek(deepseek, denken_gesetzt="denken" in raw.get("deepseek", {}))
+    normalisiere_claude(claude)
 
     cfg = Config(
         provider=provider,

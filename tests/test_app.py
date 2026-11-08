@@ -692,3 +692,61 @@ def test_nova_starts_afk_mode_when_told(app):
     assert "Notizen geordnet" in events[-1]["text"]
     first = server.controller.brain.provider.messages[0]["content"]
     assert "abwesenheit" in first  # Hinweis fuer die KI, weil es nach "bin weg" klang
+
+
+def test_key_check_keeps_waiting_messages(app, monkeypatch):
+    import threading
+
+    from assistant import schluessel
+
+    def slow_test(config, provider, key):
+        time.sleep(1.0)
+        return True, "ok", "gut"
+
+    monkeypatch.setattr(schluessel, "test_key", slow_test)
+    # Das Speichern setzt den Schluessel in os.environ - nach dem Test wieder wie vorher
+    # (setenv merkt sich auch "war nicht gesetzt" - delenv ohne Wert merkt sich nichts)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-platzhalter-nur-fuer-den-test")
+    server = app([(anthro_msg([text_block("Hallo zurueck")]), [])])
+    worker = threading.Thread(target=lambda: _req(server, "/api/setup",
+                                                  {"provider": "claude", "api_key": "sk-ant-" + "x" * 30}))
+    worker.start()
+    time.sleep(0.3)
+    body = _req(server, "/api/send", {"text": "hallo"})[1]
+    assert body["queued"]
+    worker.join(5)
+    events = _events_until(server, "done")
+    assert "hallo" in _user_texts(events)
+
+
+def test_writing_after_saying_afk_keeps_you_in_charge(app):
+    cmd = f'"{sys.executable}" -c "import time; time.sleep(2)"'
+    script = [(anthro_msg([tool_use_block("abwesenheit", "s1", {"aktion": "start"}),
+                           tool_use_block("shell_befehl", "t1", {"befehl": cmd})], stop_reason="tool_use"), []),
+              (anthro_msg([text_block("Bis spaeter!")]), [])]
+    server = app(script, safe_mode=False, auto_confirm=True)
+    _req(server, "/api/send", {"text": "Ich bin gleich weg"})
+    _events_until(server, "tool")
+    assert _req(server, "/api/state")[1]["afk_pending"]
+    _req(server, "/api/send", {"text": "Warte, noch eine Frage"})
+    events = _events_until(server, "done")
+    events += _events_until(server, "done")
+    assert any(e["type"] == "notice" and "nicht gestartet" in e["text"] for e in events)
+    assert "Warte, noch eine Frage" in _user_texts(events)
+    time.sleep(0.5)
+    state = _req(server, "/api/state")[1]
+    assert state["afk"] is None and not state["afk_pending"] and not state["busy"]
+    assert not server.controller.permissions.away
+
+
+def test_stop_right_after_afk_start_never_leaves_nova_alone(app):
+    server = app([(anthro_msg([text_block("Ich arbeite")]), [])])
+    server.controller.config.afk.pause_sekunden = 30
+    for _ in range(3):
+        _req(server, "/api/afk", {"action": "start"})
+        _req(server, "/api/stop", {})
+        events = _events_until(server, "afk_report")
+        assert events[-1]["reason"] == "zurueck"
+        time.sleep(0.2)
+        state = _req(server, "/api/state")[1]
+        assert state["afk"] is None and not server.controller.permissions.away

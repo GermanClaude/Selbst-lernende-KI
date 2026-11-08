@@ -80,6 +80,10 @@ class WebFetchTool(Tool):
         ctx.permissions.require(Risk.SAFE, f"Seite abrufen: {url}")
         if not url.startswith(("http://", "https://")):
             return "Bitte eine vollstaendige URL mit http(s):// angeben."
+        if getattr(ctx.permissions, "away", False) and ("?" in url or len(url) > 160):
+            # Niemand schaut zu: keine Daten in Adressen "verschicken" (eingeschleuste Anweisungen)
+            return ("Solange dein Mensch weg ist, rufe ich nur einfache Adressen ab (ohne '?' und nicht "
+                    "ueberlang). Nimm die Websuche oder eine kuerzere Adresse.")
         try:
             import requests
         except ImportError:

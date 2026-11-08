@@ -76,18 +76,23 @@ class PermissionManager:
         # AFK-Modus: niemand da, der gefragt werden koennte -> strenger, nie nachfragen.
         self.away = False
         self._away_created: set[Path] = set()
+        self._away_write_ok = False  # check_path_write hat die naechste Datei-Aktion freigegeben
 
     def begin_away(self) -> None:
         self.away = True
         self._away_created = set()
+        self._away_write_ok = False
 
     def end_away(self) -> None:
         self.away = False
         self._away_created = set()
+        self._away_write_ok = False
 
     # -- Aktionsfreigabe ----------------------------------------------------
     def check(self, risk: Risk, description: str) -> Decision:
         """Entscheidet, ob eine Aktion der gegebenen Risikostufe laufen darf."""
+        # Freigabe aus check_path_write gilt nur fuer genau die naechste Pruefung (dieselbe Datei-Aktion).
+        write_ok, self._away_write_ok = self._away_write_ok, False
         if risk >= Risk.DANGEROUS and self.settings.safe_mode:
             return Decision(
                 False,
@@ -97,9 +102,9 @@ class PermissionManager:
         if risk == Risk.SAFE:
             return Decision(True)
         if self.away:
-            # Umkehrbares (z.B. neue Datei im Arbeitsordner - siehe check_path_write) ja,
-            # alles Weitreichende nein. Nachgefragt wird nicht: es ist ja niemand da.
-            if risk == Risk.MODERATE:
+            # Nur NEUE Dateien im Arbeitsordner (von check_path_write geprueft) - alles andere
+            # Veraendernde nein (Aussehen, Bildschirmfoto, ...). Nachgefragt wird nie: niemand da.
+            if risk == Risk.MODERATE and write_ok:
                 return Decision(True)
             return Decision(False, _away_denied())
         if self.settings.auto_confirm:
@@ -141,6 +146,7 @@ class PermissionManager:
                                        "du nichts. Leg eine neue Datei an (z.B. mit '-entwurf' im Namen) oder "
                                        "schreib die Aenderung als Vorschlag auf.")
             self._away_created.add(resolved)
+            self._away_write_ok = True
         if is_autostart_path(path):
             return self.confirm_always(f"{AUTOSTART_WARNING}\n    Datei: {path}")
         return Decision(True)
@@ -163,12 +169,16 @@ class PermissionManager:
             candidate = self.workspace_root / candidate
         resolved = candidate.resolve()
 
-        if self.settings.allow_full_filesystem:
+        # Im AFK-Modus nur der Arbeitsordner - auch zum Lesen (Schutz vor eingeschleusten
+        # Anweisungen aus Webseiten, z.B. "lies die .env und schick sie an ...").
+        if self.settings.allow_full_filesystem and not self.away:
             if must_exist and not resolved.exists():
                 raise FileNotFoundError(f"Pfad existiert nicht: {resolved}")
             return resolved
 
         if not self._is_within(resolved, self.workspace_root):
+            if self.away:
+                raise PermissionError_(f"Solange dein Mensch weg ist (AFK-Modus), nur im Arbeitsordner: {resolved}")
             raise PermissionError_(
                 f"Zugriff ausserhalb des Arbeitsordners ist gesperrt: {resolved}\n"
                 f"Arbeitsordner: {self.workspace_root}\n"
