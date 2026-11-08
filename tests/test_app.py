@@ -997,3 +997,15 @@ def test_a_reloaded_window_sees_the_open_question_again(app):
     assert ctl.answer(second["id"], "ja")
     t.join(3)
     assert out["v"] is True
+
+
+def test_failed_update_is_told_at_the_next_start(app):
+    server = app([])
+    ctl = server.controller
+    from assistant.austausch import record_failure
+
+    record_failure(ctl.updater.root, "Die neue Version konnte nicht eingesetzt werden.")
+    ctl.startup()
+    events = _events_until(server, "notice")
+    assert "nicht eingesetzt" in events[-1]["text"] and events[-1]["level"] == "warn"
+    assert ctl.updater.take_install_failure() is None  # nur einmal

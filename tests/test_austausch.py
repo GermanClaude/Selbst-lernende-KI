@@ -61,9 +61,9 @@ def test_update_waits_for_the_restart_and_keeps_a_copy(tmp_path, monkeypatch):
     backup = up.backups()[0].path / "KI-App.exe"
     assert backup.read_bytes() == b"MZ-alt"  # Sicherung ist eine Kopie
     calls = []
-    monkeypatch.setattr("assistant.austausch.start_helper", lambda *a: calls.append(a))
+    monkeypatch.setattr("assistant.austausch.start_helper", lambda *a, **kw: calls.append((a, kw)))
     up.restart_exe(["--app"])
-    assert calls == [(exe, exe.with_name("KI-App.exe.neu"), ["--app"])]
+    assert calls == [((exe, exe.with_name("KI-App.exe.neu"), ["--app"]), {"root": up.root})]
     assert up.pending_exe is None
 
 
@@ -71,7 +71,7 @@ def test_update_falls_back_when_the_helper_cannot_start(tmp_path, monkeypatch):
     up, exe = _exe_update(tmp_path)
     up.install(up.check(), say=lambda m: None)
 
-    def broken(*a):
+    def broken(*a, **kw):
         raise OSError("Virenscanner")
 
     monkeypatch.setattr("assistant.austausch.start_helper", broken)
@@ -94,7 +94,7 @@ def test_start_helper_copies_itself_to_temp(tmp_path, monkeypatch):
     assert seen["cmd"][-1] == "--app"
 
 
-def test_after_start_repairs_once_per_version(tmp_path, monkeypatch):
+def test_after_start_repairs_once_per_version_and_per_exe(tmp_path, monkeypatch):
     calls = []
     monkeypatch.setattr(austausch, "repair_shortcuts", lambda exe, root: calls.append(exe) or 1)
     monkeypatch.setattr(austausch.tempfile, "gettempdir", lambda: str(tmp_path))
@@ -107,6 +107,16 @@ def test_after_start_repairs_once_per_version(tmp_path, monkeypatch):
     assert not austausch.after_start(exe, tmp_path, "0.7.0", background=False)  # schon erledigt
     assert austausch.after_start(exe, tmp_path, "0.7.0", force=True, background=False)
     assert len(calls) == 2
+    terminal = tmp_path / "KI.exe"  # die zweite .exe im selben Ordner hat ihren eigenen Merker
+    assert austausch.after_start(terminal, tmp_path, "0.7.0", background=False)
+    assert austausch.after_start(exe, tmp_path, "0.6.1", background=False)  # nach /zurueck wieder
+
+    def failing(exe, root):
+        raise OSError("PowerShell fehlt")
+
+    monkeypatch.setattr(austausch, "repair_shortcuts", failing)
+    assert austausch.after_start(exe, tmp_path, "0.8.0", background=False)
+    assert austausch.after_start(exe, tmp_path, "0.8.0", background=False)  # nicht als erledigt gemerkt
 
 
 def test_an_old_copy_from_the_backup_folder_points_to_the_current_one(tmp_path):
@@ -123,3 +133,84 @@ def test_an_old_copy_from_the_backup_folder_points_to_the_current_one(tmp_path):
 def test_shortcut_repair_is_windows_only():
     if sys.platform != "win32":
         assert austausch.repair_shortcuts(SimpleNamespace(), SimpleNamespace()) == 0
+
+
+
+def test_helper_falls_back_to_renaming_when_the_file_is_locked(tmp_path, monkeypatch):
+    target = tmp_path / "KI-App.exe"
+    target.write_bytes(b"MZ-alt")
+    new = tmp_path / "KI-App.exe.neu"
+    new.write_bytes(b"MZ-neu")
+    started = []
+    monkeypatch.setattr(austausch, "overwrite_in_place", lambda src, dst: False)  # gesperrt
+    monkeypatch.setattr(austausch, "wait_for_exit", lambda pid, timeout=0: None)
+    monkeypatch.setattr(austausch.subprocess, "Popen", lambda cmd, **kw: started.append(kw["env"]))
+    monkeypatch.setenv("KI_UPDATE_ORDNER", str(tmp_path))
+    assert austausch.run_helper([str(new), str(target), "4242", "--app"]) == 0
+    assert target.read_bytes() == b"MZ-neu" and target.with_name("KI-App.exe.alt").read_bytes() == b"MZ-alt"
+    assert started[0]["KI_NEUSTART_VON"] == "4242"  # wartet auf die alte KI, nicht auf den Helfer
+    assert "Ausweichweg" in (tmp_path / "logs" / "update.log").read_text(encoding="utf-8")
+
+
+def test_helper_gives_up_honestly_and_never_opens_the_old_version_twice(tmp_path, monkeypatch):
+    target = tmp_path / "KI-App.exe"
+    target.write_bytes(b"MZ-alt")
+    new = tmp_path / "KI-App.exe.neu"
+    new.write_bytes(b"MZ-neu")
+    started = []
+    monkeypatch.setattr(austausch, "overwrite_in_place", lambda src, dst: False)
+    monkeypatch.setattr(austausch, "replace_by_moving", lambda src, dst: False)
+    monkeypatch.setattr(austausch, "wait_for_exit", lambda pid, timeout=0: None)
+    monkeypatch.setattr(austausch, "_alive", lambda pid: True)  # die alte KI laeuft noch
+    monkeypatch.setattr(austausch.subprocess, "Popen", lambda cmd, **kw: started.append(cmd))
+    monkeypatch.setenv("KI_UPDATE_ORDNER", str(tmp_path))
+    assert austausch.run_helper([str(new), str(target), "4242", "--app"]) == 1
+    assert started == [] and target.read_bytes() == b"MZ-alt"
+    up = Updater(UpdateSettings(), tmp_path, frozen=True, exe_path=target, inplace=True)
+    message = up.take_install_failure()
+    assert message and "/update" in message and up.take_install_failure() is None
+
+
+def test_read_only_exe_is_still_updated_in_place(tmp_path):
+    import stat
+
+    target = tmp_path / "KI-App.exe"
+    target.write_bytes(b"MZ-alt")
+    os.chmod(target, stat.S_IREAD)
+    new = tmp_path / "neu.bin"
+    new.write_bytes(b"MZ-neu")
+    try:
+        assert austausch.overwrite_in_place(new, target, attempts=2, delay=0)
+        assert target.read_bytes() == b"MZ-neu"
+    finally:
+        os.chmod(target, stat.S_IREAD | stat.S_IWRITE)
+
+
+def test_vanished_new_version_is_reported_not_pretended(tmp_path):
+    import pytest
+
+    from assistant.updater import UpdateError
+
+    up, exe = _exe_update(tmp_path)
+    up.install(up.check(), say=lambda m: None)
+    up.pending_exe.unlink()  # Virenscanner hat sie weggenommen
+    with pytest.raises(UpdateError, match="verschwunden"):
+        up.restart_exe(["--app"])
+    assert json.loads(up.state_path.read_text(encoding="utf-8"))["installiert"] == "0.6.0"
+
+
+def test_second_attempt_reuses_the_backup_of_the_same_version(tmp_path):
+    up, exe = _exe_update(tmp_path)
+    up.install(up.check(), say=lambda m: None)
+    up.pending_exe = None
+    up.current = "0.6.0"  # Einspielen hat nicht geklappt, gleiche Version nochmal
+    up.install(up.check(), say=lambda m: None)
+    assert len(up.backups()) == 1
+
+
+def test_running_app_exe_is_recognized_as_the_ki(monkeypatch):
+    from assistant.selbststart import _pid_alive
+
+    for name in ("KI-App.exe", "KI-App (1).exe", "KI.exe"):
+        assert _pid_alive(100, {100: (1, name)}), name
+    assert not _pid_alive(100, {100: (1, "notepad.exe")})

@@ -637,6 +637,12 @@ class CLI:
         if not self.config.api_key:
             print(_c("\n" + KEY_HINT + "\n", YELLOW))
         try:
+            failed = self.updater.take_install_failure()
+        except OSError:
+            failed = None
+        if failed:
+            print(_c(f"\n[Update] {failed}", YELLOW))
+        try:
             if self._startup_update():
                 return self.exit_code  # Update installiert -> Neustart
             self._start_update_watch()
@@ -988,6 +994,9 @@ class CLI:
             try:
                 self.updater.restart_exe()
                 print(_c("Starte die neue Version …", CYAN))
+            except UpdateError as exc:  # z.B. neue Version vom Virenscanner entfernt: weiterlaufen
+                print(_c(str(exc), YELLOW))
+                return False
             except Exception as exc:  # noqa: BLE001
                 print(_c(f"Bitte starte KI.exe jetzt neu ({exc}).", YELLOW))
             self.exit_code = 0

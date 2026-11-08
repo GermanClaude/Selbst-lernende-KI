@@ -218,7 +218,9 @@ def _pid_alive(pid: int, table: dict[int, tuple[int, str]] | None = None, since:
     if pid not in table:
         return False
     name = table[pid][1].lower()
-    if not ("python" in name or name == "ki.exe" or name == "assistant"):
+    own = Path(sys.executable).name.lower() if getattr(sys, "frozen", False) else ""
+    if not ("python" in name or name == "assistant" or name == own
+            or re.match(r"^ki(-app)?( \(\d+\))?\.exe$", name)):
         return False
     if since is not None:
         started = _process_start_time(pid)

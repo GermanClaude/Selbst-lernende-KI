@@ -18,7 +18,11 @@ def version_tuple(version: str) -> tuple[int, int, int, int]:
 
 
 def version_info(project_root: Path, exe_name: str, description: str):
-    """VSVersionInfo fuer PyInstaller (EXE(version=...))."""
+    """VSVersionInfo fuer PyInstaller (EXE(version=...)) - ausserhalb von Windows None."""
+    import sys
+
+    if sys.platform != "win32":
+        return None  # Versionsangaben gibt es nur in Windows-Programmen
     from PyInstaller.utils.win32.versioninfo import (
         FixedFileInfo,
         StringFileInfo,

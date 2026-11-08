@@ -1134,6 +1134,12 @@ class AppController(CLI):
     # -- Start / Neustart / Ende -----------------------------------------------------
     def startup(self) -> None:
         """Nach dem Oeffnen des Fensters: Hinweise und (hoechstens taeglich) Update-Pruefung."""
+        try:
+            failed = self.updater.take_install_failure()
+        except OSError:
+            failed = None
+        if failed:
+            self._notice(failed, "warn")
         if not self.config.api_key:
             self._notice(KEY_HINT.replace("\n  ", "\n- "), "warn")
         elif self.config.provider_auto_switched:
@@ -1149,9 +1155,14 @@ class AppController(CLI):
     def _restart(self, kind: str) -> bool:
         """Nach Update/Zurueck: die App mit der neuen Version neu oeffnen."""
         if kind == "exe":
+            from ..updater import UpdateError
+
             try:
                 self.updater.restart_exe(["--app"])
                 print("Starte die neue Version …")
+            except UpdateError as exc:  # z.B. neue Version vom Virenscanner entfernt: weiterlaufen
+                print(str(exc))
+                return False
             except Exception as exc:  # noqa: BLE001
                 print(f"Bitte starte die App jetzt neu ({exc}).")
             self.exit_code = 0

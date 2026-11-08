@@ -40,14 +40,17 @@ def _clean_env() -> dict:
     return env
 
 
-def start_helper(exe: Path, new_file: Path, extra_args: list[str] | None = None) -> Path:
+def start_helper(exe: Path, new_file: Path, extra_args: list[str] | None = None,
+                 root: Path | None = None) -> Path:
     """Kopiert die laufende .exe als Helfer in den Temp-Ordner und startet ihn (ohne Fenster)."""
     helper = Path(tempfile.gettempdir()) / f"{HELPER_PREFIX}{os.getpid()}.exe"
     shutil.copyfile(exe, helper)
     flags = (getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "DETACHED_PROCESS", 0)
              | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
     cmd = [str(helper), HELPER_FLAG, str(new_file), str(exe), str(os.getpid()), *(extra_args or [])]
-    subprocess.Popen(cmd, cwd=str(exe.parent), env=_clean_env(), stdin=subprocess.DEVNULL,
+    env = _clean_env()
+    env["KI_UPDATE_ORDNER"] = str(root or exe.parent)  # dort steht data/update.json
+    subprocess.Popen(cmd, cwd=str(exe.parent), env=env, stdin=subprocess.DEVNULL,
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                      creationflags=flags if sys.platform == "win32" else 0,
                      start_new_session=sys.platform != "win32")
@@ -60,20 +63,28 @@ def run_helper(argv: list[str]) -> int:
     if len(argv) < 3:
         return 2
     new_file, target, pid, extra = Path(argv[0]), Path(argv[1]), argv[2], argv[3:]
-    log = _helper_log(target.parent)
-    try:
-        wait_for_exit(int(pid), timeout=90)
-    except ValueError:
-        pass
-    ok = overwrite_in_place(new_file, target)
-    log.info("Update eingespielt: %s" if ok else "Update NICHT eingespielt (alte Version bleibt): %s", target)
-    if ok:
+    root = Path(os.environ.get("KI_UPDATE_ORDNER") or target.parent)
+    log = _helper_log(root)
+    old_pid = int(pid) if pid.isdigit() else 0
+    # Die alte KI schreibt beim Beenden noch eine Zusammenfassung (kann dauern) - geduldig warten.
+    wait_for_exit(old_pid, timeout=600)
+    how = "in dieselbe Datei" if overwrite_in_place(new_file, target) else ""
+    if not how and replace_by_moving(new_file, target):
+        how = "per Umbenennen (Ausweichweg)"  # z.B. Datei gesperrt oder schreibgeschuetzt
+    if how:
+        log.info("Update eingespielt (%s): %s", how, target)
         try:
             new_file.unlink()
         except OSError:
             pass
+    else:
+        log.warning("Update NICHT eingespielt - die bisherige Version bleibt: %s", target)
+        record_failure(root, "Die neue Version konnte nicht eingesetzt werden (Datei gesperrt?). "
+                             "Die bisherige laeuft weiter - versuch es spaeter mit /update noch einmal.")
+        if _alive(old_pid):
+            return 1  # die alte KI laeuft noch - kein zweites Fenster derselben Version
     env = _clean_env()
-    env["KI_NEUSTART_VON"] = str(os.getpid())
+    env["KI_NEUSTART_VON"] = str(old_pid or os.getpid())
     flags = getattr(subprocess, "CREATE_NEW_CONSOLE", 0)  # KI.exe (Terminal) bekommt ihr Fenster
     try:
         subprocess.Popen([str(target), *extra], cwd=str(target.parent), env=env,
@@ -81,28 +92,29 @@ def run_helper(argv: list[str]) -> int:
     except OSError as exc:
         log.warning("Neustart ging nicht: %s", exc)
         return 1
-    return 0 if ok else 1
+    return 0 if how else 1
 
 
 def overwrite_in_place(src: Path, dst: Path, attempts: int = 60, delay: float = 0.5) -> bool:
     """Schreibt den Inhalt von src in die BESTEHENDE Datei dst (gleiche Datei, neuer Inhalt).
     Gesperrt (Virenscanner, alte KI noch nicht ganz zu): ein paar Mal versuchen. Geht beim
     Schreiben etwas schief, kommt der alte Inhalt zurueck."""
-    try:
-        data = src.read_bytes()
-        original = dst.read_bytes()
-    except OSError:
-        return False
-    if not data.startswith(b"MZ") and sys.platform == "win32":
-        return False
+    import stat
+
     for attempt in range(attempts):
         try:
+            data = src.read_bytes()
+            original = dst.read_bytes()
+            if not data.startswith(b"MZ") and sys.platform == "win32":
+                return False
+            if not os.access(dst, os.W_OK):
+                os.chmod(dst, stat.S_IREAD | stat.S_IWRITE)  # Schreibschutz-Haken entfernen
             fh = open(dst, "r+b")  # noqa: SIM115 - Fehler beim Oeffnen = noch gesperrt
-        except PermissionError:
+        except FileNotFoundError:
+            return False
+        except OSError:
             time.sleep(delay)
             continue
-        except OSError:
-            return False
         try:
             with fh:
                 fh.seek(0)
@@ -110,11 +122,79 @@ def overwrite_in_place(src: Path, dst: Path, attempts: int = 60, delay: float = 
                 fh.truncate()
                 fh.flush()
                 os.fsync(fh.fileno())
-            return dst.read_bytes() == data
         except OSError:
             _restore(dst, original)
-            return False
+            time.sleep(delay)
+            continue
+        if dst.read_bytes() == data:
+            return True
+        _restore(dst, original)
     return False
+
+
+def replace_by_moving(src: Path, dst: Path, attempts: int = 10, delay: float = 0.5) -> bool:
+    """Ausweichweg: die (evtl. noch laufende) .exe beiseite schieben - das erlaubt Windows auch
+    bei gesperrten Dateien - und die neue an ihren Platz setzen. Beim naechsten Start raeumt
+    after_start die .alt weg und richtet Verknuepfungen wieder auf die .exe."""
+    aside = dst.with_name(dst.name + ".alt")
+    for attempt in range(attempts):
+        try:
+            if aside.exists():
+                aside.unlink()
+            os.replace(dst, aside)
+        except FileNotFoundError:
+            return False
+        except OSError:
+            time.sleep(delay)
+            continue
+        try:
+            os.replace(src, dst)
+            return True
+        except OSError:
+            try:
+                os.replace(aside, dst)
+            except OSError:
+                pass
+            time.sleep(delay)
+    return False
+
+
+def record_failure(root: Path, message: str) -> None:
+    """Merkt sich fuer die naechste KI, dass das Einspielen nicht geklappt hat (sie sagt es dir)."""
+    path = Path(root) / "data" / "update.json"
+    try:
+        state = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        state = {}
+    state["einspielen_fehlgeschlagen"] = message
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(state, indent=2, ensure_ascii=False), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    if sys.platform == "win32":
+        try:
+            import ctypes
+
+            kernel = ctypes.windll.kernel32
+            handle = kernel.OpenProcess(0x00100000, False, pid)  # SYNCHRONIZE
+            if not handle:
+                return False
+            running = kernel.WaitForSingleObject(handle, 0) == 0x102  # WAIT_TIMEOUT
+            kernel.CloseHandle(handle)
+            return running
+        except Exception:  # noqa: BLE001
+            return False
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
 
 
 def _restore(dst: Path, original: bytes) -> None:
@@ -153,49 +233,72 @@ def wait_for_exit(pid: int, timeout: float = 60) -> None:
 
 
 def _helper_log(folder: Path) -> logging.Logger:
+    """Protokoll des Helfers in <Programmordner>/logs/update.log."""
     log = logging.getLogger("ki.update-helfer")
-    if not log.handlers:
-        try:
-            (folder / "logs").mkdir(parents=True, exist_ok=True)
-            handler = logging.FileHandler(folder / "logs" / "update.log", encoding="utf-8")
-            handler.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
-            log.addHandler(handler)
-            log.setLevel(logging.INFO)
-        except OSError:
-            log.addHandler(logging.NullHandler())
+    target = Path(folder) / "logs" / "update.log"
+    if getattr(log, "_ki_file", None) == target:
+        return log
+    for handler in list(log.handlers):
+        log.removeHandler(handler)
+        handler.close()
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        handler = logging.FileHandler(target, encoding="utf-8")
+        handler.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
+        log.addHandler(handler)
+    except OSError:
+        log.addHandler(logging.NullHandler())
+    log.setLevel(logging.INFO)
+    log._ki_file = target  # type: ignore[attr-defined]
     return log
 
 
 # -- Nach dem Start der neuen Version -------------------------------------------------
+def _read_state(root: Path) -> dict:
+    try:
+        return json.loads((Path(root) / "data" / "update.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def _write_state(root: Path, **changes) -> None:
+    path = Path(root) / "data" / "update.json"
+    state = _read_state(root)  # frisch lesen: der Updater schreibt dieselbe Datei
+    state.update(changes)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(state, indent=2, ensure_ascii=False), encoding="utf-8")
+    except OSError:
+        pass
+
+
 def after_start(exe: Path, root: Path, version: str, force: bool = False, background: bool = True) -> bool:
-    """Aufraeumen und - beim ersten Start einer neuen Version - Verknuepfungen reparieren
-    (im Hintergrund, damit der Start nicht wartet). True = es wird repariert."""
+    """Aufraeumen und - beim ersten Start dieser .exe in dieser Version (auch nach /zurueck) -
+    Verknuepfungen reparieren (im Hintergrund, damit der Start nicht wartet).
+    True = es wird repariert."""
+    exe = Path(exe)
     leftovers = list(Path(tempfile.gettempdir()).glob(f"{HELPER_PREFIX}*.exe"))
-    leftovers.append(Path(exe).with_name(Path(exe).name + ".alt"))  # Notfall-Weg beim letzten Update
+    leftovers.append(exe.with_name(exe.name + ".alt"))  # Ausweichweg beim letzten Update
     for old in leftovers:
         try:
             old.unlink()  # (laufende lassen sich nicht loeschen - dann eben beim naechsten Mal)
         except OSError:
             pass
-    state_path = Path(root) / "data" / "update.json"
-    try:
-        state = json.loads(state_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        state = {}
-    if not force and state.get("gestartet") == version:
+    seen = _read_state(root).get("gestartet")
+    seen = seen if isinstance(seen, dict) else {}
+    if not force and seen.get(exe.name) == version:
         return False
-    state["gestartet"] = version
-    try:
-        state_path.parent.mkdir(parents=True, exist_ok=True)
-        state_path.write_text(json.dumps(state, indent=2, ensure_ascii=False), encoding="utf-8")
-    except OSError:
-        pass
 
     def repair() -> None:
         try:
-            repair_shortcuts(Path(exe), Path(root))
-        except Exception as exc:  # noqa: BLE001 - nie den Start stoeren
+            repair_shortcuts(exe, Path(root))
+        except Exception as exc:  # noqa: BLE001 - nie den Start stoeren; beim naechsten Start nochmal
             logging.getLogger("ki").info("Verknuepfungen pruefen: %s", exc)
+            return
+        current = _read_state(root).get("gestartet")
+        current = current if isinstance(current, dict) else {}
+        current[exe.name] = version
+        _write_state(root, gestartet=current)
 
     if background:
         import threading
@@ -206,20 +309,24 @@ def after_start(exe: Path, root: Path, version: str, force: bool = False, backgr
     return True
 
 
-def _ps_quote(text: str) -> str:
-    return "'" + str(text).replace("'", "''") + "'"
-
-
 def repair_shortcuts(exe: Path, root: Path) -> int:
     """Verknuepfungen (Desktop, Startmenue, Taskleiste), die auf eine gesicherte alte Version
-    in versionen/ zeigen, wieder auf die aktuelle .exe richten; solche, die schon auf die
-    .exe zeigen, auffrischen. Gibt die Zahl der reparierten zurueck (nur Windows)."""
+    in versionen/ (oder die beiseite geschobene .alt) zeigen, wieder auf die aktuelle .exe
+    richten; solche, die schon auf die .exe zeigen, auffrischen (Windows merkt sich dann die
+    richtige Datei). Gibt die Zahl der reparierten zurueck (nur Windows)."""
     if sys.platform != "win32":
         return 0
-    backup = str(Path(root) / BACKUP_DIR) + "\\"
+    exe = Path(exe)
+    env = dict(os.environ)
+    # Pfade als Umgebungsvariablen - nie in den Skripttext (Apostrophe, Sonderzeichen).
+    env["KI_EXE"] = str(exe)
+    env["KI_NAME"] = exe.name
+    env["KI_BAK1"] = str(exe.parent / BACKUP_DIR) + "\\"
+    env["KI_BAK2"] = str(Path(root) / BACKUP_DIR) + "\\"
     script = (
         "$ErrorActionPreference = 'SilentlyContinue'; "
-        f"$exe = {_ps_quote(exe)}; $bak = {_ps_quote(backup)}; $name = {_ps_quote(Path(exe).name)}; "
+        "$exe = $env:KI_EXE; $name = $env:KI_NAME; $alt = $exe + '.alt'; "
+        "$baks = @($env:KI_BAK1, $env:KI_BAK2); "
         "$s = New-Object -ComObject WScript.Shell; "
         "$dirs = @([Environment]::GetFolderPath('Desktop'), [Environment]::GetFolderPath('CommonDesktopDirectory'), "
         "[Environment]::GetFolderPath('Programs'), "
@@ -228,15 +335,16 @@ def repair_shortcuts(exe: Path, root: Path) -> int:
         "$n = 0; "
         "foreach ($d in $dirs) { if ($d -and (Test-Path -LiteralPath $d)) { "
         "Get-ChildItem -LiteralPath $d -Filter *.lnk -Recurse | ForEach-Object { "
-        "$l = $s.CreateShortcut($_.FullName); $t = [string]$l.TargetPath; "
-        "$old = $t.StartsWith($bak, [StringComparison]::OrdinalIgnoreCase) -and "
-        "([IO.Path]::GetFileName($t) -ieq $name); "
+        "$l = $s.CreateShortcut($_.FullName); $t = [string]$l.TargetPath; $old = $false; "
+        "foreach ($b in $baks) { if ($t.StartsWith($b, [StringComparison]::OrdinalIgnoreCase) -and "
+        "([IO.Path]::GetFileName($t) -ieq $name)) { $old = $true } }; "
+        "if ($t -ieq $alt) { $old = $true }; "
         "if ($old -or ($t -ieq $exe)) { $l.TargetPath = $exe; "
         "$l.WorkingDirectory = [IO.Path]::GetDirectoryName($exe); $l.Save(); if ($old) { $n++ } } } } }; "
         "Write-Output $n"
     )
     proc = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
-                          capture_output=True, text=True, timeout=90, stdin=subprocess.DEVNULL,
+                          capture_output=True, text=True, timeout=90, stdin=subprocess.DEVNULL, env=env,
                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     try:
         return int((proc.stdout or "0").strip().splitlines()[-1])

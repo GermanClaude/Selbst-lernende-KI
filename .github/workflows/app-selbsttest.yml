@@ -121,3 +121,21 @@ jobs:
           Remove-Item $lnk
           Write-Host "Verknuepfung zeigt jetzt auf: $t"
           if ($t -ne $exe) { throw "Verknuepfung wurde nicht repariert: $t" }
+          # 3) Ausweichweg: die Datei ist gesperrt (das Programm laeuft noch) -> per Umbenennen einspielen
+          $dir3 = Join-Path $env:RUNNER_TEMP 'update-gesperrt'
+          New-Item -ItemType Directory -Force -Path $dir3 | Out-Null
+          $t3 = Join-Path $dir3 'KI.exe'
+          $neu3 = Join-Path $dir3 'KI.exe.neu'
+          Copy-Item dist/KI.exe $t3
+          Copy-Item dist/KI-App.exe $neu3
+          $running = Start-Process -FilePath $t3 -WorkingDirectory $dir3 -PassThru -WindowStyle Hidden
+          Start-Sleep -Seconds 8
+          $p3 = Start-Process -FilePath $helper -ArgumentList @('--update-einspielen', "`"$neu3`"", "`"$t3`"", '1', '--version') -PassThru
+          if (-not $p3.WaitForExit(180000)) { Stop-Process -Id $p3.Id -Force; throw 'Update-Helfer haengt (gesperrt)' }
+          Stop-Process -Id $running.Id -Force -ErrorAction SilentlyContinue
+          Start-Sleep -Seconds 3
+          $log3 = Join-Path $dir3 'logs/update.log'
+          if (Test-Path $log3) { Get-Content $log3 }
+          $ok3 = (Get-FileHash $t3).Hash -eq (Get-FileHash dist/KI-App.exe).Hash
+          Write-Host "Gesperrte Datei: neue Version drin: $ok3 | .alt vorhanden: $(Test-Path "$t3.alt")"
+          if (-not $ok3) { throw 'Der Ausweichweg (Umbenennen) hat nicht funktioniert' }
