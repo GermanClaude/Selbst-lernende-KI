@@ -984,8 +984,8 @@ class AppController(CLI):
         def work() -> None:
             try:
                 info = self.updater.check()
-                if info:
-                    self._pending_update = info
+                if info or self.updater.last_error is None:
+                    self._pending_update = info  # nichts Neueres mehr -> Hinweis weg
             except Exception as exc:  # noqa: BLE001
                 logger.info("Update-Pruefung: %s", exc)
             finally:

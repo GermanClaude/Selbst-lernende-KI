@@ -750,3 +750,27 @@ def test_stop_right_after_afk_start_never_leaves_nova_alone(app):
         time.sleep(0.2)
         state = _req(server, "/api/state")[1]
         assert state["afk"] is None and not server.controller.permissions.away
+
+
+def test_check_now_clears_an_outdated_update_hint(app):
+    from assistant.updater import UpdateInfo
+
+    server = app([])
+    ctl = server.controller
+    ctl.updater.settings.modus = "automatisch"
+    ctl._pending_update = UpdateInfo(current="0.1", new="9.9.9", notes="", download_url="x", kind="quelle")
+    assert _req(server, "/api/state")[1]["update_status"]["state"] == "neu"
+
+    def nothing_newer():
+        ctl.updater.last_error = None
+        ctl.updater._save_state(letzte_pruefung="2026-11-08T02:00:00", neueste=ctl.updater.current)
+        return None
+
+    ctl.updater.check = nothing_newer
+    _req(server, "/api/update", {"action": "check"})
+    for _ in range(50):
+        status = _req(server, "/api/state")[1]["update_status"]
+        if status["state"] != "pruefe":
+            break
+        time.sleep(0.05)
+    assert status["state"] == "aktuell"

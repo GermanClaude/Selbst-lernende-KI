@@ -233,7 +233,7 @@ class Updater:
             info = self._check_exe() if self.frozen else self._check_source()
         except Exception as exc:  # noqa: BLE001 - offline, Repo weg, ...
             logger.info("Update-Pruefung nicht moeglich: %s", exc)
-            self.last_error = str(exc)
+            self.last_error = friendly_check_error(exc)
             return None
         latest = info.new if info else (self.last_seen or self.current)
         self._save_state(letzte_pruefung=self.now().isoformat(timespec="seconds"), neueste=latest)
@@ -243,10 +243,10 @@ class Updater:
         """Fuer die Anzeige 'auf dem neuesten Stand?' -> state: aktuell | neu | unbekannt | aus."""
         data = self._state()
         checked, latest = data.get("letzte_pruefung"), data.get("neueste")
-        if not self.enabled:
+        if latest and is_newer(str(latest), self.current):
+            state = "neu"  # auch bei ausgeschalteten automatischen Updates zeigen, was es gibt
+        elif not self.enabled:
             state = "aus"
-        elif latest and is_newer(str(latest), self.current):
-            state = "neu"
         elif checked:
             state = "aktuell"  # gespeichert wird nur nach erfolgreicher Pruefung
         else:
@@ -562,3 +562,21 @@ def _extract_zip(data: bytes, tmp: Path) -> Path:
     if not (target / "assistant" / "__init__.py").is_file():
         raise UpdateError("Im Download fehlt das Programm (assistant/) - nichts geaendert.")
     return target
+
+
+def friendly_check_error(exc: Exception) -> str:
+    """Fehler beim Nachschauen in verstaendlichen Worten (die App zeigt sie an)."""
+    text = str(exc).lower()
+    status = getattr(exc, "code", None) or getattr(exc, "status", None)
+    if status in (403, 429) or "rate limit" in text:
+        return "GitHub laesst gerade keine Abfrage zu (zu viele Anfragen) - spaeter nochmal versuchen."
+    if status == 404 or "not found" in text:
+        return "Die Update-Quelle wurde nicht gefunden (Repo oder Branch falsch eingestellt?)."
+    if "timed out" in text or "timeout" in text:
+        return "GitHub hat nicht rechtzeitig geantwortet - spaeter nochmal versuchen."
+    if any(word in text for word in ("getaddrinfo", "name or service", "errno -3", "errno 11001",
+                                     "network is unreachable", "connection refused", "urlopen error")):
+        return "Keine Internetverbindung - bitte pruefen und nochmal versuchen."
+    if "certificate" in text or "ssl" in text:
+        return "Die sichere Verbindung zu GitHub ging nicht (Zertifikat/Virenscanner?)."
+    return f"Nachschauen ging nicht: {str(exc)[:160]}"
