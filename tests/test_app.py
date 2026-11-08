@@ -152,16 +152,57 @@ def test_toggle_allow_everything(app, tmp_path):
     assert load_config(tmp_path).permissions.auto_confirm is True
 
 
-def test_second_message_while_busy_is_refused(app):
-    cmd = f'"{sys.executable}" -c "import time; time.sleep(5)"'
-    script = [(anthro_msg([tool_use_block("shell_befehl", "t1", {"befehl": cmd})], stop_reason="tool_use"), []),
-              (anthro_msg([text_block("fertig")]), [])]
-    server = app(script, safe_mode=False, auto_confirm=True)
+def _slow_script(seconds=2):
+    cmd = f'"{sys.executable}" -c "import time; time.sleep({seconds})"'
+    return [(anthro_msg([tool_use_block("shell_befehl", "t1", {"befehl": cmd})], stop_reason="tool_use"), []),
+            (anthro_msg([text_block("fertig")]), [])]
+
+
+def _user_texts(events):
+    return [e["text"] for e in events if e["type"] == "user"]
+
+
+def test_second_message_waits_in_the_queue(app):
+    server = app(_slow_script(), safe_mode=False, auto_confirm=True)
     _req(server, "/api/send", {"text": "eins"})
     _events_until(server, "tool")
     status, body = _req(server, "/api/send", {"text": "zwei"})
-    assert body["ok"] is False and "Stopp" in body["error"]
+    assert body["ok"] and body["queued"] and not body["interrupt"]
+    assert [q["text"] for q in _req(server, "/api/state")[1]["queue"]] == ["zwei"]
+    events = _events_until(server, "done")  # erst "eins" fertig ...
+    events += _events_until(server, "done")  # ... dann kommt "zwei" von allein dran
+    assert "zwei" in _user_texts(events)
+    assert _req(server, "/api/state")[1]["queue"] == []
+
+
+def test_interrupt_answers_the_new_message_right_away(app):
+    server = app(_slow_script(5), safe_mode=False, auto_confirm=True)
+    _req(server, "/api/send", {"text": "eins"})
+    _events_until(server, "tool")
+    started = time.monotonic()
+    body = _req(server, "/api/send", {"text": "lieber das", "interrupt": True})[1]
+    assert body["queued"] and body["interrupt"]
+    events = _events_until(server, "stopped")
+    events += _events_until(server, "done")
+    assert "lieber das" in _user_texts(events)
+    assert time.monotonic() - started < 4.5  # nicht erst auf das langsame Programm gewartet
+
+
+def test_stop_gives_waiting_messages_back(app):
+    server = app(_slow_script(5), safe_mode=False, auto_confirm=True)
+    _req(server, "/api/send", {"text": "eins"})
+    _events_until(server, "tool")
+    _req(server, "/api/send", {"text": "zwei"})
+    _req(server, "/api/send", {"text": "drei"})
+    q = _req(server, "/api/state")[1]["queue"]
+    assert _req(server, "/api/queue", {"action": "remove", "id": q[1]["id"]})[1]["ok"]
+    _req(server, "/api/send", {"text": "vier"})
     _req(server, "/api/stop", {})
+    events = _events_until(server, "queue_returned")
+    assert events[-1]["text"] == "zwei\nvier"
+    _events_until(server, "stopped")
+    time.sleep(0.3)
+    assert _req(server, "/api/state")[1]["queue"] == [] and not _req(server, "/api/state")[1]["busy"]
 
 
 def test_native_program_window_is_used(app, tmp_path, monkeypatch):
@@ -541,3 +582,418 @@ def test_exe_kind_from_program_header_and_crash_memory(tmp_path):
     assert launcher._crashed_last_time(info)                              # Prozess weg, app.json noch da
     info.write_text(json.dumps({"pid": 999999, "fenster": "browser"}), encoding="utf-8")
     assert not launcher._crashed_last_time(info)
+
+
+def test_update_indicator_and_send_right_away_switch(app, tmp_path):
+    from assistant.config import load_config
+
+    server = app([])
+    ctl = server.controller
+    status = _req(server, "/api/state")[1]["update_status"]
+    assert status["state"] in ("aus", "unbekannt") and status["current"]
+    ctl.updater._save_state(letzte_pruefung="2026-11-08T01:00:00", neueste="0.0.1")
+    ctl.updater.settings.modus = "automatisch"
+    assert _req(server, "/api/state")[1]["update_status"]["state"] == "aktuell"
+    ctl.updater._save_state(neueste="99.0.0")
+    assert _req(server, "/api/state")[1]["update_status"]["state"] == "neu"
+    assert _req(server, "/api/state")[1]["voice_autosend"] is False
+    _req(server, "/api/toggle", {"name": "sofort_senden", "value": True})
+    assert _req(server, "/api/state")[1]["voice_autosend"] is True
+    assert load_config(tmp_path).voice.sofort_senden is True
+
+
+def test_model_choice_in_the_app_and_by_command(app, tmp_path):
+    from assistant.config import load_config
+
+    server = app([])
+    setup = _req(server, "/api/setup")[1]
+    claude = setup["modelle"]["claude"]
+    assert claude["model"] == "claude-opus-5-5"
+    assert [d["name"] for d in claude["denktiefen"]][:3] == ["schnell", "ausgewogen", "gründlich"]
+    assert "Opus" in _req(server, "/api/state")[1]["model_name"]
+
+    status, result = _req(server, "/api/modell", {"provider": "claude", "model": "claude-sonnet-5-5",
+                                                  "denken": "low"})
+    assert status == 200 and result["ok"], result
+    assert result["setup"]["modelle"]["claude"]["model"] == "claude-sonnet-5-5"
+    assert "Sonnet" in _req(server, "/api/state")[1]["model_name"]
+    assert load_config(tmp_path).claude.effort == "low"
+    assert not _req(server, "/api/modell", {"provider": "claude", "model": "quatsch"})[1]["ok"]
+    assert _req(server, "/api/modell", {"provider": "claude"})[1]["ok"] is False
+
+    _req(server, "/api/send", {"text": "/denken gruendlich"})
+    events = _events_until(server, "notice")
+    assert "gründlich" in events[-1]["text"]
+    assert load_config(tmp_path).claude.effort == "high"
+    _req(server, "/api/send", {"text": "/modell deepseek pro"})
+    events = _events_until(server, "notice")
+    assert "DeepSeek V4 Pro" in events[-1]["text"]
+    assert load_config(tmp_path).deepseek.model == "deepseek-v4-pro"
+
+
+def _afk_tool(tid, aktion, text):
+    return (anthro_msg([tool_use_block("abwesenheit", tid, {"aktion": aktion, "text": text})],
+                       stop_reason="tool_use"), [])
+
+
+def test_afk_mode_works_alone_and_reports_back(app):
+    script = [_afk_tool("a1", "notiz", "Drei Hotels verglichen"), (anthro_msg([text_block("Schritt eins")]), []),
+              _afk_tool("a2", "vorschlag", "Hotel buchen"), _afk_tool("a3", "fertig", "Vergleich liegt bereit"),
+              (anthro_msg([text_block("Ende")]), []), (anthro_msg([text_block("Willkommen zurueck")]), [])]
+    server = app(script)
+    ctl = server.controller
+    ctl.config.afk.pause_sekunden = 0
+    body = _req(server, "/api/afk", {"action": "start", "auftrag": "Urlaub planen", "minuten": 30})[1]
+    assert body["ok"] and body["started"]
+    events = _events_until(server, "afk_report", timeout=15)
+    report = events[-1]["text"]
+    assert "Drei Hotels verglichen" in report and "Hotel buchen" in report and "Vergleich liegt bereit" in report
+    assert events[-1]["reason"] == "fertig"
+    notices = [e["text"] for e in events if e["type"] == "notice"]
+    assert any("AFK-Modus an" in n for n in notices) and any("Schritt 1" in n for n in notices)
+    assert not any(e["type"] == "user" for e in events)  # AFK-Schritte sind keine Nachrichten "von dir"
+    time.sleep(0.3)
+    state = _req(server, "/api/state")[1]
+    assert state["afk"] is None and not state["busy"] and not ctl.permissions.away
+    _req(server, "/api/send", {"text": "Hallo"})
+    _events_until(server, "done")
+    sent = ctl.brain.provider.client.messages.last_kwargs["messages"]
+    last_user = [m for m in sent if m["role"] == "user" and isinstance(m["content"], str)][-1]["content"]
+    assert last_user.startswith("[Dein Mensch ist zurueck") and "Hotel buchen" in last_user
+    assert last_user.endswith("Hallo")
+
+
+def test_a_message_ends_the_afk_mode(app):
+    server = app([(anthro_msg([text_block("Ich arbeite")]), [])])
+    ctl = server.controller
+    ctl.config.afk.pause_sekunden = 60  # wartet nach Schritt 1 lange - bis du zurueck bist
+    _req(server, "/api/afk", {"action": "start"})
+    _events_until(server, "done")
+    assert _req(server, "/api/state")[1]["afk"]["active"]
+    started = time.monotonic()
+    body = _req(server, "/api/send", {"text": "Bin wieder da"})[1]
+    assert body["queued"] and body["afk_ended"]
+    events = _events_until(server, "afk_report")
+    assert events[-1]["reason"] == "zurueck"
+    events = _events_until(server, "done")
+    assert "Bin wieder da" in _user_texts(events)
+    assert time.monotonic() - started < 10
+
+
+def test_nova_starts_afk_mode_when_told(app):
+    script = [(anthro_msg([tool_use_block("abwesenheit", "s1", {"aktion": "start", "auftrag": "Notizen ordnen"})],
+                          stop_reason="tool_use"), []),
+              (anthro_msg([text_block("Alles klar, bis spaeter!")]), []),
+              _afk_tool("f1", "fertig", "Notizen geordnet"), (anthro_msg([text_block("fertig")]), [])]
+    server = app(script)
+    server.controller.config.afk.pause_sekunden = 0
+    _req(server, "/api/send", {"text": "Ich bin jetzt AFK, ordne bitte meine Notizen"})
+    events = _events_until(server, "afk_report", timeout=15)
+    assert "Notizen geordnet" in events[-1]["text"]
+    first = server.controller.brain.provider.messages[0]["content"]
+    assert "abwesenheit" in first  # Hinweis fuer die KI, weil es nach "bin weg" klang
+
+
+def test_key_check_keeps_waiting_messages(app, monkeypatch):
+    import threading
+
+    from assistant import schluessel
+
+    def slow_test(config, provider, key):
+        time.sleep(1.0)
+        return True, "ok", "gut"
+
+    monkeypatch.setattr(schluessel, "test_key", slow_test)
+    # Das Speichern setzt den Schluessel in os.environ - nach dem Test wieder wie vorher
+    # (setenv merkt sich auch "war nicht gesetzt" - delenv ohne Wert merkt sich nichts)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-platzhalter-nur-fuer-den-test")
+    server = app([(anthro_msg([text_block("Hallo zurueck")]), [])])
+    worker = threading.Thread(target=lambda: _req(server, "/api/setup",
+                                                  {"provider": "claude", "api_key": "sk-ant-" + "x" * 30}))
+    worker.start()
+    time.sleep(0.3)
+    body = _req(server, "/api/send", {"text": "hallo"})[1]
+    assert body["queued"]
+    worker.join(5)
+    events = _events_until(server, "done")
+    assert "hallo" in _user_texts(events)
+
+
+def test_writing_after_saying_afk_keeps_you_in_charge(app):
+    cmd = f'"{sys.executable}" -c "import time; time.sleep(2)"'
+    script = [(anthro_msg([tool_use_block("abwesenheit", "s1", {"aktion": "start"}),
+                           tool_use_block("shell_befehl", "t1", {"befehl": cmd})], stop_reason="tool_use"), []),
+              (anthro_msg([text_block("Bis spaeter!")]), [])]
+    server = app(script, safe_mode=False, auto_confirm=True)
+    _req(server, "/api/send", {"text": "Ich bin gleich weg"})
+    _events_until(server, "tool")
+    assert _req(server, "/api/state")[1]["afk_pending"]
+    _req(server, "/api/send", {"text": "Warte, noch eine Frage"})
+    events = _events_until(server, "done")
+    events += _events_until(server, "done")
+    assert any(e["type"] == "notice" and "nicht gestartet" in e["text"] for e in events)
+    assert "Warte, noch eine Frage" in _user_texts(events)
+    time.sleep(0.5)
+    state = _req(server, "/api/state")[1]
+    assert state["afk"] is None and not state["afk_pending"] and not state["busy"]
+    assert not server.controller.permissions.away
+
+
+def test_stop_right_after_afk_start_never_leaves_nova_alone(app):
+    server = app([(anthro_msg([text_block("Ich arbeite")]), [])])
+    server.controller.config.afk.pause_sekunden = 30
+    for _ in range(3):
+        _req(server, "/api/afk", {"action": "start"})
+        _req(server, "/api/stop", {})
+        events = _events_until(server, "afk_report")
+        assert events[-1]["reason"] == "zurueck"
+        time.sleep(0.2)
+        state = _req(server, "/api/state")[1]
+        assert state["afk"] is None and not server.controller.permissions.away
+
+
+def test_check_now_clears_an_outdated_update_hint(app):
+    from assistant.updater import UpdateInfo
+
+    server = app([])
+    ctl = server.controller
+    ctl.updater.settings.modus = "automatisch"
+    ctl._pending_update = UpdateInfo(current="0.1", new="9.9.9", notes="", download_url="x", kind="quelle")
+    assert _req(server, "/api/state")[1]["update_status"]["state"] == "neu"
+
+    def nothing_newer():
+        ctl.updater.last_error = None
+        ctl.updater._save_state(letzte_pruefung="2026-11-08T02:00:00", neueste=ctl.updater.current)
+        return None
+
+    ctl.updater.check = nothing_newer
+    _req(server, "/api/update", {"action": "check"})
+    for _ in range(50):
+        status = _req(server, "/api/state")[1]["update_status"]
+        if status["state"] != "pruefe":
+            break
+        time.sleep(0.05)
+    assert status["state"] == "aktuell"
+
+
+def test_two_messages_while_afk_ends_keep_their_order(app):
+    server = app([(anthro_msg([text_block("Ich arbeite")]), [])])
+    ctl = server.controller
+    ctl.config.afk.pause_sekunden = 30
+    _req(server, "/api/afk", {"action": "start"})
+    _events_until(server, "done")
+    first = _req(server, "/api/send", {"text": "A: bin zurueck"})[1]
+    second = _req(server, "/api/send", {"text": "B: was hast du gemacht?"})[1]
+    assert first["afk_ended"] and first["queued"]
+    events = _events_until(server, "afk_report")
+    events += _events_until(server, "done")
+    events += _events_until(server, "done")
+    assert [t for t in _user_texts(events) if t[:2] in ("A:", "B:")] == ["A: bin zurueck", "B: was hast du gemacht?"]
+    users = [m["content"] for m in ctl.brain.provider.messages if m["role"] == "user" and isinstance(m["content"], str)]
+    a = next(u for u in users if u.endswith("A: bin zurueck"))
+    b = next(u for u in users if u.endswith("B: was hast du gemacht?"))
+    assert a.startswith("[Dein Mensch ist zurueck") and not b.startswith("[Dein Mensch")
+
+
+def test_afk_button_with_an_older_waiting_message_still_starts(app):
+    server = app(_slow_script(2), safe_mode=False, auto_confirm=True)
+    ctl = server.controller
+    ctl.config.afk.pause_sekunden = 0
+    ctl.config.afk.max_schritte = 1
+    _req(server, "/api/send", {"text": "eins"})
+    _events_until(server, "tool")
+    _req(server, "/api/send", {"text": "zwei"})
+    body = _req(server, "/api/afk", {"action": "start", "auftrag": "Recherche"})[1]
+    assert body["ok"] and not body["started"]
+    events = _events_until(server, "afk_report", timeout=20)
+    assert "zwei" in _user_texts(events)
+
+
+def test_interrupting_never_answers_yes_for_you(app):
+    import threading
+
+    server = app([])
+    ctl = server.controller
+    out = {}
+    t = threading.Thread(target=lambda: out.setdefault("v", ctl._ask_yes("Jetzt aktualisieren? [J/n]", default=True)))
+    t.start()
+    _events_until(server, "ask")
+    ctl._cancel_rest()
+    t.join(3)
+    assert out["v"] is False
+
+
+def test_opening_jarvis_during_afk_means_you_are_back(app):
+    server = app([(anthro_msg([text_block("Ich arbeite")]), [])])
+    server.controller.config.afk.pause_sekunden = 30
+    _req(server, "/api/afk", {"action": "start"})
+    _events_until(server, "done")
+    _req(server, "/api/jarvis", {"action": "start"})
+    events = _events_until(server, "afk_report")
+    assert events[-1]["reason"] == "zurueck"
+    _req(server, "/api/jarvis", {"action": "stop"})
+
+
+def test_odd_afk_numbers_do_not_hang_the_app(app):
+    server = app([(anthro_msg([text_block("ok")]), [])])
+    server.controller.config.afk.max_schritte = 1
+    server.controller.config.afk.pause_sekunden = 0
+    status, body = _req(server, "/api/afk", {"action": "start", "minuten": 1e300, "budget": "unendlich"})
+    assert status == 200 and body["ok"]
+    _events_until(server, "afk_report")
+    time.sleep(0.3)
+    assert not _req(server, "/api/state")[1]["busy"]
+
+
+def test_stopped_answer_drops_a_pending_afk(app):
+    cmd = f'"{sys.executable}" -c "import time; time.sleep(2)"'
+    script = [(anthro_msg([tool_use_block("abwesenheit", "s1", {"aktion": "start"}),
+                           tool_use_block("shell_befehl", "t1", {"befehl": cmd})], stop_reason="tool_use"), []),
+              (anthro_msg([text_block("Bis spaeter!")]), [])]
+    server = app(script, safe_mode=False, auto_confirm=True)
+    _req(server, "/api/send", {"text": "Ich bin gleich weg"})
+    _events_until(server, "tool")
+    assert _req(server, "/api/state")[1]["afk_pending"]
+    import threading
+    from types import SimpleNamespace
+
+    from assistant.app.controller import _LiveHost
+
+    ctl = server.controller
+    loop = SimpleNamespace(stop_event=threading.Event(), exit_reason="", on_turn_end=lambda *a: None)
+    ctl._live_turn = loop  # die Antwort gehoert dem Sprachmodus
+    host = _LiveHost(ctl)
+    host.loop = loop
+    host.cancel_turn(False)  # wie "Stopp" im Sprachmodus
+    events = _events_until(server, "stopped")
+    time.sleep(0.5)
+    state = _req(server, "/api/state")[1]
+    assert state["afk"] is None and not state["afk_pending"]
+
+
+def test_stop_resets_the_front_of_the_queue(app):
+    server = app(_slow_script(5), safe_mode=False, auto_confirm=True)
+    ctl = server.controller
+    _req(server, "/api/send", {"text": "eins"})
+    _events_until(server, "tool")
+    with ctl._lock:  # Antwort laeuft noch weiter - Unterbrechung und Stopp kurz nacheinander
+        ctl._queue.insert(0, {"id": 99, "text": "sofort", "model_text": None, "shown": None})
+        ctl._front = 1
+    _req(server, "/api/stop", {})
+    assert ctl._front == 0 and ctl._queue == []
+
+
+def test_writing_before_nova_marks_afk_means_you_stay(app):
+    cmd = f'"{sys.executable}" -c "import time; time.sleep(2)"'
+    script = [(anthro_msg([tool_use_block("shell_befehl", "t1", {"befehl": cmd})], stop_reason="tool_use"), []),
+              (anthro_msg([tool_use_block("abwesenheit", "s1", {"aktion": "start"})], stop_reason="tool_use"), []),
+              (anthro_msg([text_block("Bis spaeter!")]), []), (anthro_msg([text_block("ok")]), [])]
+    server = app(script, safe_mode=False, auto_confirm=True)
+    _req(server, "/api/send", {"text": "Ich bin gleich weg"})
+    _events_until(server, "tool")
+    _req(server, "/api/send", {"text": "Warte, lass das"})
+    events = _events_until(server, "done")
+    events += _events_until(server, "done")
+    assert any(e["type"] == "notice" and "nicht gestartet" in e["text"] for e in events)
+    time.sleep(0.4)
+    state = _req(server, "/api/state")[1]
+    assert state["afk"] is None and not state["afk_pending"]
+
+
+def test_nova_keeps_the_limits_you_chose_with_the_afk_button(app):
+    cmd = f'"{sys.executable}" -c "import time; time.sleep(1.5)"'
+    script = [(anthro_msg([tool_use_block("shell_befehl", "t1", {"befehl": cmd})], stop_reason="tool_use"), []),
+              (anthro_msg([tool_use_block("abwesenheit", "s1", {"aktion": "start", "auftrag": "Notizen"})],
+                          stop_reason="tool_use"), []),
+              (anthro_msg([text_block("Bis spaeter!")]), []),
+              (anthro_msg([tool_use_block("abwesenheit", "f1", {"aktion": "fertig", "text": "ok"})],
+                          stop_reason="tool_use"), []),
+              (anthro_msg([text_block("fertig")]), [])]
+    server = app(script, safe_mode=False, auto_confirm=True)
+    server.controller.config.afk.pause_sekunden = 0
+    _req(server, "/api/send", {"text": "Ich bin gleich weg"})
+    _events_until(server, "tool")
+    _req(server, "/api/afk", {"action": "start", "auftrag": "", "minuten": 10, "budget": 0.2})
+    events = _events_until(server, "afk_report", timeout=15)
+    start = next(e["text"] for e in events if e["type"] == "notice" and "AFK-Modus an" in e["text"])
+    assert "10 Min." in start and "0,20 EUR" in start and "Auftrag: Notizen" in start
+
+
+
+def test_afk_button_pressed_after_stop_still_starts(app):
+    import threading
+
+    cmd = f'"{sys.executable}" -c "import time; time.sleep(1.5)"'
+    script = [(anthro_msg([tool_use_block("web_suche", "w1", {"anfrage": "x"})], stop_reason="tool_use"), []),
+              (anthro_msg([tool_use_block("abwesenheit", "f1", {"aktion": "fertig", "text": "ok"})],
+                          stop_reason="tool_use"), []),
+              (anthro_msg([text_block("fertig")]), [])]
+    server = app(script)
+    ctl = server.controller
+    ctl.config.afk.pause_sekunden = 0
+    started = threading.Event()
+    release = threading.Event()
+    tool = ctl.registry.get("web_suche")
+    original = tool.run
+
+    def slow_search(ctx, **kw):  # ein Werkzeug, das den Stopp erst am Ende bemerkt
+        started.set()
+        release.wait(5)
+        return "nichts"
+
+    tool.run = slow_search
+    try:
+        _req(server, "/api/send", {"text": "such was"})
+        assert started.wait(5)
+        _req(server, "/api/stop", {})
+        assert _req(server, "/api/afk", {"action": "start", "auftrag": "danach"})[1]["ok"]
+        release.set()
+        events = _events_until(server, "afk_report", timeout=15)
+        assert not any(e["type"] == "notice" and "nicht gestartet" in e["text"] for e in events)
+    finally:
+        tool.run = original
+
+
+def test_now_button_and_chat_mode_button_mean_you_stay(app):
+    import threading
+    from types import SimpleNamespace
+
+    server = app(_slow_script(3), safe_mode=False, auto_confirm=True)
+    ctl = server.controller
+    _req(server, "/api/send", {"text": "eins"})
+    _events_until(server, "tool")
+    _req(server, "/api/send", {"text": "zwei"})
+    _req(server, "/api/afk", {"action": "start"})
+    item = _req(server, "/api/state")[1]["queue"][0]
+    _req(server, "/api/queue", {"action": "now", "id": item["id"]})
+    events = _events_until(server, "done")
+    assert any(e["type"] == "notice" and "nicht gestartet" in e["text"] for e in events)
+    time.sleep(0.3)
+    assert not _req(server, "/api/state")[1]["afk_pending"]
+
+    fake = SimpleNamespace(exit_reason="", stop_event=threading.Event())
+    fake.stop = fake.stop_event.set
+    ctl._live = fake
+    ctl.jarvis("stop")
+    assert fake.exit_reason == "chat"
+    ctl._live = None
+
+
+def test_a_reloaded_window_sees_the_open_question_again(app):
+    import threading
+
+    server = app([])
+    ctl = server.controller
+    out = {}
+    t = threading.Thread(target=lambda: out.setdefault("v", ctl._ask_yes("Datei anlegen? [j/N]")))
+    t.start()
+    _events_until(server, "ask")
+    req = urllib.request.Request(f"http://127.0.0.1:{server.port}/api/events?t={server.token}")
+    with urllib.request.urlopen(req, timeout=5) as resp:  # wie ein neu geladenes Fenster
+        first = json.loads(resp.readline().decode().removeprefix("data: "))
+        resp.readline()
+        second = json.loads(resp.readline().decode().removeprefix("data: "))
+    assert first["type"] == "hello" and second["type"] == "ask" and "Datei anlegen" in second["text"]
+    assert ctl.answer(second["id"], "ja")
+    t.join(3)
+    assert out["v"] is True

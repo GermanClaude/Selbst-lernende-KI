@@ -419,3 +419,16 @@ def test_executable_bit_survives_update(tmp_path):
     up = _updater(root, routes)
     up.install(up.check(), say=lambda m: None)
     assert os.stat(root / "start.sh").st_mode & 0o111
+
+
+def test_status_shows_a_known_new_version_even_with_updates_off_and_friendly_errors(tmp_path):
+    from assistant.updater import friendly_check_error
+
+    up = _updater(tmp_path, {})
+    up._save_state(letzte_pruefung="2026-11-08T01:00:00", neueste="99.0.0")
+    up.settings.modus = "aus"
+    assert up.status()["state"] == "neu"
+    import urllib.error
+    msg = friendly_check_error(urllib.error.URLError("[Errno -3] Temporary failure in name resolution"))
+    assert msg.startswith("Keine Internetverbindung")
+    assert "zu viele Anfragen" in friendly_check_error(urllib.error.HTTPError("u", 403, "rate limit", {}, None))

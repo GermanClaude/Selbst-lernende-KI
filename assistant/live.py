@@ -817,6 +817,10 @@ class LiveLoop:
         self.turn_active = False
         self.turn_text = ""
         self.pending: str | None = None
+        self.spoke = 0                # so oft hast du wirklich etwas gesagt (kein Echo, kein Geraeusch)
+        self.recognizing = False      # Gesagtes wird gerade (langsam) erkannt
+        self.last_said: tuple[float, str] = (0.0, "")  # (Zeit, Satz) - Novas letzter Satz
+        self.exit_reason = ""         # "bye" (Tschuess/beenden) oder "chat" (zurueck in den Chat)
         self.hearing = False          # du sprichst gerade
         self.speaking = False         # Nova spricht (oder hat noch etwas in der Warteschlange)
         self.recent: deque = deque(maxlen=12)  # (Zeit, Woerter) - was Nova zuletzt gesagt hat
@@ -883,7 +887,8 @@ class LiveLoop:
             self.ear.stop()
             if self.speaking:
                 self.voice_out.stop()
-            if self.turn_active:
+            # "Tschuess" mitten in einer Antwort: die Bitte wird noch erledigt (nur nicht mehr vorgelesen).
+            if self.turn_active and self.exit_reason != "bye":
                 self.host.cancel_turn(False)
             self._state("off", error=self.error)
 
@@ -945,18 +950,26 @@ class LiveLoop:
         self.stop_event.set()
 
     def _on_utterance(self, utt: Utterance) -> None:
+        text = utt.text
+        slow = text is None or bool(self.genau and utt.pcm)
+        self.recognizing = slow  # erst setzen, dann hearing loeschen: nie "still" waehrend des Erkennens
         self.hearing = False
         if self.stop_event.is_set():
+            self.recognizing = False
             return  # Jarvis wird gerade beendet - nichts Neues mehr anfangen
-        text = utt.text
-        if text is None or (self.genau and utt.pcm):
+        if slow:
             self._state("recognizing")
             try:
                 text = tidy(self.host.transcribe(utt.pcm) or "") or (text or "")
             except Exception as exc:  # noqa: BLE001
                 self.host.event({"type": "jarvis", "state": "listening", "error": str(exc)})
                 text = text or ""
-        text = text.strip()
+        try:
+            self._handle_utterance(utt, (text or "").strip())
+        finally:
+            self.recognizing = False
+
+    def _handle_utterance(self, utt: Utterance, text: str) -> None:
         started = time.monotonic() - utt.seconds
         nova_near = self.barged or self.speaking or started < self.quiet_at + 1.5
         short_answer = len(_words(text)) <= 3 and self.ask_text is not None and voice_choice(
@@ -969,9 +982,25 @@ class LiveLoop:
             self._carry_on()
             self._idle_state()
             return
-        if self.host.is_exit(text):
+        at, said = self.last_said
+        asked = said.rstrip().endswith("?") and time.monotonic() - at < 60
+        goodbye = is_goodbye(text, after_question=asked)
+        if goodbye:
+            ask = self.host.pending_ask()
+            if ask and self.ask_said_at is not None and started >= self.ask_said_at - 0.6:
+                value = voice_choice(text, [o for o in ask.get("options", [])])
+                if value:  # "Ja, tschuess": erst die Rueckfrage beantworten, dann gehen
+                    self.ask_text = self.ask_said_at = None
+                    self.host.answer_ask(ask["id"], value)
+        if goodbye or self.host.is_exit(text):
+            # "Tschuess"/"Ciao"/"Bis dann" heisst: ich gehe. "Chat-Modus"/"Jarvis aus"/"Beenden"
+            # heisst: ich bleibe, nur ohne Sprache.
+            self.exit_reason = "bye" if goodbye else "chat"
+            if self.exit_reason == "chat":
+                self.spoke += 1
             self.stop_event.set()
             return
+        self.spoke += 1
         ask = self.host.pending_ask()
         heard_question = self.ask_said_at is not None and started >= self.ask_said_at - 0.6  # 0,45 s Vorlauf
         if ask and not heard_question:
@@ -1042,9 +1071,11 @@ class LiveLoop:
     def _is_echo(self, text: str) -> bool:
         """Hat das Mikrofon nur Nova selbst gehoert (Lautsprecher)?"""
         words = _words(text)
+        now = time.monotonic()
+        if len(words) == 1 and words[0] in _GOODBYE_WORDS:  # "Ciao!" - hat Nova das gerade selbst gesagt?
+            return any(now - at < 5 and words[0] in said for at, said in self.recent)
         if len(words) < 2:
             return False
-        now = time.monotonic()
         heard = set()
         for at, said in self.recent:
             if now - at < 20:
@@ -1123,7 +1154,8 @@ class LiveLoop:
             self.voice_out.spoken(turn)
 
     def _on_hush(self, _data) -> None:
-        """Stopp-Knopf: nicht weiterreden und die Antwort anhalten."""
+        """Stopp-Knopf: nicht weiterreden und die Antwort anhalten (heisst auch: du bist da)."""
+        self.spoke += 1
         if self.speaking:
             self._hush()
         if self.turn_active:
@@ -1165,6 +1197,7 @@ class LiveLoop:
         if sentence == self.ask_text:
             self.ask_said_at = now  # ab jetzt kann die Antwort kommen
         self.recent.append((now, set(_words(sentence))))
+        self.last_said = (now, sentence)
         self.speak_until = max(self.speak_until, now) + 0.3 + 0.085 * len(sentence)
         if not self.speaking:
             self.speaking = True
@@ -1204,3 +1237,70 @@ class LiveLoop:
                 and not self.stop_event.is_set() and not self.host.busy()):
             text, self.pending = self.pending, None
             self._send(text)
+
+
+_GOODBYES = (("tschuess",), ("tschüss",), ("tschüs",), ("tschues",), ("tschau",), ("ciao",), ("bye",),
+             ("bis", "dann"), ("bis", "spaeter"), ("bis", "später"), ("bis", "gleich"), ("bis", "morgen"),
+             ("bis", "bald"), ("auf", "wiedersehen"), ("gute", "nacht"), ("machs", "gut"), ("mach", "s", "gut"))
+_GOODBYE_WORDS = {p[0] for p in _GOODBYES if len(p) == 1}
+# Hoeflichkeit und Fuellwoerter rund um einen Abschied ("Alles klar, danke dir, tschuess Nova")
+_POLITE = {"danke", "dank", "vielen", "dir", "euch", "okay", "ok", "ja", "also", "gut", "so", "na", "und",
+           "alles", "klar", "super", "prima", "perfekt", "klasse", "toll", "schön", "schoen", "nova", "dann",
+           "liebe", "lieber", "freundin", "freund", "chef", "erstmal", "erst", "mal", "jetzt", "ich", "bin", "weg"}
+_TIME_WORDS = {"früh", "frueh", "mittag", "abend", "nachmittag", "vormittag", "um", "ab", "zum", "bis", "uhr"}
+_NOT_GOODBYE = {"nein", "nicht", "kein", "keine", "was", "wie", "warum", "heißt", "heisst", "sagt", "frag",
+                "frage", "chat"}
+
+
+def is_goodbye(text: str, after_question: bool = False) -> bool:
+    """Ein kurzer Abschied ("Tschuess Nova", "Alles klar, danke, bis dann") - ich gehe. Keine Bitte
+    ("Ich bin weg, ordne meine Notizen" geht an die KI), nichts mit "Chat" (da bleibe ich), und
+    nach einer Frage von Nova ist "Bis morgen" eine Antwort, kein Abschied."""
+    words = re.findall(r"[a-zäöüß]+", (text or "").lower())
+    if not words or len(words) > 7 or any(w in _NOT_GOODBYE for w in words):
+        return False
+    found, unknown, i = False, 0, 0
+    while i < len(words):
+        phrase = next((p for p in _GOODBYES if tuple(words[i:i + len(p)]) == p), None)
+        if phrase:
+            if phrase[0] == "bis" and (after_question or (i + len(phrase) < len(words)
+                                                          and words[i + len(phrase)] in _TIME_WORDS)):
+                return False  # "Bis morgen frueh" / Antwort auf "Bis wann ...?"
+            found = True
+            i += len(phrase)
+            continue
+        if words[i] not in _POLITE:
+            unknown += 1  # hoechstens ein fremdes Wort (z.B. ein Name)
+        i += 1
+    return found and unknown <= 1
+
+
+def staying(live) -> bool:
+    """Endet Jarvis, weil du im Chat weitermachen willst (nicht, weil du gehst)?"""
+    return live is not None and getattr(live, "exit_reason", "") == "chat"
+
+
+def wait_until_quiet(live, stop_event, timeout: float = 60.0) -> bool:
+    """Wartet, bis Nova im Jarvis-Modus ausgeredet hat. False = du hast wirklich etwas gesagt
+    (auch "Stopp" oder "Chat-Modus") bzw. du bist zurueck (stop_event). Ein Geraeusch/Husten
+    waehrend des Vorlesens zaehlt nicht; "Tschuess" heisst: du gehst wirklich."""
+    turn, spoke = getattr(live, "turn", None), getattr(live, "spoke", 0)
+
+    def you_spoke() -> bool:
+        return bool(getattr(live, "pending", None) or getattr(live, "turn", None) != turn
+                    or getattr(live, "spoke", 0) != spoke or staying(live))
+
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        if stop_event.is_set():
+            return False
+        if you_spoke():
+            return False
+        if live.stop_event.is_set():
+            return True  # "Tschuess"/Fenster zu: Jarvis endet ohnehin
+        # Der LiveLoop entscheidet selbst, wann Nova fertig ist (auch ohne Rueckmeldung des Fensters)
+        if (not live.turn_active and not live.speaking and not getattr(live, "hearing", False)
+                and not getattr(live, "recognizing", False)):
+            return True
+        time.sleep(0.1)
+    return not you_spoke()

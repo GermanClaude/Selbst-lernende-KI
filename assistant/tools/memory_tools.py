@@ -70,6 +70,9 @@ class ForgetTool(Tool):
 
     def run(self, ctx: ToolContext, id: int) -> str:  # noqa: A002 - bewusst 'id'
         ctx.permissions.require(Risk.SAFE, "Aus dem Gedaechtnis loeschen")
+        if getattr(ctx.permissions, "away", False):
+            return ("Nicht, solange dein Mensch weg ist (AFK-Modus) - schreib es als Vorschlag auf "
+                    "(abwesenheit, aktion 'vorschlag').")
         if ctx.memory is None:
             return "Kein Gedaechtnis verfuegbar."
         return "Vergessen." if ctx.memory.forget(int(id)) else "Keinen Eintrag mit dieser ID gefunden."

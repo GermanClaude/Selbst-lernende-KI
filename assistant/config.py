@@ -20,7 +20,7 @@ except ModuleNotFoundError:  # pragma: no cover - Fallback fuer 3.10
     import tomli as tomllib  # type: ignore
 
 DEFAULT_MODEL = "claude-opus-5-5"
-DEFAULT_DEEPSEEK_MODEL = "deepseek-chat"
+DEFAULT_DEEPSEEK_MODEL = "deepseek-flash"
 
 
 class ConfigError(Exception):
@@ -95,7 +95,8 @@ class ProviderSettings:
 @dataclass
 class ClaudeSettings:
     model: str = DEFAULT_MODEL
-    effort: str = "high"
+    # Denk-Tiefe: low (schnell) | medium (ausgewogen) | high | xhigh | max (sehr gruendlich)
+    effort: str = "medium"
     max_tokens: int = 32000
     server_side_fallback: bool = False
 
@@ -103,6 +104,8 @@ class ClaudeSettings:
 @dataclass
 class DeepSeekSettings:
     model: str = DEFAULT_DEEPSEEK_MODEL
+    # Nachdenken vor der Antwort: aus (schnell) | low | high | max (gruendlich)
+    denken: str = "aus"
     base_url: str = "https://api.deepseek.com"
     max_tokens: int = 8192  # kleiner = grosse Dateien brechen beim Schreiben ab
     temperature: float = 0.6
@@ -146,13 +149,14 @@ class EconomySettings:
 
 @dataclass
 class PriceSettings:
-    # US-Dollar pro 1 Mio. Token. Bei Preisaenderung einfach hier anpassen.
+    # US-Dollar pro 1 Mio. Token - nur fuer Modelle, die assistant/modelle.py nicht kennt
+    # (die bekannten haben dort ihre eigenen Preise).
     claude_input: float = 4.0
     claude_cache_hit: float = 0.2
     claude_output: float = 20.0
-    deepseek_input: float = 0.28
-    deepseek_cache_hit: float = 0.028
-    deepseek_output: float = 0.42
+    deepseek_input: float = 0.15
+    deepseek_cache_hit: float = 0.003
+    deepseek_output: float = 0.6
     usd_zu_eur: float = 0.92
 
     def for_provider(self, provider: str) -> tuple[float, float, float]:
@@ -160,6 +164,16 @@ class PriceSettings:
         if provider == "deepseek":
             return (self.deepseek_input, self.deepseek_cache_hit, self.deepseek_output)
         return (self.claude_input, self.claude_cache_hit, self.claude_output)
+
+
+@dataclass
+class AfkSettings:
+    # AFK-Modus: so lange/so teuer darf die KI hoechstens allein weiterarbeiten.
+    max_minuten: int = 120
+    max_euro: float = 1.0
+    max_schritte: int = 12
+    pause_sekunden: float = 20.0
+    max_werkzeug_schritte: int = 25  # Werkzeug-Schritte innerhalb eines Arbeitsschritts
 
 
 @dataclass
@@ -193,6 +207,8 @@ class VoiceSettings:
     wake_word: str = ""
     # F2 = Sprechtaste: halten = sprechen, kurz druecken = Mikrofon an/aus.
     f2_aufnahme: bool = True
+    # Nach F2/Mikrofon-Knopf das Gesprochene gleich abschicken (statt erst in die Eingabezeile)
+    sofort_senden: bool = False
     # Spracherkennung: "auto" (Whisper, falls installiert, sonst Google),
     # "whisper" (offline, faster-whisper) oder "google" (online, kostenlos).
     erkennung: str = "auto"
@@ -258,6 +274,7 @@ class Config:
     style: StyleSettings = field(default_factory=StyleSettings)
     about: dict = field(default_factory=dict)  # "Ueber mich" (config/ueber_mich.json)
     provider_auto_switched: str = ""  # eingestelltes Gehirn hatte keinen Schluessel -> gewechselt
+    afk: AfkSettings = field(default_factory=AfkSettings)
 
     # -- Komfort-Eigenschaften ---------------------------------------------
     @property
@@ -286,9 +303,21 @@ class Config:
         path.mkdir(parents=True, exist_ok=True)
         return path.resolve()
 
-    def cost_estimate(self, input_full: int, cache_hit: int, output: int) -> tuple[float, float]:
-        """Schaetzt die Kosten (USD, EUR) fuer die gegebenen Token-Zahlen."""
-        in_price, hit_price, out_price = self.prices.for_provider(self.active_provider)
+    def cost_estimate(self, input_full: int, cache_hit: int, output: int,
+                      provider: str | None = None, model: str | None = None,
+                      per_request: bool = False) -> tuple[float, float]:
+        """Schaetzt die Kosten (USD, EUR) fuer die gegebenen Token-Zahlen.
+
+        Bekannte Modelle haben ihre eigenen Preise (assistant/modelle.py); fuer andere
+        gelten die Werte aus [preise]."""
+        from .modelle import preise
+
+        provider = provider or self.active_provider
+        if model is None:
+            model = self.deepseek.model if provider == "deepseek" else self.claude.model
+        size = input_full + cache_hit if per_request else 0
+        in_price, hit_price, out_price = (preise(provider, model, prompt_tokens=size)
+                                          or self.prices.for_provider(provider))
         usd = (input_full * in_price + cache_hit * hit_price + output * out_price) / 1_000_000
         return (usd, usd * self.prices.usd_zu_eur)
 
@@ -449,6 +478,11 @@ def load_config(project_root: Path | None = None) -> Config:
             deepseek.model = os.environ["KI_MODEL"]
         else:
             claude.model = os.environ["KI_MODEL"]
+    # Abgeschaltete DeepSeek-Namen (deepseek-chat/-reasoner) auf die aktuellen umstellen.
+    from .modelle import normalisiere_claude, normalisiere_deepseek
+
+    normalisiere_deepseek(deepseek, denken_gesetzt="denken" in raw.get("deepseek", {}))
+    normalisiere_claude(claude)
 
     cfg = Config(
         provider=provider,
@@ -470,6 +504,7 @@ def load_config(project_root: Path | None = None) -> Config:
         update=_merge(UpdateSettings(), raw.get("update", {})),
         style=_merge(StyleSettings(), raw.get("stil", {})),
         about=_load_about(config_dir / "ueber_mich.json"),
+        afk=_merge(AfkSettings(), raw.get("afk", {})),
     )
     # Eingestelltes Gehirn ohne Schluessel, das andere hat einen (z.B. nur DEEPSEEK_API_KEY in
     # .env, aber aktiv = "claude"): automatisch das Gehirn nehmen, fuer das es einen Schluessel gibt.

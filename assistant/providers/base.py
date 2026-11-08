@@ -62,11 +62,13 @@ class Usage:
     input_full_tokens: int = 0  # Input ohne Cache-Treffer (voller Preis)
     cache_hit_tokens: int = 0   # aus dem Cache (sehr guenstig)
     output_tokens: int = 0
+    usd: float = 0.0            # Kosten, mit dem Preis des Modells, das gerade lief
 
-    def add(self, input_full: int = 0, cache_hit: int = 0, output: int = 0) -> None:
+    def add(self, input_full: int = 0, cache_hit: int = 0, output: int = 0, usd: float = 0.0) -> None:
         self.input_full_tokens += max(0, input_full)
         self.cache_hit_tokens += max(0, cache_hit)
         self.output_tokens += max(0, output)
+        self.usd += max(0.0, usd)
 
     @property
     def total_tokens(self) -> int:
@@ -226,11 +228,23 @@ class LLMProvider(ABC):
             output = output[:cap] + "\n…(Ausgabe gekuerzt, um Token zu sparen)"
         return output, is_error
 
+    def settings_changed(self) -> None:
+        """Modell oder Denk-Tiefe wurde umgestellt (gilt ab der naechsten Anfrage)."""
+
+    def _count(self, input_full: int = 0, cache_hit: int = 0, output: int = 0) -> None:
+        """Verbrauch zaehlen - mit dem Preis des Modells, das gerade eingestellt ist
+        (wer mitten im Gespraech das Modell wechselt, bekommt trotzdem stimmige Kosten)."""
+        usd, _eur = self.config.cost_estimate(input_full, cache_hit, output, provider=self.name, per_request=True)
+        self.usage.add(input_full=input_full, cache_hit=cache_hit, output=output, usd=usd)
+
     def cost(self) -> tuple[float, float]:
         """Geschaetzte Kosten dieser Sitzung in (USD, EUR)."""
-        return self.config.cost_estimate(
-            self.usage.input_full_tokens, self.usage.cache_hit_tokens, self.usage.output_tokens
-        )
+        u = self.usage
+        if u.usd <= 0 and u.total_tokens:
+            usd, _ = self.config.cost_estimate(u.input_full_tokens, u.cache_hit_tokens, u.output_tokens)
+        else:
+            usd = u.usd
+        return (usd, usd * self.config.prices.usd_zu_eur)
 
 
 def _plain_text(content: Any) -> str:

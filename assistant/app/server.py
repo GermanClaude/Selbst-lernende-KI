@@ -7,8 +7,8 @@ koennen. Der Server spricht nur mit der eigenen Oberflaeche:
   GET  /, /static/*      Oberflaeche
   GET  /api/events       Ereignisstrom (Server-Sent Events)
   GET  /api/state, /api/history, /api/profile, /api/memory, /api/tutorial, /api/appearance, /custom.css
-  POST /api/send, /api/stop, /api/answer, /api/voice, /api/toggle, /api/profile, /api/memory,
-       /api/jarvis, /api/tutorial
+  POST /api/send (Warteschlange, interrupt), /api/queue, /api/afk, /api/stop, /api/answer,
+       /api/voice, /api/toggle, /api/profile, /api/memory, /api/jarvis, /api/tutorial
 """
 from __future__ import annotations
 
@@ -193,8 +193,11 @@ class AppServer:
             def _post(self, url, body: dict):
                 ctl = server.controller
                 if url.path == "/api/send":
-                    ok, error = ctl.send(str(body.get("text", "")))
-                    return self._json({"ok": ok, "error": error} if not ok else {"ok": True})
+                    return self._json(ctl.submit(str(body.get("text", "")), bool(body.get("interrupt"))))
+                if url.path == "/api/queue":
+                    return self._json(ctl.queue_action(str(body.get("action", "")), body.get("id")))
+                if url.path == "/api/afk":
+                    return self._json(ctl.afk(body))
                 if url.path == "/api/stop":
                     ctl.stop()
                     return self._json({"ok": True})
@@ -219,6 +222,10 @@ class AppServer:
                     return self._json(ctl.tutorial_action(str(body.get("action", ""))))
                 if url.path == "/api/setup":
                     return self._json(ctl.setup_save(body))
+                if url.path == "/api/modell":
+                    return self._json(ctl.choose_model(body))
+                if url.path == "/api/update":
+                    return self._json(ctl.check_update_now())
                 return self._deny(404)
 
             def _static(self, name: str) -> None:
@@ -243,6 +250,10 @@ class AppServer:
                     self.end_headers()
                     hello = json.dumps({"type": "hello", "state": server.controller.state()}, ensure_ascii=False)
                     self.wfile.write(f"data: {hello}\n\n".encode("utf-8"))
+                    # Offene Rueckfragen erneut zeigen (neu geladenes oder zweites Fenster) - sonst
+                    # wartet die KI auf eine Antwort, die niemand mehr geben kann.
+                    for ask in server.controller.open_asks():
+                        self.wfile.write(f"data: {json.dumps(ask, ensure_ascii=False)}\n\n".encode("utf-8"))
                     self.wfile.flush()
                     while not server.stopping.is_set():
                         try:

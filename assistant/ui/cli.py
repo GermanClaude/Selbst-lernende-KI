@@ -27,6 +27,9 @@ Sonderbefehle (mit '/' beginnen):
   /aussehen [zuruecksetzen] - Aussehen der App anzeigen bzw. zuruecksetzen
   /name <Name> [= Bedeutung] - der KI einen anderen Namen geben
   /gehirn [deepseek|claude] - Gehirn zeigen bzw. wechseln (Schluessel: einfach in den Chat einfuegen)
+  /modell [name]      - Modell zeigen bzw. waehlen (z.B. /modell sonnet, /modell flash)
+  /afk [Auftrag]      - ich bin weg: die KI arbeitet allein weiter (Strg+C = zurueck)
+  /denken [stufe]     - wie gruendlich die KI nachdenkt: schnell, ausgewogen, gruendlich ...
   /app                - zur App wechseln (eigenes Fenster statt Terminal)
   /verknuepfung       - Symbol fuer die App auf den Desktop legen
   /erlauben alles     - nie mehr nachfragen, alles erlauben (dauerhaft)
@@ -150,6 +153,9 @@ class CLI:
         self.registry = build_registry(include_computer=True)
         self.tool_ctx = ToolContext(permissions=self.permissions, memory=self.memory)
         self.tool_ctx.extra["app_root"] = config.project_root
+        self._afk_pending: dict | None = None        # AFK-Modus vorgemerkt (Werkzeug abwesenheit)
+        self._afk_return: tuple[float, str] | None = None  # (Beginn, Bericht) fuer die naechste Nachricht
+        self.tool_ctx.extra["afk_start"] = self._afk_request
         self.brain = Brain(config, self.memory, self.registry, self.tool_ctx)
         self.brain.provider.wait_fn = self.thinking.start
         self.voice_out = VoiceOutput(config.voice.speak_responses)
@@ -157,6 +163,7 @@ class CLI:
         self.voice_mode = config.voice.enabled and self.voice_in.available()
         self.voice_capture = VoiceCapture(config.voice)
         self.reader = VoiceLineReader(self.voice_capture, enabled=config.voice.f2_aufnahme)
+        self.reader.autosend = lambda: bool(self.config.voice.sofort_senden)
         self.reader.warm_up()
         self.updater = Updater(config.update, config.project_root)
         self.exit_code = 0
@@ -360,15 +367,27 @@ class CLI:
         provider.effort_override = (settings.live_denktiefe or "").strip() or None
         print(_c("\n[Jarvis-Modus] Sprich einfach - ich hoere die ganze Zeit zu und du kannst mich jederzeit "
                  "unterbrechen. 'Chat-Modus' sagen oder Strg+C = zurueck.", BOLD))
+        self._afk_pending = None
         try:
             loop.run()
         except KeyboardInterrupt:
-            pass
+            self._afk_pending = None  # Strg+C: du bist da
         finally:
             self.brain.provider.effort_override = None
             host.wait()
             host.uninstall()
             speaker.stop()
+            self.brain.provider.cancel_event.clear()  # angehaltene Antwort nicht weitertragen
+        from ..live import staying
+
+        if self._afk_pending is not None and staying(loop):  # "Chat-Modus": du bleibst
+            self._afk_pending = None
+            print(_c("\n[AFK-Modus nicht gestartet - du bist ja noch da.]", GREY))
+        if self._afk_pending is not None:  # "Ich bin jetzt weg" im Sprachmodus
+            pending, self._afk_pending = self._afk_pending, None
+            print(_c("\n[Jarvis-Modus beendet - der AFK-Modus beginnt]", GREY))
+            self._afk_terminal(**pending)
+            return
         print(_c("\n[Zurueck im Chat-Modus]", GREY))
 
     # -- Gehirn & Schluessel ----------------------------------------------------
@@ -411,6 +430,123 @@ class CLI:
             state = f"Schluessel {mask(key)}" if key else "kein Schluessel"
             print(_c(f"{mark} {info['name']}: {info['info']} ({state})", CYAN))
         print(_c("Wechseln: /gehirn deepseek  bzw.  /gehirn claude. Neuer Schluessel: einfach einfuegen.", GREY))
+
+    # -- AFK-Modus: allein weiterarbeiten, waehrend du weg bist (abwesend.py) -------
+    def _afk_request(self, auftrag: str = "", minutes: int | None = None, budget: float | None = None) -> bool:
+        def number(value, kind):
+            import math
+
+            try:
+                result = kind(value) if value not in (None, "") else None
+                return result if result is None or math.isfinite(float(result)) else None
+            except (TypeError, ValueError, OverflowError):
+                return None
+
+        self._afk_pending = {"auftrag": str(auftrag or "")[:2000], "minutes": number(minutes, int),
+                             "budget": number(budget, float)}
+        return True
+
+    def _afk_command(self, args: list[str]) -> None:
+        if not self.config.api_key:
+            print(_c(KEY_HINT, YELLOW))
+            return
+        self._afk_terminal(" ".join(args))
+
+    def _afk_terminal(self, auftrag: str = "", minutes: int | None = None, budget: float | None = None) -> None:
+        from ..abwesend import run_session, settings_session
+
+        session = settings_session(self.config.afk, auftrag, minutes, budget, start_eur=self.brain.cost_now_eur())
+        cost = f"{session.max_eur:.2f}".replace(".", ",")
+        print(_c(f"\n[AFK-Modus] Ich arbeite allein weiter - hoechstens {session.max_minutes} Min. und ca. "
+                 f"{cost} EUR." + (f" Auftrag: {session.auftrag}" if session.auftrag else ""), BOLD))
+        print(_c("Ich loesche, ueberschreibe, verschicke und starte dabei nichts - das schreibe ich dir als "
+                 "Vorschlag auf. Zurueck? Strg+C druecken.", GREY))
+
+        def one_round(prompt: str) -> None:
+            self.brain.provider.cancel_event.clear()
+            print(_c(f"\n--- AFK - Schritt {session.rounds} ---", GREY))
+            print(_c(f"{self.config.ki.name}: ", CYAN), end="", flush=True)
+            snapshot = self.brain.provider.history_snapshot()
+            try:
+                self.brain.respond(prompt, on_text=self._emit, max_tool_rounds=session.max_tool_rounds,
+                                   auto_continue=0)
+            except KeyboardInterrupt:
+                self.brain.provider.abort_turn(snapshot, prompt)
+                raise
+            finally:
+                self.thinking.stop()
+            print()
+            if self.brain.compact_interrupted:  # Strg+C beim Zusammenfassen = zurueck
+                raise KeyboardInterrupt
+
+        try:
+            self.tool_ctx.extra["afk_session"] = session
+            self.permissions.begin_away()
+            run_session(session, one_round, cost_eur=self.brain.cost_now_eur, cancel=self.brain.provider.cancel)
+        except Exception as exc:  # noqa: BLE001 - zurueck in den normalen Chat
+            logger.exception("AFK-Modus")
+            print(_c(f"\n[AFK-Modus beendet: {exc}]", YELLOW))
+        finally:
+            self.permissions.end_away()
+            self.tool_ctx.extra.pop("afk_session", None)
+            self.brain.provider.cancel_event.clear()  # Waechter-Abbruch nicht in den Chat mitnehmen
+            report = session.report()
+            self._afk_return = (session.started, report)
+            print("\n" + _c(report.replace("**", ""), CYAN))
+            print(_c("Schreib einfach weiter - z.B. welche Vorschlaege ich umsetzen soll.", GREY))
+
+    def _split_provider(self, args: list[str]) -> tuple[str, list[str]]:
+        """'/modell deepseek pro' -> ('deepseek', ['pro']); ohne Gehirn-Name: das aktive."""
+        if args and args[0].lower() in ("claude", "anthropic", "deepseek"):
+            return ("deepseek" if args[0].lower() == "deepseek" else "claude"), args[1:]
+        return self.config.active_provider, args
+
+    def _apply_model_choice(self, provider: str, model: str | None = None, denken: str | None = None) -> None:
+        from ..modelle import waehle
+
+        try:
+            result = waehle(self.config, provider, model=model, denken=denken)
+        except Exception as exc:  # noqa: BLE001 - z.B. settings.toml schreibgeschuetzt
+            print(_c(f"Konnte die Einstellung nicht speichern: {exc}", YELLOW))
+            return
+        if not result["ok"]:
+            print(_c(result["message"], YELLOW))
+            return
+        (self.tool_ctx.extra.get("on_model") or self.brain.model_changed)()
+        where = "" if provider == self.config.active_provider else " (gilt, sobald du dieses Gehirn nutzt)"
+        print(_c(f"Eingestellt: {result['message']}{where}", GREEN))
+
+    def _model_command(self, args: list[str]) -> None:
+        from ..modelle import MODELLE, kurzbeschreibung
+        from ..schluessel import PROVIDERS
+
+        provider, args = self._split_provider(args)
+        if args:
+            self._apply_model_choice(provider, model=" ".join(args))
+            return
+        current = self.config.deepseek.model if provider == "deepseek" else self.config.claude.model
+        print(_c(f"\nModelle fuer {PROVIDERS[provider]['name']}:", BOLD))
+        for m in MODELLE[provider]:
+            mark = "->" if m["id"] == current else "  "
+            print(_c(f"{mark} {m['kurz']:<7} {m['name']}: {m['info']} (Tempo: {m['tempo']})", CYAN))
+        print(_c(f"Jetzt: {kurzbeschreibung(self.config, provider)}. Wechseln z.B.: /modell "
+                 f"{MODELLE[provider][1]['kurz']}  -  Denk-Tiefe: /denken", GREY))
+
+    def _think_command(self, args: list[str]) -> None:
+        from ..modelle import DENKTIEFEN, aktuelle_denktiefe, modell_name
+
+        provider, args = self._split_provider(args)
+        if args:
+            self._apply_model_choice(provider, denken=" ".join(args))
+            return
+        current = aktuelle_denktiefe(self.config, provider)
+        model = self.config.deepseek.model if provider == "deepseek" else self.config.claude.model
+        print(_c(f"\nDenk-Tiefe fuer {modell_name(provider, model)}:", BOLD))
+        for value, name, info in DENKTIEFEN[provider]:
+            mark = "->" if value == current else "  "
+            print(_c(f"{mark} {name:<16} {info}", CYAN))
+        print(_c("Aendern z.B.: /denken schnell  bzw.  /denken gruendlich. Schneller antworten = weniger "
+                 "nachdenken; fuer schwere Aufgaben lieber gruendlich.", GREY))
 
     def _open_in_editor(self, name: str) -> None:
         path = self.config.project_root / "config" / name
@@ -538,14 +674,21 @@ class CLI:
             # Antwort streamen. Strg+C haelt nur diese Antwort an, nicht die ganze KI.
             print(_c(f"\n{self.config.ki.name}: ", CYAN), end="", flush=True)
             snapshot = self.brain.provider.history_snapshot()
+            from ..abwesend import model_text_for
+
+            back, self._afk_return = self._afk_return, None
+            self._afk_pending = None
+            self.brain.provider.cancel_event.clear()  # z.B. vom AFK-Waechter liegengeblieben
             try:
-                answer = self.brain.respond(user_text, on_text=self._emit)
+                answer = self.brain.respond(model_text_for(user_text, back=back), on_text=self._emit)
             except KeyboardInterrupt:
+                self._afk_pending = None  # angehalten -> doch nicht weg
                 self.thinking.stop()
                 self.brain.provider.abort_turn(snapshot, user_text)
                 print(_c("\n[Angehalten. Schreib einfach weiter - z.B. was sie anders machen soll.]", YELLOW))
                 continue
             except Exception as exc:  # noqa: BLE001 - ein Fehler darf die Sitzung nicht beenden
+                self._afk_pending = None
                 self.thinking.stop()
                 logger.exception("Fehler bei der Antwort")
                 self.brain.provider.abort_turn(snapshot, user_text)
@@ -557,6 +700,8 @@ class CLI:
                 continue
             finally:
                 self.thinking.stop()
+            if self.brain.compact_interrupted:  # Strg+C beim Zusammenfassen -> doch nicht weg
+                self._afk_pending = None
             try:
                 print()
                 if self.config.economy.aktiv:
@@ -567,6 +712,9 @@ class CLI:
             except KeyboardInterrupt:
                 self.voice_out.stop()  # Strg+C beim Vorlesen: nur das Vorlesen anhalten
                 print(_c("\n[Vorlesen angehalten.]", GREY))
+            if self._afk_pending is not None:  # "Ich bin jetzt weg" -> die KI hat den AFK-Modus vorgemerkt
+                pending, self._afk_pending = self._afk_pending, None
+                self._afk_terminal(**pending)
 
     # -- Ein-/Ausgabe -------------------------------------------------------
     def _emit(self, chunk: str) -> None:
@@ -642,6 +790,12 @@ class CLI:
                 print(_c(KEY_HINT, CYAN))
         elif base == "/gehirn":
             self._brain_command(cmd.split()[1:])
+        elif base in ("/afk", "/weg", "/abwesend"):
+            self._afk_command(cmd.split()[1:])
+        elif base in ("/modell", "/model", "/modelle"):
+            self._model_command(cmd.split()[1:])
+        elif base in ("/denken", "/denktiefe", "/effort"):
+            self._think_command(cmd.split()[1:])
         elif base == "/terminal":
             print(_c("Du bist schon im Terminal. In die App: /app", CYAN))
         elif base in ("/tutorial", "/tour"):
@@ -917,10 +1071,13 @@ class CLI:
     def _print_status(self) -> None:
         p = self.config.permissions
         print(_c("\nStatus:", BOLD))
-        print(f"  Provider:        {self.config.active_provider}")
-        print(f"  Modell:          {self.config.active_model}")
-        if self.config.active_provider == "claude":
-            print(f"  Denk-Tiefe:      effort={self.config.claude.effort}")
+        from ..modelle import aktuelle_denktiefe, denktiefe_name, modell_name
+
+        provider = self.config.active_provider
+        level = aktuelle_denktiefe(self.config)
+        print(f"  Provider:        {provider}")
+        print(f"  Modell:          {modell_name(provider, self.config.active_model)} ({self.config.active_model})")
+        print(f"  Denk-Tiefe:      {denktiefe_name(provider, level)} ({level})")
         print(f"  Sparmodus:       {'AN' if self.config.economy.aktiv else 'aus'}")
         print(f"  Arbeitsordner:   {self.config.workspace_path}")
         print(f"  Safe Mode:       {'AN (gefaehrliche Aktionen gesperrt)' if p.safe_mode else 'AUS'}")
@@ -934,12 +1091,14 @@ class CLI:
         print(f"  Schluessel-Datei: {env_path} ({'gefunden' if env_path.is_file() else 'FEHLT'})")
 
     def _print_banner(self) -> None:
+        from ..modelle import kurzbeschreibung
+
         name = self.config.ki.name
         meaning = self.config.ki.bedeutung.strip()
         print(_c(f"\n=== {name}{' - ' + meaning if meaning else ' - deine lernfaehige KI'} ===", BOLD))
         print(
             _c(
-                f"Gehirn: {self.config.active_provider} ({self.config.active_model})"
+                f"Gehirn: {self.config.active_provider} ({kurzbeschreibung(self.config)})"
                 + ("  |  Sparmodus AN" if self.config.economy.aktiv else ""),
                 GREY,
             )
@@ -1092,20 +1251,51 @@ class _TerminalLiveHost:
                 self.cli.brain.respond(model_text, on_text=self._on_text)
             except KeyboardInterrupt:  # angehalten (Dazwischenreden, Stopp)
                 cancelled = True
+                if not self._leaving():
+                    self.cli._afk_pending = None  # doch nicht weg ("Tschuess" = Jarvis endet: bleibt)
                 if not (self.drop and provider.drop_turn(snapshot, model_text)):
                     provider.abort_turn(snapshot, text)
             except Exception as exc:  # noqa: BLE001
+                self.cli._afk_pending = None
                 provider.abort_turn(snapshot, text)
                 print(_c(f"\nFehler: {exc}", YELLOW))
             finally:
                 self.drop = False
                 print()
+                cancelled = cancelled or provider.cancel_event.is_set() or self.cli.brain.compact_interrupted
+                if cancelled and not self._leaving():
+                    self.cli._afk_pending = None  # "Stopp" (auch beim Zusammenfassen) -> doch nicht weg
                 if self.loop is not None:
                     self.loop.on_turn_end(cancelled)
+                    if self.cli._afk_pending is not None:
+                        self._leave_for_afk()
 
         self.worker = threading.Thread(target=work, name="jarvis-antwort", daemon=True)
         self.worker.start()
         return True
+
+    def _leaving(self) -> bool:
+        """Jarvis endet, weil du gehst ("Tschuess") - nicht, weil du im Chat weitermachst."""
+        from ..live import staying
+
+        return self.loop is not None and self.loop.stop_event.is_set() and not staying(self.loop)
+
+    def _leave_for_afk(self) -> None:
+        """Nach 'Ich bin weg': erst fertig sprechen lassen, dann Jarvis beenden (der AFK-Modus
+        beginnt danach). Sprichst du dabei wieder, bleibt Jarvis an und es gibt keinen AFK-Modus."""
+        loop = self.loop
+
+        def wait() -> None:
+            from ..live import wait_until_quiet
+
+            quiet = wait_until_quiet(loop, threading.Event())
+            if not quiet:
+                self.cli._afk_pending = None
+                print(_c("\n[AFK-Modus nicht gestartet - du bist ja noch da.]", GREY))
+            elif self.cli._afk_pending is not None:
+                loop.stop()
+
+        threading.Thread(target=wait, name="jarvis-afk", daemon=True).start()
 
     def _on_text(self, chunk: str) -> None:
         from ..live import split_tool_lines
@@ -1141,5 +1331,10 @@ class _TerminalLiveHost:
 
     def wait(self, timeout: float = 30.0) -> None:
         if self.worker is not None and self.worker.is_alive():
+            if self._leaving():  # "Tschuess" mitten in einer Antwort: die Bitte noch erledigen
+                print(_c("\n[Ich mache das noch fertig …]", GREY))
+                self.worker.join(300)
+                if not self.worker.is_alive():
+                    return
             self.cli.brain.provider.cancel()
             self.worker.join(timeout)

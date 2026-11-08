@@ -25,6 +25,16 @@
       <button class="icon-btn sb-close" id="sb-close" type="button" aria-label="Seitenleiste schließen" data-icon="x"></button>
     </div>
 
+    <!-- Update-Anzeige: "Auf dem neuesten Stand" / "Update verfügbar" -->
+    <div class="sb-upd" id="sb-upd" data-state="unbekannt" hidden>
+      <span class="upd-ic" id="upd-ic" aria-hidden="true"></span>
+      <span class="upd-text">
+        <span class="upd-title" id="upd-title" role="status">Noch nicht geprüft</span>
+        <span class="upd-sub" id="upd-sub"></span>
+      </span>
+      <button class="btn small secondary upd-btn" id="upd-btn" type="button">Jetzt prüfen</button>
+    </div>
+
     <div class="sb-actions">
       <button class="sb-new" id="sb-new" type="button" title="Neues Gespräch beginnen (/neu)"><span data-icon="plus"></span>Neues Gespräch</button>
       <button class="sb-profile" id="sb-profile" type="button" aria-haspopup="dialog" data-tour="profil">
@@ -37,10 +47,10 @@
     <div class="sb-alerts" id="sb-alerts" aria-live="polite"></div>
 
     <div class="sb-cards">
-      <button class="sb-card sb-brain" id="sb-brain" type="button" aria-haspopup="dialog" title="Gehirn &amp; Schlüssel einstellen">
+      <button class="sb-card sb-brain" id="sb-brain" type="button" aria-haspopup="dialog" title="Gehirn, Modell &amp; Schlüssel einstellen">
         <span class="sb-label"><span data-icon="sparkles"></span>Gehirn<span class="sb-edit">Ändern<span data-icon="chevronRight"></span></span></span>
         <span class="sb-value" id="sb-provider">–</span>
-        <span class="sb-sub mono" id="sb-model">–</span>
+        <span class="sb-sub sb-model" id="sb-model">–</span>
       </button>
       <div class="sb-card">
         <div class="sb-label"><span data-icon="coins"></span>Kosten</div>
@@ -51,6 +61,12 @@
 
     <section class="sb-section" aria-labelledby="h-settings">
       <h2 class="sb-heading" id="h-settings">Einstellungen</h2>
+      <!-- AFK-Modus: "Ich bin weg" (laeuft er, heisst der Knopf "Ich bin zurueck") -->
+      <button class="sb-afk" id="sb-afk" type="button" aria-haspopup="dialog">
+        <span class="sba-ic" data-icon="moon"></span>
+        <span class="sba-text"><span class="sba-title" id="sb-afk-title">Ich bin weg</span><span class="sba-sub" id="sb-afk-sub">KI arbeitet allein weiter</span></span>
+        <span class="sba-chev" data-icon="chevronRight"></span>
+      </button>
       <div class="switch-row wheels" data-toggle="stuetzraeder" data-tour="stuetzraeder">
         <div class="switch-text">
           <span class="switch-title" id="lbl-stuetzraeder"><span data-icon="shield"></span>Stützräder</span>
@@ -74,6 +90,14 @@
         </div>
         <button class="switch" id="sw-vorlesen" type="button" role="switch" aria-checked="false"
                 aria-labelledby="lbl-vorlesen" aria-describedby="sub-vorlesen"><span class="knob"></span></button>
+      </div>
+      <div class="switch-row" data-toggle="sofort_senden" id="row-sofort" hidden>
+        <div class="switch-text">
+          <span class="switch-title" id="lbl-sofort">Gesprochenes sofort senden</span>
+          <span class="switch-sub" id="sub-sofort">erst prüfen, dann Enter</span>
+        </div>
+        <button class="switch" id="sw-sofort" type="button" role="switch" aria-checked="false"
+                aria-labelledby="lbl-sofort" aria-describedby="sub-sofort"><span class="knob"></span></button>
       </div>
     </section>
 
@@ -108,7 +132,7 @@
       </div>
       <div class="tb-actions">
         <button class="pill-btn" id="tb-update" type="button" hidden><span data-icon="download"></span><span id="tb-update-text">Update verfügbar</span></button>
-        <span class="model-chip" id="tb-model" hidden><span data-icon="sparkles"></span><span id="tb-model-text"></span></span>
+        <button class="model-chip" id="tb-model" type="button" aria-haspopup="dialog" hidden><span data-icon="sparkles"></span><span class="mc-text" id="tb-model-text"></span></button>
         <button class="jv-launch" id="tb-jarvis" type="button" data-tour="jarvis" aria-haspopup="dialog"
                 title="Jarvis-Modus: einfach mit mir reden (/jarvis)">
           <span class="jl-orb" aria-hidden="true"><i></i></span><span class="jl-text">Jarvis-Modus</span>
@@ -121,6 +145,21 @@
     <div class="conn-banner" id="conn-banner" role="alert" hidden>
       <span class="spinner" aria-hidden="true"></span>
       <span id="conn-text">Verbindung getrennt … ich verbinde mich neu.</span>
+    </div>
+
+    <!-- AFK-Modus laeuft (oder startet gleich): ruhiges Band ueber dem Chat -->
+    <div class="afk-band" id="afk-band" role="region" aria-labelledby="ab-title" data-mode="active" hidden>
+      <div class="ab-inner">
+        <span class="ab-moon" aria-hidden="true"><span data-icon="moon"></span><span class="spinner"></span></span>
+        <div class="ab-main">
+          <div class="ab-top">
+            <span class="ab-title" id="ab-title" role="status">AFK-Modus</span>
+            <span class="ab-meta" id="ab-meta"><span class="ab-meta-in"><span id="ab-time"></span><span id="ab-step"></span><span id="ab-cost"></span></span></span>
+          </div>
+          <div class="ab-last" id="ab-last"><span class="ab-note" id="ab-note"></span><span class="ab-counts" id="ab-counts"></span></div>
+        </div>
+        <button class="btn small ab-btn" id="ab-btn" type="button">Ich bin zurück</button>
+      </div>
     </div>
 
     <div class="chat-scroll" id="chat-scroll">
@@ -175,19 +214,35 @@
           <span class="kb-text">Schlüssel fehlt – ohne ihn kann ich nicht denken.</span>
           <button class="btn small primary" id="key-bar-btn" type="button">Jetzt einrichten</button>
         </div>
+        <div class="queue" id="queue" role="region" aria-labelledby="q-title" hidden>
+          <div class="q-head">
+            <span data-icon="clock"></span>
+            <span class="q-title" id="q-title">Wartet</span>
+            <button class="q-clear" id="q-clear" type="button" title="Alle wartenden Nachrichten entfernen" hidden>Alle entfernen</button>
+          </div>
+          <ol class="q-list" id="q-list"></ol>
+        </div>
         <div class="composer" id="composer" data-tour="eingabe">
           <label class="sr-only" for="input">Nachricht</label>
           <textarea id="input" rows="1" placeholder="Schreib eine Nachricht …" autocomplete="off" spellcheck="true"
                     aria-autocomplete="list" aria-controls="cmd-pop" aria-expanded="false"></textarea>
+          <button class="c-btn afk-btn" id="afk-btn" type="button" aria-haspopup="dialog" aria-label="Ich bin weg – AFK-Modus starten"
+                  title="Ich bin weg – ich arbeite allein weiter und berichte dir danach (AFK-Modus)" data-icon="moon"></button>
           <button class="c-btn mic-btn" id="mic-btn" type="button" aria-label="Spracheingabe (gedrückt halten oder kurz drücken, F2)"
                   title="Sprechen – gedrückt halten oder kurz drücken (F2)" aria-pressed="false" data-icon="mic" data-tour="mikrofon"></button>
+          <button class="c-btn stop-btn" id="stop-btn" type="button" aria-label="Antwort anhalten (Esc)" title="Antwort anhalten (Esc)" hidden data-icon="stop"><span class="stop-label">Stopp</span></button>
           <button class="c-btn send-btn" id="send-btn" type="button" aria-label="Senden (Enter)" title="Senden (Enter)" disabled data-icon="send"></button>
         </div>
         <div class="composer-hint" id="hint">
-          <span><kbd>Enter</kbd> senden</span>
-          <span class="h-extra"><kbd>Shift</kbd> + <kbd>Enter</kbd> neue Zeile</span>
-          <span class="h-extra"><kbd>/</kbd> Befehle</span>
-          <span><kbd>F2</kbd> sprechen</span>
+          <span class="h-idle"><kbd>Enter</kbd> senden</span>
+          <span class="h-idle h-extra"><kbd>Shift</kbd> + <kbd>Enter</kbd> neue Zeile</span>
+          <span class="h-idle h-extra"><kbd>/</kbd> Befehle</span>
+          <span class="h-idle"><kbd>F2</kbd> sprechen</span>
+          <span class="h-busy"><kbd>Enter</kbd> = danach senden</span>
+          <span class="h-busy h-sep" aria-hidden="true">·</span>
+          <button class="h-busy h-now" id="hint-now" type="button" disabled
+                  title="Die laufende Antwort anhalten und diese Nachricht sofort senden (Strg+Enter)"><kbd>Strg</kbd>+<kbd>Enter</kbd> = jetzt unterbrechen</button>
+          <span class="h-afk"><kbd>Enter</kbd> = ich bin zurück (der AFK-Modus endet)</span>
         </div>
         <div class="composer-hint voice-bar" id="voice-bar" aria-live="polite" hidden>
           <span class="rec-dot" aria-hidden="true"></span>
@@ -501,6 +556,44 @@
   </div>
 </div>
 
+<!-- AFK-Modus starten ("Ich bin weg") -->
+<div class="modal amodal" id="amodal" hidden>
+  <div class="dialog adialog" id="adialog" role="dialog" aria-modal="true" aria-labelledby="afk-title" aria-describedby="afk-sub" tabindex="-1">
+    <div class="dlg-head">
+      <div class="dlg-icon"><span data-icon="moon"></span></div>
+      <div class="dlg-titles">
+        <h2 class="dlg-title" id="afk-title">AFK-Modus</h2>
+        <p class="dlg-sub" id="afk-sub">Du bist weg – ich arbeite allein weiter und berichte dir, wenn du zurück bist.</p>
+      </div>
+    </div>
+    <div class="dlg-body afk-body">
+      <label class="field">
+        <span class="field-label">Woran soll ich arbeiten? <span class="opt">(optional)</span></span>
+        <textarea class="input area afk-task" id="afk-task" rows="2" maxlength="2000" spellcheck="true"
+                  placeholder="z.B. Recherchiere günstige Flüge nach Rom im Mai"></textarea>
+      </label>
+      <div class="afk-pick">
+        <span class="field-label" id="afk-dur-label">Dauer <span class="opt">höchstens</span></span>
+        <div class="segctl afk-seg" id="afk-dur" role="radiogroup" aria-labelledby="afk-dur-label"></div>
+      </div>
+      <div class="afk-pick">
+        <span class="field-label" id="afk-bud-label">Budget <span class="opt">höchstens, für mein Denken</span></span>
+        <div class="segctl afk-seg" id="afk-bud" role="radiogroup" aria-labelledby="afk-bud-label"></div>
+      </div>
+      <div class="afk-info" id="afk-info">
+        <p class="ai-row yes"><span data-icon="checkCircle"></span><span><b>Ich darf in der Zeit:</b> lesen, im Internet suchen, neue Dateien im Arbeitsordner anlegen.</span></p>
+        <p class="ai-row no"><span data-icon="shieldOff"></span><span><b>Ich mache NICHT:</b> löschen, überschreiben, Programme ausführen, den PC steuern, etwas verschicken oder kaufen – das schreibe ich dir als Vorschlag auf.</span></p>
+        <p class="ai-row back"><span data-icon="chat"></span><span>Du kommst zurück, indem du einfach eine Nachricht schreibst.</span></p>
+      </div>
+      <p class="afk-err" id="afk-err" role="alert" hidden></p>
+    </div>
+    <div class="dlg-foot">
+      <button class="btn ghost" id="afk-cancel" type="button">Abbrechen</button>
+      <button class="btn primary afk-go" id="afk-go" type="button"><span data-icon="moon"></span><span id="afk-go-text">Los geht's</span></button>
+    </div>
+  </div>
+</div>
+
 <!-- Gehirn & Schluessel (Einrichtung) -->
 <div class="modal smodal" id="smodal" hidden>
   <div class="sdialog" id="sdialog" role="dialog" aria-modal="true" aria-labelledby="su-title" aria-describedby="su-sub" tabindex="-1">
@@ -520,6 +613,23 @@
         <div class="su-loading" id="su-loading" hidden><span class="spinner" aria-hidden="true"></span><span>Lade …</span></div>
         <div class="su-label" id="su-provs-label">1. Wähle mein Gehirn</div>
         <div class="su-provs" id="su-provs" role="radiogroup" aria-labelledby="su-provs-label"></div>
+        <!-- Modell & Denk-Tiefe des ausgewaehlten Gehirns (speichert sofort) -->
+        <section class="su-model" id="su-model" aria-labelledby="su-model-label" hidden>
+          <div class="sm-head">
+            <h3 class="su-label" id="su-model-label">2. Modell &amp; Denk-Tiefe</h3>
+            <span class="sm-for" id="sm-for"></span>
+            <span class="sm-saving" id="sm-saving" hidden><span class="spinner" aria-hidden="true"></span>Speichere …</span>
+          </div>
+          <p class="sm-inactive" id="sm-inactive" hidden><span data-icon="info"></span><span id="sm-inactive-text"></span></p>
+          <div class="sm-body">
+            <div class="sm-sub" id="sm-models-label">Modell</div>
+            <div class="sm-models" id="sm-models" role="radiogroup" aria-labelledby="sm-models-label"></div>
+            <div class="sm-sub" id="sm-depth-label">Denk-Tiefe</div>
+            <div class="segctl sm-depth" id="sm-depth" role="radiogroup" aria-labelledby="sm-depth-label" aria-describedby="sm-depth-info"></div>
+            <p class="sm-depth-info" id="sm-depth-info"></p>
+          </div>
+          <p class="sm-note"><span data-icon="zap"></span><span>Schneller antworten = weniger nachdenken. Für knifflige Aufgaben lieber gründlich.</span></p>
+        </section>
         <div class="su-key">
           <div class="su-key-top">
             <label class="su-label" for="su-input" id="su-input-label">2. Schlüssel einfügen</label>

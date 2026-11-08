@@ -228,14 +228,31 @@ class Updater:
     def check(self) -> UpdateInfo | None:
         """Schaut nach einer neueren Version. Netzwerkfehler -> None (still)."""
         self.last_error = None
+        self.last_seen = None
         try:
             info = self._check_exe() if self.frozen else self._check_source()
         except Exception as exc:  # noqa: BLE001 - offline, Repo weg, ...
             logger.info("Update-Pruefung nicht moeglich: %s", exc)
-            self.last_error = str(exc)
+            self.last_error = friendly_check_error(exc)
             return None
-        self._save_state(letzte_pruefung=self.now().isoformat(timespec="seconds"))
+        latest = info.new if info else (self.last_seen or self.current)
+        self._save_state(letzte_pruefung=self.now().isoformat(timespec="seconds"), neueste=latest)
         return info
+
+    def status(self) -> dict:
+        """Fuer die Anzeige 'auf dem neuesten Stand?' -> state: aktuell | neu | unbekannt | aus."""
+        data = self._state()
+        checked, latest = data.get("letzte_pruefung"), data.get("neueste")
+        if latest and is_newer(str(latest), self.current):
+            state = "neu"  # auch bei ausgeschalteten automatischen Updates zeigen, was es gibt
+        elif not self.enabled:
+            state = "aus"
+        elif checked:
+            state = "aktuell"  # gespeichert wird nur nach erfolgreicher Pruefung
+        else:
+            state = "unbekannt"
+        return {"state": state, "current": self.current, "latest": latest or None, "checked": checked,
+                "error": getattr(self, "last_error", None)}
 
     def _ref(self) -> str:
         return (self.settings.branch or "").strip()
@@ -247,6 +264,7 @@ class Updater:
         remote = read_version(
             self.fetch(base + "assistant/__init__.py", timeout=8).decode("utf-8", "replace")
         )
+        self.last_seen = remote
         if not remote or not is_newer(remote, self.current):
             return None
         try:
@@ -266,6 +284,7 @@ class Updater:
         repo = self.settings.repo.strip()
         release = json.loads(self.fetch(f"https://api.github.com/repos/{repo}/releases/latest", timeout=8))
         remote = str(release.get("tag_name", "")).lstrip("vV")
+        self.last_seen = remote
         if not remote or not is_newer(remote, self.current):
             return None
         assets = release.get("assets", [])
@@ -543,3 +562,21 @@ def _extract_zip(data: bytes, tmp: Path) -> Path:
     if not (target / "assistant" / "__init__.py").is_file():
         raise UpdateError("Im Download fehlt das Programm (assistant/) - nichts geaendert.")
     return target
+
+
+def friendly_check_error(exc: Exception) -> str:
+    """Fehler beim Nachschauen in verstaendlichen Worten (die App zeigt sie an)."""
+    text = str(exc).lower()
+    status = getattr(exc, "code", None) or getattr(exc, "status", None)
+    if status in (403, 429) or "rate limit" in text:
+        return "GitHub laesst gerade keine Abfrage zu (zu viele Anfragen) - spaeter nochmal versuchen."
+    if status == 404 or "not found" in text:
+        return "Die Update-Quelle wurde nicht gefunden (Repo oder Branch falsch eingestellt?)."
+    if "timed out" in text or "timeout" in text:
+        return "GitHub hat nicht rechtzeitig geantwortet - spaeter nochmal versuchen."
+    if any(word in text for word in ("getaddrinfo", "name or service", "errno -3", "errno 11001",
+                                     "network is unreachable", "connection refused", "urlopen error")):
+        return "Keine Internetverbindung - bitte pruefen und nochmal versuchen."
+    if "certificate" in text or "ssl" in text:
+        return "Die sichere Verbindung zu GitHub ging nicht (Zertifikat/Virenscanner?)."
+    return f"Nachschauen ging nicht: {str(exc)[:160]}"

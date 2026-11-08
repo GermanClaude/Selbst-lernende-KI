@@ -58,6 +58,8 @@
   const ICONS = {
     send: '<path d="M12 19V5"/><path d="m5 12 7-7 7 7"/>',
     stop: '<rect x="6" y="6" width="12" height="12" rx="2.5" fill="currentColor" stroke="none"/>',
+    queue: '<path d="M4 6h12M4 12h8M4 18h8"/><path d="M18 13v8M14 17h8"/>',
+    clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.2 2"/>',
     mic: '<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M19 10v1a7 7 0 0 1-14 0v-1"/><path d="M12 18v4"/>',
     menu: '<path d="M4 6h16M4 12h16M4 18h16"/>',
     x: '<path d="M18 6 6 18M6 6l12 12"/>',
@@ -1052,6 +1054,7 @@
   const jvEl = byId('jarvis');
   const tourEl = byId('tour');
   const cmodal = byId('cmodal');
+  const amodal = byId('amodal'); // AFK-Modus starten ("Ich bin weg")
   const jv = {
     open: false, starting: false, cancelStart: false, closing: false, closeTimer: 0, closeWaiters: [], left: false,
     leaveTimer: 0, openedAt: 0, state: 'starting', label: '', labelTimer: 0, working: false,
@@ -1069,6 +1072,8 @@
   const emptyEl = byId('empty');
   const input = byId('input');
   const sendBtn = byId('send-btn');
+  const stopBtn = byId('stop-btn');
+  const hintNow = byId('hint-now');
   const micBtn = byId('mic-btn');
   const composer = byId('composer');
 
@@ -1157,14 +1162,23 @@
     byId('sb-provider').textContent = (s.provider_name ? String(s.provider_name) : '') ||
       pick(PROVIDERS, prov.toLowerCase()) || prov || '–';
     byId('sb-provider').title = byId('sb-provider').textContent;
-    byId('sb-model').textContent = keyMissing ? 'Schlüssel fehlt – hier einrichten' : s.model || '–';
-    byId('sb-model').title = keyMissing ? '' : s.model || '';
+    // Modell fuer Menschen ("Claude Opus 5.5 - ausgewogen"), sonst die rohe Kennung
+    const modelId = s.model == null ? '' : String(s.model).trim();
+    const modelName = (s.model_name == null ? '' : String(s.model_name).trim()) || modelId;
+    const modelTip = modelName ? 'Modell & Denk-Tiefe: ' + modelName +
+      (modelId && modelId !== modelName ? ' (' + modelId + ')' : '') + ' – klicken zum Ändern' : '';
+    byId('sb-model').textContent = keyMissing ? 'Schlüssel fehlt – hier einrichten' : modelName || '–';
+    byId('sb-model').title = keyMissing ? '' : modelTip;
     byId('sb-brain').classList.toggle('nokey', keyMissing);
     byId('tab-gehirn').classList.toggle('nokey', keyMissing);
     byId('key-bar').hidden = !keyMissing || ended;
-    setupState(prov, keyMissing);
-    byId('tb-model-text').textContent = s.model || '';
-    byId('tb-model').hidden = !s.model;
+    setupState(prov, keyMissing, modelId + '|' + modelName);
+    const chip = byId('tb-model');
+    byId('tb-model-text').textContent = modelName;
+    chip.hidden = !modelName;
+    chip.title = modelTip;
+    chip.setAttribute('aria-label', modelTip || 'Modell & Denk-Tiefe');
+    fitTopbar();
 
     // Kosten
     byId('sb-eur').textContent = fmtEur(s.eur);
@@ -1184,16 +1198,29 @@
     micBtn.classList.toggle('warn-dot', !!s.voice_problem);
     micBtn.title = s.voice_problem
       ? 'Spracheingabe: ' + s.voice_problem
-      : 'Sprechen – gedrückt halten oder kurz drücken (F2)';
+      : 'Sprechen – gedrückt halten oder kurz drücken (F2)' + (s.voice_autosend === true ? ' · sendet sofort' : '');
 
-    // Update in der Kopfzeile
-    const upd = s.update && s.update.new ? String(s.update.new) : '';
-    byId('tb-update').hidden = !upd;
-    byId('tb-update-text').textContent = upd ? 'Update ' + upd : '';
+    // Update: Anzeige in der Seitenleiste ("Auf dem neuesten Stand") und Knopf in der Kopfzeile
+    onUpdateState();
+    const newV = newVersion();
+    byId('tb-update').hidden = !newV;
+    byId('tb-update-text').textContent = newV ? 'Update ' + newV : '';
+    byId('tb-update').title = newV ? 'Update auf ' + newV + ' installieren (/update)' : '';
 
     renderAlerts();
     commands = Array.isArray(s.commands) ? s.commands.filter((c) => c && typeof c.cmd === 'string') : [];
     setBusy(!!s.busy);
+    // Platzhalter-Blase vom Neuladen ("schreibt …"), aber es kam nichts mehr (z.B. AFK-Modus endete
+    // genau dabei): die KI ist frei -> weg damit, sonst bliebe sie fuer immer stehen
+    if (!s.busy && reply && reply.placeholder && reply.isEmpty()) {
+      reply.dispose();
+      reply.row.remove();
+      reply = null;
+      updateEmpty();
+      moodSync();
+    }
+    renderQueue();
+    renderAfk();
     profileNames();
     updateEmpty();
     // Jarvis-Modus laeuft beim Server (z.B. zweites Fenster, Neuverbinden), Fenster zeigt ihn nicht – oder umgekehrt
@@ -1212,7 +1239,12 @@
   const WHEELS_SUB = {
     an: 'fragt vor Änderungen, nur Arbeitsordner',
     aus: 'darf am ganzen PC alles ohne Fragen',
-    teilweise: 'teilweise – eigene Einstellungen',
+    teilweise: 'Teilweise – klicken zum Wählen',
+  };
+  const WHEELS_TIP = {
+    an: 'Stützräder sind dran – klicken zum Abnehmen',
+    aus: 'Stützräder sind ab – klicken zum Anlegen',
+    teilweise: 'Stützräder teilweise – klicken zum Auswählen (anlegen oder abnehmen)',
   };
   const WHEELS_BADGE = { an: 'An', aus: 'Abgenommen', teilweise: 'Teilweise' };
 
@@ -1227,24 +1259,33 @@
     const val = (key) => (own(pendingVal, key) ? !!pendingVal[key] : !!s[key]);
     for (const id of ['sw-erlauben', 'sec-sw-erlauben']) setSwitch(byId(id), val('auto_confirm'));
     setSwitch(byId('sw-vorlesen'), val('speak'));
+    // "Gesprochenes sofort senden" (nur, wenn die KI den Schalter kennt)
+    byId('row-sofort').hidden = typeof s.voice_autosend !== 'boolean';
+    setSwitch(byId('sw-sofort'), val('voice_autosend'));
+    byId('sub-sofort').textContent = val('voice_autosend')
+      ? 'nach dem Loslassen von Mikrofon/F2 – ohne Enter'
+      : 'erst prüfen, dann Enter';
     const w = wheelsState();
     const row = document.querySelector('.switch-row[data-toggle="stuetzraeder"]');
     row.hidden = !w;
     row.dataset.state = w;
     byId('sec-wheels').dataset.state = w || 'teilweise';
     byId('sec-wheels').hidden = !w; // aeltere KI ohne Stuetzraeder
+    row.title = WHEELS_TIP[w] || '';
     for (const id of ['sw-stuetzraeder', 'sec-sw-stuetzraeder']) {
       const b = byId(id);
       setSwitch(b, w === 'an');
       b.classList.toggle('mixed', w === 'teilweise');
+      b.title = WHEELS_TIP[w] || '';
     }
     if (w) byId('sub-stuetzraeder').textContent = WHEELS_SUB[w];
+    syncWheelsDialog(w);
     const n = kiName();
     byId('sec-wheels-badge').textContent = WHEELS_BADGE[w] || '–';
     byId('sec-wheels-text').textContent = w === 'an'
       ? 'Sind dran: ' + n + ' fragt vor jeder Änderung und bleibt im Arbeitsordner.'
       : w === 'aus' ? 'Sind ab: ' + n + ' darf am ganzen PC alles ohne Rückfrage.'
-        : 'Teilweise: Einzelne Schutzfunktionen sind anders eingestellt. Einschalten macht alles wieder sicher.';
+        : 'Teilweise: Einzelne Schutzfunktionen sind anders eingestellt. Klick auf den Schalter – dann kannst du sie ganz anlegen oder ganz abnehmen.';
     byId('sec-title').textContent = 'Was ' + n + ' ohne Nachfrage darf';
     const facts = byId('sec-facts');
     facts.replaceChildren();
@@ -1284,7 +1325,8 @@
       }
       box.append(a);
     };
-    if (s.update && s.update.new) {
+    // aeltere KI ohne Update-Anzeige: Hinweis als Karte (sonst steht es oben bei der Version)
+    if (s.update && s.update.new && !updStatus()) {
       add('update', 'download', 'Update verfügbar', 'Version ' + s.update.new + ' ist bereit.', 'Jetzt aktualisieren', '/update');
     }
     if (s.api_key_missing) {
@@ -1295,21 +1337,19 @@
       add('warn', 'power', 'Automatisch gestartet', 'Ich wurde automatisch gestartet – ' + s.started_by + '.',
         'Autostart prüfen', '/autostart');
     }
-    byId('menu-dot').hidden = !box.childElementCount;
+    byId('menu-dot').hidden = !box.childElementCount && !newVersion();
   }
 
+  // Senden geht immer – auch waehrend die KI arbeitet: dann kommt die Nachricht in die
+  // Warteschlange (Enter) oder unterbricht die laufende Antwort (Strg+Enter). Anhalten hat
+  // einen eigenen Knopf ("Stopp", Esc).
   function setBusy(b) {
     busy = !!b;
-    sendBtn.classList.toggle('stop', busy);
-    sendBtn.replaceChildren(icon(busy ? 'stop' : 'send'));
-    if (busy) {
-      sendBtn.append(h('span', null, 'Stopp'));
-      sendBtn.setAttribute('aria-label', 'Antwort anhalten (Esc)');
-      sendBtn.title = 'Antwort anhalten (Esc)';
-    } else {
-      sendBtn.setAttribute('aria-label', 'Senden (Enter)');
-      sendBtn.title = 'Senden (Enter)';
-    }
+    // Fokus liegt auf "Stopp", der gleich verschwindet -> zurueck ins Eingabefeld
+    const refocus = document.activeElement === stopBtn && (!busy || ended);
+    stopBtn.hidden = !busy || ended;
+    if (refocus) focusInput();
+    byId('hint').classList.toggle('busy', busy);
     updateSendBtn();
     updateStatus();
     tourBusy(busy);
@@ -1318,7 +1358,31 @@
   }
 
   function updateSendBtn() {
-    sendBtn.disabled = ended || (!busy && !input.value.trim());
+    const has = !!input.value.trim();
+    sendBtn.disabled = ended || !has;
+    hintNow.disabled = ended || !has;
+    // AFK-Modus laeuft: jede Nachricht heisst "ich bin zurueck" (sie wartet nicht);
+    // startet er gleich, wartet sie – und der AFK-Modus startet dann nicht
+    const away = ended ? '' : afkRunning() ? 'afk' : busy && state.afk_pending === true ? 'afkpending' : '';
+    byId('hint').classList.toggle('afk', away === 'afk');
+    const mode = away || (busy ? 'queue' : 'send');
+    if (sendBtn.dataset.mode === mode) return;
+    sendBtn.dataset.mode = mode;
+    sendBtn.replaceChildren(icon(mode === 'afk' ? 'send' : mode === 'afkpending' ? 'queue' : mode));
+    let tip = 'Senden (Enter)';
+    let label = tip;
+    if (mode === 'afk') {
+      tip = 'Senden (Enter) – du bist zurück: der AFK-Modus endet und ich antworte dir gleich';
+      label = 'Senden (Enter) – du bist zurück, der AFK-Modus endet';
+    } else if (mode === 'afkpending') {
+      tip = 'In die Warteschlange (Enter) – kommt dran, sobald ich fertig bin; der AFK-Modus startet dann nicht. Strg+Enter: unterbrechen & senden';
+      label = 'In die Warteschlange (Enter), der AFK-Modus startet dann nicht. Strg+Enter: unterbrechen und sofort senden';
+    } else if (mode === 'queue') {
+      tip = 'In die Warteschlange (Enter) – kommt dran, sobald ich fertig bin. Strg+Enter: unterbrechen & senden';
+      label = 'In die Warteschlange (Enter). Strg+Enter: unterbrechen und sofort senden';
+    }
+    sendBtn.title = tip;
+    sendBtn.setAttribute('aria-label', label);
   }
 
   function updateStatus() {
@@ -1336,19 +1400,23 @@
   }
 
   // Schalter (Seitenleiste und Reiter "Sicherheit")
-  const TOGGLES = { erlauben: 'auto_confirm', vorlesen: 'speak', stuetzraeder: 'stuetzraeder' };
+  const TOGGLES = {
+    erlauben: 'auto_confirm', vorlesen: 'speak', stuetzraeder: 'stuetzraeder', sofort_senden: 'voice_autosend',
+  };
   async function toggleSetting(name) {
     const key = pick(TOGGLES, name);
     if (!key || ended || pendingToggle[key]) return;
     let value;
     if (key === 'stuetzraeder') {
-      value = state.stuetzraeder !== 'an'; // aus/teilweise -> an (sofort); an -> ab (erst warnen)
-      if (!value) {
-        pendingToggle[key] = true; // waehrend der Warnung kein zweiter Klick
-        const ok = await wheelsWarning();
-        pendingToggle[key] = false;
-        if (!ok || ended) return;
-      }
+      // aus -> an (sofort); an -> ab (erst warnen); teilweise -> Auswahl: anlegen / abnehmen (mit Warnung)
+      pendingToggle[key] = true; // waehrend Auswahl/Warnung kein zweiter Klick
+      if (state.stuetzraeder === 'teilweise') {
+        const choice = await wheelsChoice();
+        value = choice === 'an' ? true : choice === 'aus' && await wheelsWarning() ? false : null;
+      } else if (state.stuetzraeder === 'an') value = await wheelsWarning() ? false : null;
+      else value = true;
+      pendingToggle[key] = false;
+      if (value === null || ended) return;
     } else value = !state[key];
     pendingToggle[key] = true;
     pendingVal[key] = value;
@@ -1366,6 +1434,10 @@
       toast(value ? 'Stützräder sind dran – ich frage vor Änderungen.' : 'Stützräder sind ab – ich darf jetzt alles ohne Rückfrage.',
         value ? 'ok' : 'info', 4200);
     }
+    if (r.ok && key === 'voice_autosend') {
+      toast(value ? 'Gesprochenes schicke ich jetzt sofort ab – ohne Enter.'
+        : 'Gesprochenes landet wieder erst im Eingabefeld – Enter schickt es ab.', 'ok');
+    }
   }
   for (const row of document.querySelectorAll('[data-toggle]')) {
     row.addEventListener('click', () => toggleSetting(row.dataset.toggle));
@@ -1379,7 +1451,222 @@
     b.addEventListener('click', () => { closeSidebar(); send(b.dataset.cmd); });
   }
   byId('tb-update').addEventListener('click', () => send('/update'));
-  const newChat = () => { closeSidebar(); send('/neu'); };
+
+  // =====================================================================
+  // Update-Anzeige in der Seitenleiste ("Auf dem neuesten Stand")
+  //  state.update_status = {state: aktuell|neu|pruefe|unbekannt|aus, current, latest, checked, error}
+  //  "Jetzt pruefen" -> POST /api/update (prueft nur), Ergebnis kommt als state-Ereignis.
+  // =====================================================================
+  const UPD_STATES = new Set(['aktuell', 'neu', 'pruefe', 'unbekannt', 'aus']);
+  const upd = {
+    local: false,  // Klick auf "Jetzt pruefen": schon "Pruefe …" zeigen, bis der Server es bestaetigt
+    manual: false, // vom Nutzer ausgeloest -> Ergebnis als Meldung
+    saw: false,    // Server hat "pruefe" gemeldet
+    since: 0,      // Zeitpunkt des Klicks (ms)
+    posted: false, // Server hat den Auftrag angenommen
+    rehello: false, // seit dem Klick neu verbunden (frischer Stand, "pruefe" evtl. verpasst)
+    timer: 0,
+    late: 0,
+  };
+
+  /** Update-Stand vom Server (null = aeltere KI ohne Anzeige). */
+  function updStatus() {
+    const us = state.update_status;
+    if (!us || typeof us !== 'object') return null;
+    const st = String(us.state || '');
+    return {
+      state: UPD_STATES.has(st) ? st : 'unbekannt',
+      current: String(us.current || state.version || ''),
+      latest: us.latest ? String(us.latest) : '',
+      checked: us.checked ? String(us.checked) : '',
+      error: us.error ? String(us.error) : '',
+    };
+  }
+
+  /** Technischen Fehler der Update-Pruefung in einfache Worte fassen ('' = keiner). */
+  function updErrorText(err) {
+    const e = String(err || '');
+    if (!e) return '';
+    if (/11001|11002|11004|getaddrinfo|name or service|name resolution|resolve host|nodename|no address|10051|10065|unreachable/i.test(e)) {
+      return 'Keine Internetverbindung.';
+    }
+    if (/timed? ?out|10060|zeitüberschreitung/i.test(e)) return 'GitHub hat nicht rechtzeitig geantwortet.';
+    if (/10061|10054|refused|reset by peer|connection (?:aborted|closed)|remote end closed/i.test(e)) {
+      return 'Die Verbindung zu GitHub ist abgebrochen.';
+    }
+    if (/ssl|certificate|zertifikat/i.test(e)) return 'Die sichere Verbindung zu GitHub hat nicht geklappt.';
+    if (/HTTP Error 40[39]|HTTP Error 429|rate limit/i.test(e)) return 'GitHub lässt gerade keine Abfrage zu – versuch es später nochmal.';
+    if (/HTTP Error 404/i.test(e)) return 'Die Update-Quelle wurde nicht gefunden.';
+    if (/HTTP Error 5\d\d/i.test(e)) return 'GitHub hat gerade Probleme – versuch es später nochmal.';
+    return e.length > 160 ? e.slice(0, 157) + ' …' : e; // unbekannt: so, wie er kam (nur als Text)
+  }
+
+  /** Neuere Version, die installiert werden kann ('' = keine). */
+  function newVersion() {
+    if (state.update && state.update.new) return String(state.update.new);
+    const us = updStatus();
+    return us && us.state === 'neu' ? us.latest || '?' : '';
+  }
+
+  /** "2026-11-08T01:00:00" (lokale Zeit) -> Date oder null. */
+  function parseWhen(v) {
+    const d = v ? new Date(v) : null;
+    return d && !Number.isNaN(d.getTime()) ? d : null;
+  }
+
+  function relTime(d) {
+    const min = Math.floor((Date.now() - d.getTime()) / 60000);
+    if (min < 1) return 'gerade eben';
+    if (min < 60) return 'vor ' + min + ' Min.';
+    const hrs = Math.floor(min / 60);
+    if (hrs < 24) return 'vor ' + hrs + ' Std.';
+    const days = Math.round(hrs / 24);
+    if (days <= 1) return 'gestern';
+    if (days < 7) return 'vor ' + days + ' Tagen';
+    return 'am ' + d.toLocaleDateString('de-DE');
+  }
+
+  function renderUpdate() {
+    const box = byId('sb-upd');
+    const us = updStatus();
+    box.hidden = !us;
+    if (!us) return;
+    const st = upd.local ? 'pruefe' : us.state;
+    const when = parseWhen(us.checked);
+    const whenText = when ? 'geprüft ' + relTime(when) : '';
+    const whenFull = when ? 'Zuletzt geprüft ' + relTime(when) + ' (' +
+      when.toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' }) + ').' : '';
+    const failed = !!us.error && st !== 'pruefe' && st !== 'neu';
+    let ic = 'refresh';
+    let title = 'Noch nicht geprüft';
+    let sub = 'Version ' + us.current;
+    let tip = 'Du hast Version ' + us.current + '.';
+    let btn = 'check';
+    if (st === 'aktuell') {
+      ic = 'checkCircle';
+      title = 'Auf dem neuesten Stand';
+      sub = whenText || sub;
+      tip = 'Version ' + us.current + ' ist die neueste.' + (whenFull ? '\n' + whenFull : '');
+    } else if (st === 'neu') {
+      const v = us.latest || newVersion();
+      ic = 'download';
+      title = v && v !== '?' ? 'Update auf ' + v + ' verfügbar' : 'Update verfügbar';
+      sub = 'du hast ' + us.current;
+      tip = 'Neue Version ' + v + ' – du hast ' + us.current + '.' + (whenFull ? '\n' + whenFull : '');
+      btn = 'install';
+    } else if (st === 'pruefe') {
+      ic = '';
+      title = 'Prüfe …';
+      sub = 'schaue nach einer neuen Version';
+      tip = '';
+      btn = '';
+    } else if (st === 'aus') {
+      ic = 'pause';
+      title = 'Automatische Updates aus';
+      sub = whenText || 'nur auf Wunsch';
+      tip = 'Ich schaue nicht von selbst nach neuen Versionen.' + (whenFull ? '\n' + whenFull : '');
+    }
+    if (failed) {
+      ic = 'alertCircle';
+      title = 'Prüfen hat nicht geklappt';
+      sub = 'Version ' + us.current;
+      const plain = updErrorText(us.error);
+      tip = 'Prüfen hat nicht geklappt: ' + plain + (plain !== us.error ? '\nDetails: ' + us.error : '') + (whenFull ? '\n' + whenFull : '');
+    }
+    box.dataset.state = st;
+    box.classList.toggle('err', failed);
+    box.title = tip;
+    // nur Geaendertes neu setzen: kein erneutes Vorlesen (role=status), Spinner laeuft weiter
+    const icEl = byId('upd-ic');
+    if (icEl.dataset.ic !== (ic || 'spin')) {
+      icEl.dataset.ic = ic || 'spin';
+      icEl.replaceChildren(ic ? icon(ic) : h('span', 'spinner'));
+    }
+    if (byId('upd-title').textContent !== title) byId('upd-title').textContent = title;
+    if (byId('upd-sub').textContent !== sub) byId('upd-sub').textContent = sub;
+    const b = byId('upd-btn');
+    b.hidden = !btn;
+    b.dataset.act = btn;
+    b.disabled = ended;
+    b.className = 'btn small upd-btn ' + (btn === 'install' ? 'primary' : 'secondary');
+    b.textContent = btn === 'install' ? 'Installieren' : 'Jetzt prüfen';
+    b.title = btn === 'install' ? 'Update installieren (/update)' : 'Jetzt nach einer neuen Version schauen';
+  }
+
+  /** Ist dieser Stand schon das Ergebnis von "Jetzt pruefen"? */
+  function updIsResult(us) {
+    if (upd.saw) return true; // "pruefe" gesehen -> der naechste andere Stand ist das Ergebnis
+    if (!upd.posted) return false;
+    if (upd.rehello) return true; // neu verbunden: der Stand ist frisch, "pruefe" ging verloren
+    const d = parseWhen(us.checked); // erfolgreich geprueft nach dem Klick (Zeit nur auf Sekunden genau)
+    return !!d && d.getTime() >= upd.since - 1500;
+  }
+
+  /** Neuer Stand vom Server: Anzeige erneuern; nach "Jetzt pruefen" das Ergebnis melden. */
+  function onUpdateState() {
+    const us = updStatus();
+    if (us && us.state === 'pruefe') {
+      upd.saw = true;
+      upd.local = false;
+    } else if (us && upd.manual && updIsResult(us)) {
+      upd.manual = false;
+      upd.local = false;
+      clearTimeout(upd.timer);
+      clearTimeout(upd.late);
+      if (us.error) toast('Prüfen hat nicht geklappt: ' + updErrorText(us.error), 'error', 6500);
+      else if (us.state === 'neu') toast('Update auf ' + (us.latest || newVersion()) + ' verfügbar – „Installieren“ holt es.', 'ok', 5000);
+      else toast('Du hast die neueste Version (' + us.current + ').', 'ok');
+    }
+    renderUpdate();
+  }
+
+  /** Neu verbunden (hello): Stand ist frisch – falls "Jetzt pruefen" laeuft, zaehlt er als Ergebnis. */
+  function updHello() {
+    if (upd.manual) upd.rehello = true;
+  }
+
+  async function checkUpdateNow() {
+    const us = updStatus();
+    if (!us || ended || upd.local || us.state === 'pruefe') return;
+    upd.manual = true;
+    upd.saw = false;
+    upd.local = true;
+    upd.since = Date.now();
+    upd.posted = false;
+    upd.rehello = false;
+    clearTimeout(upd.late);
+    renderUpdate();
+    const r = await post('/api/update', { action: 'check' });
+    if (!upd.manual) return; // schon erledigt (z.B. beendet)
+    if (!r.ok) {
+      upd.local = false;
+      upd.manual = false;
+      renderUpdate();
+      toast(r.error || 'Prüfen hat nicht geklappt.', 'error');
+      return;
+    }
+    upd.posted = true;
+    // Neu verbunden, bevor die Antwort kam: der Stand ist evtl. schon das Ergebnis.
+    // Kurz warten – kommt noch "pruefe", laeuft alles wie gewohnt.
+    if (upd.rehello && !upd.saw) upd.late = setTimeout(() => { if (upd.manual && !upd.saw) onUpdateState(); }, 400);
+    // Falls das "pruefe"-Ereignis ausbleibt (Verbindung weg): nicht ewig "Prüfe …" zeigen
+    clearTimeout(upd.timer);
+    upd.timer = setTimeout(() => {
+      if (!upd.local) return;
+      upd.local = false;
+      upd.manual = false;
+      renderUpdate();
+    }, 20000);
+  }
+
+  byId('upd-btn').addEventListener('click', (e) => {
+    if (e.currentTarget.dataset.act === 'install') {
+      closeSidebar();
+      send('/update');
+    } else checkUpdateNow();
+  });
+  setInterval(() => { if (!byId('sb-upd').hidden) renderUpdate(); }, 30000); // "vor 5 Min." aktuell halten
+  const newChat = () => { closeSidebar(); if (!afkBlocksNew()) send('/neu'); };
   byId('sb-new').addEventListener('click', newChat);
   byId('tb-new').addEventListener('click', newChat);
   byId('sb-profile').addEventListener('click', () => openProfile());
@@ -1510,7 +1797,26 @@
     else if (msgs.childElementCount) jumpBtn.hidden = false;
   }
   jumpBtn.addEventListener('click', () => { jumpBtn.hidden = true; toBottom(true); });
-  if (window.ResizeObserver) new ResizeObserver(() => { if (stick) toBottom(); }).observe(msgs);
+  if (window.ResizeObserver) {
+    // auch wenn der Chat selbst kleiner wird (z.B. Warteliste/Eingabefeld darunter waechst)
+    const ro = new ResizeObserver(() => { if (stick) toBottom(); });
+    ro.observe(msgs);
+    ro.observe(scroller);
+  }
+
+  // Kopfzeile: der Modell-Chip wird bei Platzmangel schmaler (CSS, mit "…"). Reicht es selbst dafuer
+  // nicht (z.B. "Update verfuegbar" + grosse Schrift + "Arbeitet …"), faellt er weg – der Modellname
+  // steht auch auf der Gehirn-Karte in der Seitenleiste. Nie waagerecht scrollen.
+  const topbarEl = document.querySelector('.topbar');
+  function fitTopbar() {
+    if (!topbarEl) return;
+    topbarEl.classList.remove('tight');
+    if (topbarEl.scrollWidth > topbarEl.clientWidth + 1) topbarEl.classList.add('tight');
+  }
+  if (window.ResizeObserver && topbarEl) {
+    const tro = new ResizeObserver(() => fitTopbar());
+    for (const el of [topbarEl, byId('status'), byId('tb-update'), byId('tb-new'), byId('tb-jarvis')]) if (el) tro.observe(el);
+  }
 
   // =====================================================================
   // Chat-Elemente
@@ -1556,7 +1862,7 @@
     else if (vp === 'stopping' || vp === 'remote-rec') m = 'recognizing';
     else if (su.checking) m = 'thinking';
     else if (speakingOn) m = 'speaking';
-    else if (busy || reply) m = rs.phase || 'thinking';
+    else if (reply || (busy && !afkResting())) m = rs.phase || 'thinking';
     sphere.mood(m);
   }
 
@@ -1740,6 +2046,7 @@
     tastatur_tippen: ['keyboard', 'Tippen'],
     tastenkombination: ['keyboard', 'Tastenkombination'],
     agent_beauftragen: ['bot', 'Agent beauftragen'],
+    abwesenheit: ['moon', 'AFK-Modus'],
   };
   function toolInfo(name) {
     const n = String(name || 'werkzeug');
@@ -2069,7 +2376,8 @@
     return text.split(key).join(maskKey(key));
   }
 
-  async function send(text, fromInput) {
+  /** interrupt: die laufende Antwort anhalten und diese Nachricht sofort beantworten (Strg+Enter). */
+  async function send(text, fromInput, interrupt) {
     text = String(text || '').trim();
     if (!text || ended) return false;
     // /jarvis und /tutorial oeffnen die Ansichten direkt im Fenster (nicht senden)
@@ -2085,16 +2393,20 @@
       if (low === '/jarvis') startJarvis(); else startTour();
       return true;
     }
-    if (busy) {
-      toast('Ich arbeite noch an der letzten Nachricht – „Stopp“ oder Esc hält sie an.');
-      return false;
-    }
+    // "/neu" waehrend AFK: erst der Bericht (sonst loescht das neue Gespraech ihn ungesehen)
+    if (/^\/neu(\s|$)/.test(low) && afkBlocksNew()) return false;
     // Schluessel: Blase nur gekuerzt (wie das Echo) und nicht fuer Pfeil hoch merken
     const masked = keyShown(text);
     const shown = masked || text;
-    const row = addUser(shown);
-    const p = { text: shown, row, t: Date.now() };
-    pendingSent.push(p);
+    // Arbeitet die KI noch, wartet die Nachricht – ihre Blase kommt erst, wenn sie drankommt
+    // (Ereignis "user"). Sonst gleich anzeigen.
+    let row = null;
+    let p = null;
+    if (!busy) {
+      row = addUser(shown);
+      p = { text: shown, row, t: Date.now() };
+      pendingSent.push(p);
+    }
     if (!masked) rememberOwn(text);
     recallIdx = -1;
     if (fromInput) {
@@ -2102,17 +2414,44 @@
       autosize();
       closeCmdPop();
     }
-    toBottom(true);
-    const r = await post('/api/send', { text });
+    if (row) toBottom(true);
+    const r = await post('/api/send', { text, interrupt: !!interrupt });
     if (!r.ok) {
-      const k = pendingSent.indexOf(p);
-      if (k >= 0) pendingSent.splice(k, 1);
-      row.remove();
-      updateEmpty();
+      if (p) {
+        const k = pendingSent.indexOf(p);
+        if (k >= 0) pendingSent.splice(k, 1);
+        row.remove();
+        updateEmpty();
+      }
       if (fromInput && !input.value) { input.value = text; autosize(); }
       toast(r.error || 'Senden hat nicht geklappt.', 'error');
       return false;
     }
+    if (r.queued) {
+      // Die KI war doch beschaeftigt: die Nachricht wartet. Eine schon gezeigte Blase wieder
+      // wegnehmen (ausser ihr Echo kam schon – dann ist sie bereits dran).
+      const k = p ? pendingSent.indexOf(p) : -1;
+      if (k >= 0) {
+        pendingSent.splice(k, 1);
+        row.remove();
+        updateEmpty();
+      }
+      if (!p || k >= 0) {
+        queuedOwn.push(shown);
+        if (queuedOwn.length > 40) queuedOwn.shift();
+        // Schluessel: der Server gibt ihn nach "Stopp" nie zurueck (er geht nie ueber die Ereignisse) –
+        // den Text nur hier im Fenster merken, damit er dann nicht spurlos verschwindet
+        if (masked && r.id != null) {
+          ownKeys.set(String(r.id), { raw: text, shown });
+          if (ownKeys.size > 20) ownKeys.delete(ownKeys.keys().next().value);
+        }
+      }
+      if (r.interrupt && r.id != null) {
+        qs.now.set(String(r.id), Date.now()); // kommt gleich – nicht mit "Jetzt"/"✕" anbieten
+        renderQueue();
+      }
+    }
+    if (r.afk_ended) afkBack(); // du bist zurueck: Band zeigt "Willkommen zurueck", bis state.afk weg ist
     return true;
   }
 
@@ -2152,23 +2491,705 @@
 
   function onUserEcho(text) {
     const t = String(text || '').trim();
+    queueStarted();
+    // eigener wartender Schluessel ist dran (wird jetzt eingerichtet): nicht mehr merken
+    for (const [id, o] of ownKeys) if (o.shown === t) { ownKeys.delete(id); break; }
     // aeltere Eintraege (ohne Echo) aufraeumen
     while (pendingSent.length && Date.now() - pendingSent[0].t > 60000) pendingSent.shift();
     const k = pendingSent.findIndex((p) => p.text === t);
     if (k >= 0) { pendingSent.splice(k, 1); return; }
     addUser(t);
-    rememberOwn(t);
+    // eigene wartende Nachricht kommt dran: schon fuer Pfeil hoch gemerkt
+    const q = queuedOwn.indexOf(t);
+    if (q >= 0) queuedOwn.splice(q, 1);
+    else rememberOwn(t);
   }
 
   async function stop() {
+    const keyIds = queueAll().map((it) => it.id).filter((id) => ownKeys.has(id));
     const r = await post('/api/stop', {});
-    if (!r.ok) toast(r.error || 'Anhalten hat nicht geklappt.', 'error');
+    if (!r.ok) { toast(r.error || 'Anhalten hat nicht geklappt.', 'error'); return; }
+    // wartende Schluessel kommen vom Server nicht zurueck: kurz auf das Echo warten (war er schon dran?),
+    // sonst lokal wieder ins Feld
+    if (keyIds.length) setTimeout(() => keysBack(keyIds), 700);
   }
 
-  sendBtn.addEventListener('click', () => {
-    if (busy) stop();
-    else send(input.value, true);
+  function keysBack(ids) {
+    const waiting = new Set(queueAll().map((it) => it.id));
+    const raws = [];
+    for (const id of ids) {
+      const o = ownKeys.get(id);
+      if (!o || waiting.has(id)) continue;
+      ownKeys.delete(id);
+      raws.push(o.raw);
+    }
+    if (!raws.length || ended) return;
+    const v = input.value.replace(/^\s+|\s+$/g, '');
+    input.value = (v ? v + '\n' : '') + raws.join('\n');
+    autosize();
+    recallIdx = -1;
+    closeCmdPop();
+    if (focusInput()) {
+      input.setSelectionRange(input.value.length, input.value.length);
+      input.scrollTop = input.scrollHeight;
+    }
+    toast(raws.length > 1 ? 'Deine Schlüssel sind noch nicht eingerichtet – sie stehen wieder im Feld. Zum Einrichten einfach senden.'
+      : 'Dein Schlüssel ist noch nicht eingerichtet – er steht wieder im Feld. Zum Einrichten einfach senden.', 'info', 6500);
+  }
+
+  sendBtn.addEventListener('click', (e) => {
+    send(input.value, true, e.ctrlKey || e.metaKey);
+    focusInput();
   });
+  stopBtn.addEventListener('click', () => stop());
+  hintNow.addEventListener('click', () => {
+    send(input.value, true, true);
+    focusInput();
+  });
+
+  // =====================================================================
+  // Warteschlange (state.queue): Nachrichten, die warten, bis die KI fertig ist
+  //  "Jetzt" = POST /api/queue {action:"now", id} (unterbricht die laufende Antwort),
+  //  "✕" = {action:"remove", id}, "Alle entfernen" = {action:"clear"}.
+  // =====================================================================
+  const queuedOwn = [];  // eigene wartende Nachrichten (fuer Pfeil hoch schon gemerkt)
+  const ownKeys = new Map(); // Warteschlangen-Nummer -> {raw, shown}: eigener wartender Schluessel (nur lokal)
+  const qs = {
+    now: new Map(),      // Nummer -> Zeitpunkt: "Jetzt" gedrueckt / Strg+Enter: kommt gleich
+    removing: new Set(), // "✕" / "Alle entfernen" gedrueckt: schon ausblenden
+    sig: '',
+    startAt: 0,          // wann zuletzt eine Nachricht drankam (Ereignis "user")
+    timer: 0,
+  };
+  const qBox = byId('queue');
+  const qList = byId('q-list');
+  const qClear = byId('q-clear');
+
+  function queueAll() {
+    const list = Array.isArray(state.queue) ? state.queue : [];
+    return list.filter((it) => it && typeof it === 'object' && it.id != null)
+      .map((it) => ({ id: String(it.id), text: String(it.text == null ? '' : it.text) }));
+  }
+
+  function renderQueue() {
+    const all = queueAll();
+    // Merker aufraeumen: was nicht mehr wartet, braucht keinen mehr
+    const ids = new Set(all.map((it) => it.id));
+    for (const set of [qs.now, qs.removing]) for (const id of [...set.keys()]) if (!ids.has(id)) set.delete(id);
+    const items = ended ? [] : all.filter((it) => !qs.removing.has(it.id));
+    // "kommt gleich …" (ohne Knoepfe) nur fuer die erste wartende Nachricht – und nur, solange sie
+    // wirklich gleich kommt (siehe queueGoing)
+    const goingId = items.length && queueGoing(items[0].id) ? items[0].id : null;
+    const sig = JSON.stringify([items, goingId]);
+    if (sig === qs.sig) return;
+    qs.sig = sig;
+    // Fokus in der Liste merken (gleicher Knopf derselben Nachricht, sonst der Nachbar)
+    const ae = document.activeElement;
+    let fId = null;
+    let fAct = '';
+    let fIdx = -1;
+    if (ae && qBox.contains(ae)) {
+      const li = ae.closest('[data-qid]');
+      fId = li ? li.dataset.qid : null;
+      fAct = ae.dataset.qact || (ae === qClear ? 'clear' : '');
+      fIdx = li ? [...qList.children].indexOf(li) : -1;
+    }
+    qList.replaceChildren();
+    items.forEach((it, k) => {
+      const one = it.text.replace(/\s+/g, ' ').trim() || '…';
+      const short = one.length > 60 ? one.slice(0, 59) + '…' : one;
+      const going = it.id === goingId;
+      const li = h('li', 'q-item' + (going ? ' going' : ''));
+      li.dataset.qid = it.id;
+      const txt = h('span', 'q-text', one);
+      txt.title = it.text.length > 600 ? it.text.slice(0, 599) + '…' : it.text;
+      li.append(h('span', 'q-num', String(k + 1)), txt);
+      if (going) {
+        const g = h('span', 'q-going');
+        g.append(h('span', 'spinner'), h('span', null, 'kommt gleich …'));
+        li.append(g);
+      } else {
+        const now = h('button', 'q-btn q-now', 'Jetzt');
+        now.type = 'button';
+        now.dataset.qact = 'now';
+        now.title = 'Jetzt senden – unterbricht die laufende Antwort';
+        now.setAttribute('aria-label', 'Jetzt senden (unterbricht die laufende Antwort): ' + short);
+        const del = h('button', 'q-btn q-del');
+        del.type = 'button';
+        del.dataset.qact = 'remove';
+        del.append(icon('x'));
+        del.title = 'Entfernen – wird nicht gesendet';
+        del.setAttribute('aria-label', 'Entfernen: ' + short);
+        li.append(now, del);
+      }
+      qList.append(li);
+    });
+    byId('q-title').textContent = 'Wartet (' + items.length + ')';
+    qClear.hidden = items.length < 2;
+    qBox.hidden = !items.length; // der Chat bleibt unten (ResizeObserver am Chat)
+    // Fokus wiederherstellen
+    if (fId !== null || fAct === 'clear') {
+      let target = null;
+      const li = fId !== null ? qList.querySelector('[data-qid="' + CSS.escape(fId) + '"]') : null;
+      if (li) target = li.querySelector('[data-qact="' + fAct + '"]') || li.querySelector('button');
+      if (!target && fAct === 'clear' && !qClear.hidden) target = qClear;
+      if (!target && qList.children.length) {
+        const n = qList.children[Math.min(Math.max(fIdx, 0), qList.children.length - 1)];
+        target = n.querySelector('[data-qact="' + fAct + '"]') || n.querySelector('button');
+      }
+      if (target) target.focus();
+      else if (qBox.contains(ae) || !document.activeElement || document.activeElement === document.body) focusInput();
+    }
+  }
+
+  async function queueAct(action, id) {
+    if (ended) return;
+    const ids = action === 'clear' ? queueAll().map((it) => it.id) : [id];
+    for (const x of ids) {
+      if (action === 'now') qs.now.set(x, Date.now());
+      else qs.removing.add(x);
+    }
+    renderQueue();
+    const body = action === 'clear' ? { action } : { action, id: Number.isFinite(Number(id)) ? Number(id) : id };
+    const r = await post('/api/queue', body);
+    if (!r.ok) {
+      for (const x of ids) (action === 'now' ? qs.now : qs.removing).delete(x);
+      qs.sig = '';
+      renderQueue();
+      toast(r.error || 'Das hat nicht geklappt.', 'error');
+    } else if (action !== 'now') for (const x of ids) ownKeys.delete(x); // bewusst entfernt
+  }
+
+  /** Kommt diese (vorne wartende) Nachricht wirklich gleich? Hat nach dem "Jetzt"/Strg+Enter (oder
+   *  kurz davor) eine ANDERE Nachricht angefangen und diese wartet danach immer noch, kommt sie erst
+   *  nach jener dran (z.B. zweimal schnell Strg+Enter) – dann wieder "Jetzt"/"✕" anbieten. */
+  function queueGoing(id) {
+    const t = qs.now.get(id);
+    if (t == null) return false;
+    if (qs.startAt && qs.startAt > t - 250 && Date.now() - qs.startAt > 1500) {
+      qs.now.delete(id);
+      return false;
+    }
+    return true;
+  }
+  /** Ereignis "user": eine Nachricht ist dran – gleich pruefen, ob die naechste noch "kommt gleich" ist. */
+  function queueStarted() {
+    qs.startAt = Date.now();
+    clearTimeout(qs.timer);
+    qs.timer = setTimeout(() => { qs.sig = ''; renderQueue(); }, 1600);
+  }
+
+  qList.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-qact]');
+    const li = b && b.closest('[data-qid]');
+    if (li) queueAct(b.dataset.qact, li.dataset.qid);
+  });
+  qClear.addEventListener('click', () => queueAct('clear'));
+
+  /** Ereignis "queue_returned": nach "Stopp" kommen die wartenden Nachrichten zurueck ins Feld. */
+  function onQueueReturned(text) {
+    const t = String(text == null ? '' : text).replace(/^\s+|\s+$/g, '');
+    if (!t || ended) return;
+    const v = input.value.replace(/^\s+|\s+$/g, '');
+    // zuerst die zurueckgekommenen (frueher geschrieben), dann das, was schon im Feld stand
+    input.value = v ? t + '\n' + v : t;
+    autosize();
+    recallIdx = -1;
+    closeCmdPop();
+    if (focusInput()) {
+      input.setSelectionRange(input.value.length, input.value.length);
+      input.scrollTop = input.scrollHeight;
+    }
+    toast('Wartende Nachrichten sind zurück im Feld', 'info', 4200);
+  }
+
+  // =====================================================================
+  // AFK-Modus ("Ich bin weg"): Nova arbeitet allein weiter und berichtet danach
+  //  state.afk = null | {active, auftrag, since, minutes, rounds, max_rounds, max_minutes, eur, max_eur,
+  //                      notes, proposals, questions, last, ended};  state.afk_pending = bool
+  //  Start: POST /api/afk {action:"start", auftrag, minuten, budget}; zurueck: {action:"stop"}.
+  //  Schritte kommen als notice level "afk" (dezente Trennzeile im Chat). Am Ende kommt der
+  //  Bericht ZWEIMAL (notice level "afk" und Ereignis afk_report) – gezeigt wird EINE Karte:
+  //  die Notice baut sie (so auch beim Neuladen aus dem Verlauf), afk_report "bestaetigt" sie nur.
+  // =====================================================================
+  const AFK_DUR = [[30, '30 Min'], [60, '1 Std'], [120, '2 Std'], [240, '4 Std']];
+  const AFK_BUD = [[0.2, '0,20 €'], [0.5, '0,50 €'], [1, '1 €'], [2, '2 €']];
+  const AFK_TALK = 'Lass uns die Vorschläge durchgehen.';
+  const RE_AFK_REPORT = /^\s*\*\*W(?:ä|ae)hrend du weg warst\*\*/i;
+  const afk = {
+    dur: 120, bud: 1,     // Auswahl im Dialog (Standard: 2 Std, 1 €)
+    back: null,           // Fokus vor dem Dialog
+    sending: false, at: 0,
+    endingSince: null,    // "Ich bin zurueck" / Nachricht geschrieben: Sitzung (since), die gerade endet
+    lastSince: null,      // zuletzt gezeigte Sitzung
+    goneSince: null,      // Sitzung, die schon vorbei ist (state.afk war danach null)
+    stopping: false,      // Anfrage "stop" laeuft
+    base: null,           // {since, minutes, at}: Minuten lokal weiterzaehlen
+    timer: 0,
+  };
+  const afkBand = byId('afk-band');
+  const adialog = byId('adialog');
+  const afkTask = byId('afk-task');
+  const afkErr = byId('afk-err');
+
+  /** Laeuft eine AFK-Sitzung (oder endet sie gerade)? Ein verspaeteter Stand einer schon beendeten
+   *  Sitzung zaehlt nicht (Zustands-Ereignisse koennen sich ueberholen). */
+  function afkRunning() {
+    const a = state.afk;
+    if (!a || typeof a !== 'object') return false; // (auch vor dem ersten Stand: "afk" noch nicht angelegt)
+    return !(afk.goneSince !== null && a.since === afk.goneSince);
+  }
+  /** Pause zwischen zwei AFK-Schritten (keine Antwort laeuft): die Sphaere atmet ruhig. */
+  function afkResting() { return afkRunning() && !reply; }
+
+  // ---------- Dialog ----------
+  function afkSegs(host, list, onPick) {
+    for (const [v, label] of list) {
+      const b = h('button', 'segctl-btn', label);
+      b.type = 'button';
+      b.setAttribute('role', 'radio');
+      b.dataset.value = String(v);
+      b.addEventListener('click', () => onPick(v));
+      host.append(b);
+    }
+    host.addEventListener('keydown', (e) => {
+      if (e.key === 'Home' || e.key === 'End') {
+        const all = [...host.children];
+        const b = all[e.key === 'Home' ? 0 : all.length - 1];
+        e.preventDefault();
+        b.focus();
+        onPick(Number(b.dataset.value));
+        return;
+      }
+      arrowRadio(e, host, (b) => onPick(Number(b.dataset.value)));
+    });
+  }
+  function afkMark(host, cur) {
+    for (const b of host.children) {
+      const on = Number(b.dataset.value) === cur;
+      b.setAttribute('aria-checked', on ? 'true' : 'false');
+      b.tabIndex = on ? 0 : -1;
+    }
+  }
+  const afkDur = byId('afk-dur');
+  const afkBud = byId('afk-bud');
+  afkSegs(afkDur, AFK_DUR, (v) => { afk.dur = v; afkMark(afkDur, v); });
+  afkSegs(afkBud, AFK_BUD, (v) => { afk.bud = v; afkMark(afkBud, v); });
+
+  function openAfk() {
+    if (ended || !amodal.hidden) return;
+    closeSidebar();
+    closeCmdPop();
+    afk.back = document.activeElement;
+    afk.dur = 120;
+    afk.bud = 1;
+    afkMark(afkDur, afk.dur);
+    afkMark(afkBud, afk.bud);
+    afkErr.hidden = true;
+    afkSending(false);
+    byId('afk-sub').textContent = 'Du bist weg – ich arbeite allein weiter und berichte dir, wenn du zurück bist.';
+    amodal.hidden = false;
+    afk.at = performance.now();
+    updateInert();
+    afkTask.focus();
+    afkTask.setSelectionRange(afkTask.value.length, afkTask.value.length);
+  }
+
+  function closeAfk() {
+    if (amodal.hidden) return;
+    amodal.hidden = true;
+    afk.sending = false;
+    updateInert();
+    const back = afk.back;
+    afk.back = null;
+    // Rueckfrage kam, waehrend der Dialog offen war: danach nicht auf den (versteckten) Dialog zurueck
+    if (askFocusBack && amodal.contains(askFocusBack)) askFocusBack = back;
+    if (!modal.hidden) { dialog.focus(); return; }
+    if (!cmodal.hidden) return;
+    if (jv.open) { jvEl.focus(); return; } // Jarvis kam waehrend des Dialogs (z.B. aus einem anderen Fenster)
+    if (back && back !== document.body && document.contains(back) && !back.closest('[inert]') &&
+        back.offsetParent !== null) back.focus();
+    else focusInput();
+  }
+
+  function afkSending(on) {
+    afk.sending = !!on;
+    const go = byId('afk-go');
+    go.disabled = afk.sending;
+    byId('afk-cancel').disabled = false;
+    go.replaceChildren(afk.sending ? h('span', 'spinner') : icon('moon'),
+      h('span', null, afk.sending ? 'Starte …' : "Los geht's"));
+  }
+
+  async function submitAfk() {
+    if (afk.sending || amodal.hidden) return;
+    afkErr.hidden = true;
+    afkSending(true);
+    const r = await post('/api/afk', { action: 'start', auftrag: afkTask.value.trim(), minuten: afk.dur, budget: afk.bud });
+    if (amodal.hidden) { // inzwischen geschlossen (z.B. KI beendet)
+      afk.sending = false;
+      if (r.ok) afkTask.value = '';
+      return;
+    }
+    afkSending(false);
+    if (!r.ok && (afkRunning() || state.afk_pending === true)) { // inzwischen anderswo gestartet
+      renderAfk(); // schliesst den Dialog (mit Hinweis)
+      return;
+    }
+    if (!r.ok) {
+      let err = String(r.error || '').trim() || 'Der AFK-Modus konnte nicht starten.';
+      if (/^Der AFK-Modus laeuft schon\.?$/.test(err)) err = 'Der AFK-Modus läuft schon.';
+      afkErr.replaceChildren(icon('alertCircle'), h('span', null, err));
+      afkErr.hidden = false;
+      afkTask.focus();
+      return;
+    }
+    afkTask.value = '';
+    afk.back = null; // der Knopf verschwindet gleich – Fokus ins Eingabefeld
+    closeAfk();
+    // Bestaetigung ist das Band oben ("AFK-Modus – … arbeitet allein" bzw. "startet gleich …") – kein Toast davor
+    renderAfk();
+  }
+
+  function afkKey(e) {
+    if (e.key === 'Escape') { e.preventDefault(); closeAfk(); return; }
+    if (e.key === 'F2') { e.preventDefault(); return; }
+    if (e.key === 'Tab') { trapTab(e, adialog); return; }
+    // Enter im Textfeld = "Los geht's" (Shift+Enter = neue Zeile), Strg+Enter ueberall
+    const inTask = e.target === afkTask;
+    if (e.key === 'Enter' && !e.isComposing && ((inTask && !e.shiftKey && !e.altKey) || e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      if (!e.repeat) submitAfk();
+    }
+  }
+  /** Maus-Klick zu kurz nach dem Oeffnen oder Teil eines Doppelklicks? (Tastatur zaehlt immer) */
+  const afkTooSoon = (e) => !!(e && e.detail) && (e.detail > 1 || performance.now() - afk.at < 400);
+  byId('afk-go').addEventListener('click', (e) => { if (!afkTooSoon(e)) submitAfk(); });
+  byId('afk-cancel').addEventListener('click', () => closeAfk());
+  amodal.addEventListener('mousedown', (e) => {
+    if (e.target !== amodal) return;
+    e.preventDefault(); // Fokus bleibt im Dialog (auch beim ignorierten zweiten Klick eines Doppelklicks)
+    if (!afkTooSoon(e)) closeAfk();
+  });
+  byId('afk-btn').addEventListener('click', () => openAfk());
+  byId('sb-afk').addEventListener('click', () => {
+    if (afkRunning() || state.afk_pending === true) { closeSidebar(); afkStop(); }
+    else openAfk();
+  });
+
+  // ---------- Band "AFK-Modus – Nova arbeitet allein" ----------
+  /** Minuten seit dem Start: lokal hochzaehlen (die KI laeuft auf demselben PC – sonst ab dem letzten Stand). */
+  function afkMinutes() {
+    const b = afk.base;
+    if (!b) return 0;
+    const est = b.minutes + Math.floor((Date.now() - b.at) / 60000);
+    const local = Date.now() / 1000 - b.since;
+    if (!Number.isFinite(local) || !b.since) return est;
+    const m = Math.floor(local / 60);
+    return Math.abs(m - est) <= 1 ? Math.max(m, b.minutes) : est;
+  }
+  function afkSince(m) {
+    if (m < 1) return 'seit gerade eben';
+    if (m < 60) return 'seit ' + m + ' Min';
+    const hh = Math.floor(m / 60);
+    const mm = m % 60;
+    return 'seit ' + hh + ' Std' + (mm ? ' ' + mm + ' Min' : '');
+  }
+  const afkLimit = (m) => (m % 60 === 0 && m >= 60 ? m / 60 + ' Std' : m + ' Min');
+  /** 1 -> "1 €", 0.2 -> "0,20 €"; exact=true: immer zwei Stellen ("0,01 €"). */
+  function afkEur(v, exact) {
+    v = Math.max(0, Number(v) || 0);
+    const whole = Math.abs(v - Math.round(v)) < 1e-9;
+    return (whole && !exact ? String(Math.round(v))
+      : v.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })) + ' €';
+  }
+  const afkCount = (n, one, many) => (n === 1 ? '1 ' + one : n + ' ' + many);
+
+  function renderAfkTime() {
+    byId('ab-time').textContent = afkBand.dataset.mode === 'active' ? afkSince(afkMinutes()) : '';
+  }
+
+  function renderAfk() {
+    const a = afkRunning() ? state.afk : null;
+    const pending = !a && state.afk_pending === true;
+    const show = !ended && (!!a || pending);
+    if (a) afk.lastSince = a.since;
+    else {
+      if (afk.lastSince !== null && !(state.afk && typeof state.afk === 'object')) afk.goneSince = afk.lastSince;
+      afk.lastSince = null;
+      afk.endingSince = null;
+      afk.base = null;
+    }
+    // AFK kam anderswo in Gang (anderes Fenster, Nova selbst): den offenen Dialog hier schliessen –
+    // "Los geht's" ginge nicht mehr bzw. wuerde die Wahl des anderen Starts ueberschreiben.
+    // (Der eigene Start schliesst ihn selbst: waehrenddessen ist afk.sending gesetzt.)
+    if (show && !amodal.hidden && !afk.sending) {
+      afk.back = null; // der Knopf "Ich bin weg" verschwindet gleich – Fokus ins Eingabefeld
+      closeAfk();
+      toast(pending ? 'Der AFK-Modus startet schon gleich.' : 'Der AFK-Modus läuft schon.', 'info');
+    }
+    const n = kiName();
+    const job = a ? String(a.auftrag || '').trim() : '';
+    // Knoepfe "Ich bin weg" (neben dem Feld und in der Seitenleiste)
+    byId('afk-btn').hidden = show || ended;
+    const sb = byId('sb-afk');
+    const sbMode = !show ? 'off' : pending ? 'pending' : 'on';
+    sb.classList.toggle('on', sbMode === 'on');
+    sb.setAttribute('aria-haspopup', sbMode === 'off' ? 'dialog' : 'false');
+    byId('sb-afk-title').textContent = sbMode === 'off' ? 'Ich bin weg' : sbMode === 'pending' ? 'Startet gleich …' : 'Ich bin zurück';
+    byId('sb-afk-sub').textContent = sbMode === 'off' ? n + ' arbeitet allein weiter'
+      : sbMode === 'pending' ? 'AFK-Modus – klicken zum Abbrechen' : 'AFK-Modus läuft – beenden';
+    sb.title = sbMode === 'off' ? 'AFK-Modus: ' + n + ' arbeitet allein weiter, während du weg bist, und berichtet dir danach'
+      : sbMode === 'on' ? 'AFK-Modus beenden – ' + n + ' hört auf und berichtet dir' : '';
+    app.classList.toggle('afk-on', !!a && !ended);
+
+    afkBand.hidden = !show;
+    updateSendBtn(); // Senden-Knopf und Hinweis: waehrend AFK heisst Enter "ich bin zurueck"
+    if (!show) {
+      clearInterval(afk.timer);
+      afk.timer = 0;
+      moodSync();
+      return;
+    }
+    // endet gerade: einmal gesehen, bleibt es so (ein verspaeteter aelterer Stand holt das Band nicht zurueck)
+    if (a && a.active === false) afk.endingSince = a.since;
+    const ending = !!a && afk.endingSince !== null && afk.endingSince === a.since;
+    const mode = pending ? 'pending' : ending ? 'ending' : 'active';
+    afkBand.dataset.mode = mode;
+    const btn = byId('ab-btn');
+    const note = byId('ab-note');
+    const counts = byId('ab-counts');
+    let title;
+    let noteText = '';
+    let countText = '';
+    if (mode === 'pending') {
+      title = 'AFK-Modus startet gleich …';
+      noteText = 'sobald ich mit der laufenden Antwort fertig bin';
+      btn.textContent = 'Abbrechen';
+      btn.title = 'Doch nicht weg – der AFK-Modus startet nicht';
+    } else if (mode === 'ending') {
+      title = 'Willkommen zurück!';
+      noteText = 'Ich höre auf und fasse zusammen, was ich gemacht habe …';
+      btn.textContent = 'Ich bin zurück';
+      btn.title = '';
+    } else {
+      title = 'AFK-Modus – ' + n + ' arbeitet allein';
+      const last = String(a.last || '').trim();
+      noteText = last ? 'Zuletzt: ' + last : job ? 'Auftrag: ' + job
+        : 'Ohne festen Auftrag – ich mache da weiter, wo wir aufgehört haben.';
+      const p = Number(a.proposals) || 0;
+      const q = Number(a.questions) || 0;
+      countText = [p ? afkCount(p, 'Vorschlag', 'Vorschläge') : '', q ? afkCount(q, 'Frage', 'Fragen') : '']
+        .filter(Boolean).join(' · ');
+      btn.textContent = 'Ich bin zurück';
+      btn.title = 'AFK-Modus beenden – ' + n + ' hört auf und berichtet dir, was in der Zeit passiert ist';
+    }
+    btn.hidden = mode === 'ending';
+    btn.disabled = afk.stopping;
+    const t = byId('ab-title');
+    if (t.textContent !== title) t.textContent = title;
+    note.textContent = noteText;
+    note.title = noteText.length > 60 ? noteText : '';
+    counts.textContent = countText;
+    counts.title = countText ? 'Wartet auf dich, wenn du zurück bist' : '';
+    byId('ab-last').hidden = !noteText && !countText;
+    if (a && mode === 'active') {
+      const since = Number(a.since);
+      afk.base = { since: Number.isFinite(since) ? since : 0, minutes: Math.max(0, Number(a.minutes) || 0), at: Date.now() };
+      const max = Math.max(1, Number(a.max_rounds) || 1);
+      byId('ab-step').textContent = 'Schritt ' + Math.min(max, Math.max(1, Number(a.rounds) || 0)) + '/' + max;
+      byId('ab-cost').textContent = 'ca. ' + afkEur(a.eur, true) + ' von ' + afkEur(a.max_eur);
+      const lim = [];
+      if (job) lim.push('Auftrag: ' + job);
+      lim.push('Höchstens ' + afkLimit(Math.max(1, Number(a.max_minutes) || 0)) + ' · ' + afkEur(a.max_eur) + ' · ' + max + ' Schritte');
+      afkBand.title = lim.join('\n');
+      if (!afk.timer) afk.timer = setInterval(renderAfkTime, 10000);
+    } else {
+      byId('ab-step').textContent = '';
+      byId('ab-cost').textContent = '';
+      afkBand.title = '';
+      clearInterval(afk.timer);
+      afk.timer = 0;
+    }
+    renderAfkTime();
+    moodSync();
+  }
+  /** Du bist zurueck (Nachricht geschrieben): Band zeigt "Willkommen zurueck", bis state.afk weg ist. */
+  function afkBack() {
+    if (!afkRunning()) return;
+    afk.endingSince = state.afk.since;
+    renderAfk();
+  }
+
+  /** "Neues Gespraech" waehrend AFK: das wuerde den Bericht gleich wieder loeschen, bevor man ihn
+   *  sieht. Stattdessen AFK beenden (der Bericht kommt) – danach geht ein neues Gespraech. */
+  function afkBlocksNew() {
+    if (!afkRunning() || ended) return false;
+    const ending = afk.endingSince !== null && afk.endingSince === state.afk.since;
+    if (!ending) afkStop();
+    toast(ending ? 'Einen Moment – gleich kommt dein Bericht. Danach kannst du ein neues Gespräch beginnen.'
+      : 'AFK-Modus beendet – hier ist erst dein Bericht. Danach kannst du ein neues Gespräch beginnen.', 'info', 6000);
+    return true;
+  }
+
+  /** "Ich bin zurueck" (laeuft) bzw. "Abbrechen" (startet gleich): POST /api/afk {action:"stop"}. */
+  async function afkStop() {
+    if (afk.stopping || ended) return;
+    const running = afkRunning();
+    const before = running ? state.afk.since : null;
+    afk.stopping = true;
+    if (running) afk.endingSince = before;
+    const hadFocus = afkBand.contains(document.activeElement);
+    renderAfk();
+    const r = await post('/api/afk', { action: 'stop' });
+    afk.stopping = false;
+    if (!r.ok) {
+      if (afk.endingSince === before) afk.endingSince = null;
+      renderAfk();
+      toast(r.error || 'Das hat nicht geklappt.', 'error');
+      return;
+    }
+    if (!running) toast('AFK-Modus abgebrochen – ich bleibe hier.', 'info');
+    renderAfk();
+    if (hadFocus && (afkBand.hidden || byId('ab-btn').hidden)) focusInput();
+  }
+  byId('ab-btn').addEventListener('click', () => afkStop());
+
+  // ---------- Im Chat: Schritte als Trennzeile, Bericht als Karte ----------
+  /** Anzeige-Text einer AFK-Notiz: "0,50 EUR" -> "0,50 €" (wie in der Bericht-Karte) und in der
+   *  Start-Notiz ein Punkt nach dem Auftrag, wenn der Nutzer keinen gesetzt hat
+   *  ("Auftrag: Flüge nach Rom im Mai Ich lösche …" -> "… im Mai. Ich lösche …"). */
+  function afkNoticeText(t) {
+    let s = t.replace(/\*\*/g, '').replace(/(\d)\s*EUR\b/g, '$1 €');
+    if (/^AFK-Modus an\b/.test(s)) s = s.replace(/(Auftrag: .*?[^\s.!?…:;])( Ich l(?:ö|oe)sche\b)/, '$1.$2');
+    return s;
+  }
+
+  function addAfkNotice(text) {
+    const t = String(text == null ? '' : text).trim();
+    if (!t) return null;
+    if (RE_AFK_REPORT.test(t)) return addAfkReport(t, false);
+    const row = h('div', 'afk-note' + (t.length > 70 ? ' long' : ''));
+    row.setAttribute('role', 'note');
+    row.dataset.text = t;
+    const chip = h('span', 'an-chip');
+    chip.append(icon('moon'), h('span', 'an-text', afkNoticeText(t)));
+    row.append(h('span', 'an-line'), chip, h('span', 'an-line'));
+    msgs.append(row);
+    added();
+    return row;
+  }
+
+  /** Bericht zerlegen: "**Während du weg warst** (3 Min., 2 Schritte, ca. 0,01 EUR). Grund" + Abschnitte. */
+  function parseAfkReport(text) {
+    const lines = String(text).replace(/\r\n?/g, '\n').split('\n');
+    const first = lines.shift() || '';
+    const m = first.match(/^\s*\*\*[^*]+\*\*\s*(?:\(([^)]*)\))?\.?\s*(.*)$/);
+    const meta = m && m[1] ? m[1].split(/,\s+/).map((x) => x.replace(/\bEUR\b/g, '€').replace(/^1 Schritte$/, '1 Schritt').trim()).filter(Boolean) : [];
+    const reason = m ? m[2].trim() : first.replace(/\*\*/g, '').trim();
+    const secs = [];
+    let cur = { title: '', lines: [] };
+    const push = () => { if (cur.title || cur.lines.join('').trim()) secs.push(cur); };
+    for (const l of lines) {
+      const s = l.match(/^\s*\*\*([^*\n]+?):?\*\*:?\s*(.*)$/); // "**Ergebnis:** …" / "**Fragen an dich:**"
+      if (s) {
+        push();
+        cur = { title: s[1].trim(), lines: s[2] ? [s[2]] : [] };
+      } else cur.lines.push(l);
+    }
+    push();
+    return { meta, reason, secs, ok: !!m };
+  }
+  const AFK_SEC = [
+    [/^ergebnis/i, 'result', 'checkCircle'],
+    [/erledigt|notiz/i, 'notes', 'pen'],
+    [/vorschl/i, 'proposals', 'brain'],
+    [/frage/i, 'questions', 'help'],
+  ];
+
+  function addAfkReport(text, claimed) {
+    const t = String(text).trim();
+    const rep = parseAfkReport(t);
+    const card = h('section', 'afk-report');
+    card.setAttribute('aria-label', 'Während du weg warst');
+    card.dataset.text = t;
+    if (claimed) card.dataset.claimed = '1';
+    const head = h('div', 'ar-head');
+    const ic = h('span', 'ar-ic');
+    ic.setAttribute('aria-hidden', 'true');
+    ic.append(icon('moon'));
+    const titles = h('div', 'ar-titles');
+    titles.append(h('h3', 'ar-title', 'Während du weg warst'));
+    if (rep.meta.length) {
+      const meta = h('div', 'ar-meta');
+      for (const x of rep.meta) meta.append(h('span', null, x));
+      titles.append(meta);
+    }
+    head.append(ic, titles);
+    card.append(head);
+    if (!rep.ok) { // unbekanntes Format: einfach als Markdown (sicher: escaped)
+      const body = h('div', 'md ar-sec-body');
+      body.innerHTML = renderMarkdown(t);
+      card.append(body);
+    } else if (rep.reason) card.append(h('p', 'ar-reason', rep.reason));
+    let talk = false;
+    if (rep.ok) {
+      for (const s of rep.secs) {
+        const kind = AFK_SEC.find(([re]) => re.test(s.title)) || [null, s.title ? 'other' : 'plain', 'info'];
+        if (kind[1] === 'proposals' || kind[1] === 'questions') talk = true;
+        const sec = h('div', 'ar-sec ' + kind[1]);
+        if (s.title) {
+          const st = h('h4', 'ar-sec-title');
+          st.append(icon(kind[2]), h('span', null, s.title));
+          sec.append(st);
+        }
+        const body = h('div', 'md ar-sec-body');
+        body.innerHTML = renderMarkdown(s.lines.join('\n').trim()); // sicher: escaped
+        sec.append(body);
+        card.append(sec);
+      }
+    }
+    if (talk) {
+      const foot = h('div', 'ar-foot');
+      const b = h('button', 'btn small ar-talk');
+      b.type = 'button';
+      b.append(icon('chat'), h('span', null, 'Vorschläge besprechen'));
+      b.title = '„' + AFK_TALK + '“ ins Eingabefeld setzen';
+      b.addEventListener('click', () => {
+        const v = input.value.replace(/\s+$/, '');
+        if (!v.includes(AFK_TALK)) input.value = v ? v + '\n' + AFK_TALK : AFK_TALK;
+        autosize();
+        recallIdx = -1;
+        closeCmdPop();
+        if (focusInput()) input.setSelectionRange(input.value.length, input.value.length);
+      });
+      foot.append(b, h('span', 'ar-hint', 'Nichts davon passiert ohne dein Okay.'));
+      card.append(foot);
+    }
+    msgs.append(card);
+    added();
+    return card;
+  }
+
+  /** Ereignis afk_report: die Karte kam schon mit der Notice – dann nur bestaetigen (nie doppelt). */
+  function onAfkReport(ev) {
+    const t = String(ev.text == null ? '' : ev.text).trim();
+    if (!t || ended) return;
+    const reason = String(ev.reason || '');
+    const cards = msgs.querySelectorAll('.afk-report');
+    const last = cards[cards.length - 1];
+    if (last && !last.dataset.claimed && last.dataset.text === t) {
+      last.dataset.claimed = '1';
+      last.dataset.reason = reason;
+      return;
+    }
+    // Bericht-Notice kam in anderem Format (als Trennzeile): durch die Karte ersetzen
+    const notes = msgs.querySelectorAll('.afk-note');
+    const ln = notes[notes.length - 1];
+    const card = addAfkReport(t, true);
+    card.dataset.reason = reason;
+    if (ln && ln.dataset.text === t) { ln.replaceWith(card); added(); }
+  }
 
   for (const b of document.querySelectorAll('[data-prompt]')) {
     b.addEventListener('click', () => send(b.dataset.prompt));
@@ -2186,7 +3207,7 @@
   /** Eingabefeld fokussieren – aber nie einem offenen Dialog den Fokus wegnehmen. */
   function focusInput() {
     if (!modal.hidden) { askFocusBack = input; return false; }
-    if (!pmodal.hidden || ended || jv.open || !cmodal.hidden || !smodal.hidden) return false;
+    if (!pmodal.hidden || ended || jv.open || !cmodal.hidden || !smodal.hidden || !amodal.hidden) return false;
     input.focus();
     return true;
   }
@@ -2295,7 +3316,8 @@
     }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      send(input.value, true);
+      // Strg+Enter: laufende Antwort unterbrechen und gleich das hier beantworten
+      send(input.value, true, e.ctrlKey || e.metaKey);
       return;
     }
     // Pfeil hoch/runter: eigene letzte Nachrichten
@@ -2358,9 +3380,10 @@
     if (recording) {
       byId('voice-label').textContent = 'Aufnahme';
       byId('voice-time').textContent = fmtTime(Date.now() - voice.t0);
+      const done = autosendOn() ? 'senden' : 'fertig';
       byId('voice-help').textContent = voice.mode === 'toggle' || voice.phase === 'remote'
-        ? 'Nochmal drücken (oder F2) = fertig · Esc bricht ab'
-        : 'Loslassen = fertig · Esc bricht ab';
+        ? 'Nochmal drücken (oder F2) = ' + done + ' · Esc bricht ab'
+        : 'Loslassen = ' + done + ' · Esc bricht ab';
       bar.querySelector('.rec-dot').hidden = false;
       bar.querySelector('.rec-spin').hidden = true;
     } else if (recognizing) {
@@ -2437,7 +3460,22 @@
     if (!r.ok) { toast(r.error || 'Die Spracherkennung hat nicht geklappt.', 'error', 5000); return; }
     const text = String(r.text || '').trim();
     if (!text) { toast('Ich habe nichts verstanden – versuch es noch einmal.'); focusInput(); return; }
-    appendToInput(text);
+    voiceText(text);
+  }
+
+  /** Schalter "Gesprochenes sofort senden" (waehrend des Umschaltens schon der neue Wert). */
+  function autosendOn() {
+    return own(pendingVal, 'voice_autosend') ? !!pendingVal.voice_autosend : state.voice_autosend === true;
+  }
+
+  /** Erkannter Text (Mikrofon-Knopf/F2): gleich senden (Schalter an) oder ins Eingabefeld setzen. */
+  function voiceText(text) {
+    if (!autosendOn() || ended) { appendToInput(text); return; }
+    // (arbeitet die KI noch, kommt es in die Warteschlange)
+    // schon getippter Text bleibt vorne – alles zusammen geht raus
+    const typed = input.value.replace(/\s+$/, '');
+    send(typed ? typed + ' ' + text : text, true);
+    focusInput();
   }
 
   async function voiceCancel(quiet) {
@@ -2504,7 +3542,8 @@
       if (voice.phase === 'remote' || voice.phase === 'remote-rec') voiceReset();
       if (quiet) return;
       if (ev.error) toast(String(ev.error), 'error', 5000);
-      else if (ev.text) appendToInput(ev.text);
+      // Aufnahme aus einem anderen Fenster: mit "sofort senden" schickt jenes Fenster den Text ab
+      else if (ev.text && !autosendOn()) appendToInput(ev.text);
     }
   }
 
@@ -2577,11 +3616,13 @@
     const profOpen = !pmodal.hidden;
     const jvOpen = jv.open;
     const setupOpen = !smodal.hidden;
-    app.inert = askOpen || confOpen || profOpen || jvOpen || setupOpen;
+    const afkOpen = !amodal.hidden;
+    app.inert = askOpen || confOpen || profOpen || jvOpen || setupOpen || afkOpen;
     pmodal.inert = askOpen || confOpen || jvOpen || setupOpen; // Jarvis liegt ueber dem Profil-Fenster
     smodal.inert = askOpen || confOpen || jvOpen;
-    jvEl.inert = askOpen || confOpen;             // Rueckfragen liegen ueber Jarvis
-    tourEl.inert = askOpen || confOpen || profOpen || jvOpen || setupOpen;
+    jvEl.inert = askOpen || confOpen || afkOpen;  // Rueckfragen und der AFK-Dialog liegen ueber Jarvis
+    tourEl.inert = askOpen || confOpen || profOpen || jvOpen || setupOpen || afkOpen;
+    amodal.inert = askOpen || confOpen; // Rueckfragen liegen ueber dem AFK-Dialog
     modal.inert = confOpen;
     // Sphaeren hinter dem obersten grossen Fenster nicht weiter zeichnen
     sphere.scope(setupOpen ? smodal : profOpen ? pmodal : null);
@@ -2744,6 +3785,7 @@
   let profTab = 'charakter';
   let panelState = 'loading';      // loading | error | ready
   let profFocusBack = null;
+  let profOpenedAt = 0; // wann das Profil-Fenster aufging (Doppelklick-Schutz)
   let profSaving = false;
   let profError = '';
   let savedNote = false;
@@ -2795,6 +3837,7 @@
     if (!pmodal.hidden) { if (tab) showTab(tab, true); return; }
     profFocusBack = document.activeElement;
     pmodal.hidden = false;
+    profOpenedAt = performance.now();
     updateInert();
     profError = '';
     savedNote = false;
@@ -3317,6 +4360,7 @@
   }
 
   function startNewConversation() {
+    if (afkBlocksNew()) return;
     if (busy) { toast('Ich arbeite noch – ein neues Gespräch geht, sobald ich fertig bin.'); return; }
     closeProfile();
     send('/neu');
@@ -3326,7 +4370,13 @@
   byId('pn-save-new').addEventListener('click', () => saveProfile(true));
   byId('pn-close').addEventListener('click', requestClose);
   byId('pn-retry').addEventListener('click', loadProfile);
-  pmodal.addEventListener('mousedown', (e) => { if (e.target === pmodal) requestClose(); });
+  pmodal.addEventListener('mousedown', (e) => {
+    if (e.target !== pmodal) return;
+    e.preventDefault(); // Fokus bleibt im Fenster
+    // zweiter Klick eines Doppelklicks auf den Ausloeser (z.B. "Profil") schliesst nicht gleich wieder
+    if (e.detail > 1 || performance.now() - profOpenedAt < 400) return;
+    requestClose();
+  });
   byId('pc-discard').addEventListener('click', closeProfile);
   byId('pc-back').addEventListener('click', () => { hideConfirm(); byId('pn-save').focus(); });
   byId('pc-save').addEventListener('click', async () => {
@@ -3772,16 +4822,22 @@
   // Bestaetigung (eigener Dialog, z.B. "Stuetzraeder abnehmen?")
   // =====================================================================
   let confirmState = null;
+  // So lange nach dem Oeffnen zaehlen Maus-Klicks im Dialog nicht: sonst rutscht der zweite
+  // Klick eines Doppelklicks durch (z.B. "Abnehmen" -> gleich auf "Stuetzraeder abnehmen").
+  const CONFIRM_GUARD_MS = 500;
   function confirmDialog(opts) {
     if (confirmState) closeConfirm(false);
     return new Promise((resolve) => {
-      confirmState = { resolve, back: document.activeElement };
+      confirmState = {
+        resolve, back: document.activeElement, raw: !!opts.raw, kind: opts.kind || '', at: performance.now(),
+      };
       byId('cdialog').className = 'dialog cdialog ' + (opts.cls || 'risk-none');
       byId('cd-icon').replaceChildren(icon(opts.icon || 'alert'));
       byId('cd-title').textContent = opts.title || '';
       byId('cd-risk').textContent = opts.risk || '';
       byId('cd-text').replaceChildren(opts.body || '');
       byId('cd-ok').textContent = opts.ok || 'OK';
+      byId('cd-ok').hidden = opts.ok === null; // Auswahl: die Knoepfe stehen im Text
       byId('cd-cancel').textContent = opts.cancel || 'Abbrechen';
       cmodal.hidden = false;
       updateInert();
@@ -3795,16 +4851,28 @@
     cmodal.hidden = true;
     updateInert();
     const back = st.back;
+    // Rueckfrage kam, waehrend dieser Dialog offen war: nach ihr nicht auf den (versteckten) Dialog zurueck
+    if (askFocusBack && cmodal.contains(askFocusBack)) askFocusBack = back;
     if (back && back !== document.body && document.contains(back) && !back.closest('[inert]')) back.focus();
+    else if (!modal.hidden) dialog.focus(); // offene Rueckfrage liegt jetzt oben
     else if (jv.open) jvEl.focus();
     else if (!smodal.hidden) sdialog.focus();
     else if (!pmodal.hidden) panel.focus();
     else focusInput();
-    st.resolve(!!result);
+    st.resolve(st.raw ? result : !!result);
   }
-  byId('cd-ok').addEventListener('click', () => closeConfirm(true));
-  byId('cd-cancel').addEventListener('click', () => closeConfirm(false));
-  cmodal.addEventListener('mousedown', (e) => { if (e.target === cmodal) closeConfirm(false); });
+  /** Maus-Klick zu kurz nach dem Oeffnen oder Teil eines Doppelklicks? (Tastatur zaehlt immer: detail 0) */
+  function confirmTooSoon(e) {
+    if (!confirmState || !e || !e.detail) return false;
+    return e.detail > 1 || performance.now() - confirmState.at < CONFIRM_GUARD_MS;
+  }
+  byId('cd-ok').addEventListener('click', (e) => { if (!confirmTooSoon(e)) closeConfirm(true); });
+  byId('cd-cancel').addEventListener('click', (e) => { if (!confirmTooSoon(e)) closeConfirm(false); });
+  cmodal.addEventListener('mousedown', (e) => {
+    if (e.target !== cmodal) return;
+    e.preventDefault(); // Fokus bleibt im Dialog (auch beim ignorierten zweiten Klick eines Doppelklicks)
+    if (!confirmTooSoon(e)) closeConfirm(false);
+  });
   function confirmKey(e) {
     if (e.key === 'Escape') { e.preventDefault(); closeConfirm(false); return; }
     if (e.key === 'F2') { e.preventDefault(); return; }
@@ -3829,7 +4897,71 @@
     body.append(p, caps, note);
     return confirmDialog({
       cls: 'risk-wheels', icon: 'shieldOff', title: 'Stützräder abnehmen?', risk: 'Voller Zugriff auf deinen PC',
-      body, ok: 'Stützräder abnehmen', cancel: 'Abbrechen',
+      body, ok: 'Stützräder abnehmen', cancel: 'Abbrechen', kind: 'wheels-off',
+    });
+  }
+
+  /** Liste "Gerade gilt" der Auswahl fuellen (nur neu bauen, wenn sich etwas geaendert hat). */
+  function wheelsFacts(facts) {
+    const n = kiName();
+    const s = state;
+    const key = [!!s.auto_confirm, !!s.full_access, !!s.safe_mode, n].join('|');
+    if (facts.dataset.key === key) return;
+    facts.dataset.key = key;
+    facts.replaceChildren();
+    for (const [good, ic, k, v] of [
+      [!s.auto_confirm, s.auto_confirm ? 'zap' : 'checkCircle', 'Rückfragen', s.auto_confirm ? n + ' fragt nicht nach' : n + ' fragt nach'],
+      [!s.full_access, s.full_access ? 'monitor' : 'folder', 'Zugriff', s.full_access ? 'ganzer PC' : 'nur Arbeitsordner'],
+      [!!s.safe_mode, s.safe_mode ? 'shield' : 'shieldOff', 'Sicherer Modus', s.safe_mode ? 'an' : 'aus'],
+    ]) {
+      const li = h('li', good ? 'good' : 'bad');
+      const t = h('span', 'cdf-text');
+      t.append(h('span', 'cdf-k', k), h('span', 'cdf-v', v));
+      li.append(icon(ic), t);
+      facts.append(li);
+    }
+  }
+
+  /** Neuer Stand vom Server, waehrend Auswahl oder Warnung offen sind (z.B. im anderen Fenster umgestellt). */
+  function syncWheelsDialog(w) {
+    const kind = confirmState ? confirmState.kind : '';
+    if (kind !== 'wheels-choice' && kind !== 'wheels-off') return;
+    if (kind === 'wheels-choice' && w === 'teilweise') {
+      const facts = byId('cd-text').querySelector('.cd-facts');
+      if (facts) wheelsFacts(facts);
+      return;
+    }
+    // Warnung: gilt weiter, solange noch etwas abzunehmen ist ("an" oder "teilweise")
+    if (kind === 'wheels-off' && (w === 'an' || w === 'teilweise')) return;
+    closeConfirm(false);
+    if (w === 'an') toast('Die Stützräder wurden inzwischen angelegt.', 'info');
+    else if (w === 'aus') toast('Die Stützräder wurden inzwischen abgenommen.', 'info');
+  }
+
+  /** Stuetzraeder "teilweise": was gerade gilt – anlegen, abnehmen oder abbrechen. Ergebnis 'an' | 'aus' | false. */
+  function wheelsChoice() {
+    const body = document.createDocumentFragment();
+    body.append(h('p', null, 'Ein Teil des Schutzes ist an, ein Teil aus. Gerade gilt:'));
+    const facts = h('ul', 'cd-facts');
+    wheelsFacts(facts);
+    const ask = h('p', 'cd-ask', 'Was möchtest du?');
+    const choices = h('div', 'cd-choices');
+    for (const [cls, ic, title, sub, val] of [
+      ['safe', 'shield', 'Anlegen – sicher', 'fragt vor Änderungen, nur Arbeitsordner, sicherer Modus an', 'an'],
+      ['free', 'shieldOff', 'Abnehmen – volle Rechte', 'ganzer PC, ohne Rückfrage – vorher kommt eine Warnung', 'aus'],
+    ]) {
+      const b = h('button', 'cd-choice ' + cls);
+      b.type = 'button';
+      const t = h('span', 'cdc-text');
+      t.append(h('span', 'cdc-title', title), h('span', 'cdc-sub', sub));
+      b.append(icon(ic, 'cdc-ic'), t, icon('chevronRight', 'cdc-chev'));
+      b.addEventListener('click', (e) => { if (!confirmTooSoon(e)) closeConfirm(val); });
+      choices.append(b);
+    }
+    body.append(facts, ask, choices);
+    return confirmDialog({
+      cls: 'risk-moderate wheels-choice', icon: 'shield', title: 'Stützräder: teilweise', risk: 'Gemischte Einstellung',
+      body, ok: null, cancel: 'Abbrechen', raw: true, kind: 'wheels-choice',
     });
   }
 
@@ -4376,7 +5508,8 @@
     if (tour.open) tourPause(true);
     orb.setState(jv.state, false);
     orb.start();
-    requestAnimationFrame(() => { if (jv.open && modal.hidden && cmodal.hidden) jvEl.focus(); });
+    // ein offener Dialog darueber (Rueckfrage, Bestaetigung, AFK) behaelt den Fokus – danach kommt er zu Jarvis
+    requestAnimationFrame(() => { if (jv.open && modal.hidden && cmodal.hidden && amodal.hidden) jvEl.focus(); });
   }
 
   function closeJarvisView() {
@@ -4403,8 +5536,11 @@
     if (tour.open) tourPause(false);
     const back = jv.focusBack;
     jv.focusBack = null;
-    if (modal.hidden && cmodal.hidden && pmodal.hidden && smodal.hidden) {
-      if (back && back !== document.body && document.contains(back) && !back.closest('[inert]')) back.focus();
+    if (!amodal.hidden && modal.hidden && cmodal.hidden) { // AFK-Dialog liegt obenauf: dort bleiben
+      if (!amodal.contains(document.activeElement)) afkTask.focus();
+    } else if (modal.hidden && cmodal.hidden && pmodal.hidden && smodal.hidden) {
+      if (back && back !== document.body && document.contains(back) && !back.closest('[inert]') &&
+          back.offsetParent !== null) back.focus();
       else focusInput();
     } else if (!smodal.hidden && modal.hidden) sdialog.focus();
     else if (!pmodal.hidden && modal.hidden) panel.focus();
@@ -4877,7 +6013,10 @@
   const su = {
     where: '',          // '' | 'modal' | 'pane'
     welcome: false, data: null, sel: '', loading: false, gen: 0, reqGen: 0, checking: false, result: null,
-    note: '', closeTimer: 0, focusBack: null, autoShown: false, lastProv: null, lastMissing: null,
+    note: '', closeTimer: 0, focusBack: null, autoShown: false, lastProv: null, lastMissing: null, lastModel: null,
+    jump: '',           // 'modell' = nach dem Laden zum Bereich "Modell & Denk-Tiefe" springen
+    openedAt: 0,        // wann das Fenster aufging (Doppelklick auf den Ausloeser schliesst es nicht gleich)
+    refreshTimer: 0, pointer: false,
   };
   const suShort = (p) => String(p && p.name ? p.name : p || '').replace(/\s*\(.*\)\s*$/, '') || 'KI';
   const suSel = () => (su.data ? su.data.providers.find((p) => p.id === su.sel) || null : null);
@@ -4897,10 +6036,38 @@
         url: /^https:\/\/[^\s"'<>\\]+$/.test(url) ? url : fb ? fb.url : '',
         hasKey: p.has_key === true,
         hint: str(p.key_hint).trim().slice(0, 40),
+        modelName: str(p.model_name).trim().slice(0, 80),
       };
     }).filter((p) => /^[a-z0-9_-]{1,30}$/.test(p.id));
     if (!list.length) return null;
-    return { provider: str(d.provider).trim().toLowerCase(), providers: list, missing: d.key_missing === true };
+    return {
+      provider: str(d.provider).trim().toLowerCase(), providers: list, missing: d.key_missing === true,
+      modelle: normModelle(d.modelle, list.map((p) => p.id)),
+    };
+  }
+
+  /** "modelle" aus /api/setup: je Gehirn {model, denken, models:[{id,name,info,tempo,preis}], depths:[{id,name,info}]}.
+      Fehlt es (aeltere KI), bleibt der Bereich "Modell & Denk-Tiefe" einfach weg. */
+  function normModelle(raw, ids) {
+    const out = Object.create(null);
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+    const items = (arr, keys) => {
+      const seen = new Set();
+      return (Array.isArray(arr) ? arr : []).filter((x) => x && typeof x === 'object').map((x) => {
+        const o = { id: str(x.id).trim() };
+        for (const k of keys) o[k] = str(x[k]).trim().slice(0, 140);
+        if (!o.name) o.name = o.id;
+        return o;
+      }).filter((o) => /^[A-Za-z0-9][A-Za-z0-9._-]{0,60}$/.test(o.id) && !seen.has(o.id) && seen.add(o.id)).slice(0, 12);
+    };
+    for (const id of ids) {
+      const g = pick(raw, id);
+      if (!g || typeof g !== 'object' || Array.isArray(g)) continue;
+      const models = items(g.modelle, ['name', 'info', 'tempo', 'preis']);
+      const depths = items(g.denktiefen, ['name', 'info']);
+      if (models.length || depths.length) out[id] = { model: str(g.model).trim(), denken: str(g.denken).trim(), models, depths };
+    }
+    return out;
   }
 
   /** Ohne Antwort vom Server: die beiden bekannten Gehirne (aus dem Zustand). */
@@ -4924,20 +6091,28 @@
   }
 
   // ---------- Oeffnen / Schliessen ----------
-  function openSetup(welcome) {
+  /** jump 'modell': gleich beim Bereich "Modell & Denk-Tiefe" des aktiven Gehirns oeffnen. */
+  function openSetup(welcome, jump) {
     closeSidebar();
     closeCmdPop();
     if (ended) return;
-    if (!pmodal.hidden) { showTab('gehirn', true); return; } // Profil-Fenster offen: dort der Reiter
+    su.jump = jump === 'modell' && !welcome ? 'modell' : '';
+    const active = String(state.provider || '').toLowerCase();
+    if (!pmodal.hidden) { // Profil-Fenster offen: dort der Reiter
+      if (su.jump && !su.checking) su.sel = active;
+      showTab('gehirn', !su.jump);
+      return;
+    }
     if (!smodal.hidden) { suFocus(); return; }
     su.focusBack = document.activeElement;
     su.welcome = !!welcome;
     su.result = null;
     su.note = '';
-    su.sel = '';
+    su.sel = su.jump ? active : '';
     clearTimeout(su.closeTimer);
     mountSetup('modal');
     smodal.hidden = false;
+    su.openedAt = performance.now();
     updateInert();
     loadSetup();
     moodSync();
@@ -4970,6 +6145,13 @@
 
   function suFocus() {
     if (!suVisible()) return;
+    if (su.jump) { // springen erst mit dem frischen Stand (sonst nach dem Laden); bis dahin im Fenster
+      if (su.data && !su.loading) suJump();
+      else if (su.where === 'modal' && !sdialog.contains(document.activeElement)) sdialog.focus();
+      return;
+    }
+    const ae = document.activeElement;
+    if (ae && ae !== sdialog && setupEl.contains(ae)) return; // schon drin (z.B. nach dem Sprung)
     const p = suSel();
     if (su.where === 'modal' && (!p || !p.hasKey || su.welcome)) suInput.focus();
     else if (su.where === 'modal') sdialog.focus();
@@ -4986,21 +6168,29 @@
 
   async function loadSetup() {
     const gen = ++su.gen;
-    if (!su.data) { su.loading = true; renderSetup(); }
+    su.loading = true; // (auch mit alten Daten: ein Sprung zum Modell wartet auf den frischen Stand)
+    if (!su.data) renderSetup();
     const d = normSetup(await getJson('/api/setup'));
     if (gen !== su.gen) return;
     su.loading = false;
     su.data = d || su.data || fallbackSetup();
     if (!su.sel || !su.data.providers.some((p) => p.id === su.sel)) su.sel = suDefaultSel();
     renderSetup();
+    if (su.jump) suJump();
   }
 
-  /** Aus applyState: beim ersten Start ohne Schluessel begruessen; offenes Fenster aktuell halten. */
-  function setupState(prov, missing) {
-    const changed = su.lastProv !== null && (su.lastProv !== prov || su.lastMissing !== missing);
+  /** Aus applyState: beim ersten Start ohne Schluessel begruessen; offenes Fenster aktuell halten
+      (auch wenn das Modell anderswo gewechselt wurde, z.B. per /modell im Chat). */
+  function setupState(prov, missing, modelSig) {
+    const changed = su.lastProv !== null &&
+      (su.lastProv !== prov || su.lastMissing !== missing || su.lastModel !== modelSig);
     su.lastProv = prov;
     su.lastMissing = missing;
+    su.lastModel = modelSig;
     if (changed && suVisible() && !su.checking) loadSetup();
+    // Auch das NICHT aktive Gehirn kann anderswo geaendert worden sein (anderes Fenster) – das sieht
+    // man am Zustand nicht: offenes Fenster nach jedem Zustand kurz darauf frisch laden.
+    else if (suVisible()) suRefreshSoon();
     if (missing && !su.autoShown && !ended) {
       su.autoShown = true;
       setTimeout(() => {
@@ -5009,6 +6199,22 @@
       }, 300);
     }
   }
+
+  /** Offenes Fenster frisch laden – aber nicht mitten in einem Klick, waehrend geprueft wird oder
+      eine eigene Modell-Wahl unterwegs ist (deren Antwort bringt den Stand ohnehin mit). */
+  function suRefreshSoon(ms) {
+    clearTimeout(su.refreshTimer);
+    su.refreshTimer = setTimeout(() => {
+      if (!suVisible() || su.checking || ended) return;
+      if (su.pointer || Object.keys(sm.busy).length || Object.keys(sm.timer).length) { suRefreshSoon(400); return; }
+      loadSetup();
+    }, ms == null ? 450 : ms);
+  }
+  setupEl.addEventListener('pointerdown', () => { su.pointer = true; });
+  for (const t of ['pointerup', 'pointercancel']) window.addEventListener(t, () => { su.pointer = false; }, true);
+  // zurueck in dieses Fenster (z.B. nach einer Aenderung im anderen): Stand auffrischen
+  window.addEventListener('focus', () => { if (suVisible()) suRefreshSoon(0); });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && suVisible()) suRefreshSoon(0); });
 
   // ---------- Darstellen ----------
   function renderSetup() {
@@ -5024,12 +6230,17 @@
       : 'Womit ' + n + ' denkt – und der passende Schlüssel dafür.';
     byId('su-close').hidden = pane;
     byId('su-later').hidden = pane;
-    byId('su-later').textContent = su.welcome ? 'Später' : 'Abbrechen';
     byId('su-loading').hidden = !(su.loading && !d);
     if (d && !su.sel) su.sel = suDefaultSel();
     const box = byId('su-provs');
+    const ae = document.activeElement;
+    const focusId = ae && box.contains(ae) ? ae.dataset.id : '';
     box.replaceChildren();
     if (d) for (const p of d.providers) box.append(suCard(p, d));
+    if (focusId) {
+      const card = [...box.children].find((c) => c.dataset.id === focusId);
+      if (card) card.focus({ preventScroll: true });
+    }
     const p = suSel();
     const where = byId('su-where');
     where.hidden = !p || !p.url;
@@ -5038,6 +6249,7 @@
       where.title = 'Öffnet die Seite von ' + suShort(p) + ' im Browser';
     }
     suInput.readOnly = su.checking;
+    renderModel();
     renderSteps(p);
     renderSuHint();
     renderSuGo();
@@ -5062,6 +6274,12 @@
     if (p.id === d.provider) top.append(h('span', 'sp-badge now', 'aktiv'));
     main.append(top);
     if (p.info) main.append(h('span', 'sp-info', p.info));
+    const mName = smShownName(p);
+    if (mName) {
+      const m = h('span', 'sp-model');
+      m.append(icon('cpu'), h('span', null, mName));
+      main.append(m);
+    }
     const k = h('span', 'sp-key' + (p.hasKey ? ' ok' : ''));
     k.append(icon(p.hasKey ? 'checkCircle' : 'key'),
       h('span', null, p.hasKey ? 'Schlüssel gespeichert' : 'noch kein Schlüssel'));
@@ -5086,6 +6304,239 @@
     }
   }
   byId('su-provs').addEventListener('keydown', (e) => arrowRadio(e, byId('su-provs'), (b) => suPick(b.dataset.id, true)));
+
+  // ---------- Modell & Denk-Tiefe (je Gehirn; speichert sofort ueber /api/modell) ----------
+  // Gezeigt wird der Bereich fuer das oben ausgewaehlte Gehirn. Ist es nicht das aktive, ist er
+  // leicht abgeschwaecht: die Auswahl gilt, sobald dieses Gehirn benutzt wird.
+  const sm = {
+    want: Object.create(null),   // Gehirn -> {model, denken}: gewaehlt, aber noch nicht bestaetigt
+    busy: Object.create(null),   // Gehirn -> true, solange eine Anfrage laeuft
+    timer: Object.create(null),  // Gehirn -> Verzoegerung (Pfeiltasten: erst speichern, wenn man stehen bleibt)
+    toastEl: null,               // letzte Meldung "Eingestellt: …" (eine neue ersetzt sie)
+  };
+  function smToast(text, kind, ms) {
+    if (sm.toastEl) sm.toastEl.remove();
+    toast(text, kind, ms);
+    sm.toastEl = byId('toasts').lastElementChild;
+  }
+  const smGroup = (pid) => (su.data && su.data.modelle ? pick(su.data.modelle, pid) || null : null);
+  /** Was gerade gewaehlt ist (die noch nicht bestaetigte Auswahl hat Vorrang). */
+  function smCur(pid) {
+    const g = smGroup(pid);
+    const w = pick(sm.want, pid);
+    return { model: w ? w.model : g ? g.model : '', denken: w ? w.denken : g ? g.denken : '' };
+  }
+  const smFind = (list, id) => list.find((x) => x.id === id) || null;
+  /** Anzeige-Name fuer die Gehirn-Karte, z.B. "Claude Sonnet 5.5 - schnell". */
+  function smShownName(p) {
+    const g = smGroup(p.id);
+    if (!g || !pick(sm.want, p.id)) return p.modelName;
+    const c = smCur(p.id);
+    const m = smFind(g.models, c.model);
+    const t = smFind(g.depths, c.denken);
+    return (m ? m.name : c.model) + (t ? ' - ' + t.name : '');
+  }
+
+  function renderModel() {
+    const sec = byId('su-model');
+    const body = byId('su-body');
+    // Reihenfolge: normal gleich nach der Gehirn-Wahl; bei der Begruessung zuerst der Schluessel
+    const before = su.welcome ? null : body.querySelector('.su-key');
+    if (before ? sec.nextElementSibling !== before : body.lastElementChild !== sec) body.insertBefore(sec, before);
+    const p = suSel();
+    const g = p ? smGroup(p.id) : null;
+    sec.hidden = !g;
+    byId('su-input-label').textContent = (g && !su.welcome ? '3' : '2') + '. Schlüssel einfügen';
+    byId('su-model-label').textContent = (su.welcome ? '3' : '2') + '. Modell & Denk-Tiefe';
+    if (!g) return;
+    const ae = document.activeElement;
+    const focusKey = ae && sec.contains(ae) ? ae.dataset.sm || '' : '';
+    const name = suShort(p);
+    const active = p.id === su.data.provider;
+    sec.classList.toggle('inactive', !active);
+    sec.dataset.provider = p.id;
+    byId('sm-for').textContent = active ? 'für ' + name + ' · aktiv' : 'für ' + name;
+    byId('sm-inactive').hidden = active;
+    byId('sm-inactive-text').textContent = name + ' ist gerade nicht aktiv – die Auswahl gilt, sobald du dieses Gehirn nutzt.';
+    byId('sm-saving').hidden = !pick(sm.busy, p.id);
+    const cur = smCur(p.id);
+
+    // Modell-Kacheln
+    const tiles = byId('sm-models');
+    tiles.setAttribute('aria-label', 'Modell für ' + name);
+    tiles.replaceChildren();
+    const hasModel = g.models.some((m) => m.id === cur.model);
+    g.models.forEach((m, i) => {
+      const on = m.id === cur.model;
+      const b = h('button', 'sm-tile' + (on ? ' selected' : ''));
+      b.type = 'button';
+      b.setAttribute('role', 'radio');
+      b.setAttribute('aria-checked', on ? 'true' : 'false');
+      b.tabIndex = on || (!hasModel && i === 0) ? 0 : -1;
+      b.dataset.id = m.id;
+      b.dataset.sm = 'model:' + m.id;
+      b.append(h('span', 'sm-name', m.name));
+      if (m.info) b.append(h('span', 'sm-info', m.info));
+      if (m.tempo || m.preis) { // "Tempo: … · Preis" – umbrechen lieber am Trenner als mitten im Preis
+        const meta = h('span', 'sm-meta');
+        if (m.tempo) meta.append(h('span', null, 'Tempo: ' + m.tempo + (m.preis ? ' ·' : '')), m.preis ? ' ' : '');
+        if (m.preis) meta.append(h('span', null, m.preis));
+        b.append(meta);
+      }
+      const chk = h('span', 'sp-check');
+      chk.append(icon('check'));
+      b.append(chk);
+      b.addEventListener('click', () => smPick(p.id, 'model', m.id, false));
+      tiles.append(b);
+    });
+    tiles.hidden = !g.models.length;
+    byId('sm-models-label').hidden = !g.models.length;
+
+    // Denk-Tiefe als Segment-Leiste
+    const seg = byId('sm-depth');
+    seg.setAttribute('aria-label', 'Denk-Tiefe für ' + name);
+    seg.replaceChildren();
+    const hasDepth = g.depths.some((t) => t.id === cur.denken);
+    g.depths.forEach((t, i) => {
+      const on = t.id === cur.denken;
+      const b = h('button', 'segctl-btn sm-seg', t.name);
+      b.type = 'button';
+      b.setAttribute('role', 'radio');
+      b.setAttribute('aria-checked', on ? 'true' : 'false');
+      b.tabIndex = on || (!hasDepth && i === 0) ? 0 : -1;
+      if (t.info) b.title = t.info;
+      b.dataset.id = t.id;
+      b.dataset.sm = 'depth:' + t.id;
+      b.addEventListener('click', () => smPick(p.id, 'denken', t.id, false));
+      seg.append(b);
+    });
+    seg.hidden = !g.depths.length;
+    byId('sm-depth-label').hidden = !g.depths.length;
+    const info = byId('sm-depth-info');
+    const t = smFind(g.depths, cur.denken);
+    info.replaceChildren();
+    if (t) info.append(h('b', null, t.name), t.info ? ': ' + t.info : '');
+    info.hidden = !t;
+
+    if (focusKey) {
+      const el = [...sec.querySelectorAll('[data-sm]')].find((x) => x.dataset.sm === focusKey);
+      if (el) el.focus({ preventScroll: true });
+    }
+  }
+
+  function smPick(pid, kind, id, keyboard) {
+    if (!smGroup(pid)) return;
+    const cur = smCur(pid);
+    if (cur[kind] === id) return;
+    sm.want[pid] = Object.assign({}, cur, { [kind]: id });
+    renderModel();
+    renderSuCardsOnly();
+    clearTimeout(pick(sm.timer, pid));
+    sm.timer[pid] = setTimeout(() => { delete sm.timer[pid]; smSave(pid); }, keyboard ? 450 : 0);
+  }
+
+  /** Nur die Gehirn-Karten neu (zeigen das gewaehlte Modell), Fokus bleibt. */
+  function renderSuCardsOnly() {
+    const box = byId('su-provs');
+    if (!su.data || !box.childElementCount) return;
+    for (const c of box.children) {
+      const p = su.data.providers.find((x) => x.id === c.dataset.id);
+      const line = p && c.querySelector('.sp-model > span:last-child');
+      if (line) line.textContent = smShownName(p);
+    }
+  }
+
+  /** Auswahl an die KI schicken – immer nur eine Anfrage je Gehirn, die neueste Auswahl gewinnt. */
+  async function smSave(pid) {
+    if (pick(sm.busy, pid)) return; // laeuft schon – danach wird nachgezogen
+    const w = pick(sm.want, pid);
+    if (!w) return;
+    const g = smGroup(pid);
+    if (g && g.model === w.model && g.denken === w.denken) { // wieder beim alten angekommen
+      delete sm.want[pid];
+      renderModel();
+      renderSuCardsOnly();
+      return;
+    }
+    sm.busy[pid] = true;
+    renderModel();
+    // Nur schicken, was wirklich geaendert wurde: eine reine Denk-Tiefen-Wahl laesst das Modell
+    // unangetastet (auch ein eigenes aus settings.toml und eines, das ein anderes Fenster gerade gewaehlt hat).
+    const body = { provider: pid };
+    if (w.model && (!g || w.model !== g.model)) body.model = w.model;
+    if (w.denken && (!g || w.denken !== g.denken)) body.denken = w.denken;
+    const r = await post('/api/modell', body);
+    delete sm.busy[pid];
+    const latest = pick(sm.want, pid);
+    const newer = latest && (latest.model !== w.model || latest.denken !== w.denken);
+    const brain = su.data && su.data.providers.find((p) => p.id === pid);
+    if (r.ok) {
+      su.gen++; // eine noch laufende (aeltere) Abfrage von /api/setup zaehlt nicht mehr
+      const d = normSetup(r.setup);
+      if (d) {
+        su.data = d;
+        su.loading = false;
+        if (!d.providers.some((p) => p.id === su.sel)) su.sel = suDefaultSel();
+      } else if (g) {
+        g.model = w.model;
+        g.denken = w.denken;
+        loadSetup();
+      }
+      if (newer) {
+        if (!pick(sm.timer, pid)) smSave(pid);
+      } else {
+        delete sm.want[pid];
+        let msg = str(r.message).trim() || 'Gespeichert.';
+        if (su.data && pid !== su.data.provider && brain) msg += ' Gilt, sobald du ' + suShort(brain) + ' nutzt.';
+        smToast('Eingestellt: ' + msg, 'ok', /Achtung/.test(msg) ? 6500 : 4000);
+      }
+    } else {
+      // nichts geaendert: zurueck zur gespeicherten Auswahl
+      delete sm.want[pid];
+      clearTimeout(pick(sm.timer, pid));
+      delete sm.timer[pid];
+      let err = str(r.error).trim() || 'Das hat nicht geklappt.';
+      if (!/[.!?]$/.test(err)) err += '.';
+      smToast(err + ' Die Einstellung bleibt, wie sie war.', 'error', 6000);
+    }
+    if (su.data) renderSetup();
+    if (su.jump && !su.loading) suJump();
+  }
+
+  for (const [gid, kind] of [['sm-models', 'model'], ['sm-depth', 'denken']]) {
+    const group = byId(gid);
+    group.addEventListener('keydown', (e) => {
+      const pid = byId('su-model').dataset.provider;
+      if (e.key === 'Home' || e.key === 'End') { // erste/letzte Wahl
+        const items = [...group.querySelectorAll('[role="radio"]')];
+        if (!items.length || !items.includes(document.activeElement)) return;
+        e.preventDefault();
+        const b = e.key === 'Home' ? items[0] : items[items.length - 1];
+        b.focus();
+        smPick(pid, kind, b.dataset.id, true);
+        return;
+      }
+      arrowRadio(e, group, (b) => smPick(pid, kind, b.dataset.id, true));
+    });
+  }
+
+  /** Zum Bereich "Modell & Denk-Tiefe" springen (Klick auf das Modell in Kopfzeile/Seitenleiste). */
+  function suJump() {
+    if (!su.jump || !suVisible()) return;
+    su.jump = '';
+    const sec = byId('su-model');
+    if (sec.hidden) { suFocus(); return; }
+    const scroller = su.where === 'pane' ? byId('pn-body') : byId('su-body');
+    const box = scroller.getBoundingClientRect();
+    const r = sec.getBoundingClientRect();
+    if (r.top < box.top || r.bottom > box.bottom) scroller.scrollTop += r.top - box.top - 8;
+    const tile = sec.querySelector('.sm-tile[tabindex="0"]') || sec.querySelector('[role="radio"][tabindex="0"]');
+    if (tile) tile.focus({ preventScroll: true });
+    sec.classList.remove('flash');
+    void sec.offsetWidth; // Animation neu starten
+    sec.classList.add('flash');
+    setTimeout(() => sec.classList.remove('flash'), 1400);
+  }
 
   function renderSteps(p) {
     const ol = byId('su-steps');
@@ -5136,6 +6587,14 @@
 
   function renderSuGo() {
     const act = suAction();
+    // Modell & Denk-Tiefe sind schon gespeichert: ohne Schluessel im Feld / Wechsel gibt es nichts
+    // mehr zu bestaetigen -> nur "Schliessen" (ein "Abbrechen" wuerde nichts rueckgaengig machen).
+    const idle = !act && !su.checking && !su.welcome;
+    const later = byId('su-later');
+    later.textContent = su.welcome ? 'Später' : idle ? 'Schließen' : 'Abbrechen';
+    const hadFocus = document.activeElement === suGo;
+    suGo.hidden = idle;
+    if (hadFocus && idle) (later.hidden ? suInput : later).focus({ preventScroll: true }); // Knopf verschwindet
     suGo.disabled = su.checking || !act;
     suGo.setAttribute('aria-busy', su.checking ? 'true' : 'false');
     if (su.checking) suGo.replaceChildren(h('span', 'spinner'), h('span', null, 'Prüfe …'));
@@ -5261,13 +6720,21 @@
   suGo.addEventListener('click', () => suSubmit(false));
   byId('su-close').addEventListener('click', closeSetup);
   byId('su-later').addEventListener('click', closeSetup);
-  smodal.addEventListener('mousedown', (e) => { if (e.target === smodal && !su.checking) closeSetup(); });
+  /** Maus-Klick zu kurz nach dem Oeffnen oder Teil eines Doppelklicks (z.B. auf den Modell-Chip)? */
+  const suTooSoon = (e) => !!(e && e.detail) && (e.detail > 1 || performance.now() - su.openedAt < 400);
+  smodal.addEventListener('mousedown', (e) => {
+    if (e.target !== smodal) return;
+    e.preventDefault(); // Fokus bleibt im Fenster
+    if (!su.checking && !suTooSoon(e)) closeSetup();
+  });
   function setupKey(e) {
     if (e.key === 'Escape') { e.preventDefault(); closeSetup(); return; }
     if (e.key === 'F2') { e.preventDefault(); return; }
     if (e.key === 'Tab') trapTab(e, sdialog);
   }
-  byId('sb-brain').addEventListener('click', () => openSetup(false));
+  // Gehirn-Karte und Modell in der Kopfzeile: beim Modell-Bereich oeffnen (ohne Schluessel: beim Schluessel)
+  byId('sb-brain').addEventListener('click', () => openSetup(false, state.api_key_missing === true ? '' : 'modell'));
+  byId('tb-model').addEventListener('click', () => openSetup(false, 'modell'));
   byId('key-bar-btn').addEventListener('click', () => openSetup(true));
 
   // ---------- Terminal-Version ----------
@@ -5301,6 +6768,7 @@
   document.addEventListener('keydown', (e) => {
     if (!cmodal.hidden) { confirmKey(e); return; }
     if (askCur && !modal.hidden) { modalKey(e); return; }
+    if (!amodal.hidden) { afkKey(e); return; }
     if (jv.open) { jarvisKey(e); return; }
     if (!smodal.hidden) { setupKey(e); return; }
     if (!pmodal.hidden) { profileKey(e); return; }
@@ -5341,10 +6809,11 @@
   let histGen = 0;           // nur die neueste Verlaufs-Ladung zaehlt
   let flushing = false;      // gepufferte Ereignisse werden gerade nachgespielt
   let resyncOnEnd = false;   // nach dem Ende der laufenden Antwort den Verlauf neu laden
+  let resyncWait = false;    // ... sobald der Server ruhig ist (keine Antwort laeuft, nichts wartet)
   let resyncCount = 0;
   let helloCount = 0;
   const FLOW = new Set(['user', 'start', 'thinking', 'chunk', 'tool', 'agent', 'info', 'done', 'stopped', 'error',
-    'notice', 'reset', 'retract']);
+    'notice', 'reset', 'retract', 'afk_report']);
 
   function setConnected(ok) {
     connected = ok;
@@ -5381,6 +6850,7 @@
     if (!smodal.hidden) closeSetup();
     byId('key-bar').hidden = true;
     if (confirmState) closeConfirm(false);
+    if (!amodal.hidden) { afk.back = null; amodal.hidden = true; }
     if (jv.open) closeJarvisView();
     ttsStop();
     endClosing();
@@ -5396,11 +6866,18 @@
     input.disabled = true;
     micBtn.disabled = true;
     app.classList.add('ended');
-    for (const el of document.querySelectorAll('.sb-actions, .sb-section, .sb-alerts, .suggestions, .composer-wrap, #tb-jarvis, #tour-offer')) {
+    for (const el of document.querySelectorAll('.sb-actions, .sb-section, .sb-alerts, .suggestions, .composer-wrap, #tb-jarvis, #tour-offer, #sb-upd')) {
       el.inert = true;
     }
+    upd.local = false;
+    upd.manual = false;
+    clearTimeout(upd.timer);
+    clearTimeout(upd.late);
+    renderUpdate(); // Knopf aus
     closeCmdPop();
     setBusy(false);
+    renderQueue(); // Warteliste weg
+    renderAfk();   // AFK-Band weg
     updateEmpty();
   }
 
@@ -5446,13 +6923,16 @@
       const r = new Reply();
       r.text(text);
       r.finish('done');
-    } else if (m.role === 'notice') addCard(m.level, text);
-    else if (m.role === 'error') addError(text);
+    } else if (m.role === 'notice') {
+      if (m.level === 'afk') addAfkNotice(text); // AFK-Schritt (Trennzeile) oder Bericht (Karte)
+      else addCard(m.level, text);
+    } else if (m.role === 'error') addError(text);
   }
 
   async function loadHistory(isResync) {
     const gen = ++histGen;
     if (!isResync) resyncCount = 0;
+    resyncWait = false;
     loadingHistory = true;
     buffered = [];
     const data = await getJson('/api/history');
@@ -5484,7 +6964,7 @@
       histBuilding = false;
     }
     if (keep) { msgs.append(keep.row); reply = keep; }
-    else if (wasBusy) ensureReply();
+    else if (wasBusy && !afkRunning()) ensureReply().placeholder = true; // Antwort laeuft, ihr Anfang fehlt
     historyReady = true;
     // Der Anfang der laufenden Antwort fehlt evtl. -> nach ihrem Ende den Verlauf neu laden
     resyncOnEnd = wasBusy;
@@ -5527,6 +7007,16 @@
     if (!(resyncOnEnd || flushing)) return;
     resyncOnEnd = false;
     if (resyncCount >= 2) return;
+    // Nicht sofort: mit der Warteschlange beginnt die naechste Runde genau jetzt – ihre Ereignisse
+    // stuenden sonst schon im Verlauf UND kaemen noch einmal live. Erst laden, wenn der Server ruhig ist.
+    resyncWait = true;
+    resyncIfQuiet();
+  }
+  /** Aus "done"/"state": Verlauf nachladen, sobald keine Antwort mehr laeuft und nichts mehr wartet. */
+  function resyncIfQuiet() {
+    if (!resyncWait || loadingHistory || ended) return;
+    if (state.busy === true || queueAll().length) return;
+    resyncWait = false;
     resyncCount++;
     setTimeout(() => loadHistory(true), 0);
   }
@@ -5542,12 +7032,14 @@
         if (ev.state && ev.state.busy === false) dropAsks();
         // getrennt gewesen: evtl. "off" verpasst – laeuft Jarvis nicht mehr, nichts mehr ignorieren
         if (jv.left && ev.state && ev.state.jarvis !== true) { jv.left = false; endClosing(); }
+        updHello();
         applyState(ev.state);
         loadHistory();
         if (helloCount++ > 0) loadAppearance(true); // nach dem Neuverbinden: evtl. verpasste Aenderungen
         break;
       case 'state':
         applyState(ev.state);
+        resyncIfQuiet();
         break;
       case 'user':
         onUserEcho(ev.text);
@@ -5610,14 +7102,22 @@
         break;
       case 'notice':
         if (/Live-Mitschrift/i.test(String(ev.text || '')) && jv.live === false) jvSetupInfo(String(ev.text), ev.level);
-        addCard(ev.level, String(ev.text || ''));
+        if (ev.level === 'afk') addAfkNotice(String(ev.text || ''));
+        else addCard(ev.level, String(ev.text || ''));
+        break;
+      case 'afk_report':
+        onAfkReport(ev);
         break;
       case 'retract':
         onRetract();
         break;
+      case 'queue_returned':
+        onQueueReturned(ev.text);
+        break;
       case 'reset':
         clearChat();
         resyncOnEnd = false;
+        resyncWait = false;
         updateEmpty();
         toBottom(true);
         break;

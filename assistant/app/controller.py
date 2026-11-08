@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import io
 import itertools
+import math
 import os
 import re
 import subprocess
@@ -26,7 +27,9 @@ from .. import __version__
 from ..anzeige import schoen
 from ..cancel import Abgebrochen
 from ..config import Config, save_setting, toml_string
+from ..live import staying, wait_until_quiet
 from ..logging_setup import get_logger
+from ..modelle import kurzbeschreibung
 from ..permissions import Risk
 from ..ui.cli import CLI, JARVIS_HINT, KEY_HINT, _is_exit_phrase
 from ..voice import VoiceOutput
@@ -63,6 +66,9 @@ COMMANDS = [
     ("/sprache", "Stand der Spracheingabe"),
     ("/sprache einrichten", "Spracheingabe installieren"),
     ("/gehirn", "DeepSeek oder Claude - Schluessel einfach in den Chat einfuegen"),
+    ("/afk", "ich bin weg - die KI arbeitet allein weiter (mit Bericht)"),
+    ("/modell", "Modell waehlen - schnell oder besonders stark"),
+    ("/denken", "wie gruendlich die KI nachdenkt (schnell ... maximal)"),
     ("/terminal", "zur Terminal-Version wechseln"),
     ("/hilfe", "alle Befehle"),
     ("/beenden", "App schliessen"),
@@ -112,6 +118,21 @@ class AppController(CLI):
         self._live_setup_failed = False
         self._speaker = None
         self.tool_ctx.extra["on_appearance"] = lambda: self._event({"type": "appearance"})
+        self.tool_ctx.extra["on_model"] = self._model_changed
+        # Warteschlange: Nachrichten, die waehrend einer Antwort geschickt werden, kommen danach dran.
+        self._queue: list[dict] = []
+        self._queue_ids = itertools.count(1)
+        self._front = 0              # so viele Eintraege vorne sind "sofort" (Unterbrechen/Rueckkehr)
+        self._last_qid = 0           # zuletzt vergebene Warteschlangen-Nummer
+        self._turn_mark = 0          # ... beim Beginn der laufenden Antwort (spaeter = waehrenddessen getippt)
+        self._afk_dropped = False    # vorgemerkter AFK-Modus verworfen -> Hinweis zeigen
+        self._closing = False
+        # AFK-Modus (abwesend.py): vorgemerkt / laufend / Bericht fuer die Rueckkehr
+        self._afk_pending: dict | None = None
+        self._afk = None
+        self._afk_return: tuple[float, str] | None = None  # (Beginn der Abwesenheit, Bericht)
+        self.tool_ctx.extra["afk_start"] = self._afk_request
+        self.tool_ctx.extra["afk_update"] = self._state_changed
         # Sphaere: reagiert auf deine Stimme beim Mikrofon-Knopf / F2
         self.voice_capture.on_level = lambda value: self._event({"type": "mic", "level": value})
 
@@ -139,7 +160,11 @@ class AppController(CLI):
             "version": __version__,
             "provider": self.config.active_provider,
             "model": self.config.active_model,
+            "model_name": schoen(kurzbeschreibung(self.config)),
             "busy": self.busy,
+            "queue": [{"id": item["id"], "text": item["shown"] or item["text"]} for item in list(self._queue)],
+            "afk": self._afk.status() if self._afk is not None else None,
+            "afk_pending": self._afk_pending is not None,
             "auto_confirm": bool(self.permissions.settings.auto_confirm),
             "safe_mode": bool(self.permissions.settings.safe_mode),
             "speak": bool(self.voice_out.enabled),
@@ -150,6 +175,8 @@ class AppController(CLI):
             "provider_name": schoen({"deepseek": "DeepSeek", "claude": "Claude (Anthropic)"}.get(
                 self.config.active_provider, self.config.active_provider)),
             "update": {"new": self._pending_update.new} if self._pending_update else None,
+            "update_status": self._update_status(),
+            "voice_autosend": bool(self.config.voice.sofort_senden),
             "jarvis": self._jarvis_active(),
             "jarvis_state": self._live.state if self._jarvis_active() else "off",  # fuer ein neu geoeffnetes Fenster
             "jarvis_live": bool(self._jarvis_active() and self._live.ear.live),
@@ -200,21 +227,27 @@ class AppController(CLI):
             self._writer.flush_notice()  # erst zeigen, was vor der Frage ausgegeben wurde
         ask_id = f"q{next(self._ask_ids)}"
         waiter = {"event": threading.Event(), "value": default, "options": [v for v, _ in options]}
-        self._asks[ask_id] = waiter
         clean = _ANSI.sub("", text).strip()
-        self._event({"type": "ask", "id": ask_id, "kind": kind, "risk": risk, "text": clean,
-                     "options": [{"value": v, "label": label} for v, label in options]})
+        event = {"type": "ask", "id": ask_id, "kind": kind, "risk": risk, "text": clean,
+                 "options": [{"value": v, "label": label} for v, label in options]}
+        waiter["ask"] = event  # fuer neu verbundene Fenster (open_asks)
+        self._asks[ask_id] = waiter
+        self._event(event)
         self._live_hook("ask", clean)
         cancel = self.brain.provider.cancel_event
         try:
             while not waiter["event"].wait(0.25):
-                if cancel.is_set():
-                    waiter["value"] = default
+                if cancel.is_set():  # angehalten: nie "ja" daraus machen
+                    waiter["value"] = "nein" if "nein" in waiter["options"] else default
                     break
         finally:
             self._asks.pop(ask_id, None)
             self._event({"type": "ask_done", "id": ask_id})
         return waiter["value"]
+
+    def open_asks(self) -> list[dict]:
+        """Rueckfragen, die gerade auf eine Antwort warten (fuer ein neu verbundenes Fenster)."""
+        return [dict(w["ask"]) for w in list(self._asks.values()) if "ask" in w]
 
     def answer(self, ask_id: str, value: str) -> bool:
         waiter = self._asks.get(ask_id)
@@ -247,25 +280,175 @@ class AppController(CLI):
         text = (text or "").strip()
         if not text:
             return False, "Leere Nachricht"
-        shown = None
-        from ..schluessel import find_key, mask
-
-        key = find_key(text)
-        if key and not text.startswith("/"):
-            # Schluessel eingefuegt: einrichten statt an die KI schicken; angezeigt wird er nur gekuerzt
-            text, shown = f"/schluessel {key}", f"\U0001F511 Schl\u00fcssel {mask(key)}"
-        elif key:
-            shown = text.replace(key, mask(key))
+        text, shown = _mask_key(text)
         with self._lock:
             if self.busy:
                 return False, "Ich arbeite noch an der letzten Nachricht - Stopp, um sie anzuhalten."
             self.busy = True
             self._live_turn = live
             self._drop_turn = False
-        self.brain.provider.cancel_event.clear()
+            self._turn_mark = self._last_qid
+            self.brain.provider.cancel_event.clear()  # unter der Sperre: ein Stopp gleich danach zaehlt
         threading.Thread(target=self._work, args=(text, None, model_text, shown), name="ki-antwort",
                          daemon=True).start()
         return True, ""
+
+    def submit(self, text: str, interrupt: bool = False) -> dict:
+        """Getippte Nachricht aus dem Fenster. Arbeitet die KI noch, kommt sie in die Warteschlange
+        (interrupt=True: die laufende Antwort anhalten und diese gleich beantworten). Laeuft der
+        AFK-Modus, heisst jede Nachricht: Ich bin zurueck."""
+        text = (text or "").strip()
+        if not text:
+            return {"ok": False, "error": "Leere Nachricht"}
+        for _attempt in range(3):
+            with self._lock:
+                busy = self.busy
+                if busy:
+                    sent, shown = _mask_key(text)
+                    self._last_qid = next(self._queue_ids)
+                    item = {"id": self._last_qid, "text": sent, "model_text": None, "shown": shown}
+                    afk = self._afk
+                    # Nur die ERSTE Nachricht beendet den AFK-Modus und kommt nach vorn; weitere,
+                    # die kommen, waehrend er noch endet, reihen sich normal dahinter ein.
+                    back = afk is not None and not afk.ended and not afk.stop_event.is_set()
+                    if back or interrupt:
+                        self._queue.insert(self._front, item)
+                        self._front += 1
+                    elif len(self._queue) >= 20:
+                        return {"ok": False, "error": "Die Warteschlange ist voll - warte kurz oder halte mich an."}
+                    else:
+                        self._queue.append(item)
+                    dropped = self._afk_pending is not None  # du schreibst noch -> du bist ja da
+                    self._afk_pending = None
+                    if back:
+                        afk.stop_event.set()
+                    if back or interrupt:
+                        self.brain.provider.cancel()  # unter der Sperre: trifft sicher die laufende Antwort
+            if busy:
+                if back or interrupt:
+                    self._cancel_rest()
+                if dropped:
+                    self._notice("AFK-Modus nicht gestartet \u2013 du bist ja noch da.", "afk")
+                self._state_changed()
+                return {"ok": True, "queued": True, "id": item["id"], "interrupt": bool(back or interrupt),
+                        "afk_ended": back}
+            ok, error = self.send(text)
+            if ok:
+                return {"ok": True}
+            if not self.busy:  # anderer Grund (z.B. leer) - nicht "gerade beschaeftigt"
+                return {"ok": False, "error": error}
+        return {"ok": False, "error": "Ich arbeite noch - gleich nochmal versuchen."}
+
+    def _remove_queued_locked(self, item: dict) -> None:
+        index = self._queue.index(item)
+        self._queue.pop(index)
+        if index < self._front:
+            self._front -= 1
+
+    def queue_action(self, action: str, item_id: Any = None) -> dict:
+        """Warteschlange: 'remove' (eine Nachricht raus), 'clear' (alle), 'now' (diese jetzt - unterbricht)."""
+        with self._lock:
+            if action == "clear":
+                self._queue.clear()
+                self._front = 0
+            elif action in ("remove", "now"):
+                item = next((q for q in self._queue if str(q["id"]) == str(item_id)), None)
+                if item is None:
+                    return {"ok": False, "error": "Diese Nachricht wartet nicht mehr."}
+                self._remove_queued_locked(item)
+                if action == "now":
+                    self._queue.insert(0, item)
+                    self._front += 1
+                    if self.busy:
+                        self.brain.provider.cancel()
+                        if self._afk_pending is not None:  # du klickst gerade -> du bist da
+                            self._afk_pending = None
+                            self._afk_dropped = True
+            else:
+                return {"ok": False, "error": f"Unbekannte Aktion '{action}'."}
+        if action == "now" and self.busy:
+            self._cancel_rest()
+        self._state_changed()
+        return {"ok": True}
+
+    def _cancel_current(self) -> None:
+        """Nur die laufende Antwort anhalten (die Warteschlange bleibt)."""
+        self.brain.provider.cancel()
+        self._cancel_rest()
+
+    def _cancel_rest(self) -> None:
+        """Alles ausser dem Modell-Abbruch: Sprachmodus still, offene Rueckfragen, Vorlesen."""
+        if self._live is not None:
+            self._live.hush()
+        for waiter in list(self._asks.values()):
+            if "nein" in waiter.get("options", []):
+                waiter["value"] = "nein"  # abgebrochen heisst nie "ja"
+            waiter["event"].set()
+        self.voice_out.stop()
+
+    def _next_job_locked(self) -> dict | None:
+        """Was als Naechstes drankommt (unter self._lock aufrufen). Setzt das Abbruch-Signal
+        hier zurueck - ein Stopp/Unterbrechen danach trifft sicher die neue Aufgabe."""
+        if self._closing:
+            return None
+        if self._queue:
+            self.brain.provider.cancel_event.clear()
+            self._front = max(0, self._front - 1)
+            self._turn_mark = self._last_qid
+            return {"message": self._queue.pop(0)}
+        if self._afk_pending is not None:
+            request, self._afk_pending = self._afk_pending, None
+            live = self._live
+            if live is not None and not live.stop_event.is_set() and getattr(live, "pending", None):
+                self._afk_dropped = True  # im Sprachmodus wartet schon dein naechster Satz -> du bist da
+                return None
+            try:
+                session = self._new_afk_session_locked(request)
+            except Exception:  # noqa: BLE001 - nie mit busy=True haengen bleiben
+                logger.exception("AFK-Modus konnte nicht beginnen")
+                self._afk_dropped = "fehler"
+                return None
+            self.brain.provider.cancel_event.clear()
+            return {"afk": session}
+        return None
+
+    def _afk_dropped_notice(self) -> None:
+        reason, self._afk_dropped = self._afk_dropped, False
+        if reason == "fehler":
+            self._notice("Der AFK-Modus ging nicht (interner Fehler) - ich bin weiter normal fuer dich da.", "afk")
+        elif reason:
+            self._notice("AFK-Modus nicht gestartet \u2013 du bist ja noch da.", "afk")
+
+    def _new_afk_session_locked(self, request: dict):
+        """AFK-Sitzung sofort sichtbar machen (unter self._lock): eine Nachricht, die jetzt kommt,
+        heisst schon 'zurueck'."""
+        from ..abwesend import settings_session
+
+        session = settings_session(self.config.afk, request.get("auftrag", ""), request.get("minutes"),
+                                   request.get("budget"), start_eur=self.brain.cost_now_eur())
+        self._afk = session
+        self.tool_ctx.extra["afk_session"] = session
+        return session
+
+    def _release(self) -> None:
+        """Arbeit fertig (ausser _work): naechste Aufgabe beginnen oder frei geben."""
+        with self._lock:
+            job = self._next_job_locked()
+            if job is None:
+                self.busy = False
+        self._afk_dropped_notice()
+        self._state_changed()
+        if job is not None:
+            self._start_job(job)
+
+    def _start_job(self, job: dict) -> None:
+        """Naechste Aufgabe beginnen - self.busy ist dabei schon True."""
+        if "afk" in job:
+            target, args = self._work, (None, lambda: self._run_afk(job["afk"]))
+        else:
+            item = job["message"]
+            target, args = self._work, (item["text"], None, item["model_text"], item["shown"])
+        threading.Thread(target=target, args=args, name="ki-warteschlange", daemon=True).start()
 
     def run_background(self, fn: Callable[[], Any]) -> None:
         """Etwas wie eine Nachricht ausfuehren (Ausgaben -> Systemkarten), z.B. Update-Pruefung."""
@@ -273,7 +456,7 @@ class AppController(CLI):
             if self.busy:
                 return
             self.busy = True
-        self.brain.provider.cancel_event.clear()
+            self.brain.provider.cancel_event.clear()
         threading.Thread(target=self._work, args=(None, fn), name="ki-hintergrund", daemon=True).start()
 
     def _work(self, text: str | None, fn: Callable[[], Any] | None = None, model_text: str | None = None,
@@ -309,12 +492,17 @@ class AppController(CLI):
             self._writer = None
             with self._lock:  # erst den Besitzer der Antwort merken, dann frei geben
                 live_turn, self._live_turn = self._live_turn, None
-                self.busy = False
+                job = self._next_job_locked() if quit_code is None else None
+                if job is None:
+                    self.busy = False
+            self._afk_dropped_notice()
             self._state_changed()
             if live_turn is not None:
                 live_turn.on_turn_end()
         if quit_code is not None:
             self.on_quit(quit_code)
+        elif job is not None:
+            self._start_job(job)
 
     def _command(self, text: str) -> int | None:
         if text.split()[0].lower() == "/app":
@@ -327,16 +515,28 @@ class AppController(CLI):
             self._state_changed()  # neuer Name gleich in der Seitenleiste
         return self.exit_code if quit_now else None
 
-    def _answer(self, text: str, model_text: str | None = None) -> None:
+    def _answer(self, text: str, model_text: str | None = None, as_notice: bool = False,
+                max_tool_rounds: int | None = None) -> None:
         entry = {"role": "user", "text": text}
-        self.history.append(entry)
-        self._event({"type": "user", "text": text})
+        if as_notice:  # AFK-Schritt: keine Sprechblase "von dir"
+            self._notice(text, "afk")
+        else:
+            self.history.append(entry)
+            self._event({"type": "user", "text": text})
+            model_text = self._with_afk_hints(text, model_text)
         self._event({"type": "start"})
         self._answer_parts: list[str] = []
         snapshot = self.brain.provider.history_snapshot()
         try:
-            answer = self.brain.respond(model_text or text, on_text=self._emit)
+            if as_notice:  # AFK-Schritt: begrenzt, kein automatisches Weiterarbeiten
+                answer = self.brain.respond(model_text or text, on_text=self._emit,
+                                            max_tool_rounds=max_tool_rounds, auto_continue=0)
+            else:
+                answer = self.brain.respond(model_text or text, on_text=self._emit)
         except KeyboardInterrupt:  # Stopp-Knopf (Abgebrochen) - oder Strg+C im Hintergrund
+            # (Ein vorgemerkter AFK-Modus wird beim Anhalten dort verworfen, wo angehalten wird:
+            # Stopp/Unterbrechen/Rueckkehr im Fenster, Stopp/Nachtrag/Chat-Modus im Sprachmodus.
+            # Hier nicht - sonst traefe es auch einen AFK-Knopf, der NACH dem Stopp gedrueckt wurde.)
             drop, self._drop_turn = self._drop_turn, False
             if drop and self.brain.provider.drop_turn(snapshot, model_text or text):
                 # Sprachmodus: "Wie wird das Wetter?" ... "in Berlin" -> eine Frage
@@ -357,7 +557,7 @@ class AppController(CLI):
         self._event({"type": "thinking", "on": False})
         self._event({"type": "done"})
         self._last_answer = "".join(self._answer_parts) or answer
-        if self.voice_out.enabled and not self._jarvis_active():
+        if self.voice_out.enabled and not self._jarvis_active() and not as_notice:
             threading.Thread(target=self._speak_aloud, args=(answer,), daemon=True).start()
 
     def _speak_aloud(self, answer: str) -> None:
@@ -369,12 +569,159 @@ class AppController(CLI):
             self._event({"type": "speaking", "on": False})
 
     def stop(self) -> None:
-        if self._live is not None:
-            self._live.hush()
-        self.brain.provider.cancel()
-        for waiter in list(self._asks.values()):
-            waiter["event"].set()
-        self.voice_out.stop()
+        """Stopp-Knopf: Antwort anhalten, AFK-Modus beenden. Wartende Nachrichten werden nicht
+        einfach abgeschickt, sondern kommen zurueck ins Eingabefeld (nichts geht verloren)."""
+        with self._lock:
+            waiting, self._queue = self._queue, []
+            self._front = 0
+            self._afk_pending = None
+            if self._afk is not None:
+                self._afk.stop_event.set()
+            self.brain.provider.cancel()
+        self._cancel_rest()
+        if waiting:
+            texts = [item["text"] for item in waiting if not item["shown"]]  # Schluessel nie zurueck
+            if texts:
+                self._event({"type": "queue_returned", "text": "\n".join(texts)})
+            self._state_changed()
+
+    # -- AFK-Modus: allein weiterarbeiten, waehrend du weg bist (abwesend.py) -------
+    def _afk_request(self, auftrag: str = "", minutes: int | None = None, budget: float | None = None) -> bool:
+        """Vormerken (Werkzeug abwesenheit, /afk) - beginnt, sobald die laufende Antwort fertig ist.
+        Wurde waehrend dieser Antwort schon weitergeschrieben, bist du offensichtlich noch da.
+        Hast du schon den AFK-Knopf gedrueckt, gelten dessen Grenzen (die KI fuellt hoechstens den
+        Auftrag auf). True = vorgemerkt."""
+        auftrag = str(auftrag or "")[:2000]
+        with self._lock:
+            if self._afk is not None:
+                return False
+            existing = self._afk_pending
+            if existing is not None:  # Knopf schon gedrueckt: dessen Wahl bleibt
+                if not existing.get("auftrag") and auftrag:
+                    existing["auftrag"] = auftrag
+                kept = True
+            elif any(item["id"] > self._turn_mark for item in self._queue):
+                self._afk_dropped = True  # waehrend dieser Antwort weitergeschrieben -> du bist da
+                kept = False
+            else:
+                self._afk_pending = {"auftrag": auftrag, "minutes": _int_or_none(minutes),
+                                     "budget": _float_or_none(budget)}
+                kept = True
+        self._state_changed()
+        return kept
+
+    def afk(self, data: dict) -> dict:
+        """POST /api/afk: {"action": "start", "auftrag", "minuten", "budget"} | {"action": "stop"}."""
+        action = str(data.get("action") or "")
+        if action == "stop":
+            with self._lock:
+                running, self._afk_pending = self._afk, None
+                if running is not None:
+                    running.stop_event.set()
+                    self.brain.provider.cancel()
+            if running is not None:
+                self._cancel_rest()
+            self._state_changed()
+            return {"ok": True}
+        if action != "start":
+            return {"ok": False, "error": schoen(f"Unbekannte Aktion '{action}'.")}
+        if not self.config.api_key:
+            return {"ok": False, "error": schoen("Dafuer brauche ich erst einen Schluessel (Gehirn & Schluessel).")}
+        request = {"auftrag": str(data.get("auftrag") or "")[:2000],
+                   "minutes": _int_or_none(data.get("minuten")),
+                   "budget": _float_or_none(data.get("budget"))}
+        with self._lock:
+            if self._afk is not None:
+                return {"ok": False, "error": schoen("Der AFK-Modus laeuft schon.")}
+            if self.busy:
+                self._afk_pending = request  # nach der laufenden Antwort
+                job = None
+            else:
+                try:
+                    session = self._new_afk_session_locked(request)
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception("AFK-Modus konnte nicht beginnen")
+                    return {"ok": False, "error": schoen(f"Der AFK-Modus ging nicht: {exc}")}
+                self.busy = True
+                self.brain.provider.cancel_event.clear()
+                job = {"afk": session}
+        if job is not None:
+            self._start_job(job)
+        self._state_changed()
+        return {"ok": True, "started": job is not None}
+
+    def _run_afk(self, session) -> None:
+        from ..abwesend import run_session
+
+        try:
+            live = self._live
+            if live is not None and not live.stop_event.is_set():
+                # Erst die Bestaetigung zu Ende sprechen lassen; sprichst du dabei wieder, bist du da.
+                if not wait_until_quiet(live, session.stop_event):
+                    session.ended = "nicht_gestartet"
+                    return
+                live.stop()  # allein arbeiten heisst: nicht mithoeren und nichts vorlesen
+            if live is not None:
+                with self._jarvis_lock:  # Jarvis-Denktiefe nicht in die AFK-Schritte mitnehmen
+                    if self._live is live:
+                        self._live = None
+                        self.brain.provider.effort_override = None
+            self.permissions.begin_away()
+            task = (f"Auftrag: {session.auftrag}" if session.auftrag
+                    else "Ich mache mit dem weiter, woran wir zuletzt gearbeitet haben.")
+            cost = f"{session.max_eur:.2f}".replace(".", ",")
+            self._notice(f"AFK-Modus an \u2013 ich arbeite allein weiter (hoechstens {session.max_minutes} Min., ca. "
+                         f"{cost} EUR). {task} Ich loesche, ueberschreibe, verschicke und starte dabei nichts \u2013 "
+                         "das schreibe ich dir als Vorschlag auf. Zurueck? Einfach eine Nachricht schreiben.", "afk")
+            self._state_changed()
+
+            def one_round(prompt: str) -> None:
+                self.brain.provider.cancel_event.clear()  # erst zuruecksetzen, dann pruefen (kein Rennen)
+                if session.stop_event.is_set():
+                    return
+                self._answer(f"AFK \u2013 Schritt {session.rounds}", model_text=prompt, as_notice=True,
+                             max_tool_rounds=session.max_tool_rounds)
+
+            run_session(session, one_round, cost_eur=self.brain.cost_now_eur, on_update=self._state_changed,
+                        cancel=self.brain.provider.cancel)
+        finally:
+            self.permissions.end_away()
+            self.tool_ctx.extra.pop("afk_session", None)
+            if session.ended == "nicht_gestartet":
+                with self._lock:
+                    self._afk = None
+                self._notice("AFK-Modus nicht gestartet \u2013 du bist ja noch da.", "afk")
+                self._state_changed()
+                return
+            if not session.ended:
+                session.ended = "fehler"
+            report = session.report()
+            with self._lock:
+                self._afk = None
+                self._afk_return = (session.started, report)
+            self._notice(report, "afk")
+            self._event({"type": "afk_report", "text": schoen(report), "reason": session.ended})
+            self._state_changed()
+
+    def _with_afk_hints(self, text: str, model_text: str | None) -> str | None:
+        """Rueckkehr nach dem AFK-Modus: Bericht vor die Nachricht; 'bin jetzt weg': Hinweis."""
+        from ..abwesend import model_text_for
+
+        with self._lock:
+            back, self._afk_return = self._afk_return, None
+        base = model_text or text
+        result = model_text_for(base, back=back, active=self._afk is not None)
+        return result if result != base else model_text
+
+    def _afk_command(self, args: list[str]) -> None:
+        """/afk [Auftrag] im Fenster: beginnt, sobald dieser Befehl durch ist."""
+        if not self.config.api_key:
+            print("Dafuer brauche ich erst einen Schluessel (Gehirn & Schluessel).")
+            return
+        if self._afk_request(" ".join(args)):
+            print("AFK-Modus vorgemerkt - geht gleich los. Zurueck? Einfach eine Nachricht schreiben.")
+        else:
+            print("AFK-Modus nicht gestartet - du hast ja schon weitergeschrieben.")
 
     # -- Charakter & Profil (Einstellungen-Fenster der App) --------------------------
     def profile(self) -> dict:
@@ -471,7 +818,37 @@ class AppController(CLI):
         info = describe(self.config)
         for item in info["providers"]:
             item["name"], item["info"] = schoen(item["name"]), schoen(item["info"])
+            item["model_name"] = schoen(item["model_name"])
+        info["aktuell"] = schoen(info["aktuell"])
+        for group in info["modelle"].values():
+            for entry in group["modelle"] + group["denktiefen"]:
+                for k in ("name", "info", "tempo", "preis"):
+                    if entry.get(k):
+                        entry[k] = schoen(entry[k])
         return info
+
+    def _model_changed(self) -> None:
+        self.brain.model_changed()
+        self._state_changed()
+
+    def choose_model(self, data: dict) -> dict:
+        """Modell und/oder Denk-Tiefe waehlen (gilt ab der naechsten Anfrage, Gespraech bleibt)."""
+        from ..modelle import waehle
+
+        provider = str(data.get("provider") or "").lower() or None
+        model = str(data.get("model") or "").strip() or None
+        denken = str(data.get("denken") or "").strip() or None
+        if not model and not denken:
+            return {"ok": False, "error": "Bitte ein Modell oder eine Denk-Tiefe angeben."}
+        try:
+            result = waehle(self.config, provider, model=model, denken=denken)
+        except Exception as exc:  # noqa: BLE001 - z.B. settings.toml nicht beschreibbar
+            logger.warning("Modell-Wahl: %s", exc)
+            return {"ok": False, "error": schoen(f"Konnte die Einstellung nicht speichern: {exc}")}
+        if not result["ok"]:
+            return {"ok": False, "error": schoen(result["message"])}
+        self._model_changed()
+        return {"ok": True, "message": schoen(result["message"]), "setup": self.setup_info()}
 
     def setup_save(self, data: dict) -> dict:
         """Schluessel pruefen und speichern, Gehirn waehlen."""
@@ -496,9 +873,7 @@ class AppController(CLI):
             self._notice(message)
             return {"ok": True, "message": schoen(message), "setup": self.setup_info()}
         finally:
-            with self._lock:
-                self.busy = False
-            self._state_changed()
+            self._release()
 
     # In der App oeffnen /jarvis und /tutorial die Ansichten im Fenster (statt der Terminal-Versionen).
     def _jarvis_terminal(self) -> None:
@@ -548,6 +923,17 @@ class AppController(CLI):
         if action == "start":
             if self._jarvis_active():
                 return {"ok": True, "live": self._live.ear.live}
+            with self._lock:  # Jarvis oeffnen heisst: du bist zurueck
+                if self._afk_pending is not None:
+                    self._afk_dropped = True
+                afk, self._afk_pending = self._afk, None
+                back = afk is not None and not afk.ended
+                if back:
+                    afk.stop_event.set()
+                    self.brain.provider.cancel()
+            if back:
+                self._cancel_rest()
+            self._afk_dropped_notice()
             problem = self.voice_capture.problem()
             if problem:
                 return {"ok": False, "error": schoen(problem), "setup": not getattr(sys, "frozen", False)}
@@ -572,6 +958,8 @@ class AppController(CLI):
             self._state_changed()
             return {"ok": True, "live": factory is not None}
         if self._live is not None:
+            # Knopf "Chat-Modus"/Fenster schliessen: du bleibst am PC (wie gesagtes "Chat-Modus")
+            self._live.exit_reason = self._live.exit_reason or "chat"
             self._live.stop()
         self._state_changed()
         return {"ok": True}
@@ -666,6 +1054,12 @@ class AppController(CLI):
                 save_setting(self.config.project_root, "permissions", "auto_confirm", "true" if value else "false")
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Einstellung nicht gespeichert: %s", exc)
+        elif name == "sofort_senden":
+            self.config.voice.sofort_senden = bool(value)
+            try:
+                save_setting(self.config.project_root, "voice", "sofort_senden", "true" if value else "false")
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Einstellung nicht gespeichert: %s", exc)
         elif name == "vorlesen":
             if value and not self.voice_out.enabled:
                 self.voice_out = VoiceOutput(True)
@@ -674,6 +1068,39 @@ class AppController(CLI):
             elif not value:
                 self.voice_out.enabled = False
         self._state_changed()
+
+    # -- Updates: Anzeige "auf dem neuesten Stand" -------------------------------------
+    def _update_status(self) -> dict:
+        try:
+            status = self.updater.status()
+        except Exception:  # noqa: BLE001
+            status = {"state": "unbekannt", "current": __version__}
+        if self._pending_update:
+            status.update(state="neu", latest=self._pending_update.new)
+        if getattr(self, "_checking_update", False):
+            status["state"] = "pruefe"
+        return status
+
+    def check_update_now(self) -> dict:
+        """Knopf 'Jetzt pruefen': nur nachschauen (installiert nichts - dafuer /update)."""
+        if getattr(self, "_checking_update", False):
+            return {"ok": True}
+        self._checking_update = True
+        self._state_changed()
+
+        def work() -> None:
+            try:
+                info = self.updater.check()
+                if info or self.updater.last_error is None:
+                    self._pending_update = info  # nichts Neueres mehr -> Hinweis weg
+            except Exception as exc:  # noqa: BLE001
+                logger.info("Update-Pruefung: %s", exc)
+            finally:
+                self._checking_update = False
+                self._state_changed()
+
+        threading.Thread(target=work, name="update-pruefen", daemon=True).start()
+        return {"ok": True}
 
     # -- Spracheingabe (Mikrofon-Knopf / F2 im Fenster) -------------------------------
     def voice(self, action: str) -> dict:
@@ -743,6 +1170,7 @@ class AppController(CLI):
         return True
 
     def shutdown(self) -> None:
+        self._closing = True
         if self._live is not None:
             self._live.stop()
         self._stop_watch.set()
@@ -754,10 +1182,31 @@ class AppController(CLI):
             logger.warning("Beim Beenden: %s", exc)
 
 
+def _mask_key(text: str) -> tuple[str, str | None]:
+    """Eingefuegter API-Schluessel: einrichten statt an die KI schicken; angezeigt nur gekuerzt.
+    -> (Text fuer die Verarbeitung, Anzeige-Text oder None)."""
+    from ..schluessel import find_key, mask
+
+    key = find_key(text)
+    if key and not text.startswith("/"):
+        return f"/schluessel {key}", f"\U0001F511 Schl\u00fcssel {mask(key)}"
+    if key:
+        return text, text.replace(key, mask(key))
+    return text, None
+
+
+def _float_or_none(value: Any) -> float | None:
+    try:
+        number = float(value) if value not in (None, "") else None
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return number if number is None or math.isfinite(number) else None
+
+
 def _int_or_none(value: Any) -> int | None:
     try:
         return int(value) if value is not None else None
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None
 
 
@@ -785,6 +1234,11 @@ class _LiveHost:
     def cancel_turn(self, drop: bool) -> None:
         if self.ctl._live_turn is not self.loop:
             return  # nur eigene Antworten anhalten (nicht z.B. eine getippte Nachricht)
+        leaving = self.loop.stop_event.is_set() and not staying(self.loop)  # "Tschuess" = du gehst
+        with self.ctl._lock:
+            if self.ctl._afk_pending is not None and not leaving:
+                self.ctl._afk_pending = None  # "Stopp"/Nachtrag/"Chat-Modus": du bist noch da
+                self.ctl._afk_dropped = True
         self.ctl._drop_turn = drop
         self.ctl.brain.provider.cancel()
 

@@ -406,6 +406,7 @@ class VoiceLineReader:
         self._sleep = sleep
         self._interactive = interactive
         self._broken = False
+        self.autosend = lambda: False  # True = Gesprochenes gleich abschicken (ohne Enter)
         self._status_len = 0
 
     def _get_console(self):
@@ -460,6 +461,9 @@ class VoiceLineReader:
             raise
         except Exception as exc:  # noqa: BLE001 - lieber ohne F2 als gar keine Eingabe
             return self._fallback(exc)
+        if spoken and self.autosend():
+            self._write(core + spoken + "\n")  # gleich abschicken, wie mit Enter
+            return spoken
         try:
             return console.finish(core, bool(spoken), spoken, self._write)
         except (KeyboardInterrupt, EOFError):

@@ -60,7 +60,8 @@ class AnthropicProvider(LLMProvider):
         return kwargs
 
     def _open_stream(self, kwargs: dict[str, Any]):
-        if self.config.claude.server_side_fallback:
+        # Haiku hat keinen Ersatz bei Ablehnungen - dort wuerde der Parameter abgelehnt.
+        if self.config.claude.server_side_fallback and "haiku" not in str(kwargs.get("model", "")):
             kwargs = dict(kwargs)
             kwargs["betas"] = ["server-side-fallback-2026-07-01"]
             kwargs["fallbacks"] = "default"
@@ -204,7 +205,7 @@ class AnthropicProvider(LLMProvider):
         input_full += getattr(usage, "cache_creation_input_tokens", 0) or 0
         cache_hit = getattr(usage, "cache_read_input_tokens", 0) or 0
         output = getattr(usage, "output_tokens", 0) or 0
-        self.usage.add(input_full=input_full, cache_hit=cache_hit, output=output)
+        self._count(input_full=input_full, cache_hit=cache_hit, output=output)
 
     # -- Verlauf / Kompaktierung -------------------------------------------
     def history_length(self) -> int:

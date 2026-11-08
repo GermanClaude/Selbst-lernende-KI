@@ -13,9 +13,15 @@ aktiv = "claude"
 #  CLAUDE (Anthropic) - Schluessel kommt aus .env: ANTHROPIC_API_KEY
 # ----------------------------------------------------------------------------
 [claude]
+# Modell - am einfachsten in der App (Gehirn & Schluessel) oder mit /modell waehlen:
+#   claude-opus-5-5    sehr stark und gruendlich (Standard)
+#   claude-sonnet-5-5  schnell und stark - gut fuer jeden Tag
+#   claude-haiku-5-5   blitzschnell und sehr guenstig - fuer einfache Sachen
+#   claude-fable-5-1   das staerkste Claude - langsamer und teurer
 model = "claude-opus-5-5"
-# Denk-Tiefe: low | medium | high | xhigh | max  (mehr = gruendlicher, teurer)
-effort = "high"
+# Denk-Tiefe (auch mit /denken): low = schnell | medium = ausgewogen | high = gruendlich |
+# xhigh = sehr gruendlich | max = maximal. Mehr = bessere Antworten, aber laenger warten.
+effort = "medium"
 # Maximale Laenge EINER Antwort. Zu klein = grosse Dateien werden abgeschnitten.
 max_tokens = 32000
 server_side_fallback = false
@@ -26,10 +32,13 @@ server_side_fallback = false
 #  Sehr guenstig. Nutzt automatisches Kontext-Caching (verbilligt Wiederholungen).
 # ----------------------------------------------------------------------------
 [deepseek]
-# Modell-ID. "deepseek-chat" ist der guenstige, schnelle Standard (Nicht-Denker).
-# Falls dein Konto diesen Alias nicht kennt, probiere "deepseek-flash" oder
-# "deepseek-v4-pro". Fuer schwierige Logik gibt es "deepseek-reasoner" (mehr Token).
-model = "deepseek-chat"
+# Modell (auch mit /modell): "deepseek-flash" = schnell und extrem guenstig (Standard),
+# "deepseek-v4-pro" = staerker bei schweren Aufgaben. Die alten Namen deepseek-chat und
+# deepseek-reasoner hat DeepSeek abgeschaltet - sie werden automatisch umgestellt.
+model = "deepseek-flash"
+# Nachdenken vor der Antwort (auch mit /denken): aus = schnell | low = ausgewogen |
+# high = gruendlich | max = maximal
+denken = "aus"
 base_url = "https://api.deepseek.com"
 # Maximale Laenge EINER Antwort (mindestens 8192 empfohlen).
 # Zu klein = grosse Dateien werden mitten im Schreiben abgeschnitten.
@@ -82,13 +91,27 @@ verlauf_kompakt_nach = 24
 #  Bei Preisaenderung einfach die Zahlen anpassen. '/kosten' zeigt die Schaetzung.
 # ----------------------------------------------------------------------------
 [preise]
+# US-Dollar pro 1 Mio. Token - nur fuer Modelle, die die KI nicht kennt (die bekannten
+# Modelle bringen ihre Preise selbst mit, siehe assistant/modelle.py).
 claude_input = 4.0
 claude_cache_hit = 0.2
 claude_output = 20.0
-deepseek_input = 0.28
-deepseek_cache_hit = 0.028
-deepseek_output = 0.42
+deepseek_input = 0.15
+deepseek_cache_hit = 0.003
+deepseek_output = 0.6
 usd_zu_eur = 0.92
+
+
+# ----------------------------------------------------------------------------
+#  AFK-MODUS - "Ich bin weg": die KI arbeitet allein weiter (/afk oder Knopf in der App).
+#  Sie loescht, ueberschreibt, verschickt und startet dabei nichts - das schlaegt sie nur vor.
+# ----------------------------------------------------------------------------
+[afk]
+max_minuten = 120      # hoechstens so lange
+max_euro = 1.0         # hoechstens so viel Kosten (ca.)
+max_schritte = 12      # hoechstens so viele Arbeitsschritte
+pause_sekunden = 20    # Pause zwischen zwei Schritten
+max_werkzeug_schritte = 25  # Werkzeug-Schritte innerhalb eines Arbeitsschritts
 
 
 [memory]
@@ -118,6 +141,8 @@ agent_runden = 40
 # druecken = Mikrofon an, nochmal F2 = fertig. Der Text landet in der Eingabezeile.
 # Einrichten im Chat mit:  /sprache einrichten
 f2_aufnahme = true
+# true = das Gesprochene nach dem Loslassen gleich abschicken (ohne Enter)
+sofort_senden = false
 # Spracherkennung: "auto" (Whisper, falls installiert, sonst Google),
 # "google" (online, kostenlos) oder "whisper" (offline: pip install faster-whisper).
 erkennung = "auto"

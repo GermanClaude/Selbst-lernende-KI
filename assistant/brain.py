@@ -52,7 +52,14 @@ class Brain:
         )
         self._on_text: StreamFn | None = None
         self._agent_running = False
+        self.compact_interrupted = False
         tool_ctx.extra["agent_runner"] = self.run_agent
+        tool_ctx.extra["config"] = config
+        tool_ctx.extra.setdefault("on_model", self.model_changed)
+
+    def model_changed(self) -> None:
+        """Modell/Denk-Tiefe wurde umgestellt - gilt ab der naechsten Anfrage."""
+        self.provider.settings_changed()
 
     @property
     def usage(self) -> Usage:
@@ -61,19 +68,33 @@ class Brain:
     def cost(self) -> tuple[float, float]:
         return self.provider.cost()
 
-    def respond(self, user_text: str, on_text: StreamFn | None = None) -> str:
+    def cost_now_eur(self) -> float:
+        """Kosten dieser Sitzung in EUR - inklusive gerade laufender Agenten (fuer AFK-Grenzen)."""
+        total = self.cost()[1]
+        for child in list(getattr(self.provider, "_children", [])):
+            try:
+                total += child.cost()[1]
+            except Exception:  # noqa: BLE001
+                pass
+        return total
+
+    def respond(self, user_text: str, on_text: StreamFn | None = None, max_tool_rounds: int | None = None,
+                auto_continue: int | None = None) -> str:
         """Antwortet; erreicht die KI ihr Schritt-Limit, arbeitet sie (bis zu
-        'automatisch_weiter' mal) von selbst weiter, statt anzuhalten."""
+        'automatisch_weiter' mal) von selbst weiter, statt anzuhalten. Der AFK-Modus begrenzt
+        beides (max_tool_rounds, auto_continue), damit ein Schritt nicht ausufert."""
         self._on_text = on_text
+        self.compact_interrupted = False
         conv = self.config.conversation
-        extra = max(0, int(conv.automatisch_weiter or 0))
+        extra = max(0, int(conv.automatisch_weiter or 0) if auto_continue is None else int(auto_continue))
+        rounds_limit = conv.max_werkzeug_runden if max_tool_rounds is None else max_tool_rounds
         parts: list[str] = []
         text = user_text
         for part in range(extra + 1):
             answer = self.provider.respond(
                 text,
                 on_text=on_text,
-                max_tool_rounds=conv.max_werkzeug_runden,
+                max_tool_rounds=rounds_limit,
                 announce_limit=(part == extra),
             )
             parts.append(answer)
@@ -139,7 +160,7 @@ class Brain:
                 self.provider._children.remove(agent)
             u = agent.usage  # Kosten des Agenten zaehlen zur Sitzung
             self.provider.usage.add(input_full=u.input_full_tokens, cache_hit=u.cache_hit_tokens,
-                                    output=u.output_tokens)
+                                    output=u.output_tokens, usd=u.usd)
         emit(f"  << Agent '{role}' fertig\n")
         if limit_reached:
             result += "\n(Hinweis: Der Agent hat sein Schritt-Limit erreicht - das Ergebnis ist evtl. unvollstaendig.)"
@@ -149,8 +170,13 @@ class Brain:
         """Fasst den Verlauf ggf. zusammen. False = mit Strg+C abgebrochen."""
         try:
             self._compact(only_if_large)
-        except KeyboardInterrupt:
-            # Die Antwort ist schon fertig - Zusammenfassen einfach auslassen.
+        except KeyboardInterrupt as exc:
+            # Die Antwort ist schon fertig - Zusammenfassen einfach auslassen. Ein echtes Strg+C
+            # (nicht ein Abbruch-Signal) merken: im AFK-Modus heisst das "ich bin zurueck".
+            from .cancel import Abgebrochen
+
+            if not isinstance(exc, Abgebrochen):
+                self.compact_interrupted = True
             logger.info("Zusammenfassung mit Strg+C uebersprungen.")
             return False
         return True

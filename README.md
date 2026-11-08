@@ -35,6 +35,8 @@ Tastatur steuern.
 - ⌨️ **Shell**: Befehle ausführen, Programme starten, Dinge installieren.
 - 🎙️ **Sprachsteuerung** (optional): zuhören und vorlesen.
 - 🎭 **Persönlichkeit & Werte**, die du selbst in Textdateien festlegst.
+- 🌙 **AFK-Modus**: „Ich bin mal weg“ – sie arbeitet allein weiter, sicher und mit Bericht.
+- ⚡ **Schnell oder gründlich**: Modell und Denk-Tiefe frei wählbar.
 - 🔒 **Sicherheit zuerst**: ein Berechtigungssystem mit „Safe Mode“, Nachfragen
   und einem Papierkorb, damit nichts versehentlich zerstört wird.
 - 📦 **Als `.exe` baubar** für den Doppelklick-Start unter Windows.
@@ -129,10 +131,23 @@ Du kannst zwischen zwei „Gehirnen“ umschalten (in `config/settings.toml`):
 **DeepSeek einrichten:**
 1. Schlüssel von <https://platform.deepseek.com/> in `.env` als `DEEPSEEK_API_KEY`.
 2. In `config/settings.toml`: `[provider] aktiv = "deepseek"`.
-3. Modell steht auf `deepseek-chat` (günstig, schnell). Falls dein Konto diesen
-   Alias nicht kennt, trage unter `[deepseek] model` `deepseek-flash` oder
-   `deepseek-v4-pro` ein. Für besonders schwierige Logik: `deepseek-reasoner`
-   (verbraucht mehr Token).
+3. Modell steht auf `deepseek-flash` (schnell, extrem günstig). Für schwere
+   Aufgaben gibt es `deepseek-v4-pro`. Die alten Namen `deepseek-chat` und
+   `deepseek-reasoner` hat DeepSeek abgeschaltet – sie werden automatisch umgestellt.
+
+### Modell und Denk-Tiefe wählen (schnell oder gründlich)
+
+In der App unter **Gehirn & Schlüssel** oder im Chat mit `/modell` und `/denken`:
+
+| Gehirn | Modelle | Denk-Tiefe |
+|--------|---------|------------|
+| **Claude** | Opus 5.5 (stark, Standard), Sonnet 5.5 (schnell), Haiku 5.5 (blitzschnell, sehr günstig), Fable 5.1 (das stärkste, langsamer) | schnell · ausgewogen · gründlich · sehr gründlich · maximal |
+| **DeepSeek** | Flash (schnell, Standard), V4 Pro (stärker) | schnell (ohne Nachdenken) · ausgewogen · gründlich · maximal |
+
+Beispiele: `/modell sonnet`, `/modell deepseek pro`, `/denken schnell`, `/denken gründlich`.
+Faustregel: Für Alltagsfragen reicht **schnell** oder **ausgewogen** – für knifflige
+Programmier-Aufgaben lieber **gründlich**. Mehr Denk-Tiefe heißt: bessere Antworten,
+aber länger warten und etwas höhere Kosten. Das Gespräch läuft beim Wechsel weiter.
 
 ### Wie bleibt der Token-Verbrauch extrem niedrig?
 
@@ -142,8 +157,8 @@ Der **Sparmodus** (`[sparsam] aktiv = true`, standardmäßig an) sorgt dafür:
   kommen → weniger Output-Token (Output ist am teuersten).
 - **Automatisches Kontext-Caching von DeepSeek**: Weil wir den Verlauf nur
   *anhängen* und den System-Prompt stabil halten, zählt der wiederkehrende Anfang
-  als „Cache-Treffer“ und kostet nur einen Bruchteil (bei `deepseek-chat` ca.
-  **1/10** des normalen Input-Preises).
+  als „Cache-Treffer“ und kostet nur einen Bruchteil (bei `deepseek-flash` ca.
+  **1/50** des normalen Input-Preises).
 - **Frühe Zusammenfassung** langer Gespräche (`verlauf_kompakt_nach`), damit nicht
   jede neue Nachricht den ganzen bisherigen Verlauf erneut bezahlt.
 - **Gekürzte Werkzeug-Ausgaben** (`max_werkzeug_ausgabe`), damit riesige Dateien
@@ -151,8 +166,9 @@ Der **Sparmodus** (`[sparsam] aktiv = true`, standardmäßig an) sorgt dafür:
 
 ### Was kostet das ungefähr?
 
-Mit `deepseek-chat` (Preise ca. `$0,28` pro 1 Mio. Input-Token, `$0,028` für
-Cache-Treffer, `$0,42` für Output) kostet eine typische Chat-Nachricht mit etwas
+Mit `deepseek-flash` (Preise ca. `$0,15` pro 1 Mio. Input-Token, `$0,003` für
+Cache-Treffer, `$0,60` für Output; werktags 2–5 und 7–11 Uhr deutscher Winterzeit
+doppelt so viel) kostet eine typische Chat-Nachricht mit etwas
 Kontext oft **deutlich unter einem Zehntelcent**. Ein gemessenes Beispiel aus dem
 Projekt (Frage + Werkzeugnutzung + Antwort) lag bei **~0,00005 €**.
 
@@ -292,6 +308,35 @@ die alte in `data/persona-sicherungen/` gesichert), „Über mich“ in
 - Vor dem Abschluss größerer Arbeiten prüft sie ihr Ergebnis selbst.
 - **Strg+C** hält die laufende Antwort an, ohne die KI zu beenden.
 
+## Warteschlange und Dazwischenreden (App)
+
+- Du kannst schreiben, während Nova noch arbeitet: **Enter** stellt die Nachricht in
+  die **Warteschlange** (sie ist dran, sobald die laufende Antwort fertig ist),
+  **Strg+Enter** unterbricht Nova und sie beantwortet die neue Nachricht sofort.
+- Über dem Eingabefeld siehst du, was wartet – mit „Jetzt“ (unterbrechen) und „✕“ (entfernen).
+- **Stopp** hält an; wartende Nachrichten kommen zurück ins Eingabefeld.
+
+## AFK-Modus: „Ich bin mal weg“
+
+Sag Nova „Ich bin jetzt AFK“ oder „Ich bin für zwei Stunden weg, recherchier bitte …“,
+drück in der App **„Ich bin weg“** oder tippe `/afk <Auftrag>`. Dann arbeitet sie in
+Schritten allein weiter – an deinem Auftrag oder an dem, woran ihr zuletzt gearbeitet
+habt – und handelt so, wie du es nach allem, was sie über dich weiß, wollen würdest.
+
+- **Erlaubt**: im Arbeitsordner lesen, im Internet recherchieren (Websuche und die
+  dabei gefundenen Seiten), planen, **neue** Dateien im Arbeitsordner anlegen, sich
+  Dinge merken.
+- **Nicht erlaubt** (egal wie die Stützräder stehen): löschen, bestehende Dateien
+  überschreiben, Befehle/Programme ausführen, den PC steuern, etwas verschicken oder
+  kaufen, ihren eigenen Programmordner (Schlüssel, Einstellungen) anfassen, selbst
+  zusammengebaute Internet-Adressen aufrufen. Solche Schritte schreibt sie als
+  **Vorschlag** auf. Nachgefragt wird in der Zeit nie – es ist ja niemand da.
+  Anweisungen, die auf Webseiten oder in Dateien stehen, befolgt sie nicht.
+- **Grenzen**: höchstens 2 Stunden, ca. 1 € und 12 Schritte (in der App beim Start
+  wählbar, sonst in `config/settings.toml` unter `[afk]`).
+- **Zurück**: einfach eine Nachricht schreiben (im Terminal: Strg+C). Du bekommst einen
+  Bericht mit Ergebnissen, Vorschlägen zum Freigeben und offenen Fragen.
+
 ## Automatische Updates
 
 Einmal am Tag schaut die KI im GitHub-Repo nach einer neuen Version. Gibt es eine,
@@ -336,6 +381,10 @@ stoppt die Steuerung sofort.
 | `/sprache einrichten` | Spracheingabe installieren |
 | `/sprache vorlesen` | Antworten vorlesen an/aus |
 | `/jarvis` | Jarvis-Modus: einfach reden, live (zurück: „Chat-Modus“ sagen) |
+| `/afk [Auftrag]` | AFK-Modus: Nova arbeitet allein weiter (zurück: Nachricht bzw. Strg+C) |
+| `/modell [name]` | Modell zeigen bzw. wählen (z.B. `/modell sonnet`, `/modell deepseek pro`) |
+| `/denken [stufe]` | Denk-Tiefe: schnell, ausgewogen, gründlich, sehr gründlich, maximal |
+| `/gehirn [deepseek\|claude]` | Gehirn zeigen bzw. wechseln |
 | `/update` | jetzt nach einer neuen Version schauen |
 | `/versionen` | gesicherte alte Versionen anzeigen |
 | `/zurueck <Nr>` | zu einer alten Version zurückkehren |
@@ -380,8 +429,9 @@ start.bat/.sh      Direktstart ohne Build
 ## Technische Hinweise
 
 - **Modell:** Standard ist Claude `claude-opus-5-5` (adaptives „Thinking“,
-  einstellbare Denk-Tiefe über `effort`). Alternativ DeepSeek `deepseek-chat`.
-  Beides in `config/settings.toml` änderbar.
+  einstellbare Denk-Tiefe über `effort`). Alternativ DeepSeek `deepseek-flash`
+  (Nachdenken über `denken`). Wählbar in der App, mit `/modell` und `/denken` oder in
+  `config/settings.toml`.
 - **Tests:** 44 Stück (pytest), decken Gedächtnis, Berechtigungen, Werkzeuge,
   beide Provider (mit gefälschten Clients, ohne Netz) und die Kostenrechnung ab.
 - **Langer Verlauf:** Sehr lange Gespräche werden automatisch zusammengefasst

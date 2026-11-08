@@ -263,9 +263,13 @@ beim passenden Namen eintragen, speichern, neu starten.
 **„Insufficient balance“ / Fehler vom Anbieter** → Guthaben leer oder Schlüssel
 falsch kopiert. Guthaben prüfen, Schlüssel neu kopieren.
 
-**DeepSeek-Modell wird nicht gefunden** → In `config/settings.toml` unter
-`[deepseek]` `model` von `deepseek-chat` auf `deepseek-flash` oder
-`deepseek-v4-pro` ändern.
+**DeepSeek-Modell wird nicht gefunden** → Im Chat `/modell flash` eingeben (oder in
+der App unter Gehirn & Schlüssel „DeepSeek Flash“ wählen). Die alten Namen
+`deepseek-chat`/`deepseek-reasoner` stellt Nova seit Version 0.6.0 selbst um.
+
+**Claude denkt mir zu lange nach** → In der App unter Gehirn & Schlüssel die
+Denk-Tiefe auf „schnell“ oder „ausgewogen“ stellen (im Chat: `/denken schnell`) –
+oder ein schnelleres Modell wählen, z. B. `/modell sonnet` oder `/modell haiku`.
 
 **Die KI öffnet sich immer wieder von selbst** → Im KI-Fenster `/autostart`
 eingeben. Es zeigt, was sie automatisch startet (oft hat sie sich selbst in die
