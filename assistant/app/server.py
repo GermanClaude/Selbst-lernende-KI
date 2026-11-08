@@ -7,8 +7,8 @@ koennen. Der Server spricht nur mit der eigenen Oberflaeche:
   GET  /, /static/*      Oberflaeche
   GET  /api/events       Ereignisstrom (Server-Sent Events)
   GET  /api/state, /api/history, /api/profile, /api/memory, /api/tutorial, /api/appearance, /custom.css
-  POST /api/send, /api/stop, /api/answer, /api/voice, /api/toggle, /api/profile, /api/memory,
-       /api/jarvis, /api/tutorial
+  POST /api/send (Warteschlange, interrupt), /api/queue, /api/afk, /api/stop, /api/answer,
+       /api/voice, /api/toggle, /api/profile, /api/memory, /api/jarvis, /api/tutorial
 """
 from __future__ import annotations
 
@@ -193,8 +193,11 @@ class AppServer:
             def _post(self, url, body: dict):
                 ctl = server.controller
                 if url.path == "/api/send":
-                    ok, error = ctl.send(str(body.get("text", "")))
-                    return self._json({"ok": ok, "error": error} if not ok else {"ok": True})
+                    return self._json(ctl.submit(str(body.get("text", "")), bool(body.get("interrupt"))))
+                if url.path == "/api/queue":
+                    return self._json(ctl.queue_action(str(body.get("action", "")), body.get("id")))
+                if url.path == "/api/afk":
+                    return self._json(ctl.afk(body))
                 if url.path == "/api/stop":
                     ctl.stop()
                     return self._json({"ok": True})

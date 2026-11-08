@@ -40,6 +40,8 @@ class GehirnEinstellenTool(Tool):
                     f"Denk-Tiefen: {levels}.")
         if aktion != "setzen":
             return f"Unbekannte aktion '{aktion}'."
+        if getattr(ctx.permissions, "away", False):
+            return "Nicht, solange dein Mensch weg ist (AFK-Modus) - das entscheidet er selbst."
         if not (modell or denken):
             return "Nichts angegeben - z.B. denken='schnell' oder modell='sonnet'."
         # Teure Wahl (staerkstes Modell / maximale Tiefe) nur mit Zustimmung

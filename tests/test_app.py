@@ -152,16 +152,57 @@ def test_toggle_allow_everything(app, tmp_path):
     assert load_config(tmp_path).permissions.auto_confirm is True
 
 
-def test_second_message_while_busy_is_refused(app):
-    cmd = f'"{sys.executable}" -c "import time; time.sleep(5)"'
-    script = [(anthro_msg([tool_use_block("shell_befehl", "t1", {"befehl": cmd})], stop_reason="tool_use"), []),
-              (anthro_msg([text_block("fertig")]), [])]
-    server = app(script, safe_mode=False, auto_confirm=True)
+def _slow_script(seconds=2):
+    cmd = f'"{sys.executable}" -c "import time; time.sleep({seconds})"'
+    return [(anthro_msg([tool_use_block("shell_befehl", "t1", {"befehl": cmd})], stop_reason="tool_use"), []),
+            (anthro_msg([text_block("fertig")]), [])]
+
+
+def _user_texts(events):
+    return [e["text"] for e in events if e["type"] == "user"]
+
+
+def test_second_message_waits_in_the_queue(app):
+    server = app(_slow_script(), safe_mode=False, auto_confirm=True)
     _req(server, "/api/send", {"text": "eins"})
     _events_until(server, "tool")
     status, body = _req(server, "/api/send", {"text": "zwei"})
-    assert body["ok"] is False and "Stopp" in body["error"]
+    assert body["ok"] and body["queued"] and not body["interrupt"]
+    assert [q["text"] for q in _req(server, "/api/state")[1]["queue"]] == ["zwei"]
+    events = _events_until(server, "done")  # erst "eins" fertig ...
+    events += _events_until(server, "done")  # ... dann kommt "zwei" von allein dran
+    assert "zwei" in _user_texts(events)
+    assert _req(server, "/api/state")[1]["queue"] == []
+
+
+def test_interrupt_answers_the_new_message_right_away(app):
+    server = app(_slow_script(5), safe_mode=False, auto_confirm=True)
+    _req(server, "/api/send", {"text": "eins"})
+    _events_until(server, "tool")
+    started = time.monotonic()
+    body = _req(server, "/api/send", {"text": "lieber das", "interrupt": True})[1]
+    assert body["queued"] and body["interrupt"]
+    events = _events_until(server, "stopped")
+    events += _events_until(server, "done")
+    assert "lieber das" in _user_texts(events)
+    assert time.monotonic() - started < 4.5  # nicht erst auf das langsame Programm gewartet
+
+
+def test_stop_gives_waiting_messages_back(app):
+    server = app(_slow_script(5), safe_mode=False, auto_confirm=True)
+    _req(server, "/api/send", {"text": "eins"})
+    _events_until(server, "tool")
+    _req(server, "/api/send", {"text": "zwei"})
+    _req(server, "/api/send", {"text": "drei"})
+    q = _req(server, "/api/state")[1]["queue"]
+    assert _req(server, "/api/queue", {"action": "remove", "id": q[1]["id"]})[1]["ok"]
+    _req(server, "/api/send", {"text": "vier"})
     _req(server, "/api/stop", {})
+    events = _events_until(server, "queue_returned")
+    assert events[-1]["text"] == "zwei\nvier"
+    _events_until(server, "stopped")
+    time.sleep(0.3)
+    assert _req(server, "/api/state")[1]["queue"] == [] and not _req(server, "/api/state")[1]["busy"]
 
 
 def test_native_program_window_is_used(app, tmp_path, monkeypatch):
@@ -588,3 +629,66 @@ def test_model_choice_in_the_app_and_by_command(app, tmp_path):
     events = _events_until(server, "notice")
     assert "DeepSeek V4 Pro" in events[-1]["text"]
     assert load_config(tmp_path).deepseek.model == "deepseek-v4-pro"
+
+
+def _afk_tool(tid, aktion, text):
+    return (anthro_msg([tool_use_block("abwesenheit", tid, {"aktion": aktion, "text": text})],
+                       stop_reason="tool_use"), [])
+
+
+def test_afk_mode_works_alone_and_reports_back(app):
+    script = [_afk_tool("a1", "notiz", "Drei Hotels verglichen"), (anthro_msg([text_block("Schritt eins")]), []),
+              _afk_tool("a2", "vorschlag", "Hotel buchen"), _afk_tool("a3", "fertig", "Vergleich liegt bereit"),
+              (anthro_msg([text_block("Ende")]), []), (anthro_msg([text_block("Willkommen zurueck")]), [])]
+    server = app(script)
+    ctl = server.controller
+    ctl.config.afk.pause_sekunden = 0
+    body = _req(server, "/api/afk", {"action": "start", "auftrag": "Urlaub planen", "minuten": 30})[1]
+    assert body["ok"] and body["started"]
+    events = _events_until(server, "afk_report", timeout=15)
+    report = events[-1]["text"]
+    assert "Drei Hotels verglichen" in report and "Hotel buchen" in report and "Vergleich liegt bereit" in report
+    assert events[-1]["reason"] == "fertig"
+    notices = [e["text"] for e in events if e["type"] == "notice"]
+    assert any("AFK-Modus an" in n for n in notices) and any("Schritt 1" in n for n in notices)
+    assert not any(e["type"] == "user" for e in events)  # AFK-Schritte sind keine Nachrichten "von dir"
+    time.sleep(0.3)
+    state = _req(server, "/api/state")[1]
+    assert state["afk"] is None and not state["busy"] and not ctl.permissions.away
+    _req(server, "/api/send", {"text": "Hallo"})
+    _events_until(server, "done")
+    sent = ctl.brain.provider.client.messages.last_kwargs["messages"]
+    last_user = [m for m in sent if m["role"] == "user" and isinstance(m["content"], str)][-1]["content"]
+    assert last_user.startswith("[Dein Mensch ist zurueck") and "Hotel buchen" in last_user
+    assert last_user.endswith("Hallo")
+
+
+def test_a_message_ends_the_afk_mode(app):
+    server = app([(anthro_msg([text_block("Ich arbeite")]), [])])
+    ctl = server.controller
+    ctl.config.afk.pause_sekunden = 60  # wartet nach Schritt 1 lange - bis du zurueck bist
+    _req(server, "/api/afk", {"action": "start"})
+    _events_until(server, "done")
+    assert _req(server, "/api/state")[1]["afk"]["active"]
+    started = time.monotonic()
+    body = _req(server, "/api/send", {"text": "Bin wieder da"})[1]
+    assert body["queued"] and body["afk_ended"]
+    events = _events_until(server, "afk_report")
+    assert events[-1]["reason"] == "zurueck"
+    events = _events_until(server, "done")
+    assert "Bin wieder da" in _user_texts(events)
+    assert time.monotonic() - started < 10
+
+
+def test_nova_starts_afk_mode_when_told(app):
+    script = [(anthro_msg([tool_use_block("abwesenheit", "s1", {"aktion": "start", "auftrag": "Notizen ordnen"})],
+                          stop_reason="tool_use"), []),
+              (anthro_msg([text_block("Alles klar, bis spaeter!")]), []),
+              _afk_tool("f1", "fertig", "Notizen geordnet"), (anthro_msg([text_block("fertig")]), [])]
+    server = app(script)
+    server.controller.config.afk.pause_sekunden = 0
+    _req(server, "/api/send", {"text": "Ich bin jetzt AFK, ordne bitte meine Notizen"})
+    events = _events_until(server, "afk_report", timeout=15)
+    assert "Notizen geordnet" in events[-1]["text"]
+    first = server.controller.brain.provider.messages[0]["content"]
+    assert "abwesenheit" in first  # Hinweis fuer die KI, weil es nach "bin weg" klang

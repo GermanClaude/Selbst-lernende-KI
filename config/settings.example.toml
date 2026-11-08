@@ -102,6 +102,17 @@ deepseek_output = 0.6
 usd_zu_eur = 0.92
 
 
+# ----------------------------------------------------------------------------
+#  AFK-MODUS - "Ich bin weg": die KI arbeitet allein weiter (/afk oder Knopf in der App).
+#  Sie loescht, ueberschreibt, verschickt und startet dabei nichts - das schlaegt sie nur vor.
+# ----------------------------------------------------------------------------
+[afk]
+max_minuten = 120      # hoechstens so lange
+max_euro = 1.0         # hoechstens so viel Kosten (ca.)
+max_schritte = 12      # hoechstens so viele Arbeitsschritte
+pause_sekunden = 20    # Pause zwischen zwei Schritten
+
+
 [memory]
 db_path = "data/memory.sqlite3"
 max_facts_in_context = 60

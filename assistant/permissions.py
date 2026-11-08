@@ -73,6 +73,17 @@ class PermissionManager:
         self.workspace_root = workspace_root.resolve()
         self.confirm_fn = confirm_fn or _default_confirm
         self.app_root = app_root  # Ordner der KI (fuer "startet sich selbst")
+        # AFK-Modus: niemand da, der gefragt werden koennte -> strenger, nie nachfragen.
+        self.away = False
+        self._away_created: set[Path] = set()
+
+    def begin_away(self) -> None:
+        self.away = True
+        self._away_created = set()
+
+    def end_away(self) -> None:
+        self.away = False
+        self._away_created = set()
 
     # -- Aktionsfreigabe ----------------------------------------------------
     def check(self, risk: Risk, description: str) -> Decision:
@@ -85,6 +96,12 @@ class PermissionManager:
             )
         if risk == Risk.SAFE:
             return Decision(True)
+        if self.away:
+            # Umkehrbares (z.B. neue Datei im Arbeitsordner - siehe check_path_write) ja,
+            # alles Weitreichende nein. Nachgefragt wird nicht: es ist ja niemand da.
+            if risk == Risk.MODERATE:
+                return Decision(True)
+            return Decision(False, _away_denied())
         if self.settings.auto_confirm:
             return Decision(True)
         # Nachfragen.
@@ -97,6 +114,8 @@ class PermissionManager:
 
         Abschaltbar mit [permissions] autostart_immer_fragen = false.
         """
+        if self.away:
+            return Decision(False, _away_denied())
         if self.settings.auto_confirm and not self.settings.autostart_immer_fragen:
             return Decision(True)
         if self.confirm_fn(description, Risk.AUTOSTART):
@@ -108,7 +127,20 @@ class PermissionManager:
         )
 
     def check_path_write(self, path: Path) -> Decision:
-        """Schreiben in einen Autostart-Ordner nur mit ausdruecklicher Zustimmung."""
+        """Schreiben in einen Autostart-Ordner nur mit ausdruecklicher Zustimmung.
+
+        Im AFK-Modus: nur NEUE Dateien im Arbeitsordner (bzw. solche, die in dieser
+        Abwesenheit selbst angelegt wurden) - nichts Bestehendes ueberschreiben."""
+        if self.away:
+            resolved = Path(path).resolve()
+            if not self._is_within(resolved, self.workspace_root):
+                return Decision(False, "Solange dein Mensch weg ist, schreibst du nur in den Arbeitsordner. "
+                                       + _away_denied())
+            if resolved.exists() and resolved not in self._away_created:
+                return Decision(False, "Diese Datei gab es schon - solange dein Mensch weg ist, ueberschreibst "
+                                       "du nichts. Leg eine neue Datei an (z.B. mit '-entwurf' im Namen) oder "
+                                       "schreib die Aenderung als Vorschlag auf.")
+            self._away_created.add(resolved)
         if is_autostart_path(path):
             return self.confirm_always(f"{AUTOSTART_WARNING}\n    Datei: {path}")
         return Decision(True)
@@ -157,6 +189,8 @@ class PermissionManager:
     # -- Shell-Pruefung -----------------------------------------------------
     def check_shell(self, command: str, cwd: str | None = None) -> Decision:
         """Prueft einen Shell-Befehl gegen Verbots-/Erlaubnisliste und Safe Mode."""
+        if self.away:
+            return Decision(False, _away_denied())
         lowered = command.lower().strip()
         for pattern in self.settings.shell_denylist:
             if pattern.lower() in lowered:
@@ -181,3 +215,9 @@ class PermissionManager:
         if self.confirm_fn(f"Shell-Befehl ausfuehren:\n    {command}", Risk.DANGEROUS):
             return Decision(True)
         return Decision(False, "Vom Nutzer abgelehnt.")
+
+
+def _away_denied() -> str:
+    from .abwesend import AWAY_DENIED
+
+    return AWAY_DENIED

@@ -167,6 +167,15 @@ class PriceSettings:
 
 
 @dataclass
+class AfkSettings:
+    # AFK-Modus: so lange/so teuer darf die KI hoechstens allein weiterarbeiten.
+    max_minuten: int = 120
+    max_euro: float = 1.0
+    max_schritte: int = 12
+    pause_sekunden: float = 20.0
+
+
+@dataclass
 class MemorySettings:
     db_path: str = "data/memory.sqlite3"
     max_facts_in_context: int = 60
@@ -264,6 +273,7 @@ class Config:
     style: StyleSettings = field(default_factory=StyleSettings)
     about: dict = field(default_factory=dict)  # "Ueber mich" (config/ueber_mich.json)
     provider_auto_switched: str = ""  # eingestelltes Gehirn hatte keinen Schluessel -> gewechselt
+    afk: AfkSettings = field(default_factory=AfkSettings)
 
     # -- Komfort-Eigenschaften ---------------------------------------------
     @property
@@ -489,6 +499,7 @@ def load_config(project_root: Path | None = None) -> Config:
         update=_merge(UpdateSettings(), raw.get("update", {})),
         style=_merge(StyleSettings(), raw.get("stil", {})),
         about=_load_about(config_dir / "ueber_mich.json"),
+        afk=_merge(AfkSettings(), raw.get("afk", {})),
     )
     # Eingestelltes Gehirn ohne Schluessel, das andere hat einen (z.B. nur DEEPSEEK_API_KEY in
     # .env, aber aktiv = "claude"): automatisch das Gehirn nehmen, fuer das es einen Schluessel gibt.
