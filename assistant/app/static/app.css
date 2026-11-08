@@ -1220,6 +1220,13 @@ kbd {
 .afk-pick { display: flex; flex-direction: column; gap: 6px; }
 .segctl.afk-seg { display: grid; width: 100%; }
 .segctl.afk-seg .segctl-btn { min-width: 0; padding: 7px 6px; font-variant-numeric: tabular-nums; }
+.afk-own { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.afk-own[hidden] { display: none; }
+.afk-own-label { font-size: 0.9em; color: var(--text-2, var(--muted, inherit)); white-space: nowrap; }
+.afk-own-input { width: 7.5em; text-align: right; font-variant-numeric: tabular-nums; }
+.afk-own-unit { color: var(--text-2, var(--muted, inherit)); }
+.afk-hint { margin: 6px 0 0; font-size: 0.85em; color: var(--text-2, var(--muted, inherit)); }
+.afk-hint[hidden] { display: none; }
 .afk-info {
   display: flex; flex-direction: column; gap: 7px;
   padding: 11px 14px;

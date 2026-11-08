@@ -437,3 +437,29 @@ def test_slow_recognition_and_the_stop_button_mean_you_are_here():
 
     threading.Thread(target=recognized).start()
     assert wait_until_quiet(live, threading.Event(), timeout=5) is False  # nicht "still" waehrend des Erkennens
+
+
+def test_budget_can_be_given_with_the_command():
+    from assistant.abwesend import budget_abtrennen
+
+    assert budget_abtrennen("0,30€ recherchiere Fluege") == (0.3, "recherchiere Fluege")
+    assert budget_abtrennen("2 Euro schreib mir eine Liste") == (2.0, "schreib mir eine Liste")
+    assert budget_abtrennen("30 Cent such Rezepte") == (0.3, "such Rezepte")
+    assert budget_abtrennen("1.5 eur") == (1.5, "")
+    assert budget_abtrennen("recherchiere 3 Euro-Angebote") == (None, "recherchiere 3 Euro-Angebote")
+
+
+def test_the_ai_can_pass_a_spoken_budget():
+    from assistant.tools.abwesenheit import AbwesenheitTool
+    from assistant.tools.base import ToolContext
+
+    seen = []
+
+    class Perm:
+        def require(self, *a, **k):
+            return None
+
+    ctx = ToolContext(Perm(), None, {"afk_start": lambda auftrag, minuten, euro=None: seen.append((auftrag, minuten, euro))})
+    AbwesenheitTool().run(ctx, "start", auftrag="Rezepte", minuten=30, euro=0.3)
+    AbwesenheitTool().run(ctx, "start", auftrag="x")
+    assert seen == [("Rezepte", 30, 0.3), ("x", None, None)]

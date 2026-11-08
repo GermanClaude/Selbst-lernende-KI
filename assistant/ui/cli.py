@@ -32,7 +32,8 @@ Sonderbefehle (mit '/' beginnen):
   /ollama laden <modell> - ein Modell fuer Ollama herunterladen (z.B. /ollama laden qwen3.5:4b)
   /ollama adresse <url>  - andere Adresse fuer Ollama (Standard: http://localhost:11434)
   /ollama starten     - das installierte Ollama starten
-  /afk [Auftrag]      - ich bin weg: die KI arbeitet allein weiter (Strg+C = zurueck)
+  /afk [Betrag] [Auftrag] - ich bin weg: die KI arbeitet allein weiter, z.B. /afk 0,30€ ...
+                       (Strg+C = zurueck)
   /bild <pfad> [frage] - Bild mitschicken, z.B. /bild foto.jpg Was steht da drauf? (mehrere Pfade
                         moeglich, mit Leerzeichen in Anfuehrungszeichen; ohne Pfad: Zwischenablage).
                         Ein Bildpfad allein (z.B. ins Fenster gezogen) geht auch.
@@ -773,7 +774,10 @@ class CLI:
         if not self.config.api_key:
             print(_c(KEY_HINT, YELLOW))
             return
-        self._afk_terminal(" ".join(args))
+        from ..abwesend import budget_abtrennen
+
+        budget, auftrag = budget_abtrennen(" ".join(args))  # z.B. /afk 0,30€ recherchiere ...
+        self._afk_terminal(auftrag, budget=budget)
 
     def _afk_terminal(self, auftrag: str = "", minutes: int | None = None, budget: float | None = None) -> None:
         from ..abwesend import run_session, settings_session

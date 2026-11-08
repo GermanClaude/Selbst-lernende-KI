@@ -3407,7 +3407,8 @@
   //  die Notice baut sie (so auch beim Neuladen aus dem Verlauf), afk_report "bestaetigt" sie nur.
   // =====================================================================
   const AFK_DUR = [[30, '30 Min'], [60, '1 Std'], [120, '2 Std'], [240, '4 Std']];
-  const AFK_BUD = [[0.2, '0,20 €'], [0.5, '0,50 €'], [1, '1 €'], [2, '2 €']];
+  const AFK_BUD = [[0.1, '0,10 €'], [0.25, '0,25 €'], [0.5, '0,50 €'], [1, '1 €'], [-1, 'Eigener']];
+  const AFK_BUD_KEY = 'nova.afk.budget';  // zuletzt gewaehlter Betrag (nur Bequemlichkeit, darf fehlen)
   const AFK_TALK = 'Lass uns die Vorschläge durchgehen.';
   const RE_AFK_REPORT = /^\s*\*\*W(?:ä|ae)hrend du weg warst\*\*/i;
   const afk = {
@@ -3468,7 +3469,28 @@
   const afkDur = byId('afk-dur');
   const afkBud = byId('afk-bud');
   afkSegs(afkDur, AFK_DUR, (v) => { afk.dur = v; afkMark(afkDur, v); });
-  afkSegs(afkBud, AFK_BUD, (v) => { afk.bud = v; afkMark(afkBud, v); });
+  const afkOwn = byId('afk-bud-own');
+  const afkOwnBox = byId('afk-bud-ownbox');
+  function afkPickBud(v, focusOwn) {
+    afk.bud = v;
+    afkMark(afkBud, v);
+    afkOwnBox.hidden = v !== -1;
+    if (v === -1 && focusOwn) afkOwn.focus();
+  }
+  afkSegs(afkBud, AFK_BUD, (v) => afkPickBud(v, true));
+  /** Eigener Betrag: "0,30", "0.3", "1 €" -> Zahl (oder NaN). */
+  function afkOwnValue() {
+    const t = String(afkOwn.value || '').replace(/€|eur(o)?/gi, '').trim().replace(',', '.');
+    return /^\d{1,3}(\.\d{1,2})?$/.test(t) ? Number(t) : NaN;
+  }
+  function afkBudget() { return afk.bud === -1 ? afkOwnValue() : afk.bud; }
+  function afkRemember(v) { try { localStorage.setItem(AFK_BUD_KEY, String(v)); } catch (e) { /* egal */ } }
+  function afkRemembered() {
+    let v = NaN;
+    try { v = Number(localStorage.getItem(AFK_BUD_KEY)); } catch (e) { /* egal */ }
+    return Number.isFinite(v) && v >= 0.01 && v <= 50 ? v : 1;
+  }
+  afkOwn.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); submitAfk(); } });
 
   function openAfk() {
     if (ended || !amodal.hidden) return;
@@ -3476,9 +3498,11 @@
     closeCmdPop();
     afk.back = document.activeElement;
     afk.dur = 120;
-    afk.bud = 1;
     afkMark(afkDur, afk.dur);
-    afkMark(afkBud, afk.bud);
+    const last = afkRemembered();
+    if (AFK_BUD.some(([v]) => v === last)) { afkOwn.value = ''; afkPickBud(last, false); }
+    else { afkOwn.value = String(last).replace('.', ','); afkPickBud(-1, false); }
+    byId('afk-bud-free').hidden = state.kostenlos !== true;
     afkErr.hidden = true;
     afkSending(false);
     byId('afk-sub').textContent = 'Du bist weg – ich arbeite allein weiter und berichte dir, wenn du zurück bist.';
@@ -3518,8 +3542,16 @@
   async function submitAfk() {
     if (afk.sending || amodal.hidden) return;
     afkErr.hidden = true;
+    const budget = afkBudget();
+    if (!(budget >= 0.01 && budget <= 50)) {
+      afkErr.textContent = 'Bitte einen Betrag zwischen 0,01 € und 50 € eingeben, z. B. 0,30.';
+      afkErr.hidden = false;
+      afkOwn.focus();
+      return;
+    }
+    afkRemember(budget);
     afkSending(true);
-    const r = await post('/api/afk', { action: 'start', auftrag: afkTask.value.trim(), minuten: afk.dur, budget: afk.bud });
+    const r = await post('/api/afk', { action: 'start', auftrag: afkTask.value.trim(), minuten: afk.dur, budget });
     if (amodal.hidden) { // inzwischen geschlossen (z.B. KI beendet)
       afk.sending = false;
       if (r.ok) afkTask.value = '';

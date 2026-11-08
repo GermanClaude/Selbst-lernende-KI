@@ -4,6 +4,15 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.8.1 – 2026-11-08
+
+- **AFK-Modus: eigenes Budget.** Im Dialog „Ich bin weg“ kannst du jetzt unter „Eigener“
+  jeden Betrag eintragen (z. B. 0,30 €) – praktisch mit Claude, wo 1 € schnell zu viel ist.
+  Nova merkt sich deinen letzten Betrag.
+- Kleinere Beträge zur schnellen Auswahl: 0,10 €, 0,25 €, 0,50 € und 1 €.
+- Auch per Befehl (`/afk 0,30€ recherchiere …`) oder einfach gesagt („Ich bin weg,
+  höchstens 30 Cent“).
+
 ## 0.8.0 – 2026-11-08
 
 **Neues kostenloses Gehirn: Ollama**
