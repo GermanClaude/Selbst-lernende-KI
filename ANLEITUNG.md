@@ -88,6 +88,12 @@ git clone -b ccr-cfa1ff8c-wgsyxb https://github.com/GermanClaude/Selbst-lernende
 4. Den Schlüssel (beginnt mit `sk-...`) sofort **kopieren**.
    ⚠️ Er wird nur **einmal** angezeigt.
 
+### Oder ganz kostenlos: Ollama (läuft auf deinem PC)
+
+Ohne Schlüssel und ohne Kosten: Ollama von <https://ollama.com/download> installieren,
+dann in Nova unter **„Gehirn & Schlüssel“ → „Ollama“** ein empfohlenes Modell herunterladen
+(z.B. `qwen3.5:4b`, ca. 3–4 GB). Schwächer als DeepSeek/Claude und je nach PC langsamer.
+
 ### Oder Claude (stärker, teurer)
 <https://console.anthropic.com/> → Konto, Guthaben, unter **„API Keys“** einen
 Schlüssel erstellen (beginnt mit `sk-ant-...`) und kopieren.

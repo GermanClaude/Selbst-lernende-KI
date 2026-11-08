@@ -24,8 +24,8 @@ Tastatur steuern.
 ## Was sie kann
 
 - 💬 **Natürliches Gespräch** in vollständigen Sätzen, auf Deutsch.
-- 🔀 **Zwei Gehirne zur Auswahl**: **Claude** (sehr stark) oder **DeepSeek**
-  (extrem günstig) – per Einstellung umschaltbar, jeweils mit eigenem API-Key.
+- 🔀 **Drei Gehirne zur Auswahl**: **Claude** (sehr stark), **DeepSeek** (extrem günstig)
+  oder **Ollama** (kostenlos, läuft auf deinem eigenen PC, ganz ohne Schlüssel).
 - 💶 **Sparmodus + Live-Kostenanzeige**: so wenig Token wie möglich bei voller
   Leistung; `/kosten` zeigt jederzeit den geschätzten Verbrauch.
 - 🧠 **Lernen & Gedächtnis**: merkt sich dauerhaft, was ihr wichtig ist über dich.
@@ -319,6 +319,20 @@ die alte in `data/persona-sicherungen/` gesichert), „Über mich“ in
 - Über dem Eingabefeld siehst du, was wartet – mit „Jetzt“ (unterbrechen) und „✕“ (entfernen).
 - **Stopp** hält an; wartende Nachrichten kommen zurück ins Eingabefeld.
 
+## Kostenlos auf dem eigenen PC: Ollama
+
+[Ollama](https://ollama.com) lässt KI-Modelle direkt auf deinem PC laufen – ohne Schlüssel,
+ohne Kosten, ohne dass Gespräche ins Internet gehen.
+
+1. Ollama einmal installieren: <https://ollama.com/download> (Windows: `OllamaSetup.exe`).
+2. In Nova **„Gehirn & Schlüssel“ → „Ollama“** wählen (oder `/gehirn ollama` im Terminal).
+3. Ein empfohlenes Modell herunterladen, z.B. `qwen3.5:4b` (ca. 3–4 GB; kann Werkzeuge
+   benutzen und Bilder sehen). Im Terminal: `/ollama laden qwen3.5:4b`.
+
+Lokale Modelle sind schwächer als Claude/DeepSeek und brauchen einen ordentlichen PC
+(mindestens 8 GB Arbeitsspeicher; mit Grafikkarte deutlich schneller). Einstellungen stehen
+unter `[ollama]` in `config/settings.toml` (Adresse, Modell, Kontextgröße).
+
 ## Bilder: zeigen und erstellen lassen
 
 - **Bilder zeigen:** In der App mit **Strg+V** einfügen, ins Fenster ziehen oder über die
@@ -424,7 +438,8 @@ stoppt die Steuerung sofort.
 | `/bild <Pfad> [Frage]` | Bild anhängen (ohne Pfad: aus der Zwischenablage) |
 | `/feedback` | Feedback & Bewertung an den Entwickler schicken |
 | `/denken [stufe]` | Denk-Tiefe: schnell, ausgewogen, gründlich, sehr gründlich, maximal |
-| `/gehirn [deepseek\|claude]` | Gehirn zeigen bzw. wechseln |
+| `/gehirn [deepseek\|claude\|ollama]` | Gehirn zeigen bzw. wechseln |
+| `/ollama [laden <modell>]` | Ollama-Status zeigen bzw. ein Modell herunterladen |
 | `/update` | jetzt nach einer neuen Version schauen |
 | `/versionen` | gesicherte alte Versionen anzeigen |
 | `/zurueck <Nr>` | zu einer alten Version zurückkehren |

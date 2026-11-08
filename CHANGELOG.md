@@ -4,6 +4,21 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.8.0 – 2026-11-08
+
+**Neues kostenloses Gehirn: Ollama**
+- Neben Claude und DeepSeek gibt es jetzt **Ollama**: Die KI läuft direkt auf deinem PC –
+  **ohne Schlüssel, ohne Kosten**, und deine Gespräche verlassen den Rechner nicht.
+- Einrichten in **„Gehirn & Schlüssel“ → „Ollama“**: Nova zeigt, ob Ollama läuft, welche
+  Modelle du hast, und lädt empfohlene Modelle per Knopfdruck herunter (mit Fortschritt).
+  Ollama selbst installierst du einmal von ollama.com – der Knopf dafür ist direkt dort.
+- Im Terminal: `/gehirn ollama`, `/ollama` (Status) und `/ollama laden <modell>`.
+- Empfehlung: `qwen3.5:4b` (ca. 3–4 GB, kann Werkzeuge benutzen und Bilder sehen). Für
+  stärkere PCs: `qwen3.5:9b`.
+- Gut zu wissen: Lokale Modelle sind schwächer als Claude oder DeepSeek, und wie schnell sie
+  antworten, hängt von deinem PC ab (mindestens 8 GB Arbeitsspeicher, mit Grafikkarte deutlich
+  schneller). Kann ein Modell keine Werkzeuge benutzen oder keine Bilder sehen, sagt Nova dir das.
+
 ## 0.7.0 – 2026-11-08
 
 **Bilder zeigen – Nova sieht mit**
