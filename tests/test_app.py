@@ -541,3 +541,21 @@ def test_exe_kind_from_program_header_and_crash_memory(tmp_path):
     assert launcher._crashed_last_time(info)                              # Prozess weg, app.json noch da
     info.write_text(json.dumps({"pid": 999999, "fenster": "browser"}), encoding="utf-8")
     assert not launcher._crashed_last_time(info)
+
+
+def test_update_indicator_and_send_right_away_switch(app, tmp_path):
+    from assistant.config import load_config
+
+    server = app([])
+    ctl = server.controller
+    status = _req(server, "/api/state")[1]["update_status"]
+    assert status["state"] in ("aus", "unbekannt") and status["current"]
+    ctl.updater._save_state(letzte_pruefung="2026-11-08T01:00:00", neueste="0.0.1")
+    ctl.updater.settings.modus = "automatisch"
+    assert _req(server, "/api/state")[1]["update_status"]["state"] == "aktuell"
+    ctl.updater._save_state(neueste="99.0.0")
+    assert _req(server, "/api/state")[1]["update_status"]["state"] == "neu"
+    assert _req(server, "/api/state")[1]["voice_autosend"] is False
+    _req(server, "/api/toggle", {"name": "sofort_senden", "value": True})
+    assert _req(server, "/api/state")[1]["voice_autosend"] is True
+    assert load_config(tmp_path).voice.sofort_senden is True

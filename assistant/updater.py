@@ -228,14 +228,31 @@ class Updater:
     def check(self) -> UpdateInfo | None:
         """Schaut nach einer neueren Version. Netzwerkfehler -> None (still)."""
         self.last_error = None
+        self.last_seen = None
         try:
             info = self._check_exe() if self.frozen else self._check_source()
         except Exception as exc:  # noqa: BLE001 - offline, Repo weg, ...
             logger.info("Update-Pruefung nicht moeglich: %s", exc)
             self.last_error = str(exc)
             return None
-        self._save_state(letzte_pruefung=self.now().isoformat(timespec="seconds"))
+        latest = info.new if info else (self.last_seen or self.current)
+        self._save_state(letzte_pruefung=self.now().isoformat(timespec="seconds"), neueste=latest)
         return info
+
+    def status(self) -> dict:
+        """Fuer die Anzeige 'auf dem neuesten Stand?' -> state: aktuell | neu | unbekannt | aus."""
+        data = self._state()
+        checked, latest = data.get("letzte_pruefung"), data.get("neueste")
+        if not self.enabled:
+            state = "aus"
+        elif latest and is_newer(str(latest), self.current):
+            state = "neu"
+        elif checked:
+            state = "aktuell"  # gespeichert wird nur nach erfolgreicher Pruefung
+        else:
+            state = "unbekannt"
+        return {"state": state, "current": self.current, "latest": latest or None, "checked": checked,
+                "error": getattr(self, "last_error", None)}
 
     def _ref(self) -> str:
         return (self.settings.branch or "").strip()
@@ -247,6 +264,7 @@ class Updater:
         remote = read_version(
             self.fetch(base + "assistant/__init__.py", timeout=8).decode("utf-8", "replace")
         )
+        self.last_seen = remote
         if not remote or not is_newer(remote, self.current):
             return None
         try:
@@ -266,6 +284,7 @@ class Updater:
         repo = self.settings.repo.strip()
         release = json.loads(self.fetch(f"https://api.github.com/repos/{repo}/releases/latest", timeout=8))
         remote = str(release.get("tag_name", "")).lstrip("vV")
+        self.last_seen = remote
         if not remote or not is_newer(remote, self.current):
             return None
         assets = release.get("assets", [])

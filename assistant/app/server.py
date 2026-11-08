@@ -219,6 +219,8 @@ class AppServer:
                     return self._json(ctl.tutorial_action(str(body.get("action", ""))))
                 if url.path == "/api/setup":
                     return self._json(ctl.setup_save(body))
+                if url.path == "/api/update":
+                    return self._json(ctl.check_update_now())
                 return self._deny(404)
 
             def _static(self, name: str) -> None:

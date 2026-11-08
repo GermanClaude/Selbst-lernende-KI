@@ -150,6 +150,8 @@ class AppController(CLI):
             "provider_name": schoen({"deepseek": "DeepSeek", "claude": "Claude (Anthropic)"}.get(
                 self.config.active_provider, self.config.active_provider)),
             "update": {"new": self._pending_update.new} if self._pending_update else None,
+            "update_status": self._update_status(),
+            "voice_autosend": bool(self.config.voice.sofort_senden),
             "jarvis": self._jarvis_active(),
             "jarvis_state": self._live.state if self._jarvis_active() else "off",  # fuer ein neu geoeffnetes Fenster
             "jarvis_live": bool(self._jarvis_active() and self._live.ear.live),
@@ -666,6 +668,12 @@ class AppController(CLI):
                 save_setting(self.config.project_root, "permissions", "auto_confirm", "true" if value else "false")
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Einstellung nicht gespeichert: %s", exc)
+        elif name == "sofort_senden":
+            self.config.voice.sofort_senden = bool(value)
+            try:
+                save_setting(self.config.project_root, "voice", "sofort_senden", "true" if value else "false")
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Einstellung nicht gespeichert: %s", exc)
         elif name == "vorlesen":
             if value and not self.voice_out.enabled:
                 self.voice_out = VoiceOutput(True)
@@ -674,6 +682,39 @@ class AppController(CLI):
             elif not value:
                 self.voice_out.enabled = False
         self._state_changed()
+
+    # -- Updates: Anzeige "auf dem neuesten Stand" -------------------------------------
+    def _update_status(self) -> dict:
+        try:
+            status = self.updater.status()
+        except Exception:  # noqa: BLE001
+            status = {"state": "unbekannt", "current": __version__}
+        if self._pending_update:
+            status.update(state="neu", latest=self._pending_update.new)
+        if getattr(self, "_checking_update", False):
+            status["state"] = "pruefe"
+        return status
+
+    def check_update_now(self) -> dict:
+        """Knopf 'Jetzt pruefen': nur nachschauen (installiert nichts - dafuer /update)."""
+        if getattr(self, "_checking_update", False):
+            return {"ok": True}
+        self._checking_update = True
+        self._state_changed()
+
+        def work() -> None:
+            try:
+                info = self.updater.check()
+                if info:
+                    self._pending_update = info
+            except Exception as exc:  # noqa: BLE001
+                logger.info("Update-Pruefung: %s", exc)
+            finally:
+                self._checking_update = False
+                self._state_changed()
+
+        threading.Thread(target=work, name="update-pruefen", daemon=True).start()
+        return {"ok": True}
 
     # -- Spracheingabe (Mikrofon-Knopf / F2 im Fenster) -------------------------------
     def voice(self, action: str) -> dict:

@@ -157,6 +157,7 @@ class CLI:
         self.voice_mode = config.voice.enabled and self.voice_in.available()
         self.voice_capture = VoiceCapture(config.voice)
         self.reader = VoiceLineReader(self.voice_capture, enabled=config.voice.f2_aufnahme)
+        self.reader.autosend = lambda: bool(self.config.voice.sofort_senden)
         self.reader.warm_up()
         self.updater = Updater(config.update, config.project_root)
         self.exit_code = 0

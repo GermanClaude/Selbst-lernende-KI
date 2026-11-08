@@ -193,6 +193,8 @@ class VoiceSettings:
     wake_word: str = ""
     # F2 = Sprechtaste: halten = sprechen, kurz druecken = Mikrofon an/aus.
     f2_aufnahme: bool = True
+    # Nach F2/Mikrofon-Knopf das Gesprochene gleich abschicken (statt erst in die Eingabezeile)
+    sofort_senden: bool = False
     # Spracherkennung: "auto" (Whisper, falls installiert, sonst Google),
     # "whisper" (offline, faster-whisper) oder "google" (online, kostenlos).
     erkennung: str = "auto"

@@ -373,3 +373,14 @@ def test_windows_shift_letter_is_typing():
     con = _win([_rec(0x10, mods=0x10), _rec(0x41, "A", mods=0x10)])
     key = con.wait_first_key()
     assert key.char == "A" and len(con._k32.queue) == 1  # Umschalt-Druck weg, "A" bleibt fuer input()
+
+
+def test_spoken_text_can_be_sent_right_away():
+    clock = Clock()
+    console = FakeConsole(clock, [(0, F2)], f2_release=2.0)
+    capture = FakeCapture("Sind die Stuetzraeder noch an?")
+    reader, out = _reader(console, capture, clock)
+    reader.autosend = lambda: True
+    assert reader.read("Du: ") == "Sind die Stuetzraeder noch an?"
+    assert console.finished is None                  # nicht erst in die Eingabezeile
+    assert any("Sind die Stuetzraeder noch an?\n" in o for o in out)

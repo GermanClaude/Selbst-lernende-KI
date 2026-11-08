@@ -118,6 +118,8 @@ agent_runden = 40
 # druecken = Mikrofon an, nochmal F2 = fertig. Der Text landet in der Eingabezeile.
 # Einrichten im Chat mit:  /sprache einrichten
 f2_aufnahme = true
+# true = das Gesprochene nach dem Loslassen gleich abschicken (ohne Enter)
+sofort_senden = false
 # Spracherkennung: "auto" (Whisper, falls installiert, sonst Google),
 # "google" (online, kostenlos) oder "whisper" (offline: pip install faster-whisper).
 erkennung = "auto"
