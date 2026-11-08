@@ -817,6 +817,8 @@ class LiveLoop:
         self.turn_active = False
         self.turn_text = ""
         self.pending: str | None = None
+        self.spoke = 0                # so oft hast du wirklich etwas gesagt (kein Echo, kein Geraeusch)
+        self.exit_reason = ""         # "bye" (Tschuess/beenden) oder "chat" (zurueck in den Chat)
         self.hearing = False          # du sprichst gerade
         self.speaking = False         # Nova spricht (oder hat noch etwas in der Warteschlange)
         self.recent: deque = deque(maxlen=12)  # (Zeit, Woerter) - was Nova zuletzt gesagt hat
@@ -970,8 +972,13 @@ class LiveLoop:
             self._idle_state()
             return
         if self.host.is_exit(text):
+            # "Tschuess" heisst: ich gehe. "Chat-Modus" heisst: ich bleibe, nur ohne Sprache.
+            self.exit_reason = "bye" if is_goodbye(text) else "chat"
+            if self.exit_reason == "chat":
+                self.spoke += 1
             self.stop_event.set()
             return
+        self.spoke += 1
         ask = self.host.pending_ask()
         heard_question = self.ask_said_at is not None and started >= self.ask_said_at - 0.6  # 0,45 s Vorlauf
         if ask and not heard_question:
@@ -1206,21 +1213,41 @@ class LiveLoop:
             self._send(text)
 
 
+_GOODBYES = ("tschuess", "tschüss", "tschues", "ciao", "tschau", "bye", "beenden", "ende", "bis spaeter",
+             "bis später", "bis dann", "auf wiedersehen", "ich bin weg", "ich geh")
+
+
+def is_goodbye(text: str) -> bool:
+    """Ein Abschied (ich gehe) - im Gegensatz zu "Chat-Modus" (ich bleibe, nur ohne Sprache)."""
+    low = (text or "").lower().strip(" .!?,")
+    return any(low == g or low.startswith(g + " ") or low.startswith(g + ",") for g in _GOODBYES)
+
+
+def staying(live) -> bool:
+    """Endet Jarvis, weil du im Chat weitermachen willst (nicht, weil du gehst)?"""
+    return live is not None and getattr(live, "exit_reason", "") == "chat"
+
+
 def wait_until_quiet(live, stop_event, timeout: float = 60.0) -> bool:
-    """Wartet, bis Nova im Jarvis-Modus ausgeredet hat. False = du sprichst wieder (ein echter Satz
-    wartet auf Antwort oder eine neue Runde hat begonnen) bzw. du bist zurueck (stop_event).
-    Ein Geraeusch/Husten waehrend des Vorlesens ist noch keine Entscheidung - dann weiter warten."""
-    turn = getattr(live, "turn", None)
+    """Wartet, bis Nova im Jarvis-Modus ausgeredet hat. False = du hast wirklich etwas gesagt
+    (auch "Stopp" oder "Chat-Modus") bzw. du bist zurueck (stop_event). Ein Geraeusch/Husten
+    waehrend des Vorlesens zaehlt nicht; "Tschuess" heisst: du gehst wirklich."""
+    turn, spoke = getattr(live, "turn", None), getattr(live, "spoke", 0)
+
+    def you_spoke() -> bool:
+        return bool(getattr(live, "pending", None) or getattr(live, "turn", None) != turn
+                    or getattr(live, "spoke", 0) != spoke or staying(live))
+
     end = time.monotonic() + timeout
     while time.monotonic() < end:
         if stop_event.is_set():
             return False
+        if you_spoke():
+            return False
         if live.stop_event.is_set():
             return True  # "Tschuess"/Fenster zu: Jarvis endet ohnehin
-        if getattr(live, "pending", None) or getattr(live, "turn", None) != turn:
-            return False
         # Der LiveLoop entscheidet selbst, wann Nova fertig ist (auch ohne Rueckmeldung des Fensters)
         if not live.turn_active and not live.speaking and not getattr(live, "hearing", False):
             return True
         time.sleep(0.1)
-    return not (getattr(live, "pending", None) or getattr(live, "turn", None) != turn)
+    return not you_spoke()

@@ -196,16 +196,30 @@ def _get_checked(requests, url: str, hops: int = 5):
     verfolgen und jedes Ziel pruefen (nicht ins eigene Netz, nicht auf http)."""
     from urllib.parse import urljoin
 
-    for hop in range(hops + 1):
-        sent = _prepared(requests, url)
-        problem = _host_problem(sent)
-        if problem:
-            return problem if hop == 0 else "Die Seite leitet weiter auf eine Adresse, die ich jetzt nicht abrufe. " + problem
-        resp = requests.get(sent, headers=_HEADERS, timeout=25, allow_redirects=False)
-        location = resp.headers.get("Location") if getattr(resp, "headers", None) else None
-        if not (300 <= int(getattr(resp, "status_code", 200) or 200) < 400 and location):
-            return resp
-        if location != location.strip() or any(c.isspace() or ord(c) < 32 for c in location):
-            return "Die Seite leitet auf eine ungueltige Adresse weiter - abgebrochen."
-        url = urljoin(sent, location)
-    return "Zu viele Weiterleitungen - abgebrochen."
+    # Eine Sitzung wie beim normalen Abruf: Cookies zwischen den Schritten, Adressen so dekodiert
+    # wie requests selbst (z.B. Umlaute in Weiterleitungen).
+    session = requests.Session() if hasattr(requests, "Session") else None
+    get = session.get if session is not None else requests.get
+    try:
+        for hop in range(hops + 1):
+            sent = _prepared(requests, url)
+            problem = _host_problem(sent)
+            if problem:
+                return problem if hop == 0 else (
+                    "Die Seite leitet weiter auf eine Adresse, die ich jetzt nicht abrufe. " + problem)
+            resp = get(sent, headers=_HEADERS, timeout=25, allow_redirects=False)
+            if session is not None:
+                location = session.get_redirect_target(resp)
+            else:
+                code = int(getattr(resp, "status_code", 200) or 200)
+                headers = getattr(resp, "headers", None) or {}
+                location = headers.get("Location") if 300 <= code < 400 else None
+            if not location:
+                return resp
+            if location != location.strip() or any(c.isspace() or ord(c) < 32 for c in location):
+                return "Die Seite leitet auf eine ungueltige Adresse weiter - abgebrochen."
+            url = urljoin(sent, location)
+        return "Zu viele Weiterleitungen - abgebrochen."
+    finally:
+        if session is not None:
+            session.close()

@@ -378,6 +378,11 @@ class CLI:
             host.uninstall()
             speaker.stop()
             self.brain.provider.cancel_event.clear()  # angehaltene Antwort nicht weitertragen
+        from ..live import staying
+
+        if self._afk_pending is not None and staying(loop):  # "Chat-Modus": du bleibst
+            self._afk_pending = None
+            print(_c("\n[AFK-Modus nicht gestartet - du bist ja noch da.]", GREY))
         if self._afk_pending is not None:  # "Ich bin jetzt weg" im Sprachmodus
             pending, self._afk_pending = self._afk_pending, None
             print(_c("\n[Jarvis-Modus beendet - der AFK-Modus beginnt]", GREY))
@@ -429,11 +434,13 @@ class CLI:
     # -- AFK-Modus: allein weiterarbeiten, waehrend du weg bist (abwesend.py) -------
     def _afk_request(self, auftrag: str = "", minutes: int | None = None, budget: float | None = None) -> bool:
         def number(value, kind):
+            import math
+
             try:
                 result = kind(value) if value not in (None, "") else None
+                return result if result is None or math.isfinite(float(result)) else None
             except (TypeError, ValueError, OverflowError):
                 return None
-            return result if result is None or abs(float(result)) != float("inf") else None
 
         self._afk_pending = {"auftrag": str(auftrag or "")[:2000], "minutes": number(minutes, int),
                              "budget": number(budget, float)}
@@ -1244,7 +1251,7 @@ class _TerminalLiveHost:
                 self.cli.brain.respond(model_text, on_text=self._on_text)
             except KeyboardInterrupt:  # angehalten (Dazwischenreden, Stopp)
                 cancelled = True
-                if not (self.loop is not None and self.loop.stop_event.is_set()):
+                if not self._leaving():
                     self.cli._afk_pending = None  # doch nicht weg ("Tschuess" = Jarvis endet: bleibt)
                 if not (self.drop and provider.drop_turn(snapshot, model_text)):
                     provider.abort_turn(snapshot, text)
@@ -1256,8 +1263,7 @@ class _TerminalLiveHost:
                 self.drop = False
                 print()
                 cancelled = cancelled or provider.cancel_event.is_set() or self.cli.brain.compact_interrupted
-                leaving = self.loop is not None and self.loop.stop_event.is_set()
-                if cancelled and not leaving:
+                if cancelled and not self._leaving():
                     self.cli._afk_pending = None  # "Stopp" (auch beim Zusammenfassen) -> doch nicht weg
                 if self.loop is not None:
                     self.loop.on_turn_end(cancelled)
@@ -1267,6 +1273,12 @@ class _TerminalLiveHost:
         self.worker = threading.Thread(target=work, name="jarvis-antwort", daemon=True)
         self.worker.start()
         return True
+
+    def _leaving(self) -> bool:
+        """Jarvis endet, weil du gehst ("Tschuess") - nicht, weil du im Chat weitermachst."""
+        from ..live import staying
+
+        return self.loop is not None and self.loop.stop_event.is_set() and not staying(self.loop)
 
     def _leave_for_afk(self) -> None:
         """Nach 'Ich bin weg': erst fertig sprechen lassen, dann Jarvis beenden (der AFK-Modus

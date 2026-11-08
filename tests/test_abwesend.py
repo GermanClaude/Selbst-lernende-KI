@@ -375,3 +375,31 @@ def test_waiting_for_jarvis_ignores_a_cough_but_not_a_sentence():
 
     threading.Thread(target=sentence).start()
     assert wait_until_quiet(live, threading.Event(), timeout=5) is False
+
+
+
+def test_saying_stop_or_chat_mode_while_nova_says_goodbye_keeps_you_here():
+    import threading
+    import time as _t
+    from types import SimpleNamespace
+
+    from assistant.live import is_goodbye, wait_until_quiet
+
+    def loop():
+        return SimpleNamespace(stop_event=threading.Event(), turn=1, turn_active=False, speaking=True,
+                               hearing=False, pending=None, spoke=0, exit_reason="")
+
+    live = loop()
+    threading.Thread(target=lambda: (_t.sleep(0.2), setattr(live, "spoke", 1))).start()  # "Stopp"
+    assert wait_until_quiet(live, threading.Event(), timeout=5) is False
+
+    live = loop()
+    threading.Thread(target=lambda: (_t.sleep(0.2), setattr(live, "exit_reason", "chat"),
+                                     live.stop_event.set())).start()  # "Chat-Modus"
+    assert wait_until_quiet(live, threading.Event(), timeout=5) is False
+
+    live = loop()
+    threading.Thread(target=lambda: (_t.sleep(0.2), setattr(live, "exit_reason", "bye"),
+                                     live.stop_event.set())).start()  # "Tschuess"
+    assert wait_until_quiet(live, threading.Event(), timeout=5) is True
+    assert is_goodbye("Tschüss!") and is_goodbye("ciao, bis morgen") and not is_goodbye("Chat-Modus")

@@ -854,7 +854,17 @@ def test_stopped_answer_drops_a_pending_afk(app):
     _req(server, "/api/send", {"text": "Ich bin gleich weg"})
     _events_until(server, "tool")
     assert _req(server, "/api/state")[1]["afk_pending"]
-    server.controller.brain.provider.cancel()  # wie "Stopp" im Sprachmodus
+    import threading
+    from types import SimpleNamespace
+
+    from assistant.app.controller import _LiveHost
+
+    ctl = server.controller
+    loop = SimpleNamespace(stop_event=threading.Event(), exit_reason="", on_turn_end=lambda *a: None)
+    ctl._live_turn = loop  # die Antwort gehoert dem Sprachmodus
+    host = _LiveHost(ctl)
+    host.loop = loop
+    host.cancel_turn(False)  # wie "Stopp" im Sprachmodus
     events = _events_until(server, "stopped")
     time.sleep(0.5)
     state = _req(server, "/api/state")[1]
@@ -907,3 +917,38 @@ def test_nova_keeps_the_limits_you_chose_with_the_afk_button(app):
     events = _events_until(server, "afk_report", timeout=15)
     start = next(e["text"] for e in events if e["type"] == "notice" and "AFK-Modus an" in e["text"])
     assert "10 Min." in start and "0,20 EUR" in start and "Auftrag: Notizen" in start
+
+
+
+def test_afk_button_pressed_after_stop_still_starts(app):
+    import threading
+
+    cmd = f'"{sys.executable}" -c "import time; time.sleep(1.5)"'
+    script = [(anthro_msg([tool_use_block("web_suche", "w1", {"anfrage": "x"})], stop_reason="tool_use"), []),
+              (anthro_msg([tool_use_block("abwesenheit", "f1", {"aktion": "fertig", "text": "ok"})],
+                          stop_reason="tool_use"), []),
+              (anthro_msg([text_block("fertig")]), [])]
+    server = app(script)
+    ctl = server.controller
+    ctl.config.afk.pause_sekunden = 0
+    started = threading.Event()
+    release = threading.Event()
+    tool = ctl.registry.get("web_suche")
+    original = tool.run
+
+    def slow_search(ctx, **kw):  # ein Werkzeug, das den Stopp erst am Ende bemerkt
+        started.set()
+        release.wait(5)
+        return "nichts"
+
+    tool.run = slow_search
+    try:
+        _req(server, "/api/send", {"text": "such was"})
+        assert started.wait(5)
+        _req(server, "/api/stop", {})
+        assert _req(server, "/api/afk", {"action": "start", "auftrag": "danach"})[1]["ok"]
+        release.set()
+        events = _events_until(server, "afk_report", timeout=15)
+        assert not any(e["type"] == "notice" and "nicht gestartet" in e["text"] for e in events)
+    finally:
+        tool.run = original

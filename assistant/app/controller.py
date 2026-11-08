@@ -27,7 +27,7 @@ from .. import __version__
 from ..anzeige import schoen
 from ..cancel import Abgebrochen
 from ..config import Config, save_setting, toml_string
-from ..live import wait_until_quiet
+from ..live import staying, wait_until_quiet
 from ..logging_setup import get_logger
 from ..modelle import kurzbeschreibung
 from ..permissions import Risk
@@ -525,12 +525,9 @@ class AppController(CLI):
             else:
                 answer = self.brain.respond(model_text or text, on_text=self._emit)
         except KeyboardInterrupt:  # Stopp-Knopf (Abgebrochen) - oder Strg+C im Hintergrund
-            leaving = self._live_turn is not None and self._live_turn.stop_event.is_set()
-            if not as_notice and not leaving:  # Jarvis beendet ("Tschuess") heisst nicht "doch da"
-                with self._lock:  # angehalten (auch per Stimme) -> doch nicht weg
-                    if self._afk_pending is not None:
-                        self._afk_pending = None
-                        self._afk_dropped = True
+            # (Ein vorgemerkter AFK-Modus wird beim Anhalten dort verworfen, wo angehalten wird:
+            # Stopp/Unterbrechen/Rueckkehr im Fenster, Stopp/Nachtrag/Chat-Modus im Sprachmodus.
+            # Hier nicht - sonst traefe es auch einen AFK-Knopf, der NACH dem Stopp gedrueckt wurde.)
             drop, self._drop_turn = self._drop_turn, False
             if drop and self.brain.provider.drop_turn(snapshot, model_text or text):
                 # Sprachmodus: "Wie wird das Wetter?" ... "in Berlin" -> eine Frage
@@ -1226,6 +1223,11 @@ class _LiveHost:
     def cancel_turn(self, drop: bool) -> None:
         if self.ctl._live_turn is not self.loop:
             return  # nur eigene Antworten anhalten (nicht z.B. eine getippte Nachricht)
+        leaving = self.loop.stop_event.is_set() and not staying(self.loop)  # "Tschuess" = du gehst
+        with self.ctl._lock:
+            if self.ctl._afk_pending is not None and not leaving:
+                self.ctl._afk_pending = None  # "Stopp"/Nachtrag/"Chat-Modus": du bist noch da
+                self.ctl._afk_dropped = True
         self.ctl._drop_turn = drop
         self.ctl.brain.provider.cancel()
 
