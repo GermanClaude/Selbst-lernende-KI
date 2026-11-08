@@ -4,6 +4,44 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.6.0 – 2026-11-08
+
+**Schnell oder gründlich – du bestimmst, wie Nova denkt**
+- Im Fenster **„Gehirn & Schlüssel“** kannst du jetzt das **Modell** und die
+  **Denk-Tiefe** wählen – für Claude und für DeepSeek.
+  - Claude: Opus 5.5 (stark), Sonnet 5.5 (schnell), Haiku 5.5 (blitzschnell und sehr
+    günstig) und Fable 5.1 (das stärkste, aber langsamer und teurer).
+  - DeepSeek: Flash (schnell, extrem günstig) und V4 Pro (stärker).
+  - Denk-Tiefe von „schnell“ bis „maximal“. Denkt dir Claude zu lange nach? Stell
+    auf „schnell“ oder „ausgewogen“.
+- Du kannst es Nova auch einfach sagen: „Denk schneller“, „Nimm Sonnet“ – oder im
+  Chat `/modell` und `/denken` eingeben. Das Gespräch läuft beim Wechsel weiter.
+- DeepSeek hat seine alten Modellnamen abgeschaltet – Nova stellt automatisch auf
+  die neuen um. Die Kosten-Anzeige rechnet jetzt mit dem Preis des gewählten Modells.
+
+**Dazwischenreden und Warteschlange**
+- Du kannst schreiben, während Nova noch arbeitet: Die Nachricht kommt in die
+  **Warteschlange** und ist danach dran. Mit **Strg+Enter** (oder „Jetzt“) unterbrichst
+  du Nova und sie kümmert sich sofort um die neue Nachricht.
+- „Stopp“ hält an – wartende Nachrichten landen wieder im Eingabefeld, nichts geht verloren.
+
+**AFK-Modus: „Ich bin mal weg“**
+- Sag Nova „Ich bin jetzt AFK“ (oder drück „Ich bin weg“, oder `/afk` mit einem
+  Auftrag) – dann arbeitet sie allein weiter, so wie du es nach allem, was sie über
+  dich weiß, wollen würdest.
+- Sicher: In der Zeit liest und recherchiert sie und legt neue Dateien im
+  Arbeitsordner an. Sie **löscht, überschreibt, verschickt und startet nichts** –
+  solche Schritte schreibt sie dir als **Vorschlag** auf. Mit Zeit- und Kosten-Grenze.
+- Wenn du zurück bist (einfach eine Nachricht schreiben), bekommst du einen Bericht:
+  was erledigt ist, welche Vorschläge auf dich warten und welche Fragen sie hat.
+
+**Außerdem**
+- Anzeige **„Auf dem neuesten Stand“** in der Seitenleiste – mit „Jetzt prüfen“.
+- Neuer Schalter **„Gesprochenes sofort senden“**: Nach Mikrofon/F2 geht der Text
+  gleich ab, ohne Enter.
+- **Stützräder**: Im Zustand „teilweise“ öffnet ein Klick jetzt eine Auswahl
+  (anlegen oder abnehmen) – vorher ließen sie sich scheinbar nicht abnehmen.
+
 ## 0.5.1 – 2026-11-08
 
 - Die Beispiele im Fenster „Über mich“ (Name, Alter, Wohnort …) sind jetzt allgemein

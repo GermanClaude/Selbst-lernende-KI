@@ -35,6 +35,8 @@ Tastatur steuern.
 - ⌨️ **Shell**: Befehle ausführen, Programme starten, Dinge installieren.
 - 🎙️ **Sprachsteuerung** (optional): zuhören und vorlesen.
 - 🎭 **Persönlichkeit & Werte**, die du selbst in Textdateien festlegst.
+- 🌙 **AFK-Modus**: „Ich bin mal weg“ – sie arbeitet allein weiter, sicher und mit Bericht.
+- ⚡ **Schnell oder gründlich**: Modell und Denk-Tiefe frei wählbar.
 - 🔒 **Sicherheit zuerst**: ein Berechtigungssystem mit „Safe Mode“, Nachfragen
   und einem Papierkorb, damit nichts versehentlich zerstört wird.
 - 📦 **Als `.exe` baubar** für den Doppelklick-Start unter Windows.
@@ -306,6 +308,32 @@ die alte in `data/persona-sicherungen/` gesichert), „Über mich“ in
 - Vor dem Abschluss größerer Arbeiten prüft sie ihr Ergebnis selbst.
 - **Strg+C** hält die laufende Antwort an, ohne die KI zu beenden.
 
+## Warteschlange und Dazwischenreden (App)
+
+- Du kannst schreiben, während Nova noch arbeitet: **Enter** stellt die Nachricht in
+  die **Warteschlange** (sie ist dran, sobald die laufende Antwort fertig ist),
+  **Strg+Enter** unterbricht Nova und sie beantwortet die neue Nachricht sofort.
+- Über dem Eingabefeld siehst du, was wartet – mit „Jetzt“ (unterbrechen) und „✕“ (entfernen).
+- **Stopp** hält an; wartende Nachrichten kommen zurück ins Eingabefeld.
+
+## AFK-Modus: „Ich bin mal weg“
+
+Sag Nova „Ich bin jetzt AFK“ oder „Ich bin für zwei Stunden weg, recherchier bitte …“,
+drück in der App **„Ich bin weg“** oder tippe `/afk <Auftrag>`. Dann arbeitet sie in
+Schritten allein weiter – an deinem Auftrag oder an dem, woran ihr zuletzt gearbeitet
+habt – und handelt so, wie du es nach allem, was sie über dich weiß, wollen würdest.
+
+- **Erlaubt**: lesen, im Internet recherchieren, planen, **neue** Dateien im
+  Arbeitsordner anlegen, sich Dinge merken.
+- **Nicht erlaubt** (egal wie die Stützräder stehen): löschen, bestehende Dateien
+  überschreiben, Befehle/Programme ausführen, den PC steuern, etwas verschicken oder
+  kaufen. Solche Schritte schreibt sie als **Vorschlag** auf. Nachgefragt wird in der
+  Zeit nie – es ist ja niemand da.
+- **Grenzen**: höchstens 2 Stunden, ca. 1 € und 12 Schritte (in der App beim Start
+  wählbar, sonst in `config/settings.toml` unter `[afk]`).
+- **Zurück**: einfach eine Nachricht schreiben (im Terminal: Strg+C). Du bekommst einen
+  Bericht mit Ergebnissen, Vorschlägen zum Freigeben und offenen Fragen.
+
 ## Automatische Updates
 
 Einmal am Tag schaut die KI im GitHub-Repo nach einer neuen Version. Gibt es eine,
@@ -350,6 +378,10 @@ stoppt die Steuerung sofort.
 | `/sprache einrichten` | Spracheingabe installieren |
 | `/sprache vorlesen` | Antworten vorlesen an/aus |
 | `/jarvis` | Jarvis-Modus: einfach reden, live (zurück: „Chat-Modus“ sagen) |
+| `/afk [Auftrag]` | AFK-Modus: Nova arbeitet allein weiter (zurück: Nachricht bzw. Strg+C) |
+| `/modell [name]` | Modell zeigen bzw. wählen (z.B. `/modell sonnet`, `/modell deepseek pro`) |
+| `/denken [stufe]` | Denk-Tiefe: schnell, ausgewogen, gründlich, sehr gründlich, maximal |
+| `/gehirn [deepseek\|claude]` | Gehirn zeigen bzw. wechseln |
 | `/update` | jetzt nach einer neuen Version schauen |
 | `/versionen` | gesicherte alte Versionen anzeigen |
 | `/zurueck <Nr>` | zu einer alten Version zurückkehren |
