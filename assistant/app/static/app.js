@@ -2171,6 +2171,67 @@
     };
   }
 
+  /** Kurz fassen (fuer Beschriftungen) */
+  const clip = (s, n) => (s.length > n ? s.slice(0, n - 1).trimEnd() + '…' : s);
+
+  /** Erzeugtes Bild (Ereignis "image" bzw. Verlauf role "image"):
+   *  {url: "/api/bild/e/<name>", name, prompt, pfad (relativ zum Arbeitsordner), anbieter} */
+  function genImage(ev) {
+    const url = HL.bildUrl(ev && ev.url, TOKEN);
+    if (!url) return null;
+    const name = HL.anzeigeName(ev.name, ev.url);
+    const prompt = String(ev.prompt == null ? '' : ev.prompt).replace(/\s+/g, ' ').trim();
+    const who = String(ev.anbieter == null ? '' : ev.anbieter).trim().slice(0, 40);
+    const pfad = String(ev.pfad == null ? '' : ev.pfad).replace(/[\u0000-\u001f]/g, '').trim().slice(0, 300);
+    const fig = h('figure', 'gen-img');
+    const big = h('button', 'btn small secondary');
+    big.type = 'button';
+    big.append(icon('maximize'), h('span', null, 'Groß ansehen'));
+    const save = h('a', 'btn small secondary');
+    save.href = url;
+    save.download = name;
+    save.title = 'Bild speichern (' + name + ')';
+    save.append(icon('download'), h('span', null, 'Speichern'));
+    const view = h('button', 'gi-view');
+    view.type = 'button';
+    view.title = 'Groß ansehen';
+    view.setAttribute('aria-label', 'Bild groß ansehen' + (prompt ? ': ' + clip(prompt, 120) : ''));
+    const img = h('img');
+    img.alt = prompt ? 'Erstelltes Bild: ' + clip(prompt, 240) : 'Erstelltes Bild';
+    img.decoding = 'async';
+    img.addEventListener('load', () => { fig.classList.add('loaded'); keepBottom(); });
+    img.addEventListener('error', () => {
+      fig.classList.add('broken');
+      view.disabled = true;
+      view.replaceChildren(icon('image'), h('span', null, 'Das Bild ist nicht mehr da.'));
+      save.hidden = true;
+      big.hidden = true;
+    });
+    img.src = url;
+    view.append(img);
+    const cap = h('figcaption', 'gi-cap');
+    const whoEl = h('span', 'gi-who');
+    whoEl.append(icon('sparkles'), h('span', null, who ? 'Erstellt mit ' + who : 'Erstelltes Bild'));
+    cap.append(whoEl);
+    if (prompt) {
+      const p = h('span', 'gi-prompt', '„' + clip(prompt, 180) + '“');
+      p.title = clip(prompt, 2000);
+      cap.append(p);
+    }
+    if (pfad) {
+      const pa = h('span', 'gi-path');
+      pa.append(icon('folder'), h('span', null, 'Gespeichert im Arbeitsordner: ' + pfad));
+      cap.append(pa);
+    }
+    const btns = h('div', 'gi-btns');
+    btns.append(big, save);
+    fig.append(view, cap, btns);
+    const item = [{ src: url, name, caption: (who ? who + (prompt ? ' – ' : '') : '') + clip(prompt, 400), save: true }];
+    view.addEventListener('click', () => openLightbox(item, 0, view));
+    big.addEventListener('click', () => openLightbox(item, 0, big));
+    return fig;
+  }
+
   /** Eine KI-Antwort (Sprechblase) mit Text-Abschnitten, Chips, Agenten. */
   class Reply {
     constructor() {
@@ -2270,6 +2331,37 @@
       keepBottom();
     }
 
+    /** Erzeugtes Bild in diese Antwort (ersetzt die Fortschritts-Zeile). */
+    image(ev) {
+      const fig = genImage(ev);
+      if (!fig) return false;
+      this.dropProgress();
+      this.content.append(fig);
+      this.seg = null;
+      keepBottom();
+      return true;
+    }
+
+    /** "In der Warteschlange: Platz 3, ca. 40 s" – EINE Zeile, die sich aktualisiert. */
+    progress(text) {
+      const t = String(text || '').trim();
+      if (!t) return;
+      if (!this.prog || !this.prog.isConnected) {
+        const d = h('div', 'info-line img-progress');
+        d.append(h('span', 'spinner'), h('span', 'ip-text'));
+        this.content.append(d);
+        this.prog = d;
+        this.seg = null;
+      }
+      this.prog.querySelector('.ip-text').textContent = clip(t, 200);
+      keepBottom();
+    }
+
+    dropProgress() {
+      if (this.prog) this.prog.remove();
+      this.prog = null;
+    }
+
     thinking(on) {
       if (on && !this.think) {
         const el = h('div', 'thinking');
@@ -2308,7 +2400,8 @@
     }
 
     isEmpty() {
-      return !this.content.childElementCount || (!this.rawText() && !this.content.querySelector('.chip, .agent, .info-line'));
+      return !this.content.childElementCount ||
+        (!this.rawText() && !this.content.querySelector('.chip, .agent, .info-line, .gen-img'));
     }
 
     /** Timer anhalten, wenn die Blase verworfen wird (z.B. neues Gespraech). */
@@ -2322,6 +2415,7 @@
     finish(kind) {
       this.flush();
       this.thinking(false);
+      this.dropProgress(); // fertig (oder abgebrochen): "In der Warteschlange …" stimmt nicht mehr
       for (const b of this.agents) b.finish(kind === 'stopped' ? 'stopped' : 'done');
       this.active = false;
       this.row.removeAttribute('aria-busy');
@@ -2430,13 +2524,21 @@
     return text.split(key).join(maskKey(key));
   }
 
-  /** interrupt: die laufende Antwort anhalten und diese Nachricht sofort beantworten (Strg+Enter). */
+  /** interrupt: die laufende Antwort anhalten und diese Nachricht sofort beantworten (Strg+Enter).
+   *  Getippte Nachrichten (fromInput) nehmen die angehaengten Bilder mit – Befehle ("/…") nie. */
   async function send(text, fromInput, interrupt) {
     text = String(text || '').trim();
-    if (!text || ended) return false;
-    // /jarvis und /tutorial oeffnen die Ansichten direkt im Fenster (nicht senden)
+    if (ended) return false;
+    const tray = fromInput && !text.startsWith('/') ? chatTray : null;
+    if (tray && tray.busy()) {
+      toast('Einen Moment – die Bilder werden noch vorbereitet.', 'info');
+      return false;
+    }
+    const imgs = tray ? tray.items.slice() : [];
+    if (!text && !imgs.length) return false;
+    // /jarvis, /tutorial und /feedback oeffnen die Ansichten direkt im Fenster (nicht senden)
     const low = text.toLowerCase();
-    if (low === '/jarvis' || low === '/tutorial' || low === '/tour') {
+    if (low === '/jarvis' || low === '/tutorial' || low === '/tour' || low === '/feedback' || low === '/bewertung') {
       if (fromInput) {
         input.value = '';
         autosize();
@@ -2444,7 +2546,9 @@
       }
       rememberOwn(text);
       recallIdx = -1;
-      if (low === '/jarvis') startJarvis(); else startTour();
+      if (low === '/jarvis') startJarvis();
+      else if (low === '/feedback' || low === '/bewertung') openFeedback({ trigger: 'menue' });
+      else startTour();
       return true;
     }
     // "/neu" waehrend AFK: erst der Bericht (sonst loescht das neue Gespraech ihn ungesehen)
@@ -2452,24 +2556,28 @@
     // Schluessel: Blase nur gekuerzt (wie das Echo) und nicht fuer Pfeil hoch merken
     const masked = keyShown(text);
     const shown = masked || text;
+    const cid = HL.neueId(); // Echo vom Server ("user" mit client_id) gehoert zu genau dieser Blase
     // Arbeitet die KI noch, wartet die Nachricht – ihre Blase kommt erst, wenn sie drankommt
     // (Ereignis "user"). Sonst gleich anzeigen.
     let row = null;
     let p = null;
     if (!busy) {
-      row = addUser(shown);
-      p = { text: shown, row, t: Date.now() };
+      row = addUser(shown, imgs.map((b) => ({ src: b.data, name: b.name, save: false })));
+      p = { text: shown, row, t: Date.now(), cid, imgs: imgs.length };
       pendingSent.push(p);
     }
-    if (!masked) rememberOwn(text);
+    if (!masked && text) rememberOwn(text);
     recallIdx = -1;
     if (fromInput) {
       input.value = '';
       autosize();
       closeCmdPop();
     }
+    if (tray && imgs.length) tray.clear();
     if (row) toBottom(true);
-    const r = await post('/api/send', { text, interrupt: !!interrupt });
+    const body = { text, interrupt: !!interrupt, client_id: cid };
+    if (imgs.length) body.images = imgs.map((b) => ({ name: b.name, data: b.data }));
+    const r = await post('/api/send', body);
     if (!r.ok) {
       if (p) {
         const k = pendingSent.indexOf(p);
@@ -2478,7 +2586,8 @@
         updateEmpty();
       }
       if (fromInput && !input.value) { input.value = text; autosize(); }
-      toast(r.error || 'Senden hat nicht geklappt.', 'error');
+      if (tray && imgs.length) tray.restore(imgs); // nichts geht verloren
+      toast(r.error || 'Senden hat nicht geklappt.', 'error', imgs.length ? 6000 : undefined);
       return false;
     }
     if (r.queued) {
@@ -2490,7 +2599,7 @@
         row.remove();
         updateEmpty();
       }
-      if (!p || k >= 0) {
+      if ((!p || k >= 0) && shown) {
         queuedOwn.push(shown);
         if (queuedOwn.length > 40) queuedOwn.shift();
         // Schluessel: der Server gibt ihn nach "Stopp" nie zurueck (er geht nie ueber die Ereignisse) –
@@ -2543,16 +2652,23 @@
     if (progress) msgs.lastElementChild.dataset.kind = 'live-progress';
   }
 
-  function onUserEcho(text) {
-    const t = String(text || '').trim();
+  /** Ereignis "user": {text, images: [{url, name}], client_id}. Die eigene Blase (schon gezeigt)
+   *  erkennt das Fenster an der client_id; aeltere KI ohne client_id: am Text. */
+  function onUserEcho(ev) {
+    const t = String(ev.text == null ? '' : ev.text).trim();
+    const imgs = HL.normBilder(ev.images);
+    const cid = ev.client_id == null ? '' : String(ev.client_id);
     queueStarted();
     // eigener wartender Schluessel ist dran (wird jetzt eingerichtet): nicht mehr merken
     for (const [id, o] of ownKeys) if (o.shown === t) { ownKeys.delete(id); break; }
     // aeltere Eintraege (ohne Echo) aufraeumen
     while (pendingSent.length && Date.now() - pendingSent[0].t > 60000) pendingSent.shift();
-    const k = pendingSent.findIndex((p) => p.text === t);
+    let k = cid ? pendingSent.findIndex((p) => p.cid === cid) : -1;
+    if (k < 0 && !cid) k = pendingSent.findIndex((p) => p.text === t && !p.imgs);
     if (k >= 0) { pendingSent.splice(k, 1); return; }
-    addUser(t);
+    if (!t && !imgs.length) return;
+    addUser(t, imgs.map(serverImg).filter(Boolean));
+    if (!t) return;
     // eigene wartende Nachricht kommt dran: schon fuer Pfeil hoch gemerkt
     const q = queuedOwn.indexOf(t);
     if (q >= 0) queuedOwn.splice(q, 1);
@@ -2622,7 +2738,7 @@
   function queueAll() {
     const list = Array.isArray(state.queue) ? state.queue : [];
     return list.filter((it) => it && typeof it === 'object' && it.id != null)
-      .map((it) => ({ id: String(it.id), text: String(it.text == null ? '' : it.text) }));
+      .map((it) => ({ id: String(it.id), text: String(it.text == null ? '' : it.text), pics: HL.anzahlBilder(it.images) }));
   }
 
   function renderQueue() {
@@ -2650,14 +2766,21 @@
     }
     qList.replaceChildren();
     items.forEach((it, k) => {
-      const one = it.text.replace(/\s+/g, ' ').trim() || '…';
-      const short = one.length > 60 ? one.slice(0, 59) + '…' : one;
+      const one = it.text.replace(/\s+/g, ' ').trim() || (it.pics ? HL.bildText(it.pics) : '…');
+      const short = (one.length > 60 ? one.slice(0, 59) + '…' : one) + (it.pics && it.text.trim() ? ' (' + HL.bildText(it.pics) + ')' : '');
       const going = it.id === goingId;
       const li = h('li', 'q-item' + (going ? ' going' : ''));
       li.dataset.qid = it.id;
       const txt = h('span', 'q-text', one);
-      txt.title = it.text.length > 600 ? it.text.slice(0, 599) + '…' : it.text;
-      li.append(h('span', 'q-num', String(k + 1)), txt);
+      txt.title = it.text.length > 600 ? it.text.slice(0, 599) + '…' : it.text || one;
+      li.append(h('span', 'q-num', String(k + 1)));
+      if (it.pics) { // "📎 2": diese Nachricht hat Bilder dabei
+        const a = h('span', 'q-att');
+        a.title = HL.bildText(it.pics) + ' dabei';
+        a.append(icon('paperclip'), h('span', null, String(it.pics)), h('span', 'sr-only', ' ' + HL.bildText(it.pics) + ':'));
+        li.append(a);
+      }
+      li.append(txt);
       if (going) {
         const g = h('span', 'q-going');
         g.append(h('span', 'spinner'), h('span', null, 'kommt gleich …'));
@@ -2740,22 +2863,497 @@
   });
   qClear.addEventListener('click', () => queueAct('clear'));
 
-  /** Ereignis "queue_returned": nach "Stopp" kommen die wartenden Nachrichten zurueck ins Feld. */
-  function onQueueReturned(text) {
-    const t = String(text == null ? '' : text).replace(/^\s+|\s+$/g, '');
-    if (!t || ended) return;
-    const v = input.value.replace(/^\s+|\s+$/g, '');
-    // zuerst die zurueckgekommenen (frueher geschrieben), dann das, was schon im Feld stand
-    input.value = v ? t + '\n' + v : t;
-    autosize();
-    recallIdx = -1;
-    closeCmdPop();
+  /** Ereignis "queue_returned": nach "Stopp" kommen die wartenden Nachrichten zurueck ins Feld –
+   *  {items: [{text, images: [{url, name}]}]} (aeltere KI: {text}). Bilder holt das Fenster ueber
+   *  ihre Adresse wieder in die Leiste ueber dem Eingabefeld. */
+  function onQueueReturned(ev) {
+    if (ended) return;
+    const items = Array.isArray(ev.items) ? ev.items : [{ text: ev.text }];
+    const texts = [];
+    const pics = [];
+    for (const it of items) {
+      if (!it || typeof it !== 'object') continue;
+      const t = String(it.text == null ? '' : it.text).replace(/^\s+|\s+$/g, '');
+      if (t) texts.push(t);
+      pics.push(...HL.normBilder(it.images));
+    }
+    if (!texts.length && !pics.length) return;
+    if (texts.length) {
+      const t = texts.join('\n');
+      const v = input.value.replace(/^\s+|\s+$/g, '');
+      // zuerst die zurueckgekommenen (frueher geschrieben), dann das, was schon im Feld stand
+      input.value = v ? t + '\n' + v : t;
+      autosize();
+      recallIdx = -1;
+      closeCmdPop();
+    }
+    if (pics.length) chatTray.addUrls(pics);
     if (focusInput()) {
       input.setSelectionRange(input.value.length, input.value.length);
       input.scrollTop = input.scrollHeight;
     }
-    toast('Wartende Nachrichten sind zurück im Feld', 'info', 4200);
+    toast(pics.length ? 'Wartende Nachrichten sind zurück im Feld – mit ihren Bildern' : 'Wartende Nachrichten sind zurück im Feld',
+      'info', 4200);
   }
+
+  // =====================================================================
+  // Bilder anhaengen (Chat und Feedback): Bueroklammer, Strg+V, Hineinziehen
+  //  Jedes Bild wird hier EINMAL vorbereitet (lange Seite <= 1568, im Feedback 1920; JPEG 0,85 –
+  //  PNG bleibt, wenn es kleiner oder durchsichtig ist; GIF -> erstes Bild) und als data:-Adresse
+  //  geschickt (die CSP erlaubt kein blob:). Der Server prueft jedes Bild noch einmal.
+  //  POST /api/send {text, interrupt, client_id, images: [{name, data: "data:image/…;base64,…"}]}
+  // =====================================================================
+  class BildFehler extends Error {}
+
+  function readAsDataUrl(blob) {
+    return new Promise((resolve, reject) => {
+      const fr = new FileReader();
+      fr.onload = () => resolve(String(fr.result || ''));
+      fr.onerror = () => reject(new BildFehler('lesen'));
+      fr.readAsDataURL(blob);
+    });
+  }
+
+  function loadImg(src) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.decoding = 'async';
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new BildFehler('bild'));
+      img.src = src;
+    });
+  }
+
+  /** Datei/Blob -> {name, data, w, h, bytes}. Wirft BildFehler mit deutscher Meldung. */
+  async function prepareImage(file, kante, name, mime) {
+    const label = name && !/^image\.\w+$/i.test(name) ? '„' + clip(HL.anzeigeName(name), 40) + '“' : 'Das Bild';
+    const bad = () => new BildFehler(label + ' konnte nicht gelesen werden – ist es wirklich ein Bild?');
+    let bmp = null;
+    try {
+      let img = null;
+      let src = '';
+      if (typeof createImageBitmap === 'function') {
+        try { bmp = await createImageBitmap(file); } catch (_) { bmp = null; }
+      }
+      if (!bmp) {
+        src = HL.mitTyp(await readAsDataUrl(file), mime);
+        if (!src) throw bad();
+        img = await loadImg(src);
+      }
+      const w = bmp ? bmp.width : img.naturalWidth;
+      const hgt = bmp ? bmp.height : img.naturalHeight;
+      if (!w || !hgt) throw bad();
+      // passt schon (Typ, Groesse): unveraendert – Bildschirmfotos bleiben gestochen scharf
+      if (HL.behalten({ typ: mime, w, h: hgt, bytes: file.size, maxKante: kante })) {
+        if (!src) src = HL.mitTyp(await readAsDataUrl(file), mime);
+        if (!HL.istBildDaten(src)) throw bad();
+        return { name: HL.dateiName(name, mime), data: src, w, h: hgt, bytes: file.size };
+      }
+      const t = HL.zielMass(w, hgt, kante);
+      const cv = document.createElement('canvas');
+      cv.width = t.w;
+      cv.height = t.h;
+      const ctx = cv.getContext('2d');
+      if (!ctx) throw bad();
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(bmp || img, 0, 0, t.w, t.h); // GIF: das erste Bild
+      let data;
+      if (mime === 'image/jpeg') data = cv.toDataURL('image/jpeg', HL.JPEG_GUETE); // Foto bleibt Foto
+      else {
+        let clear = false;
+        try { clear = HL.hatTransparenz(ctx.getImageData(0, 0, t.w, t.h).data, HL.pruefSchritt(t.w, t.h)); } catch (_) { clear = false; }
+        const png = cv.toDataURL('image/png');
+        data = png;
+        if (!clear) {
+          const jpg = cv.toDataURL('image/jpeg', HL.JPEG_GUETE);
+          if (HL.dataUrlTyp(jpg) === 'image/jpeg' && HL.kodierung(false, png.length, jpg.length) === 'image/jpeg') data = jpg;
+        }
+      }
+      cv.width = 0;
+      cv.height = 0;
+      if (!HL.istBildDaten(data)) throw bad();
+      return { name: HL.dateiName(name, HL.dataUrlTyp(data)), data, w: t.w, h: t.h, bytes: HL.dataUrlBytes(data) };
+    } catch (e) {
+      if (e instanceof BildFehler && e.message !== 'lesen' && e.message !== 'bild') throw e;
+      throw bad();
+    } finally {
+      if (bmp && typeof bmp.close === 'function') bmp.close();
+    }
+  }
+
+  /** Bild vom Server (z.B. aus der Warteschlange zurueck) wieder holen und vorbereiten. */
+  async function fetchImage(url, name, kante) {
+    const src = HL.bildUrl(url, TOKEN);
+    let blob = null;
+    try {
+      const r = src ? await fetch(src) : null;
+      if (r && r.ok) blob = await r.blob();
+    } catch (_) { blob = null; }
+    if (!blob) throw new BildFehler('Ein Bild konnte nicht zurückgeholt werden – häng es bitte noch einmal an.');
+    const mime = HL.typ(blob.type, name || url);
+    if (!mime) throw new BildFehler('Ein Bild konnte nicht zurückgeholt werden – häng es bitte noch einmal an.');
+    return prepareImage(blob, kante, name || String(url).split('/').pop(), mime);
+  }
+
+  /** Leiste mit Miniaturen (Chat: ueber dem Eingabefeld; Feedback: im Dialog).
+   *  o: {box, list, count, err, clearBtn?, max(), kante, gesamt, tooBig, onChange?, focusEmpty?} */
+  function makeTray(o) {
+    const slots = []; // in Reihenfolge: {id, name, loading} bzw. fertig {id, name, data, w, h, bytes}
+    let seq = 0;
+    let errTimer = 0;
+    const ready = () => slots.filter((s) => !s.loading);
+    const room = () => Math.max(0, o.max() - slots.length);
+
+    function showErr(msg) {
+      o.err.replaceChildren(icon('alertCircle'), h('span', null, msg));
+      o.err.hidden = false;
+      o.box.hidden = false;
+      clearTimeout(errTimer);
+      errTimer = setTimeout(hideErr, 9000);
+      if (o.onChange) o.onChange();
+    }
+    function hideErr() {
+      clearTimeout(errTimer);
+      if (o.err.hidden) return;
+      o.err.hidden = true;
+      o.box.hidden = !slots.length;
+      if (o.onChange) o.onChange();
+    }
+
+    function lightboxList() {
+      return ready().map((s) => ({ src: s.data, name: s.name, caption: s.w + ' × ' + s.h + ' Pixel · ' + HL.groesseText(s.bytes), save: false }));
+    }
+
+    function render() {
+      // Fokus merken (gleicher Knopf desselben Bildes)
+      const ae = document.activeElement;
+      let fId = '';
+      let fKind = '';
+      if (ae && o.list.contains(ae)) {
+        const li = ae.closest('[data-id]');
+        fId = li ? li.dataset.id : '';
+        fKind = ae.classList.contains('att-del') ? 'del' : 'view';
+      }
+      o.list.replaceChildren();
+      for (const s of slots) {
+        const li = h('li', 'att-item' + (s.loading ? ' loading' : ''));
+        li.dataset.id = String(s.id);
+        if (s.loading) {
+          const ph = h('span', 'att-thumb att-wait');
+          ph.title = s.name + ' – wird vorbereitet …';
+          ph.append(h('span', 'spinner'), h('span', 'sr-only', s.name + ' wird vorbereitet'));
+          li.append(ph);
+        } else {
+          const v = h('button', 'att-thumb');
+          v.type = 'button';
+          v.title = s.name + ' · ' + s.w + ' × ' + s.h + ' · ' + HL.groesseText(s.bytes) + ' – groß ansehen';
+          v.setAttribute('aria-label', 'Groß ansehen: ' + s.name);
+          const img = h('img');
+          img.alt = '';
+          img.src = s.data;
+          v.append(img);
+          v.addEventListener('click', () => openLightbox(lightboxList(), ready().indexOf(s), v));
+          li.append(v);
+        }
+        const del = h('button', 'att-del');
+        del.type = 'button';
+        del.title = 'Entfernen';
+        del.setAttribute('aria-label', 'Bild entfernen: ' + s.name);
+        del.append(icon('x'));
+        del.addEventListener('click', () => remove(s, true));
+        li.append(del);
+        o.list.append(li);
+      }
+      const n = slots.length;
+      o.count.textContent = n ? n + ' von ' + o.max() : '';
+      o.count.title = n ? HL.bildText(n) + ' angehängt, höchstens ' + o.max() : '';
+      if (o.clearBtn) o.clearBtn.hidden = n < 2;
+      o.box.hidden = !n && o.err.hidden;
+      if (fId) {
+        const li = o.list.querySelector('[data-id="' + CSS.escape(fId) + '"]');
+        const target = li && (fKind === 'del' ? li.querySelector('.att-del') : li.querySelector('.att-thumb') || li.querySelector('.att-del'));
+        if (target && typeof target.focus === 'function' && target.tagName === 'BUTTON') target.focus();
+      }
+      if (o.onChange) o.onChange();
+    }
+
+    function remove(s, byUser) {
+      const k = slots.indexOf(s);
+      if (k < 0) return;
+      slots.splice(k, 1);
+      if (byUser) hideErr();
+      render();
+      if (!byUser) return;
+      const dels = o.list.querySelectorAll('.att-del');
+      const next = dels[Math.min(k, dels.length - 1)];
+      if (next) next.focus();
+      else if (o.focusEmpty) o.focusEmpty();
+    }
+
+    function start(promise, name) {
+      const slot = { id: ++seq, name: HL.anzeigeName(name), loading: true };
+      slots.push(slot);
+      promise.then((r) => {
+        if (!slots.includes(slot)) return; // inzwischen entfernt
+        Object.assign(slot, r, { name: HL.anzeigeName(r.name), loading: false });
+        if (HL.gesamtLaenge(ready()) > o.gesamt) {
+          slots.splice(slots.indexOf(slot), 1);
+          render();
+          showErr(o.tooBig);
+          return;
+        }
+        render();
+      }, (err) => {
+        const k = slots.indexOf(slot);
+        if (k < 0) return;
+        slots.splice(k, 1);
+        render();
+        showErr(err instanceof BildFehler ? err.message : 'Ein Bild konnte nicht gelesen werden.');
+      });
+    }
+
+    function overText(over) {
+      return 'Höchstens ' + o.max() + ' Bilder – ' + (over === 1 ? '1 Bild wurde' : over + ' Bilder wurden') + ' nicht angehängt.';
+    }
+
+    function add(files) {
+      const list = [...(files || [])].filter(Boolean);
+      if (!list.length || ended) return;
+      const errs = [];
+      let over = 0;
+      for (const f of list) {
+        const name = String(f.name || '');
+        const label = name && !/^image\.\w+$/i.test(name) ? '„' + clip(HL.anzeigeName(name), 40) + '“' : 'Das eingefügte Bild';
+        const mime = HL.typ(f.type, name);
+        if (!mime) { errs.push(label + ' ist kein unterstütztes Bild – erlaubt sind PNG, JPG, GIF und WebP.'); continue; }
+        if (f.size > HL.MAX_DATEI) { errs.push(label + ' ist zu groß (höchstens 30 MB).'); continue; }
+        if (!room()) { over++; continue; }
+        start(prepareImage(f, o.kante, name, mime), name || 'bild');
+      }
+      if (over) errs.push(overText(over));
+      render();
+      if (errs.length) showErr(errs.slice(0, 2).join(' '));
+      else hideErr();
+    }
+
+    function addUrls(list) {
+      let over = 0;
+      for (const b of list || []) {
+        if (!b || !b.url) continue;
+        if (!room()) { over++; continue; }
+        start(fetchImage(b.url, b.name, o.kante), b.name || 'bild');
+      }
+      render();
+      if (over) showErr(overText(over));
+    }
+
+    /** Nach einem Fehler beim Senden: die Bilder wieder vorn in die Leiste. */
+    function restore(list) {
+      const back = (list || []).filter((b) => b && b.data).map((b) => Object.assign({}, b, { id: ++seq, loading: false }));
+      const keep = back.slice(0, room());
+      slots.unshift(...keep);
+      render();
+      if (keep.length < back.length) showErr(overText(back.length - keep.length));
+    }
+
+    function clear() {
+      slots.length = 0;
+      clearTimeout(errTimer);
+      o.err.hidden = true;
+      render();
+    }
+
+    return {
+      get items() { return ready(); },
+      busy: () => slots.some((s) => s.loading),
+      add, addUrls, restore, clear, render, error: showErr,
+    };
+  }
+
+  chatTray = makeTray({
+    box: byId('att-tray'), list: byId('att-list'), count: byId('att-count'), err: byId('att-err'), clearBtn: byId('att-clear'),
+    max: () => HL.MAX_CHAT, kante: HL.MAX_KANTE, gesamt: HL.CHAT_GESAMT,
+    tooBig: 'Die Bilder sind zusammen zu groß – entferne ein Bild oder schick sie in zwei Nachrichten.',
+    onChange: () => { updateSendBtn(); keepBottom(); },
+    focusEmpty: () => focusInput(),
+  });
+  byId('att-clear').addEventListener('click', () => { chatTray.clear(); focusInput(); });
+  byId('dz-sub').textContent = 'PNG, JPG, GIF oder WebP – höchstens ' + HL.MAX_CHAT + ' auf einmal';
+
+  const attachFile = byId('attach-file');
+  byId('attach-btn').addEventListener('click', () => { if (!ended) attachFile.click(); });
+  attachFile.addEventListener('change', () => {
+    chatTray.add(attachFile.files);
+    attachFile.value = '';
+    focusInput();
+  });
+
+  /** Wohin gehen eingefuegte / hineingezogene Bilder gerade? 'feedback' | 'chat' | '' (nirgends) */
+  function attachTarget() {
+    if (ended || !lbEl.hidden) return '';
+    if (!fmodal.hidden) return !fmodal.inert && !fb.sending && !fb.done && fb.max > 0 ? 'feedback' : '';
+    return app.inert ? '' : 'chat';
+  }
+  function attachTo(where, files) {
+    if (where === 'feedback') fbTray.add(files);
+    else if (where === 'chat') {
+      chatTray.add(files);
+      focusInput();
+    }
+  }
+
+  // Strg+V: Bilder aus der Zwischenablage (Text darin hat Vorrang, z.B. aus Excel kommt beides)
+  function clipFiles(e) {
+    const dt = e.clipboardData;
+    if (!dt) return [];
+    let text = '';
+    try { text = dt.getData('text/plain'); } catch (_) { text = ''; }
+    if (HL.textGewinnt(text)) return [];
+    const files = [];
+    for (const it of dt.items ? [...dt.items] : []) {
+      if (it.kind !== 'file') continue;
+      const f = it.getAsFile();
+      if (f) files.push(f);
+    }
+    if (!files.length && dt.files) files.push(...dt.files);
+    return files;
+  }
+  document.addEventListener('paste', (e) => {
+    const files = clipFiles(e);
+    if (!files.length) return;
+    const where = attachTarget();
+    if (!where) return;
+    e.preventDefault();
+    attachTo(where, files);
+  });
+
+  // Hineinziehen: fensterweit abfangen – sonst oeffnet WebView2 die Datei und die App ist weg
+  const dropZone = byId('drop-zone');
+  let dzTimer = 0;
+  const dragFiles = (e) => !!(e.dataTransfer && [...(e.dataTransfer.types || [])].includes('Files'));
+  const editable = (el) => !!(el && el.closest && el.closest('textarea, input, [contenteditable="true"]'));
+  function dzHide() {
+    clearTimeout(dzTimer);
+    dropZone.hidden = true;
+    fdialog.classList.remove('dragging');
+  }
+  function dzShow(where) {
+    dropZone.hidden = where !== 'chat';
+    fdialog.classList.toggle('dragging', where === 'feedback');
+    clearTimeout(dzTimer);
+    dzTimer = setTimeout(dzHide, 400); // kommt kein "dragover" mehr (Maus ist raus): ausblenden
+  }
+  window.addEventListener('dragenter', (e) => {
+    if (dragFiles(e) || !editable(e.target)) e.preventDefault();
+  });
+  window.addEventListener('dragover', (e) => {
+    const files = dragFiles(e);
+    if (!files && editable(e.target)) return; // Text in ein Feld ziehen: wie gewohnt
+    e.preventDefault();
+    const where = files ? attachTarget() : '';
+    if (e.dataTransfer) e.dataTransfer.dropEffect = where ? 'copy' : 'none';
+    if (where) dzShow(where);
+    else dzHide();
+  });
+  window.addEventListener('drop', (e) => {
+    const files = dragFiles(e);
+    if (!files && editable(e.target)) return;
+    e.preventDefault();
+    dzHide();
+    const where = files ? attachTarget() : '';
+    const list = where && e.dataTransfer ? [...e.dataTransfer.files] : [];
+    if (list.length) attachTo(where, list);
+  });
+  window.addEventListener('dragend', dzHide);
+  window.addEventListener('blur', dzHide);
+
+  // =====================================================================
+  // Grossansicht (Lightbox): Bilder im Chat, erzeugte Bilder, Vorschau der Anhaenge
+  //  list: [{src, name, caption, save}] – Esc schliesst, Pfeiltasten blaettern
+  // =====================================================================
+  const lb = { list: [], i: 0, back: null, at: 0 };
+  const lbImg = byId('lb-img');
+
+  function openLightbox(list, index, back) {
+    if (ended || !Array.isArray(list)) return;
+    const items = list.filter((b) => b && b.src);
+    if (!items.length) return;
+    if (lbEl.hidden) lb.back = back || document.activeElement;
+    lb.list = items;
+    lb.i = Math.max(0, Math.min(Number(index) || 0, items.length - 1));
+    closeCmdPop();
+    lbEl.hidden = false;
+    lb.at = performance.now();
+    updateInert();
+    lbShow();
+    lbEl.focus();
+  }
+
+  function lbShow() {
+    const b = lb.list[lb.i];
+    if (!b) return;
+    const name = b.name || 'Bild';
+    lbImg.alt = name;
+    lbImg.src = b.src;
+    byId('lb-title').textContent = name;
+    const cap = String(b.caption || '').trim();
+    byId('lb-cap').textContent = cap && cap !== name ? cap : '';
+    byId('lb-cap').hidden = !byId('lb-cap').textContent;
+    const many = lb.list.length > 1;
+    byId('lb-count').textContent = many ? (lb.i + 1) + ' von ' + lb.list.length : '';
+    byId('lb-prev').hidden = !many;
+    byId('lb-next').hidden = !many;
+    const save = byId('lb-save');
+    save.hidden = b.save === false;
+    if (!save.hidden) {
+      save.href = b.src;
+      save.download = name;
+      save.title = 'Bild speichern (' + name + ')';
+    } else save.removeAttribute('href');
+  }
+
+  function closeLightbox() {
+    if (lbEl.hidden) return;
+    lbEl.hidden = true;
+    lbImg.removeAttribute('src');
+    lb.list = [];
+    updateInert();
+    const back = lb.back;
+    lb.back = null;
+    if (askFocusBack && lbEl.contains(askFocusBack)) askFocusBack = back;
+    if (!modal.hidden) { dialog.focus(); return; }
+    if (!cmodal.hidden) return;
+    if (back && back !== document.body && document.contains(back) && !back.closest('[inert]') && back.offsetParent !== null) back.focus();
+    else if (!fmodal.hidden) fdialog.focus();
+    else focusInput();
+  }
+
+  function lbStep(d) {
+    if (lb.list.length < 2) return;
+    lb.i = (lb.i + d + lb.list.length) % lb.list.length;
+    lbShow();
+  }
+
+  function lbKey(e) {
+    if (e.key === 'Escape') { e.preventDefault(); closeLightbox(); return; }
+    if (e.key === 'F2') { e.preventDefault(); return; }
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      e.preventDefault();
+      lbStep(e.key === 'ArrowLeft' ? -1 : 1);
+      return;
+    }
+    if (e.key === 'Tab') trapTab(e, lbEl);
+  }
+  byId('lb-close').addEventListener('click', closeLightbox);
+  byId('lb-prev').addEventListener('click', () => lbStep(-1));
+  byId('lb-next').addEventListener('click', () => lbStep(1));
+  lbEl.addEventListener('mousedown', (e) => {
+    // Klick neben das Bild schliesst (nicht der zweite Klick eines Doppelklicks auf die Miniatur)
+    if (e.target !== lbEl && e.target !== byId('lb-stage')) return;
+    e.preventDefault();
+    if (!(e.detail > 1) && performance.now() - lb.at > 350) closeLightbox();
+  });
 
   // =====================================================================
   // AFK-Modus ("Ich bin weg"): Nova arbeitet allein weiter und berichtet danach
@@ -3261,7 +3859,8 @@
   /** Eingabefeld fokussieren – aber nie einem offenen Dialog den Fokus wegnehmen. */
   function focusInput() {
     if (!modal.hidden) { askFocusBack = input; return false; }
-    if (!pmodal.hidden || ended || jv.open || !cmodal.hidden || !smodal.hidden || !amodal.hidden) return false;
+    if (!pmodal.hidden || ended || jv.open || !cmodal.hidden || !smodal.hidden || !amodal.hidden || !fmodal.hidden ||
+        !lbEl.hidden) return false;
     input.focus();
     return true;
   }
@@ -3671,12 +4270,17 @@
     const jvOpen = jv.open;
     const setupOpen = !smodal.hidden;
     const afkOpen = !amodal.hidden;
-    app.inert = askOpen || confOpen || profOpen || jvOpen || setupOpen || afkOpen;
-    pmodal.inert = askOpen || confOpen || jvOpen || setupOpen; // Jarvis liegt ueber dem Profil-Fenster
-    smodal.inert = askOpen || confOpen || jvOpen;
-    jvEl.inert = askOpen || confOpen || afkOpen;  // Rueckfragen und der AFK-Dialog liegen ueber Jarvis
-    tourEl.inert = askOpen || confOpen || profOpen || jvOpen || setupOpen || afkOpen;
-    amodal.inert = askOpen || confOpen; // Rueckfragen liegen ueber dem AFK-Dialog
+    const fbOpen = !fmodal.hidden; // Feedback liegt ueber Profil, Einrichtung, Jarvis und AFK-Dialog
+    const lbOpen = !lbEl.hidden;   // Grossansicht liegt ueber allem ausser Rueckfragen/Bestaetigung
+    const top = fbOpen || lbOpen;
+    app.inert = askOpen || confOpen || profOpen || jvOpen || setupOpen || afkOpen || top;
+    pmodal.inert = askOpen || confOpen || jvOpen || setupOpen || top; // Jarvis liegt ueber dem Profil-Fenster
+    smodal.inert = askOpen || confOpen || jvOpen || top;
+    jvEl.inert = askOpen || confOpen || afkOpen || top;  // Rueckfragen und der AFK-Dialog liegen ueber Jarvis
+    tourEl.inert = askOpen || confOpen || profOpen || jvOpen || setupOpen || afkOpen || top;
+    amodal.inert = askOpen || confOpen || top; // Rueckfragen liegen ueber dem AFK-Dialog
+    fmodal.inert = askOpen || confOpen || lbOpen;
+    lbEl.inert = askOpen || confOpen;
     modal.inert = confOpen;
     // Sphaeren hinter dem obersten grossen Fenster nicht weiter zeichnen
     sphere.scope(setupOpen ? smodal : profOpen ? pmodal : null);
@@ -3691,6 +4295,8 @@
       updateInert();
       if (wasOpen) {
         if (askFocusBack && document.contains(askFocusBack) && !askFocusBack.closest('[inert]')) askFocusBack.focus();
+        else if (!lbEl.hidden) lbEl.focus();
+        else if (!fmodal.hidden) fdialog.focus();
         else if (jv.open) jvEl.focus();
         else if (!smodal.hidden) sdialog.focus();
         else if (!pmodal.hidden) panel.focus();
@@ -4909,6 +5515,8 @@
     if (askFocusBack && cmodal.contains(askFocusBack)) askFocusBack = back;
     if (back && back !== document.body && document.contains(back) && !back.closest('[inert]')) back.focus();
     else if (!modal.hidden) dialog.focus(); // offene Rueckfrage liegt jetzt oben
+    else if (!lbEl.hidden) lbEl.focus();
+    else if (!fmodal.hidden) fdialog.focus();
     else if (jv.open) jvEl.focus();
     else if (!smodal.hidden) sdialog.focus();
     else if (!pmodal.hidden) panel.focus();
@@ -6097,6 +6705,7 @@
     return {
       provider: str(d.provider).trim().toLowerCase(), providers: list, missing: d.key_missing === true,
       modelle: normModelle(d.modelle, list.map((p) => p.id)),
+      bilder: HL.normBilderSetup(d.bilder), // Bildgenerator (fehlt bei aelterer KI)
     };
   }
 
@@ -6190,11 +6799,13 @@
     if (document.activeElement !== back) focusInput();
   }
 
-  /** Schluessel aus dem Feld nehmen (nach dem Speichern, beim Schliessen). */
-  function clearKey() {
+  /** Schluessel aus dem Feld nehmen (nach dem Speichern, beim Schliessen).
+      onlyBrain: nur den Gehirn-Schluessel (ein halb eingetragener Cloudflare-Token bleibt). */
+  function clearKey(onlyBrain) {
     suInput.value = '';
     showKey(false);
     su.note = '';
+    if (!onlyBrain) sbiClear();
   }
 
   function suFocus() {
@@ -6248,7 +6859,8 @@
     if (missing && !su.autoShown && !ended) {
       su.autoShown = true;
       setTimeout(() => {
-        const free = modal.hidden && cmodal.hidden && pmodal.hidden && smodal.hidden && !jv.open && !tour.open;
+        const free = modal.hidden && cmodal.hidden && pmodal.hidden && smodal.hidden && fmodal.hidden && lbEl.hidden &&
+          !jv.open && !tour.open;
         if (free && !ended && state.api_key_missing === true) openSetup(true);
       }, 300);
     }
@@ -6308,6 +6920,7 @@
     renderSuHint();
     renderSuGo();
     renderSuResult();
+    renderBilder();
   }
 
   function suCard(p, d) {
@@ -6713,7 +7326,7 @@
     su.checking = false;
     const visible = suVisible();
     if (r.ok) {
-      clearKey();
+      clearKey(true);
       const d = normSetup(r.setup);
       if (d) su.data = d;
       su.sel = suDefaultSel();
@@ -6791,6 +7404,282 @@
   byId('tb-model').addEventListener('click', () => openSetup(false, 'modell'));
   byId('key-bar-btn').addEventListener('click', () => openSetup(true));
 
+  // ---------- Bilder (optional): welcher Dienst malt Bilder? ----------
+  //  /api/setup -> bilder: {anbieter: auto|horde|cloudflare, cloudflare: bool, aktiv: "AI Horde"|"Cloudflare"}
+  //  POST /api/bilder/einstellen {anbieter?, cloudflare_account_id?, cloudflare_token?, entfernen?} -> {ok, message|error}
+  //  Der Token steht nur im Feld, bis er gespeichert ist – nie angezeigt, nie in localStorage.
+  const sbi = { busy: false, want: '', timer: 0, checking: false, result: null };
+  const sbiKonto = byId('sbi-konto');
+  const sbiToken = byId('sbi-token');
+  const sbiPickEl = byId('sbi-pick');
+  const sbiData = () => (su.data && su.data.bilder ? su.data.bilder : null);
+
+  for (const [v, label] of HL.ANBIETER) {
+    const b = h('button', 'segctl-btn sbi-opt', label);
+    b.type = 'button';
+    b.setAttribute('role', 'radio');
+    b.dataset.value = v;
+    b.addEventListener('click', () => sbiPick(v, false));
+    sbiPickEl.append(b);
+  }
+  sbiPickEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Home' || e.key === 'End') {
+      const items = [...sbiPickEl.children];
+      if (!items.includes(document.activeElement)) return;
+      e.preventDefault();
+      const b = items[e.key === 'Home' ? 0 : items.length - 1];
+      b.focus();
+      sbiPick(b.dataset.value, true);
+      return;
+    }
+    arrowRadio(e, sbiPickEl, (b) => sbiPick(b.dataset.value, true));
+  });
+
+  (function sbiSteps() {
+    const ol = byId('sbi-steps');
+    const li = (...parts) => {
+      const l = h('li');
+      l.append(...parts);
+      ol.append(l);
+    };
+    const b = (t) => h('b', null, t);
+    const a = h('a', null, 'dash.cloudflare.com');
+    a.href = 'https://dash.cloudflare.com/';
+    a.target = '_blank';
+    a.rel = 'noopener';
+    li('Öffne ', a, ' und registriere dich kostenlos (oder melde dich an).');
+    li('Gehe zu ', b('„Workers AI“'), ' und wähle ', b('„Use REST API“'), '.');
+    li('Klicke auf ', b('„Create a Workers AI API Token“'), ', bestätige und kopiere den Token.');
+    li('Auf derselben Seite steht deine ', b('Konto-ID'), ' (Account ID) – auch kopieren.');
+    li('Beides hier einfügen und ', b('„Prüfen & speichern“'), ' klicken.');
+  })();
+
+  function renderBilder() {
+    const sec = byId('su-bilder');
+    const b = sbiData();
+    sec.hidden = !b || su.welcome;
+    if (sec.hidden) return;
+    const cur = sbi.want || b.anbieter;
+    byId('sbi-active-text').textContent = HL.aktivText(b.aktiv);
+    for (const btn of sbiPickEl.children) {
+      const on = btn.dataset.value === cur;
+      btn.setAttribute('aria-checked', on ? 'true' : 'false');
+      btn.tabIndex = on ? 0 : -1;
+    }
+    const opt = HL.ANBIETER.find((x) => x[0] === cur);
+    let info = opt ? opt[2] : '';
+    if (cur === 'cloudflare' && !b.cloudflare) info += ' Noch kein Schlüssel eingerichtet – bis dahin malt AI Horde.';
+    else if (cur === 'horde' && b.cloudflare) info += ' Dein Cloudflare-Schlüssel bleibt gespeichert, wird aber nicht genutzt.';
+    byId('sbi-pick-info').textContent = info;
+    byId('sbi-saving').hidden = !sbi.busy;
+    byId('sbi-badge').hidden = !b.cloudflare;
+    byId('sbi-remove').hidden = !b.cloudflare;
+    byId('sbi-remove').disabled = sbi.checking;
+    sbiKonto.placeholder = b.cloudflare ? 'gespeichert – zum Ändern neu eintragen' : '32 Zeichen, z.B. 0123abcd…';
+    sbiToken.placeholder = b.cloudflare ? 'gespeichert – zum Ersetzen neu einfügen' : 'Token einfügen';
+    sbiKonto.readOnly = sbi.checking;
+    sbiToken.readOnly = sbi.checking;
+    renderSbiHint();
+    renderSbiSave();
+    renderSbiResult();
+  }
+
+  function renderSbiHint() {
+    const el = byId('sbi-hint');
+    const b = sbiData();
+    const k = sbiKonto.value.trim();
+    const t = sbiToken.value.trim();
+    let text = 'Bleibt nur auf deinem PC – nie im Chat.';
+    let cls = '';
+    if (k && !HL.kontoIdOk(k)) { text = 'Die Konto-ID hat normalerweise 32 Zeichen (Ziffern und a–f).'; cls = 'warn'; }
+    else if (t && !HL.tokenOk(t)) { text = 'Ein API-Token ist normalerweise etwa 40 Zeichen lang, ohne Leerzeichen.'; cls = 'warn'; }
+    else if (!k && !t && b && b.cloudflare) text = 'Schon gespeichert. Zum Ersetzen einfach neu eintragen.';
+    el.className = 'su-hint' + (cls ? ' ' + cls : '');
+    el.textContent = text;
+  }
+
+  /** Was "Prüfen & speichern" schicken wuerde – null, wenn noch etwas fehlt. */
+  function sbiBody() {
+    const b = sbiData();
+    if (!b) return null;
+    const body = HL.cloudflareDaten(sbiKonto.value, sbiToken.value);
+    if (!Object.keys(body).length) return null;
+    if (!b.cloudflare && (!body.cloudflare_account_id || !body.cloudflare_token)) return null; // erstes Mal: beides
+    return body;
+  }
+
+  function renderSbiSave() {
+    const btn = byId('sbi-save');
+    btn.disabled = sbi.checking || !sbiBody();
+    btn.setAttribute('aria-busy', sbi.checking ? 'true' : 'false');
+    btn.replaceChildren(...(sbi.checking ? [h('span', 'spinner'), h('span', null, 'Prüfe …')] : [h('span', null, 'Prüfen & speichern')]));
+  }
+
+  function renderSbiResult() {
+    const box = byId('sbi-result');
+    const r = sbi.result;
+    box.replaceChildren();
+    box.hidden = !r;
+    if (!r) return;
+    box.className = 'su-result sbi-result ' + (r.ok ? 'ok' : 'error');
+    box.setAttribute('role', r.ok ? 'status' : 'alert');
+    const ic = h('span', 'sr-ic');
+    ic.append(icon(r.ok ? 'checkCircle' : 'alertCircle'));
+    const body = h('div', 'sr-body');
+    body.append(h('div', 'sr-title', r.ok ? 'Gespeichert' : 'Das hat nicht geklappt'), h('div', 'sr-text', r.text));
+    box.append(ic, body);
+  }
+
+  /** Antwort der KI uebernehmen: neuer Stand (setup/bilder) – sonst vorlaeufig patch und frisch laden. */
+  function sbiApply(r, patch) {
+    const d = r && r.setup ? normSetup(r.setup) : null;
+    if (d && d.bilder) {
+      su.data = d;
+      if (!d.providers.some((p) => p.id === su.sel)) su.sel = suDefaultSel();
+      return;
+    }
+    const nb = r && r.bilder ? HL.normBilderSetup(r.bilder) : null;
+    if (nb && su.data) { su.data.bilder = nb; return; }
+    if (su.data && su.data.bilder) Object.assign(su.data.bilder, patch);
+    loadSetup();
+  }
+
+  function sbiPick(v, keyboard) {
+    const b = sbiData();
+    if (!b || sbi.checking) return;
+    const cur = sbi.want || b.anbieter;
+    if (v === cur) return;
+    sbi.want = v;
+    if (v === 'cloudflare' && !b.cloudflare) byId('sbi-cf').open = true;
+    renderBilder();
+    if (keyboard) {
+      const btn = [...sbiPickEl.children].find((x) => x.dataset.value === v);
+      if (btn) btn.focus();
+    }
+    clearTimeout(sbi.timer);
+    sbi.timer = setTimeout(sbiSaveChoice, keyboard ? 450 : 0); // Pfeiltasten: erst, wenn man stehen bleibt
+  }
+
+  /** Auswahl speichern – immer nur eine Anfrage, die neueste Auswahl gewinnt. */
+  async function sbiSaveChoice() {
+    if (sbi.busy) return;
+    const b = sbiData();
+    const v = sbi.want;
+    if (!b || !v) return;
+    if (v === b.anbieter) { sbi.want = ''; renderBilder(); return; }
+    sbi.busy = true;
+    renderBilder();
+    const r = await post('/api/bilder/einstellen', { anbieter: v });
+    sbi.busy = false;
+    const label = (HL.ANBIETER.find((x) => x[0] === v) || [v, v])[1];
+    if (r.ok) {
+      su.gen++; // eine noch laufende (aeltere) Abfrage von /api/setup zaehlt nicht mehr
+      sbiApply(r, { anbieter: v });
+      if (sbi.want && sbi.want !== v) { renderBilder(); sbiSaveChoice(); return; }
+      sbi.want = '';
+      smToast('Eingestellt: ' + (str(r.message).trim() || 'Bildgenerator ' + label + '.'), 'ok', 4000);
+    } else {
+      sbi.want = '';
+      clearTimeout(sbi.timer);
+      let err = str(r.error || r.message).trim() || 'Das hat nicht geklappt.';
+      if (!/[.!?]$/.test(err)) err += '.';
+      smToast(err + ' Die Einstellung bleibt, wie sie war.', 'error', 6000);
+    }
+    if (su.data) renderSetup();
+  }
+
+  async function sbiSave() {
+    const body = sbiBody();
+    const b = sbiData();
+    if (!body || !b || sbi.checking) {
+      if (b && !sbi.checking && !b.cloudflare && (sbiKonto.value.trim() || sbiToken.value.trim())) {
+        sbi.result = { ok: false, text: 'Bitte trag Konto-ID UND API-Token ein.' };
+        renderSbiResult();
+        (sbiKonto.value.trim() ? sbiToken : sbiKonto).focus();
+      }
+      return;
+    }
+    const wasHorde = (sbi.want || b.anbieter) === 'horde';
+    sbi.checking = true;
+    sbi.result = null;
+    renderBilder();
+    moodSync();
+    const r = await post('/api/bilder/einstellen', body);
+    sbi.checking = false;
+    if (r.ok) {
+      sbiClear(true);
+      let text = str(r.message).trim() || 'Cloudflare ist eingerichtet – Bilder kommen jetzt schneller.';
+      if (wasHorde) text += ' Gerade ist „AI Horde“ fest eingestellt – wähle „Automatisch“ oder „Cloudflare“, damit dein Schlüssel genutzt wird.';
+      sbi.result = { ok: true, text };
+      sbiApply(r, { cloudflare: true });
+      sphere.settle();
+    } else {
+      sbi.result = { ok: false, text: str(r.error || r.message).trim() || 'Der Schlüssel konnte nicht gespeichert werden.' };
+      sphere.flicker();
+    }
+    if (su.data) renderSetup();
+    moodSync();
+    if (!r.ok && suVisible()) sbiToken.focus();
+  }
+
+  async function sbiRemove() {
+    if (sbi.checking || ended) return;
+    const ok = await confirmDialog({
+      icon: 'key', title: 'Cloudflare-Schlüssel entfernen?', risk: 'Bildgenerator',
+      body: h('p', null, 'Token und Konto-ID werden von deinem PC gelöscht. Danach malt AI Horde – kostenlos, ohne Anmeldung.'),
+      ok: 'Entfernen', cancel: 'Abbrechen',
+    });
+    if (!ok || ended) return;
+    sbi.checking = true;
+    sbi.result = null;
+    renderBilder();
+    const r = await post('/api/bilder/einstellen', { entfernen: true });
+    sbi.checking = false;
+    if (r.ok) {
+      sbiClear(true);
+      sbi.result = { ok: true, text: str(r.message).trim() || 'Entfernt – Bilder malt jetzt AI Horde.' };
+      sbiApply(r, { cloudflare: false, aktiv: 'AI Horde' });
+    } else {
+      sbi.result = { ok: false, text: str(r.error || r.message).trim() || 'Das Entfernen hat nicht geklappt.' };
+    }
+    if (su.data) renderSetup();
+    if (suVisible() && (document.activeElement === document.body || byId('sbi-remove').hidden)) sbiKonto.focus();
+  }
+
+  function showSbiToken(on) {
+    sbiToken.type = on ? 'text' : 'password';
+    const b = byId('sbi-eye');
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    b.setAttribute('aria-label', on ? 'Token verbergen' : 'Token anzeigen');
+    b.title = on ? 'Token verbergen' : 'Token anzeigen';
+    b.replaceChildren(icon(on ? 'eyeOff' : 'eye'));
+  }
+
+  /** Felder leeren (nach dem Speichern, beim Schliessen); keepResult: Ergebnis-Zeile bleibt stehen. */
+  function sbiClear(keepResult) {
+    sbiKonto.value = '';
+    sbiToken.value = '';
+    showSbiToken(false);
+    if (!keepResult) sbi.result = null;
+    renderSbiHint();
+    renderSbiSave();
+    renderSbiResult();
+  }
+
+  for (const el of [sbiKonto, sbiToken]) {
+    el.addEventListener('input', () => {
+      if (sbi.result) { sbi.result = null; renderSbiResult(); }
+      renderSbiHint();
+      renderSbiSave();
+    });
+    el.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); sbiSave(); }
+    });
+  }
+  byId('sbi-eye').addEventListener('click', () => showSbiToken(sbiToken.type === 'password'));
+  byId('sbi-save').addEventListener('click', () => sbiSave());
+  byId('sbi-remove').addEventListener('click', () => sbiRemove());
+
   // ---------- Terminal-Version ----------
   byId('sb-terminal').addEventListener('click', async () => {
     closeSidebar();
@@ -6817,11 +7706,394 @@
   }
 
   // =====================================================================
+  // Feedback & Bewertung (Dialog) und die Nachfrage-Karte "Wie gefällt dir Nova?"
+  //  GET  /api/feedback -> {ok, configured, due, pending, max_images}
+  //  POST /api/feedback {kind: bewertung|bug|idee|feedback, stars: 1-5|null, text, contact,
+  //       images: [{name, data}], trigger: popup|menue} -> {ok, status: gesendet|gespeichert, message} | {ok:false, error}
+  //  POST /api/feedback/gezeigt (Karte erscheint) · POST /api/feedback/spaeter ("Später" / ✕)
+  //  Das Fenster kennt keine Adresse: verschickt wird nur ueber die KI.
+  //  Der Entwurf bleibt erhalten, bis er gesendet ist (nur im Speicher, nie in localStorage).
+  // =====================================================================
+  const fb = { stars: null, kind: 'bewertung', trigger: 'menue', back: null, at: 0, sending: false, done: '', max: HL.MAX_FEEDBACK,
+    gen: 0, closeTimer: 0 };
+  const fbText = byId('fb-text');
+  const fbContact = byId('fb-contact');
+  const fbErr = byId('fb-err');
+  const fbGo = byId('fb-go');
+  const fbCancel = byId('fb-cancel');
+  const fbStars = byId('fb-stars');
+  const fbKinds = byId('fb-kinds');
+
+  /** 5 Sterne als Radiogruppe (Pfeiltasten, Pos1/Ende); onPick(n) */
+  function makeStars(host, onPick, onHover) {
+    host.replaceChildren();
+    for (let n = 1; n <= 5; n++) {
+      const b = h('button', 'fb-star');
+      b.type = 'button';
+      b.setAttribute('role', 'radio');
+      b.setAttribute('aria-checked', 'false');
+      b.dataset.value = String(n);
+      b.setAttribute('aria-label', (n === 1 ? '1 Stern' : n + ' Sterne') + ' – ' + HL.STERNE_TEXT[n]);
+      b.title = HL.STERNE_TEXT[n];
+      b.tabIndex = n === 1 ? 0 : -1;
+      b.append(icon('star'));
+      b.addEventListener('click', () => onPick(n));
+      b.addEventListener('pointerenter', () => { paintStars(host, n, true); if (onHover) onHover(n); });
+      host.append(b);
+    }
+    host.addEventListener('pointerleave', () => {
+      const cur = Number(host.dataset.value) || 0;
+      paintStars(host, cur, false);
+      if (onHover) onHover(cur);
+    });
+    host.addEventListener('keydown', (e) => {
+      if (e.key === 'Home' || e.key === 'End') {
+        const items = [...host.children];
+        if (!items.includes(document.activeElement)) return;
+        e.preventDefault();
+        const b = items[e.key === 'Home' ? 0 : items.length - 1];
+        b.focus();
+        onPick(Number(b.dataset.value));
+        return;
+      }
+      arrowRadio(e, host, (b) => onPick(Number(b.dataset.value)));
+    });
+  }
+  function paintStars(host, n, hover) {
+    [...host.children].forEach((b, k) => b.classList.toggle('lit', k < n));
+    host.classList.toggle('hovering', !!hover);
+  }
+  function markStars(host, n) {
+    const cur = HL.sterne(n) || 0;
+    host.dataset.value = cur ? String(cur) : '';
+    [...host.children].forEach((b, k) => {
+      const on = k + 1 === cur;
+      b.setAttribute('aria-checked', on ? 'true' : 'false');
+      b.tabIndex = on || (!cur && k === 0) ? 0 : -1;
+    });
+    paintStars(host, cur, false);
+  }
+
+  function fbStarsText(n) {
+    const el = byId('fb-stars-text');
+    el.textContent = n ? HL.STERNE_TEXT[n] : 'noch keine Sterne';
+    el.classList.toggle('none', !n);
+  }
+  makeStars(fbStars, (n) => {
+    fb.stars = n;
+    markStars(fbStars, n);
+    fbStarsText(n);
+    fbErr.hidden = true;
+  }, (n) => fbStarsText(n || fb.stars || 0));
+
+  for (const [v, label, ic] of HL.FEEDBACK_ARTEN) {
+    const b = h('button', 'fb-kind');
+    b.type = 'button';
+    b.setAttribute('role', 'radio');
+    b.dataset.value = v;
+    b.append(icon(ic), h('span', null, label));
+    b.addEventListener('click', () => fbKind(v));
+    fbKinds.append(b);
+  }
+  fbKinds.addEventListener('keydown', (e) => {
+    if (e.key === 'Home' || e.key === 'End') {
+      const items = [...fbKinds.children];
+      if (!items.includes(document.activeElement)) return;
+      e.preventDefault();
+      const b = items[e.key === 'Home' ? 0 : items.length - 1];
+      b.focus();
+      fbKind(b.dataset.value);
+      return;
+    }
+    arrowRadio(e, fbKinds, (b) => fbKind(b.dataset.value));
+  });
+  function fbKind(v) {
+    fb.kind = HL.feedbackArt(v);
+    for (const b of fbKinds.children) {
+      const on = b.dataset.value === fb.kind;
+      b.setAttribute('aria-checked', on ? 'true' : 'false');
+      b.tabIndex = on ? 0 : -1;
+    }
+  }
+
+  const fbTray = makeTray({
+    box: byId('fb-tray'), list: byId('fb-att-list'), count: byId('fb-att-count'), err: byId('fb-att-err'),
+    max: () => fb.max, kante: HL.MAX_KANTE_FEEDBACK, gesamt: HL.FEEDBACK_GESAMT,
+    tooBig: 'Die Bilder sind zusammen zu groß – entferne bitte ein Bild.',
+    onChange: () => { byId('fb-attach').disabled = fb.sending || fb.max <= 0; },
+    focusEmpty: () => byId('fb-attach').focus(),
+  });
+  const fbFile = byId('fb-file');
+  byId('fb-attach').addEventListener('click', () => { if (!fb.sending) fbFile.click(); });
+  fbFile.addEventListener('change', () => {
+    fbTray.add(fbFile.files);
+    fbFile.value = '';
+  });
+
+  /** Fenster oeffnen. opts: {trigger: 'popup'|'menue', stars} */
+  function openFeedback(opts) {
+    const o = opts || {};
+    if (ended) return;
+    closeSidebar();
+    closeCmdPop();
+    fpHide();
+    fb.trigger = o.trigger === 'popup' ? 'popup' : 'menue';
+    if (fb.done) fbReset(); // schon gesendet: frisch anfangen
+    if (HL.sterne(o.stars)) fb.stars = HL.sterne(o.stars);
+    markStars(fbStars, fb.stars);
+    fbStarsText(fb.stars);
+    fbKind(fb.kind);
+    if (!fmodal.hidden) { (fb.stars ? fbText : fbStars.querySelector('[tabindex="0"]')).focus(); return; }
+    clearTimeout(fb.closeTimer);
+    fb.back = document.activeElement;
+    fbView('form');
+    fbSending(false);
+    fbErr.hidden = true;
+    fmodal.hidden = false;
+    fb.at = performance.now();
+    updateInert();
+    // Sterne schon gewaehlt (aus der Karte): gleich ins Textfeld, sonst zu den Sternen
+    if (fb.stars) {
+      fbText.focus();
+      fbText.setSelectionRange(fbText.value.length, fbText.value.length);
+    } else (fbStars.querySelector('[tabindex="0"]') || fbText).focus();
+    fbLoadInfo();
+  }
+
+  /** Stand vom Server: eingerichtet? wartet noch etwas? wie viele Bilder? */
+  async function fbLoadInfo() {
+    const gen = ++fb.gen;
+    const d = await getJson('/api/feedback');
+    if (gen !== fb.gen || fmodal.hidden || !d || typeof d !== 'object') return;
+    const max = Number(d.max_images);
+    fb.max = Number.isInteger(max) && max >= 0 && max <= 10 ? max : HL.MAX_FEEDBACK;
+    byId('fb-att-max').textContent = '(optional, höchstens ' + fb.max + ')';
+    byId('fb-att').hidden = fb.max <= 0;
+    fbTray.render();
+    const notes = [];
+    if (d.configured === false) {
+      notes.push('Das Feedback-Postfach wird gerade noch eingerichtet – deine Nachricht wird gespeichert und automatisch gesendet, sobald es bereit ist.');
+    }
+    const n = Number(d.pending) || 0;
+    if (n > 0) notes.push(n === 1 ? 'Eine frühere Rückmeldung wartet noch und wird automatisch gesendet.'
+      : n + ' frühere Rückmeldungen warten noch und werden automatisch gesendet.');
+    byId('fb-note-text').textContent = notes.join(' ');
+    byId('fb-note').hidden = !notes.length;
+  }
+
+  function closeFeedback() {
+    if (fmodal.hidden) return;
+    clearTimeout(fb.closeTimer);
+    fmodal.hidden = true;
+    fb.gen++;
+    dzHide();
+    updateInert();
+    if (fb.done) fbReset(); // gesendet/gespeichert: beim naechsten Mal leer; sonst bleibt der Entwurf
+    const back = fb.back;
+    fb.back = null;
+    if (askFocusBack && fmodal.contains(askFocusBack)) askFocusBack = back;
+    if (!modal.hidden) { dialog.focus(); return; }
+    if (!cmodal.hidden) return;
+    if (back && back !== document.body && document.contains(back) && !back.closest('[inert]') && back.offsetParent !== null) back.focus();
+    else if (jv.open) jvEl.focus();
+    else if (!smodal.hidden) sdialog.focus();
+    else if (!pmodal.hidden) panel.focus();
+    else focusInput();
+  }
+
+  function fbReset() {
+    fb.stars = null;
+    fb.kind = 'bewertung';
+    fb.done = '';
+    fbText.value = '';
+    fbContact.value = '';
+    fbTray.clear();
+    fbErr.hidden = true;
+    markStars(fbStars, 0);
+    fbStarsText(0);
+    fbKind(fb.kind);
+    fbView('form');
+  }
+
+  /** 'form' (Eingabe) oder 'done' (Danke / gespeichert) */
+  function fbView(which) {
+    const done = which === 'done';
+    byId('fb-form').hidden = done;
+    byId('fb-done').hidden = !done;
+    fbGo.hidden = done;
+    fbCancel.textContent = done ? 'Schließen' : 'Abbrechen';
+    fbCancel.className = 'btn ' + (done ? 'primary' : 'ghost');
+  }
+
+  function fbSending(on) {
+    fb.sending = !!on;
+    fbGo.disabled = fb.sending;
+    fbGo.setAttribute('aria-busy', fb.sending ? 'true' : 'false');
+    fbGo.replaceChildren(fb.sending ? h('span', 'spinner') : icon('send'), h('span', null, fb.sending ? 'Sende …' : 'Jetzt senden'));
+    const form = byId('fb-form');
+    const hadFocus = form.contains(document.activeElement);
+    form.inert = fb.sending; // waehrenddessen nichts aendern (Doppelklick-Schutz)
+    form.classList.toggle('sending', fb.sending);
+    if (fb.sending && hadFocus) fdialog.focus();
+    byId('fb-attach').disabled = fb.sending || fb.max <= 0;
+  }
+
+  function fbError(text, focusEl) {
+    fbErr.replaceChildren(icon('alertCircle'), h('span', null, text));
+    fbErr.hidden = false;
+    if (focusEl) focusEl.focus();
+  }
+
+  async function submitFeedback() {
+    if (fb.sending || fmodal.hidden || fb.done) return;
+    if (fbTray.busy()) { fbError('Einen Moment – die Bilder werden noch vorbereitet.'); return; }
+    const imgs = fbTray.items;
+    if (HL.feedbackLeer(fb.stars, fbText.value, imgs.length)) {
+      fbError('Vergib ein paar Sterne oder schreib kurz, worum es geht.', fbStars.querySelector('[tabindex="0"]') || fbText);
+      return;
+    }
+    const body = HL.feedbackDaten({
+      kind: fb.kind, stars: fb.stars, text: fbText.value, contact: fbContact.value, images: imgs, trigger: fb.trigger,
+    });
+    fbErr.hidden = true;
+    fbSending(true);
+    moodSync();
+    const r = await post('/api/feedback', body);
+    fbSending(false);
+    const res = HL.feedbackErgebnis(r);
+    if (res.art === 'fehler') {
+      sphere.flicker();
+      if (fmodal.hidden) { toast(res.text, 'error', 6500); return; }
+      fbError(res.text, fbText);
+      return;
+    }
+    fb.done = res.art;
+    sphere.settle();
+    if (fmodal.hidden) { // inzwischen geschlossen: Ergebnis als Meldung
+      fbReset();
+      toast(res.text, res.art === 'gesendet' ? 'ok' : 'info', 6000);
+      return;
+    }
+    fbShowDone(res);
+  }
+
+  function fbShowDone(res) {
+    const sent = res.art === 'gesendet';
+    fbView('done');
+    const ic = byId('fbd-ic');
+    ic.className = 'fbd-ic ' + (sent ? 'ok' : 'saved');
+    ic.replaceChildren(icon(sent ? 'checkCircle' : 'clock'));
+    byId('fbd-title').textContent = sent ? 'Danke!' : 'Gespeichert';
+    byId('fbd-text').textContent = sent ? res.text.replace(/^Danke!\s*/, '') || 'Dein Feedback wurde gesendet.' : res.text;
+    fbCancel.focus();
+    if (sent) fb.closeTimer = setTimeout(closeFeedback, 3500);
+  }
+
+  function fbKey(e) {
+    if (e.key === 'Escape') { e.preventDefault(); closeFeedback(); return; }
+    if (e.key === 'F2') { e.preventDefault(); return; }
+    if (e.key === 'Tab') { trapTab(e, fdialog); return; }
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.isComposing) {
+      e.preventDefault();
+      if (!e.repeat) submitFeedback();
+    }
+  }
+  /** Maus-Klick zu kurz nach dem Oeffnen oder Teil eines Doppelklicks? (Tastatur zaehlt immer) */
+  const fbTooSoon = (e) => !!(e && e.detail) && (e.detail > 1 || performance.now() - fb.at < 400);
+  fbGo.addEventListener('click', (e) => { if (!fbTooSoon(e)) submitFeedback(); });
+  fbCancel.addEventListener('click', (e) => { if (!fbTooSoon(e) || fb.done) closeFeedback(); });
+  byId('fb-close').addEventListener('click', () => closeFeedback());
+  fmodal.addEventListener('mousedown', (e) => {
+    if (e.target !== fmodal) return;
+    e.preventDefault(); // Fokus bleibt im Dialog
+    if (!fbTooSoon(e)) closeFeedback();
+  });
+  fdialog.addEventListener('pointerdown', () => clearTimeout(fb.closeTimer)); // liest noch: nicht von selbst schliessen
+  byId('sb-feedback').addEventListener('click', () => openFeedback({ trigger: 'menue' }));
+
+  // ---------- Nachfrage-Karte (state.feedback_due) ----------
+  // Erscheint nur, wenn Nova frei ist (keine Antwort, kein AFK, kein Jarvis, kein Dialog, Schluessel da,
+  // Tour erledigt) und du nicht gerade tippst. Beim Erscheinen sofort /api/feedback/gezeigt.
+  const fp = { shown: false, stars: 0, timer: 0 };
+  const fpEl = byId('fb-pop');
+  const fpStars = byId('fp-stars');
+  makeStars(fpStars, (n) => {
+    fp.stars = n;
+    markStars(fpStars, n);
+  });
+
+  function fpFree() {
+    return HL.nachfrageFrei({
+      faellig: state.feedback_due === true,
+      gezeigt: fp.shown,
+      beendet: ended,
+      busy: busy || state.busy === true || !!reply,
+      afk: afkRunning() || state.afk_pending === true,
+      jarvis: jv.open || state.jarvis === true,
+      dialog: !modal.hidden || !cmodal.hidden || !pmodal.hidden || !smodal.hidden || !amodal.hidden || !fmodal.hidden ||
+        !lbEl.hidden || tour.open,
+      tippt: !!input.value.trim() || chatTray.items.length > 0 || chatTray.busy() || voice.phase !== 'idle',
+      schluessel: state.api_key_missing !== true,
+      tour: state.tutorial_done !== false,
+      bereit: historyReady && connected && performance.now() > 6000,
+    });
+  }
+
+  /** Aus applyState (und danach alle 15 s, solange sie faellig ist, aber nicht passt). */
+  function fpCheck() {
+    clearTimeout(fp.timer);
+    if (state.feedback_due !== true || fp.shown || ended) return;
+    if (fpFree()) { fpShow(); return; }
+    fp.timer = setTimeout(fpCheck, 15000);
+  }
+
+  function fpShow() {
+    fp.shown = true; // in diesem Fenster nur einmal
+    fp.stars = 0;
+    markStars(fpStars, 0);
+    const n = kiName();
+    byId('fp-title').textContent = 'Wie gefällt dir ' + n + '?';
+    fpEl.hidden = false;
+    byId('fp-live').textContent = n + ' fragt: Wie gefällt dir ' + n + '? Du kannst Sterne vergeben oder „Später“ wählen.';
+    keepBottom();
+    post('/api/feedback/gezeigt', {}); // sofort merken – Neuladen zeigt sie nicht noch einmal
+  }
+
+  function fpHide() {
+    if (fpEl.hidden) return;
+    const had = fpEl.contains(document.activeElement);
+    fpEl.hidden = true;
+    byId('fp-live').textContent = '';
+    if (had) focusInput();
+  }
+
+  function fpLater() {
+    if (fpEl.hidden) return;
+    fpHide();
+    post('/api/feedback/spaeter', {});
+  }
+  byId('fp-write').addEventListener('click', () => {
+    const n = fp.stars;
+    fpHide();
+    openFeedback({ trigger: 'popup', stars: n || null });
+  });
+  byId('fp-later').addEventListener('click', fpLater);
+  byId('fp-close').addEventListener('click', fpLater);
+  fpEl.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    e.preventDefault();
+    e.stopPropagation(); // nicht auch noch die laufende Antwort anhalten
+    fpLater();
+  });
+
+  // =====================================================================
   // Globale Tasten
   // =====================================================================
   document.addEventListener('keydown', (e) => {
     if (!cmodal.hidden) { confirmKey(e); return; }
     if (askCur && !modal.hidden) { modalKey(e); return; }
+    if (!lbEl.hidden) { lbKey(e); return; }
+    if (!fmodal.hidden) { fbKey(e); return; }
     if (!amodal.hidden) { afkKey(e); return; }
     if (jv.open) { jarvisKey(e); return; }
     if (!smodal.hidden) { setupKey(e); return; }
@@ -6867,7 +8139,7 @@
   let resyncCount = 0;
   let helloCount = 0;
   const FLOW = new Set(['user', 'start', 'thinking', 'chunk', 'tool', 'agent', 'info', 'done', 'stopped', 'error',
-    'notice', 'reset', 'retract', 'afk_report']);
+    'notice', 'reset', 'retract', 'afk_report', 'image', 'image_progress']);
 
   function setConnected(ok) {
     connected = ok;
@@ -6905,6 +8177,12 @@
     byId('key-bar').hidden = true;
     if (confirmState) closeConfirm(false);
     if (!amodal.hidden) { afk.back = null; amodal.hidden = true; }
+    if (!fmodal.hidden) { fb.back = null; clearTimeout(fb.closeTimer); fmodal.hidden = true; }
+    if (!lbEl.hidden) { lb.back = null; lbEl.hidden = true; lbImg.removeAttribute('src'); }
+    fpEl.hidden = true;
+    clearTimeout(fp.timer);
+    dzHide();
+    chatTray.clear();
     if (jv.open) closeJarvisView();
     ttsStop();
     endClosing();
@@ -6969,14 +8247,35 @@
     moodSync(); // keine laufende Antwort mehr -> Sphaere nicht weiter "nachdenken" lassen
   }
 
+  // Erzeugte Bilder stehen im Verlauf VOR der Antwort, zu der sie gehoeren (role "image"):
+  // sie kommen oben in die naechste Antwort-Blase – sonst (keine Antwort danach) in eine eigene.
+  let histImgs = [];
+  function flushHistImgs() {
+    if (!histImgs.length) return;
+    const list = histImgs;
+    histImgs = [];
+    const r = new Reply();
+    for (const ev of list) r.image(ev);
+    r.finish('done');
+  }
+
   function addFromHistory(m) {
     if (!m || typeof m !== 'object') return;
     const text = String(m.text == null ? '' : m.text);
-    if (m.role === 'user') { addUser(text); rememberOwn(text.trim()); }
-    else if (m.role === 'assistant') {
+    if (m.role === 'image') { histImgs.push(m); return; }
+    if (m.role === 'assistant') {
+      const list = histImgs;
+      histImgs = [];
       const r = new Reply();
+      for (const ev of list) r.image(ev);
       r.text(text);
       r.finish('done');
+      return;
+    }
+    flushHistImgs();
+    if (m.role === 'user') {
+      addUser(text, HL.normBilder(m.images).map(serverImg).filter(Boolean));
+      if (text.trim()) rememberOwn(text.trim());
     } else if (m.role === 'notice') {
       if (m.level === 'afk') addAfkNotice(text); // AFK-Schritt (Trennzeile) oder Bericht (Karte)
       else addCard(m.level, text);
@@ -7012,8 +8311,10 @@
     ownMsgs.length = 0;
     recallIdx = -1;
     histBuilding = true;
+    histImgs = [];
     try {
       for (const m of list) addFromHistory(m);
+      flushHistImgs();
     } finally {
       histBuilding = false;
     }
@@ -7024,12 +8325,19 @@
     resyncOnEnd = wasBusy;
     // Was schon im Verlauf steht, nicht noch einmal anzeigen
     const tail = list.slice(-12)
-      .filter((m) => m && (m.role === 'user' || m.role === 'notice' || m.role === 'error'))
-      .map((m) => ({ role: m.role, text: String(m.text == null ? '' : m.text).trim() }));
+      .filter((m) => m && (m.role === 'user' || m.role === 'notice' || m.role === 'error' || m.role === 'image'))
+      .map((m) => ({ role: m.role, text: replayKey(m.role, m) }));
     replay(later, tail);
     updateEmpty();
     toBottom(true);
     moodSync();
+  }
+
+  /** Vergleichswert "schon im Verlauf?": Text (Nutzer: + Bild-Adressen), erzeugtes Bild: seine Adresse. */
+  function replayKey(kind, m) {
+    if (kind === 'image') return HL.normBilder([m]).map((b) => b.url).join('');
+    if (kind === 'user') return HL.echoSchluessel(m.text, m.images);
+    return String(m.text == null ? '' : m.text).trim();
   }
 
   /** Gepufferte Ereignisse nachspielen; Doppeltes (schon im Verlauf) auslassen. */
@@ -7039,8 +8347,8 @@
       for (const ev of events) {
         if (ended) break;
         if (ev.type === 'reset') tail.length = 0;
-        if (ev.type === 'user' || ev.type === 'notice' || ev.type === 'error') {
-          const t = String(ev.text == null ? '' : ev.text).trim();
+        if (ev.type === 'user' || ev.type === 'notice' || ev.type === 'error' || ev.type === 'image') {
+          const t = replayKey(ev.type, ev);
           const k = tail.findIndex((x) => x.role === ev.type &&
             (x.text === t || (ev.type === 'error' && x.text && t.endsWith(x.text))));
           if (k >= 0) {
@@ -7096,7 +8404,7 @@
         resyncIfQuiet();
         break;
       case 'user':
-        onUserEcho(ev.text);
+        onUserEcho(ev);
         break;
       case 'start':
         if (reply) endReply('done');
@@ -7166,7 +8474,19 @@
         onRetract();
         break;
       case 'queue_returned':
-        onQueueReturned(ev.text);
+        onQueueReturned(ev);
+        break;
+      case 'image': // erzeugtes Bild: in die laufende Antwort (sonst eine eigene, fertige Blase)
+        if (reply) reply.image(ev);
+        else {
+          const r = new Reply();
+          if (r.image(ev)) r.finish('done');
+          else { r.row.remove(); updateEmpty(); }
+        }
+        sphere.pulse();
+        break;
+      case 'image_progress':
+        if (reply) reply.progress(ev.text);
         break;
       case 'reset':
         clearChat();
@@ -7217,6 +8537,7 @@
         if (ended) break;
         if (ev.what === 'jarvis') { if (!jv.open && !jv.closing) { jv.left = false; openJarvisView(false, 'listening'); } }
         else if (ev.what === 'tutorial') startTour();
+        else if (ev.what === 'feedback') openFeedback({ trigger: 'menue' });
         break;
       case 'appearance':
         loadAppearance(true);

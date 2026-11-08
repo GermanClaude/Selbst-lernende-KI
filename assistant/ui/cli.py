@@ -389,12 +389,16 @@ class CLI:
     def _nur_bildpfade(self, text: str) -> list | None:
         """Besteht die Nachricht nur aus Bildpfaden (z.B. Datei ins Terminal gezogen)? -> Bilder.
         Wirft BildFehler, wenn eine der Dateien kein lesbares Bild ist."""
+        from ..bilder import BildFehler
+
         text = _ohne_ps_aufruf(text.strip())
         pfade, rest = bildpfade_abtrennen(text, self._bild_basis())
         if not pfade or rest:
             return None
         grenze = max(1, int(self.config.bilder.max_bilder_pro_nachricht or 10))
-        return [self._bild_laden(pfad) for pfad in pfade[:grenze]]
+        if len(pfade) > grenze:
+            raise BildFehler(f"Hoechstens {grenze} Bilder pro Nachricht.")
+        return [self._bild_laden(pfad) for pfad in pfade]
 
     def _bild_basis(self) -> list[Path]:
         """Wo relative Bildpfade gesucht werden: aktueller Ordner, dann der Arbeitsordner."""
@@ -456,7 +460,7 @@ class CLI:
             return
         self._bild_fortschritt = text
         self.thinking.stop()
-        print(_c(f"\n  [{text}]", GREY), end="", flush=True)
+        print(_c(f"  [{text}]", GREY), flush=True)
 
     def _bild_hinweis_faellig(self) -> bool:
         """Beim ersten erzeugten Bild einmal sagen, wohin Bildbeschreibungen gehen (dann gemerkt)."""
@@ -981,7 +985,7 @@ class CLI:
                 if parsed is None:
                     continue
                 bilder, user_text = parsed
-            elif not user_text.startswith("/"):
+            else:  # auch "/home/ich/foto.png" (Linux/macOS: Datei ins Terminal gezogen)
                 try:
                     bilder = self._nur_bildpfade(user_text) or []
                 except BildFehler as exc:
@@ -1140,6 +1144,9 @@ class CLI:
             self._feedback_terminal()
         elif base in ("/bild", "/bilder"):
             self._bild_hilfe()  # im Terminal faengt _loop /bild vorher ab
+        elif _bildpfad(cmd.split()[0], self._bild_basis()):  # "/home/ich/foto.png Was ist das?"
+            print(_c("Bild mitschicken: /bild <pfad> [frage]  - z.B. /bild " + cmd.split()[0] + " Was ist das?",
+                     CYAN))
         else:
             print(_c(f"Unbekannter Befehl: {base}. /hilfe zeigt alle.", YELLOW))
         return False

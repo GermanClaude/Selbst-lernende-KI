@@ -11,6 +11,9 @@ tomli>=2.0 ; python_version < "3.11"
 requests>=2.31
 beautifulsoup4>=4.12
 
+# Bilder: angehaengte Bilder verkleinern, Zwischenablage (/bild), Bildschirmfotos, Feedback-Bilder
+pillow>=10
+
 # App-Fenster (start-app.bat / KI-App.exe): echtes Programmfenster unter Windows
 pywebview>=6.2 ; sys_platform == "win32"
 
@@ -22,6 +25,6 @@ pywebview>=6.2 ; sys_platform == "win32"
 #                                         (= pip install sounddevice SpeechRecognition)
 #   ... offline statt Google:             pip install faster-whisper
 #   Sprachausgabe (Text -> Stimme):       pip install pyttsx3
-#   PC-Steuerung (Maus/Tastatur lokal):   pip install pyautogui pillow
+#   PC-Steuerung (Maus/Tastatur lokal):   pip install pyautogui
 #   Build zur .exe:                       pip install pyinstaller
 # -----------------------------------------------------------------------------
