@@ -10,6 +10,7 @@ Gespeichert wird in config/settings.toml:
 """
 from __future__ import annotations
 
+import os
 import re
 from datetime import datetime, timezone
 
@@ -232,14 +233,20 @@ def waehle(config, provider: str | None = None, model: str | None = None,
             return {"ok": False, "changed": False, "provider": provider,
                     "message": f"Diese Denk-Tiefe gibt es nicht. Moeglich: {names}."}
         new_level = found
-    changed = (new_model, new_level) != (section.model, getattr(section, level_key))
-    if changed:
-        root = config.project_root
+    model_changed = bool(model) and new_model != section.model
+    level_changed = bool(denken) and new_level != getattr(section, level_key)
+    root = config.project_root
+    # Nur speichern, was wirklich gewaehlt wurde (ein per KI_MODEL erzwungenes Modell bleibt draussen).
+    if model_changed:
         save_setting(root, provider, "model", toml_string(new_model))
-        save_setting(root, provider, level_key, toml_string(new_level))
         section.model = new_model
+    if level_changed:
+        save_setting(root, provider, level_key, toml_string(new_level))
         setattr(section, level_key, new_level)
+    changed = model_changed or level_changed
     message = f"{modell_name(provider, new_model)} - Denk-Tiefe: {denktiefe_name(provider, new_level)}."
+    if model_changed and os.environ.get("KI_MODEL"):
+        message += " Hinweis: KI_MODEL (in .env) legt beim naechsten Start wieder ein anderes Modell fest."
     if provider == "claude" and new_model == "claude-fable-5-1" and new_level in ("xhigh", "max"):
         message += " Achtung: Fable denkt so sehr lange und ist teuer."
     return {"ok": True, "message": message, "changed": changed, "provider": provider}

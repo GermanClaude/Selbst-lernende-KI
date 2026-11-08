@@ -15,6 +15,7 @@ sie als Vorschlag auf. Nachgefragt wird nie (es ist ja niemand da, der antworten
 """
 from __future__ import annotations
 
+import math
 import re
 import threading
 import time
@@ -66,11 +67,13 @@ AWAY_HINT = (
 )
 
 
-def model_text_for(text: str, back: tuple[int, str] | None = None, active: bool = False) -> str:
+def model_text_for(text: str, back: tuple[float, str] | None = None, active: bool = False) -> str:
     """Was die KI von einer Nachricht bekommt: nach der Rueckkehr den Bericht davor;
-    klingt sie nach 'bin jetzt weg', einen kleinen Hinweis auf den AFK-Modus dahinter."""
+    klingt sie nach 'bin jetzt weg', einen kleinen Hinweis auf den AFK-Modus dahinter.
+    back = (Beginn der Abwesenheit als time.time(), Bericht)."""
     if back is not None:
-        minutes, report = back
+        started, report = back
+        minutes = max(0, int((time.time() - started) // 60))
         return RETURN_NOTE.format(minutes=minutes, report=report) + text
     if not active and sounds_like_away(text):
         return text + AWAY_HINT
@@ -183,8 +186,11 @@ def settings_session(settings, auftrag: str = "", minutes: int | None = None, bu
     """Neue Sitzung mit den Grenzen aus [afk] (oder den Werten aus der App)."""
     def clamp(value, low, high, default):
         try:
-            return min(high, max(low, type(default)(value)))
-        except (TypeError, ValueError):
+            number = float(value)
+            if not math.isfinite(number):
+                return default
+            return min(high, max(low, type(default)(number)))
+        except (TypeError, ValueError, OverflowError):
             return default
     return AfkSession(
         auftrag=(auftrag or "").strip()[:2000],

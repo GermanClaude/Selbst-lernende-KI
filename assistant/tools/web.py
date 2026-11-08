@@ -2,9 +2,14 @@
 
 Diese Werkzeuge laufen clientseitig (ueber 'requests'), damit die KI auch dann
 Internetzugang hat, wenn serverseitige Tools nicht verfuegbar sind. Lesen gilt
-als SAFE; es werden keine Daten aktiv irgendwohin gesendet.
+als SAFE. Achtung: Auch ein Seitenabruf schickt etwas nach aussen (die Adresse) -
+deshalb darf die KI im AFK-Modus (niemand schaut zu) nur Links aus ihrer Websuche
+abrufen, keine selbst gebauten Adressen.
 """
 from __future__ import annotations
+
+import ipaddress
+from urllib.parse import urlsplit
 
 from ..permissions import Risk
 from .base import Tool, ToolContext
@@ -62,6 +67,8 @@ class WebSearchTool(Tool):
             href = link.get("href", "")
             snippet = snippets[i].get_text(strip=True) if i < len(snippets) else ""
             results.append(f"{i + 1}. {title}\n   {snippet}\n   {href}")
+            if getattr(ctx.permissions, "away", False) and href:
+                ctx.permissions.away_urls.add(_plain_url(href))
         if not results:
             return f"Keine Treffer fuer '{anfrage}'."
         return f"Suchergebnisse fuer '{anfrage}':\n\n" + "\n\n".join(results)
@@ -80,10 +87,11 @@ class WebFetchTool(Tool):
         ctx.permissions.require(Risk.SAFE, f"Seite abrufen: {url}")
         if not url.startswith(("http://", "https://")):
             return "Bitte eine vollstaendige URL mit http(s):// angeben."
-        if getattr(ctx.permissions, "away", False) and ("?" in url or len(url) > 160):
+        if getattr(ctx.permissions, "away", False):
             # Niemand schaut zu: keine Daten in Adressen "verschicken" (eingeschleuste Anweisungen)
-            return ("Solange dein Mensch weg ist, rufe ich nur einfache Adressen ab (ohne '?' und nicht "
-                    "ueberlang). Nimm die Websuche oder eine kuerzere Adresse.")
+            problem = _away_url_problem(url, getattr(ctx.permissions, "away_urls", set()))
+            if problem:
+                return problem
         try:
             import requests
         except ImportError:
@@ -111,3 +119,26 @@ class WebFetchTool(Tool):
 def register(registry) -> None:
     registry.register(WebSearchTool())
     registry.register(WebFetchTool())
+
+
+def _plain_url(url: str) -> str:
+    return url.split("#", 1)[0].strip()
+
+
+def _away_url_problem(url: str, allowed: set) -> str | None:
+    """Im AFK-Modus: nur https-Links, die die Websuche in dieser Abwesenheit geliefert hat."""
+    parts = urlsplit(url)
+    host = parts.hostname or ""
+    if parts.scheme != "https" or "@" in parts.netloc or not host:
+        return "Solange dein Mensch weg ist, rufe ich nur normale https-Adressen ab."
+    try:
+        ipaddress.ip_address(host)
+        return "Solange dein Mensch weg ist, rufe ich keine IP-Adressen ab."
+    except ValueError:
+        pass
+    if host == "localhost" or host.endswith((".local", ".lan", ".internal")):
+        return "Solange dein Mensch weg ist, rufe ich nichts im eigenen Netz ab."
+    if _plain_url(url) not in allowed:
+        return ("Solange dein Mensch weg ist, rufe ich nur Seiten ab, die ich vorher ueber die Websuche "
+                "gefunden habe (keine selbst gebauten Adressen). Such zuerst mit web_suche.")
+    return None

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import io
 import itertools
+import math
 import os
 import re
 import subprocess
@@ -120,11 +121,13 @@ class AppController(CLI):
         # Warteschlange: Nachrichten, die waehrend einer Antwort geschickt werden, kommen danach dran.
         self._queue: list[dict] = []
         self._queue_ids = itertools.count(1)
+        self._front = 0              # so viele Eintraege vorne sind "sofort" (Unterbrechen/Rueckkehr)
+        self._afk_dropped = False    # vorgemerkter AFK-Modus verworfen -> Hinweis zeigen
         self._closing = False
         # AFK-Modus (abwesend.py): vorgemerkt / laufend / Bericht fuer die Rueckkehr
         self._afk_pending: dict | None = None
         self._afk = None
-        self._afk_return: tuple[int, str] | None = None
+        self._afk_return: tuple[float, str] | None = None  # (Beginn der Abwesenheit, Bericht)
         self.tool_ctx.extra["afk_start"] = self._afk_request
         self.tool_ctx.extra["afk_update"] = self._state_changed
         # Sphaere: reagiert auf deine Stimme beim Mikrofon-Knopf / F2
@@ -229,8 +232,8 @@ class AppController(CLI):
         cancel = self.brain.provider.cancel_event
         try:
             while not waiter["event"].wait(0.25):
-                if cancel.is_set():
-                    waiter["value"] = default
+                if cancel.is_set():  # angehalten: nie "ja" daraus machen
+                    waiter["value"] = "nein" if "nein" in waiter["options"] else default
                     break
         finally:
             self._asks.pop(ask_id, None)
@@ -294,9 +297,12 @@ class AppController(CLI):
                     sent, shown = _mask_key(text)
                     item = {"id": next(self._queue_ids), "text": sent, "model_text": None, "shown": shown}
                     afk = self._afk
-                    back = afk is not None and not afk.ended
+                    # Nur die ERSTE Nachricht beendet den AFK-Modus und kommt nach vorn; weitere,
+                    # die kommen, waehrend er noch endet, reihen sich normal dahinter ein.
+                    back = afk is not None and not afk.ended and not afk.stop_event.is_set()
                     if back or interrupt:
-                        self._queue.insert(0, item)
+                        self._queue.insert(self._front, item)
+                        self._front += 1
                     elif len(self._queue) >= 20:
                         return {"ok": False, "error": "Die Warteschlange ist voll - warte kurz oder halte mich an."}
                     else:
@@ -322,18 +328,26 @@ class AppController(CLI):
                 return {"ok": False, "error": error}
         return {"ok": False, "error": "Ich arbeite noch - gleich nochmal versuchen."}
 
+    def _remove_queued_locked(self, item: dict) -> None:
+        index = self._queue.index(item)
+        self._queue.pop(index)
+        if index < self._front:
+            self._front -= 1
+
     def queue_action(self, action: str, item_id: Any = None) -> dict:
         """Warteschlange: 'remove' (eine Nachricht raus), 'clear' (alle), 'now' (diese jetzt - unterbricht)."""
         with self._lock:
             if action == "clear":
                 self._queue.clear()
+                self._front = 0
             elif action in ("remove", "now"):
                 item = next((q for q in self._queue if str(q["id"]) == str(item_id)), None)
                 if item is None:
                     return {"ok": False, "error": "Diese Nachricht wartet nicht mehr."}
-                self._queue.remove(item)
+                self._remove_queued_locked(item)
                 if action == "now":
                     self._queue.insert(0, item)
+                    self._front += 1
                     if self.busy:
                         self.brain.provider.cancel()
             else:
@@ -353,6 +367,8 @@ class AppController(CLI):
         if self._live is not None:
             self._live.hush()
         for waiter in list(self._asks.values()):
+            if "nein" in waiter.get("options", []):
+                waiter["value"] = "nein"  # abgebrochen heisst nie "ja"
             waiter["event"].set()
         self.voice_out.stop()
 
@@ -362,14 +378,29 @@ class AppController(CLI):
         if self._closing:
             return None
         if self._queue:
-            self._afk_pending = None  # es wird noch geschrieben -> du bist da
             self.brain.provider.cancel_event.clear()
+            self._front = max(0, self._front - 1)
             return {"message": self._queue.pop(0)}
         if self._afk_pending is not None:
             request, self._afk_pending = self._afk_pending, None
+            live = self._live
+            if live is not None and getattr(live, "pending", None):
+                self._afk_dropped = True  # im Sprachmodus wurde weitergesprochen -> du bist da
+                return None
+            try:
+                session = self._new_afk_session_locked(request)
+            except Exception:  # noqa: BLE001 - nie mit busy=True haengen bleiben
+                logger.exception("AFK-Modus konnte nicht beginnen")
+                self._afk_dropped = True
+                return None
             self.brain.provider.cancel_event.clear()
-            return {"afk": self._new_afk_session_locked(request)}
+            return {"afk": session}
         return None
+
+    def _afk_dropped_notice(self) -> None:
+        if self._afk_dropped:
+            self._afk_dropped = False
+            self._notice("AFK-Modus nicht gestartet - du bist ja noch da.", "afk")
 
     def _new_afk_session_locked(self, request: dict):
         """AFK-Sitzung sofort sichtbar machen (unter self._lock): eine Nachricht, die jetzt kommt,
@@ -388,6 +419,7 @@ class AppController(CLI):
             job = self._next_job_locked()
             if job is None:
                 self.busy = False
+        self._afk_dropped_notice()
         self._state_changed()
         if job is not None:
             self._start_job(job)
@@ -446,6 +478,7 @@ class AppController(CLI):
                 job = self._next_job_locked() if quit_code is None else None
                 if job is None:
                     self.busy = False
+            self._afk_dropped_notice()
             self._state_changed()
             if live_turn is not None:
                 live_turn.on_turn_end()
@@ -484,6 +517,11 @@ class AppController(CLI):
             else:
                 answer = self.brain.respond(model_text or text, on_text=self._emit)
         except KeyboardInterrupt:  # Stopp-Knopf (Abgebrochen) - oder Strg+C im Hintergrund
+            if not as_notice:
+                with self._lock:  # angehalten (auch per Stimme) -> doch nicht weg
+                    if self._afk_pending is not None:
+                        self._afk_pending = None
+                        self._afk_dropped = True
             drop, self._drop_turn = self._drop_turn, False
             if drop and self.brain.provider.drop_turn(snapshot, model_text or text):
                 # Sprachmodus: "Wie wird das Wetter?" ... "in Berlin" -> eine Frage
@@ -566,9 +604,14 @@ class AppController(CLI):
                 self._afk_pending = request  # nach der laufenden Antwort
                 job = None
             else:
+                try:
+                    session = self._new_afk_session_locked(request)
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception("AFK-Modus konnte nicht beginnen")
+                    return {"ok": False, "error": schoen(f"Der AFK-Modus ging nicht: {exc}")}
                 self.busy = True
                 self.brain.provider.cancel_event.clear()
-                job = {"afk": self._new_afk_session_locked(request)}
+                job = {"afk": session}
         if job is not None:
             self._start_job(job)
         self._state_changed()
@@ -606,7 +649,7 @@ class AppController(CLI):
             report = session.report()
             with self._lock:
                 self._afk = None
-                self._afk_return = (session.minutes, report)
+                self._afk_return = (session.started, report)
             self._notice(report, "afk")
             self._event({"type": "afk_report", "text": schoen(report), "reason": session.ended})
             self._state_changed()
@@ -829,6 +872,14 @@ class AppController(CLI):
         if action == "start":
             if self._jarvis_active():
                 return {"ok": True, "live": self._live.ear.live}
+            with self._lock:  # Jarvis oeffnen heisst: du bist zurueck
+                afk, self._afk_pending = self._afk, None
+                back = afk is not None and not afk.ended
+                if back:
+                    afk.stop_event.set()
+                    self.brain.provider.cancel()
+            if back:
+                self._cancel_rest()
             problem = self.voice_capture.problem()
             if problem:
                 return {"ok": False, "error": schoen(problem), "setup": not getattr(sys, "frozen", False)}
@@ -1090,15 +1141,16 @@ def _mask_key(text: str) -> tuple[str, str | None]:
 
 def _float_or_none(value: Any) -> float | None:
     try:
-        return float(value) if value not in (None, "") else None
-    except (TypeError, ValueError):
+        number = float(value) if value not in (None, "") else None
+    except (TypeError, ValueError, OverflowError):
         return None
+    return number if number is None or math.isfinite(number) else None
 
 
 def _int_or_none(value: Any) -> int | None:
     try:
         return int(value) if value is not None else None
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None
 
 

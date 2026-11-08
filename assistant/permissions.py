@@ -77,16 +77,26 @@ class PermissionManager:
         self.away = False
         self._away_created: set[Path] = set()
         self._away_write_ok = False  # check_path_write hat die naechste Datei-Aktion freigegeben
+        self.away_urls: set[str] = set()  # im AFK-Modus abrufbar: nur Links aus der Websuche
 
     def begin_away(self) -> None:
         self.away = True
         self._away_created = set()
         self._away_write_ok = False
+        self.away_urls = set()
 
     def end_away(self) -> None:
         self.away = False
         self._away_created = set()
         self._away_write_ok = False
+        self.away_urls = set()
+
+    def _in_app_dir(self, resolved: Path) -> bool:
+        """Im Ordner der KI selbst (Schluessel, Einstellungen, Programm) - ausser ihrem Arbeitsordner."""
+        if not self.app_root:
+            return False
+        app = Path(self.app_root).resolve()
+        return self._is_within(resolved, app) and not self._is_within(resolved, app / "workspace")
 
     # -- Aktionsfreigabe ----------------------------------------------------
     def check(self, risk: Risk, description: str) -> Decision:
@@ -135,18 +145,23 @@ class PermissionManager:
         """Schreiben in einen Autostart-Ordner nur mit ausdruecklicher Zustimmung.
 
         Im AFK-Modus: nur NEUE Dateien im Arbeitsordner (bzw. solche, die in dieser
-        Abwesenheit selbst angelegt wurden) - nichts Bestehendes ueberschreiben."""
+        Abwesenheit selbst angelegt wurden) - nichts Bestehendes ueberschreiben. Die Freigabe
+        gilt nur fuer genau die naechste Pruefung (diese Datei-Aktion) und nur, wenn alles passt."""
+        self._away_write_ok = False
         if self.away:
             resolved = Path(path).resolve()
-            if not self._is_within(resolved, self.workspace_root):
+            if not self._is_within(resolved, self.workspace_root) or self._in_app_dir(resolved):
                 return Decision(False, "Solange dein Mensch weg ist, schreibst du nur in den Arbeitsordner. "
                                        + _away_denied())
             if resolved.exists() and resolved not in self._away_created:
                 return Decision(False, "Diese Datei gab es schon - solange dein Mensch weg ist, ueberschreibst "
                                        "du nichts. Leg eine neue Datei an (z.B. mit '-entwurf' im Namen) oder "
                                        "schreib die Aenderung als Vorschlag auf.")
+            if is_autostart_path(path):
+                return Decision(False, _away_denied())
             self._away_created.add(resolved)
             self._away_write_ok = True
+            return Decision(True)
         if is_autostart_path(path):
             return self.confirm_always(f"{AUTOSTART_WARNING}\n    Datei: {path}")
         return Decision(True)
@@ -176,6 +191,8 @@ class PermissionManager:
                 raise FileNotFoundError(f"Pfad existiert nicht: {resolved}")
             return resolved
 
+        if self.away and self._in_app_dir(resolved):
+            raise PermissionError_("Solange dein Mensch weg ist (AFK-Modus), nicht im Ordner der KI selbst.")
         if not self._is_within(resolved, self.workspace_root):
             if self.away:
                 raise PermissionError_(f"Solange dein Mensch weg ist (AFK-Modus), nur im Arbeitsordner: {resolved}")

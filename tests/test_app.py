@@ -774,3 +774,88 @@ def test_check_now_clears_an_outdated_update_hint(app):
             break
         time.sleep(0.05)
     assert status["state"] == "aktuell"
+
+
+def test_two_messages_while_afk_ends_keep_their_order(app):
+    server = app([(anthro_msg([text_block("Ich arbeite")]), [])])
+    ctl = server.controller
+    ctl.config.afk.pause_sekunden = 30
+    _req(server, "/api/afk", {"action": "start"})
+    _events_until(server, "done")
+    first = _req(server, "/api/send", {"text": "A: bin zurueck"})[1]
+    second = _req(server, "/api/send", {"text": "B: was hast du gemacht?"})[1]
+    assert first["afk_ended"] and first["queued"]
+    events = _events_until(server, "afk_report")
+    events += _events_until(server, "done")
+    events += _events_until(server, "done")
+    assert [t for t in _user_texts(events) if t[:2] in ("A:", "B:")] == ["A: bin zurueck", "B: was hast du gemacht?"]
+    users = [m["content"] for m in ctl.brain.provider.messages if m["role"] == "user" and isinstance(m["content"], str)]
+    a = next(u for u in users if u.endswith("A: bin zurueck"))
+    b = next(u for u in users if u.endswith("B: was hast du gemacht?"))
+    assert a.startswith("[Dein Mensch ist zurueck") and not b.startswith("[Dein Mensch")
+
+
+def test_afk_button_with_an_older_waiting_message_still_starts(app):
+    server = app(_slow_script(2), safe_mode=False, auto_confirm=True)
+    ctl = server.controller
+    ctl.config.afk.pause_sekunden = 0
+    ctl.config.afk.max_schritte = 1
+    _req(server, "/api/send", {"text": "eins"})
+    _events_until(server, "tool")
+    _req(server, "/api/send", {"text": "zwei"})
+    body = _req(server, "/api/afk", {"action": "start", "auftrag": "Recherche"})[1]
+    assert body["ok"] and not body["started"]
+    events = _events_until(server, "afk_report", timeout=20)
+    assert "zwei" in _user_texts(events)
+
+
+def test_interrupting_never_answers_yes_for_you(app):
+    import threading
+
+    server = app([])
+    ctl = server.controller
+    out = {}
+    t = threading.Thread(target=lambda: out.setdefault("v", ctl._ask_yes("Jetzt aktualisieren? [J/n]", default=True)))
+    t.start()
+    _events_until(server, "ask")
+    ctl._cancel_rest()
+    t.join(3)
+    assert out["v"] is False
+
+
+def test_opening_jarvis_during_afk_means_you_are_back(app):
+    server = app([(anthro_msg([text_block("Ich arbeite")]), [])])
+    server.controller.config.afk.pause_sekunden = 30
+    _req(server, "/api/afk", {"action": "start"})
+    _events_until(server, "done")
+    _req(server, "/api/jarvis", {"action": "start"})
+    events = _events_until(server, "afk_report")
+    assert events[-1]["reason"] == "zurueck"
+    _req(server, "/api/jarvis", {"action": "stop"})
+
+
+def test_odd_afk_numbers_do_not_hang_the_app(app):
+    server = app([(anthro_msg([text_block("ok")]), [])])
+    server.controller.config.afk.max_schritte = 1
+    server.controller.config.afk.pause_sekunden = 0
+    status, body = _req(server, "/api/afk", {"action": "start", "minuten": 1e300, "budget": "unendlich"})
+    assert status == 200 and body["ok"]
+    _events_until(server, "afk_report")
+    time.sleep(0.3)
+    assert not _req(server, "/api/state")[1]["busy"]
+
+
+def test_stopped_answer_drops_a_pending_afk(app):
+    cmd = f'"{sys.executable}" -c "import time; time.sleep(2)"'
+    script = [(anthro_msg([tool_use_block("abwesenheit", "s1", {"aktion": "start"}),
+                           tool_use_block("shell_befehl", "t1", {"befehl": cmd})], stop_reason="tool_use"), []),
+              (anthro_msg([text_block("Bis spaeter!")]), [])]
+    server = app(script, safe_mode=False, auto_confirm=True)
+    _req(server, "/api/send", {"text": "Ich bin gleich weg"})
+    _events_until(server, "tool")
+    assert _req(server, "/api/state")[1]["afk_pending"]
+    server.controller.brain.provider.cancel()  # wie "Stopp" im Sprachmodus
+    events = _events_until(server, "stopped")
+    time.sleep(0.5)
+    state = _req(server, "/api/state")[1]
+    assert state["afk"] is None and not state["afk_pending"]

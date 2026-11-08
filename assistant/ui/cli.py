@@ -154,7 +154,7 @@ class CLI:
         self.tool_ctx = ToolContext(permissions=self.permissions, memory=self.memory)
         self.tool_ctx.extra["app_root"] = config.project_root
         self._afk_pending: dict | None = None        # AFK-Modus vorgemerkt (Werkzeug abwesenheit)
-        self._afk_return: tuple[int, str] | None = None  # Bericht fuer die naechste Nachricht
+        self._afk_return: tuple[float, str] | None = None  # (Beginn, Bericht) fuer die naechste Nachricht
         self.tool_ctx.extra["afk_start"] = self._afk_request
         self.brain = Brain(config, self.memory, self.registry, self.tool_ctx)
         self.brain.provider.wait_fn = self.thinking.start
@@ -367,15 +367,21 @@ class CLI:
         provider.effort_override = (settings.live_denktiefe or "").strip() or None
         print(_c("\n[Jarvis-Modus] Sprich einfach - ich hoere die ganze Zeit zu und du kannst mich jederzeit "
                  "unterbrechen. 'Chat-Modus' sagen oder Strg+C = zurueck.", BOLD))
+        self._afk_pending = None
         try:
             loop.run()
         except KeyboardInterrupt:
-            pass
+            self._afk_pending = None  # Strg+C: du bist da
         finally:
             self.brain.provider.effort_override = None
             host.wait()
             host.uninstall()
             speaker.stop()
+        if self._afk_pending is not None:  # "Ich bin jetzt weg" im Sprachmodus
+            pending, self._afk_pending = self._afk_pending, None
+            print(_c("\n[Jarvis-Modus beendet - der AFK-Modus beginnt]", GREY))
+            self._afk_terminal(**pending)
+            return
         print(_c("\n[Zurueck im Chat-Modus]", GREY))
 
     # -- Gehirn & Schluessel ----------------------------------------------------
@@ -453,6 +459,8 @@ class CLI:
             finally:
                 self.thinking.stop()
             print()
+            if self.brain.compact_interrupted:  # Strg+C beim Zusammenfassen = zurueck
+                raise KeyboardInterrupt
 
         try:
             self.tool_ctx.extra["afk_session"] = session
@@ -464,8 +472,9 @@ class CLI:
         finally:
             self.permissions.end_away()
             self.tool_ctx.extra.pop("afk_session", None)
+            self.brain.provider.cancel_event.clear()  # Waechter-Abbruch nicht in den Chat mitnehmen
             report = session.report()
-            self._afk_return = (session.minutes, report)
+            self._afk_return = (session.started, report)
             print("\n" + _c(report.replace("**", ""), CYAN))
             print(_c("Schreib einfach weiter - z.B. welche Vorschlaege ich umsetzen soll.", GREY))
 
@@ -652,6 +661,7 @@ class CLI:
 
             back, self._afk_return = self._afk_return, None
             self._afk_pending = None
+            self.brain.provider.cancel_event.clear()  # z.B. vom AFK-Waechter liegengeblieben
             try:
                 answer = self.brain.respond(model_text_for(user_text, back=back), on_text=self._emit)
             except KeyboardInterrupt:
@@ -1222,9 +1232,11 @@ class _TerminalLiveHost:
                 self.cli.brain.respond(model_text, on_text=self._on_text)
             except KeyboardInterrupt:  # angehalten (Dazwischenreden, Stopp)
                 cancelled = True
+                self.cli._afk_pending = None  # doch nicht weg
                 if not (self.drop and provider.drop_turn(snapshot, model_text)):
                     provider.abort_turn(snapshot, text)
             except Exception as exc:  # noqa: BLE001
+                self.cli._afk_pending = None
                 provider.abort_turn(snapshot, text)
                 print(_c(f"\nFehler: {exc}", YELLOW))
             finally:
@@ -1232,6 +1244,11 @@ class _TerminalLiveHost:
                 print()
                 if self.loop is not None:
                     self.loop.on_turn_end(cancelled)
+                    if self.cli._afk_pending is not None and not cancelled:
+                        if getattr(self.loop, "pending", None):  # schon weitergesprochen -> du bist da
+                            self.cli._afk_pending = None
+                        else:
+                            self.loop.stop()  # Jarvis endet, danach beginnt der AFK-Modus
 
         self.worker = threading.Thread(target=work, name="jarvis-antwort", daemon=True)
         self.worker.start()

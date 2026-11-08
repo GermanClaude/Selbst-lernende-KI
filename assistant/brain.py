@@ -52,6 +52,7 @@ class Brain:
         )
         self._on_text: StreamFn | None = None
         self._agent_running = False
+        self.compact_interrupted = False
         tool_ctx.extra["agent_runner"] = self.run_agent
         tool_ctx.extra["config"] = config
         tool_ctx.extra.setdefault("on_model", self.model_changed)
@@ -83,6 +84,7 @@ class Brain:
         'automatisch_weiter' mal) von selbst weiter, statt anzuhalten. Der AFK-Modus begrenzt
         beides (max_tool_rounds, auto_continue), damit ein Schritt nicht ausufert."""
         self._on_text = on_text
+        self.compact_interrupted = False
         conv = self.config.conversation
         extra = max(0, int(conv.automatisch_weiter or 0) if auto_continue is None else int(auto_continue))
         rounds_limit = conv.max_werkzeug_runden if max_tool_rounds is None else max_tool_rounds
@@ -168,8 +170,13 @@ class Brain:
         """Fasst den Verlauf ggf. zusammen. False = mit Strg+C abgebrochen."""
         try:
             self._compact(only_if_large)
-        except KeyboardInterrupt:
-            # Die Antwort ist schon fertig - Zusammenfassen einfach auslassen.
+        except KeyboardInterrupt as exc:
+            # Die Antwort ist schon fertig - Zusammenfassen einfach auslassen. Ein echtes Strg+C
+            # (nicht ein Abbruch-Signal) merken: im AFK-Modus heisst das "ich bin zurueck".
+            from .cancel import Abgebrochen
+
+            if not isinstance(exc, Abgebrochen):
+                self.compact_interrupted = True
             logger.info("Zusammenfassung mit Strg+C uebersprungen.")
             return False
         return True

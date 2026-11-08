@@ -40,6 +40,52 @@ def test_away_rules_are_strict_and_never_ask(tmp_path):
     assert pm.check_path_write(old).allowed and pm.check(Risk.DANGEROUS, "x").allowed
 
 
+def test_refused_autostart_write_leaves_no_permission_behind(tmp_path):
+    cfg = load_config(tmp_path)
+    cfg.permissions.auto_confirm = True
+    ws = tmp_path / "ws"
+    (ws / ".config" / "autostart").mkdir(parents=True)
+    pm = PermissionManager(cfg.permissions, ws, app_root=tmp_path)
+    pm.begin_away()
+    assert not pm.check_path_write(ws / ".config" / "autostart" / "x.desktop").allowed
+    assert not pm.check(Risk.MODERATE, "Aussehen zuruecksetzen").allowed  # keine liegengebliebene Freigabe
+
+
+def test_away_never_touches_the_ki_folder_even_inside_the_workspace(tmp_path):
+    cfg = load_config(tmp_path)
+    app = tmp_path / "KI"
+    (app / "config").mkdir(parents=True)
+    (app / ".env").write_text("ANTHROPIC_API_KEY=sk-ant-geheim", encoding="utf-8")
+    pm = PermissionManager(cfg.permissions, tmp_path, app_root=app)  # Arbeitsordner = ganzer Ordner
+    pm.begin_away()
+    with pytest.raises(PermissionError_):
+        pm.resolve_path(str(app / ".env"))
+    assert not pm.check_path_write(app / "config" / "settings.toml").allowed
+    (app / "workspace").mkdir()
+    assert pm.check_path_write(app / "workspace" / "neu.txt").allowed  # ihr eigener Arbeitsordner ja
+
+
+def test_search_results_unlock_fetching_while_away(tmp_path, monkeypatch):
+    import types
+
+    cfg = load_config(tmp_path)
+    pm = PermissionManager(cfg.permissions, tmp_path)
+    ctx = ToolContext(permissions=pm)
+    reg = build_registry()
+    html = ('<a class="result-link" href="https://www.example.org/artikel">Artikel</a>'
+            '<td class="result-snippet">Text</td>')
+    fake = types.SimpleNamespace(
+        post=lambda *a, **k: types.SimpleNamespace(text=html, raise_for_status=lambda: None),
+        get=lambda *a, **k: types.SimpleNamespace(text="<p>Inhalt</p>", raise_for_status=lambda: None))
+    monkeypatch.setitem(__import__("sys").modules, "requests", fake)
+    pm.begin_away()
+    assert reg.get("web_abrufen").run(ctx, url="https://www.example.org/artikel").startswith("Solange")
+    reg.get("web_suche").run(ctx, anfrage="test")
+    assert "Inhalt" in reg.get("web_abrufen").run(ctx, url="https://www.example.org/artikel#teil")
+    pm.end_away()
+    assert pm.away_urls == set()
+
+
 def test_tools_respect_the_away_rules(tmp_path):
     cfg = load_config(tmp_path)
     cfg.permissions.auto_confirm = True
@@ -63,7 +109,12 @@ def test_tools_respect_the_away_rules(tmp_path):
     assert "Nicht" in reg.get("vergessen").run(ctx, id=1)
     with pytest.raises(PermissionError_):
         reg.get("app_anpassen").run(ctx, aktion="zuruecksetzen")
-    assert "einfache Adressen" in reg.get("web_abrufen").run(ctx, url="https://x.example/?geheim=sk-123")
+    fetch = reg.get("web_abrufen")
+    for url in ("https://x.example/?geheim=sk-123", "https://evil.example/c/DE89370400440532013000",
+                "https://geheim@evil.example/", "http://example.org/", "https://192.168.0.5/",
+                "https://DE89370400440532013000.evil.example/"):
+        out = fetch.run(ctx, url=url)
+        assert out.startswith("Solange dein Mensch weg ist"), (url, out)
     tool = reg.get("abwesenheit")
     tool.run(ctx, aktion="notiz", text="Recherche fertig")
     tool.run(ctx, aktion="vorschlag", text="alt.txt loeschen")
@@ -127,8 +178,11 @@ def test_settings_and_hints():
     assert not sounds_like_away("Wie weit ist es nach Berlin?")
     assert "abwesenheit" in model_text_for("bin jetzt für länger weg")
     assert model_text_for("bin weg", active=True) == "bin weg"
-    back = model_text_for("Hallo", back=(42, "BERICHT"))
+    back = model_text_for("Hallo", back=(time.time() - 42 * 60 - 5, "BERICHT"))
     assert back.startswith("[Dein Mensch ist zurueck - er war 42 Min.") and back.endswith("Hallo")
+    # unsinnige Grenzen (unendlich) lassen die Sitzung nicht abstuerzen
+    odd = settings_session(AfkSettings(max_minuten=float("inf"), max_schritte=float("inf")), minutes=1e309)
+    assert odd.max_minutes == 120 and odd.max_rounds == 12
 
 
 def test_terminal_afk_mode(tmp_path, capsys):
@@ -155,3 +209,60 @@ def test_terminal_afk_mode(tmp_path, capsys):
         assert cli._afk_return is not None and "Welche Stadt?" in cli._afk_return[1]
     finally:
         cli.memory.close()
+
+
+def test_terminal_afk_leaves_no_stop_signal_behind(tmp_path, capsys):
+    from types import SimpleNamespace
+
+    from assistant.ui.cli import CLI
+    from tests._fakes import AnthroStream, anthro_msg, text_block
+
+    cfg = load_config(tmp_path)
+    cfg.update.modus = "aus"
+    cfg.anthropic_api_key = "sk-ant-test-schluessel"
+    cfg.afk.pause_sekunden = 0
+    cli = CLI(cfg)
+
+    def stream(**kwargs):  # der Waechter haelt den Schritt an (Budget erreicht)
+        cli.brain.provider.cancel()
+        return AnthroStream(anthro_msg([text_block("x")]), [SimpleNamespace(type="text", text="x")])
+
+    cli.brain.provider.client = SimpleNamespace(messages=SimpleNamespace(stream=stream))
+    try:
+        cli._afk_terminal("Test")
+        assert not cli.brain.provider.cancel_event.is_set()
+    finally:
+        cli.memory.close()
+
+
+def test_ctrl_c_while_summarizing_counts_as_back(tmp_path):
+    from assistant.brain import Brain
+    from assistant.cancel import Abgebrochen
+
+    brain = Brain.__new__(Brain)
+    brain.compact_interrupted = False
+
+    def boom(only_if_large):
+        raise KeyboardInterrupt
+
+    brain._compact = boom
+    assert brain._maybe_compact() is False and brain.compact_interrupted
+    brain.compact_interrupted = False
+
+    def cancelled(only_if_large):
+        raise Abgebrochen()
+
+    brain._compact = cancelled
+    brain._maybe_compact()
+    assert not brain.compact_interrupted
+
+
+def test_choosing_a_depth_does_not_store_a_forced_model(tmp_path, monkeypatch):
+    from assistant.modelle import waehle
+
+    monkeypatch.setenv("KI_MODEL", "claude-haiku-5-5")
+    cfg = load_config(tmp_path)
+    assert cfg.claude.model == "claude-haiku-5-5"
+    waehle(cfg, "claude", denken="gruendlich")
+    text = (tmp_path / "config" / "settings.toml").read_text(encoding="utf-8")
+    assert 'model = "claude-haiku-5-5"' not in text and 'effort = "high"' in text
