@@ -1209,6 +1209,15 @@
     renderAlerts();
     commands = Array.isArray(s.commands) ? s.commands.filter((c) => c && typeof c.cmd === 'string') : [];
     setBusy(!!s.busy);
+    // Platzhalter-Blase vom Neuladen ("schreibt …"), aber es kam nichts mehr (z.B. AFK-Modus endete
+    // genau dabei): die KI ist frei -> weg damit, sonst bliebe sie fuer immer stehen
+    if (!s.busy && reply && reply.placeholder && reply.isEmpty()) {
+      reply.dispose();
+      reply.row.remove();
+      reply = null;
+      updateEmpty();
+      moodSync();
+    }
     renderQueue();
     renderAfk();
     profileNames();
@@ -2598,6 +2607,453 @@
       input.scrollTop = input.scrollHeight;
     }
     toast('Wartende Nachrichten sind zurück im Feld', 'info', 4200);
+  }
+
+  // =====================================================================
+  // AFK-Modus ("Ich bin weg"): Nova arbeitet allein weiter und berichtet danach
+  //  state.afk = null | {active, auftrag, since, minutes, rounds, max_rounds, max_minutes, eur, max_eur,
+  //                      notes, proposals, questions, last, ended};  state.afk_pending = bool
+  //  Start: POST /api/afk {action:"start", auftrag, minuten, budget}; zurueck: {action:"stop"}.
+  //  Schritte kommen als notice level "afk" (dezente Trennzeile im Chat). Am Ende kommt der
+  //  Bericht ZWEIMAL (notice level "afk" und Ereignis afk_report) – gezeigt wird EINE Karte:
+  //  die Notice baut sie (so auch beim Neuladen aus dem Verlauf), afk_report "bestaetigt" sie nur.
+  // =====================================================================
+  const AFK_DUR = [[30, '30 Min'], [60, '1 Std'], [120, '2 Std'], [240, '4 Std']];
+  const AFK_BUD = [[0.2, '0,20 €'], [0.5, '0,50 €'], [1, '1 €'], [2, '2 €']];
+  const AFK_TALK = 'Lass uns die Vorschläge durchgehen.';
+  const RE_AFK_REPORT = /^\s*\*\*W(?:ä|ae)hrend du weg warst\*\*/i;
+  const afk = {
+    dur: 120, bud: 1,     // Auswahl im Dialog (Standard: 2 Std, 1 €)
+    back: null,           // Fokus vor dem Dialog
+    sending: false, at: 0,
+    endingSince: null,    // "Ich bin zurueck" / Nachricht geschrieben: Sitzung (since), die gerade endet
+    lastSince: null,      // zuletzt gezeigte Sitzung
+    goneSince: null,      // Sitzung, die schon vorbei ist (state.afk war danach null)
+    stopping: false,      // Anfrage "stop" laeuft
+    base: null,           // {since, minutes, at}: Minuten lokal weiterzaehlen
+    timer: 0,
+  };
+  const afkBand = byId('afk-band');
+  const adialog = byId('adialog');
+  const afkTask = byId('afk-task');
+  const afkErr = byId('afk-err');
+
+  /** Laeuft eine AFK-Sitzung (oder endet sie gerade)? Ein verspaeteter Stand einer schon beendeten
+   *  Sitzung zaehlt nicht (Zustands-Ereignisse koennen sich ueberholen). */
+  function afkRunning() {
+    const a = state.afk;
+    if (!a || typeof a !== 'object') return false; // (auch vor dem ersten Stand: "afk" noch nicht angelegt)
+    return !(afk.goneSince !== null && a.since === afk.goneSince);
+  }
+  /** Pause zwischen zwei AFK-Schritten (keine Antwort laeuft): die Sphaere atmet ruhig. */
+  function afkResting() { return afkRunning() && !reply; }
+
+  // ---------- Dialog ----------
+  function afkSegs(host, list, onPick) {
+    for (const [v, label] of list) {
+      const b = h('button', 'segctl-btn', label);
+      b.type = 'button';
+      b.setAttribute('role', 'radio');
+      b.dataset.value = String(v);
+      b.addEventListener('click', () => onPick(v));
+      host.append(b);
+    }
+    host.addEventListener('keydown', (e) => {
+      if (e.key === 'Home' || e.key === 'End') {
+        const all = [...host.children];
+        const b = all[e.key === 'Home' ? 0 : all.length - 1];
+        e.preventDefault();
+        b.focus();
+        onPick(Number(b.dataset.value));
+        return;
+      }
+      arrowRadio(e, host, (b) => onPick(Number(b.dataset.value)));
+    });
+  }
+  function afkMark(host, cur) {
+    for (const b of host.children) {
+      const on = Number(b.dataset.value) === cur;
+      b.setAttribute('aria-checked', on ? 'true' : 'false');
+      b.tabIndex = on ? 0 : -1;
+    }
+  }
+  const afkDur = byId('afk-dur');
+  const afkBud = byId('afk-bud');
+  afkSegs(afkDur, AFK_DUR, (v) => { afk.dur = v; afkMark(afkDur, v); });
+  afkSegs(afkBud, AFK_BUD, (v) => { afk.bud = v; afkMark(afkBud, v); });
+
+  function openAfk() {
+    if (ended || !amodal.hidden) return;
+    closeSidebar();
+    closeCmdPop();
+    afk.back = document.activeElement;
+    afk.dur = 120;
+    afk.bud = 1;
+    afkMark(afkDur, afk.dur);
+    afkMark(afkBud, afk.bud);
+    afkErr.hidden = true;
+    afkSending(false);
+    byId('afk-sub').textContent = 'Du bist weg – ich arbeite allein weiter und berichte dir, wenn du zurück bist.';
+    amodal.hidden = false;
+    afk.at = performance.now();
+    updateInert();
+    afkTask.focus();
+    afkTask.setSelectionRange(afkTask.value.length, afkTask.value.length);
+  }
+
+  function closeAfk() {
+    if (amodal.hidden) return;
+    amodal.hidden = true;
+    afk.sending = false;
+    updateInert();
+    const back = afk.back;
+    afk.back = null;
+    // Rueckfrage kam, waehrend der Dialog offen war: danach nicht auf den (versteckten) Dialog zurueck
+    if (askFocusBack && amodal.contains(askFocusBack)) askFocusBack = back;
+    if (!modal.hidden) { dialog.focus(); return; }
+    if (back && back !== document.body && document.contains(back) && !back.closest('[inert]') &&
+        back.offsetParent !== null) back.focus();
+    else focusInput();
+  }
+
+  function afkSending(on) {
+    afk.sending = !!on;
+    const go = byId('afk-go');
+    go.disabled = afk.sending;
+    byId('afk-cancel').disabled = false;
+    go.replaceChildren(afk.sending ? h('span', 'spinner') : icon('moon'),
+      h('span', null, afk.sending ? 'Starte …' : "Los geht's"));
+  }
+
+  async function submitAfk() {
+    if (afk.sending || amodal.hidden) return;
+    afkErr.hidden = true;
+    afkSending(true);
+    const r = await post('/api/afk', { action: 'start', auftrag: afkTask.value.trim(), minuten: afk.dur, budget: afk.bud });
+    if (amodal.hidden) { // inzwischen geschlossen (z.B. KI beendet)
+      afk.sending = false;
+      if (r.ok) afkTask.value = '';
+      return;
+    }
+    afkSending(false);
+    if (!r.ok) {
+      afkErr.replaceChildren(icon('alertCircle'), h('span', null, r.error || 'Der AFK-Modus konnte nicht starten.'));
+      afkErr.hidden = false;
+      afkTask.focus();
+      return;
+    }
+    afkTask.value = '';
+    afk.back = null; // der Knopf verschwindet gleich – Fokus ins Eingabefeld
+    closeAfk();
+    // Bestaetigung ist das Band oben ("AFK-Modus – … arbeitet allein" bzw. "startet gleich …") – kein Toast davor
+    renderAfk();
+  }
+
+  function afkKey(e) {
+    if (e.key === 'Escape') { e.preventDefault(); closeAfk(); return; }
+    if (e.key === 'F2') { e.preventDefault(); return; }
+    if (e.key === 'Tab') { trapTab(e, adialog); return; }
+    // Enter im Textfeld = "Los geht's" (Shift+Enter = neue Zeile), Strg+Enter ueberall
+    const inTask = e.target === afkTask;
+    if (e.key === 'Enter' && !e.isComposing && ((inTask && !e.shiftKey && !e.altKey) || e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      if (!e.repeat) submitAfk();
+    }
+  }
+  /** Maus-Klick zu kurz nach dem Oeffnen oder Teil eines Doppelklicks? (Tastatur zaehlt immer) */
+  const afkTooSoon = (e) => !!(e && e.detail) && (e.detail > 1 || performance.now() - afk.at < 400);
+  byId('afk-go').addEventListener('click', (e) => { if (!afkTooSoon(e)) submitAfk(); });
+  byId('afk-cancel').addEventListener('click', () => closeAfk());
+  amodal.addEventListener('mousedown', (e) => { if (e.target === amodal && !afkTooSoon(e)) closeAfk(); });
+  byId('afk-btn').addEventListener('click', () => openAfk());
+  byId('sb-afk').addEventListener('click', () => {
+    if (afkRunning() || state.afk_pending === true) { closeSidebar(); afkStop(); }
+    else openAfk();
+  });
+
+  // ---------- Band "AFK-Modus – Nova arbeitet allein" ----------
+  /** Minuten seit dem Start: lokal hochzaehlen (die KI laeuft auf demselben PC – sonst ab dem letzten Stand). */
+  function afkMinutes() {
+    const b = afk.base;
+    if (!b) return 0;
+    const est = b.minutes + Math.floor((Date.now() - b.at) / 60000);
+    const local = Date.now() / 1000 - b.since;
+    if (!Number.isFinite(local) || !b.since) return est;
+    const m = Math.floor(local / 60);
+    return Math.abs(m - est) <= 1 ? Math.max(m, b.minutes) : est;
+  }
+  function afkSince(m) {
+    if (m < 1) return 'seit gerade eben';
+    if (m < 60) return 'seit ' + m + ' Min';
+    const hh = Math.floor(m / 60);
+    const mm = m % 60;
+    return 'seit ' + hh + ' Std' + (mm ? ' ' + mm + ' Min' : '');
+  }
+  const afkLimit = (m) => (m % 60 === 0 && m >= 60 ? m / 60 + ' Std' : m + ' Min');
+  /** 1 -> "1 €", 0.2 -> "0,20 €"; exact=true: immer zwei Stellen ("0,01 €"). */
+  function afkEur(v, exact) {
+    v = Math.max(0, Number(v) || 0);
+    const whole = Math.abs(v - Math.round(v)) < 1e-9;
+    return (whole && !exact ? String(Math.round(v))
+      : v.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })) + ' €';
+  }
+  const afkCount = (n, one, many) => (n === 1 ? '1 ' + one : n + ' ' + many);
+
+  function renderAfkTime() {
+    byId('ab-time').textContent = afkBand.dataset.mode === 'active' ? afkSince(afkMinutes()) : '';
+  }
+
+  function renderAfk() {
+    const a = afkRunning() ? state.afk : null;
+    const pending = !a && state.afk_pending === true;
+    const show = !ended && (!!a || pending);
+    if (a) afk.lastSince = a.since;
+    else {
+      if (afk.lastSince !== null && !(state.afk && typeof state.afk === 'object')) afk.goneSince = afk.lastSince;
+      afk.lastSince = null;
+      afk.endingSince = null;
+      afk.base = null;
+    }
+    const n = kiName();
+    const job = a ? String(a.auftrag || '').trim() : '';
+    // Knoepfe "Ich bin weg" (neben dem Feld und in der Seitenleiste)
+    byId('afk-btn').hidden = show || ended;
+    const sb = byId('sb-afk');
+    const sbMode = !show ? 'off' : pending ? 'pending' : 'on';
+    sb.classList.toggle('on', sbMode === 'on');
+    sb.setAttribute('aria-haspopup', sbMode === 'off' ? 'dialog' : 'false');
+    byId('sb-afk-title').textContent = sbMode === 'off' ? 'Ich bin weg' : sbMode === 'pending' ? 'Startet gleich …' : 'Ich bin zurück';
+    byId('sb-afk-sub').textContent = sbMode === 'off' ? n + ' arbeitet allein weiter'
+      : sbMode === 'pending' ? 'AFK-Modus – klicken zum Abbrechen' : 'AFK-Modus läuft – beenden';
+    sb.title = sbMode === 'off' ? 'AFK-Modus: ' + n + ' arbeitet allein weiter, während du weg bist, und berichtet dir danach'
+      : sbMode === 'on' ? 'AFK-Modus beenden – ' + n + ' hört auf und berichtet dir' : '';
+    app.classList.toggle('afk-on', !!a && !ended);
+
+    afkBand.hidden = !show;
+    if (!show) {
+      clearInterval(afk.timer);
+      afk.timer = 0;
+      moodSync();
+      return;
+    }
+    // endet gerade: einmal gesehen, bleibt es so (ein verspaeteter aelterer Stand holt das Band nicht zurueck)
+    if (a && a.active === false) afk.endingSince = a.since;
+    const ending = !!a && afk.endingSince !== null && afk.endingSince === a.since;
+    const mode = pending ? 'pending' : ending ? 'ending' : 'active';
+    afkBand.dataset.mode = mode;
+    const btn = byId('ab-btn');
+    const note = byId('ab-note');
+    const counts = byId('ab-counts');
+    let title;
+    let noteText = '';
+    let countText = '';
+    if (mode === 'pending') {
+      title = 'AFK-Modus startet gleich …';
+      noteText = 'sobald ich mit der laufenden Antwort fertig bin';
+      btn.textContent = 'Abbrechen';
+      btn.title = 'Doch nicht weg – der AFK-Modus startet nicht';
+    } else if (mode === 'ending') {
+      title = 'Willkommen zurück!';
+      noteText = 'Ich höre auf und fasse zusammen, was ich gemacht habe …';
+      btn.textContent = 'Ich bin zurück';
+      btn.title = '';
+    } else {
+      title = 'AFK-Modus – ' + n + ' arbeitet allein';
+      const last = String(a.last || '').trim();
+      noteText = last ? 'Zuletzt: ' + last : job ? 'Auftrag: ' + job
+        : 'Ohne festen Auftrag – ich mache da weiter, wo wir aufgehört haben.';
+      const p = Number(a.proposals) || 0;
+      const q = Number(a.questions) || 0;
+      countText = [p ? afkCount(p, 'Vorschlag', 'Vorschläge') : '', q ? afkCount(q, 'Frage', 'Fragen') : '']
+        .filter(Boolean).join(' · ');
+      btn.textContent = 'Ich bin zurück';
+      btn.title = 'AFK-Modus beenden – ' + n + ' hört auf und berichtet dir, was in der Zeit passiert ist';
+    }
+    btn.hidden = mode === 'ending';
+    btn.disabled = afk.stopping;
+    const t = byId('ab-title');
+    if (t.textContent !== title) t.textContent = title;
+    note.textContent = noteText;
+    note.title = noteText.length > 60 ? noteText : '';
+    counts.textContent = countText;
+    counts.title = countText ? 'Wartet auf dich, wenn du zurück bist' : '';
+    byId('ab-last').hidden = !noteText && !countText;
+    if (a && mode === 'active') {
+      const since = Number(a.since);
+      afk.base = { since: Number.isFinite(since) ? since : 0, minutes: Math.max(0, Number(a.minutes) || 0), at: Date.now() };
+      const max = Math.max(1, Number(a.max_rounds) || 1);
+      byId('ab-step').textContent = 'Schritt ' + Math.min(max, Math.max(1, Number(a.rounds) || 0)) + '/' + max;
+      byId('ab-cost').textContent = 'ca. ' + afkEur(a.eur, true) + ' von ' + afkEur(a.max_eur);
+      const lim = [];
+      if (job) lim.push('Auftrag: ' + job);
+      lim.push('Höchstens ' + afkLimit(Math.max(1, Number(a.max_minutes) || 0)) + ' · ' + afkEur(a.max_eur) + ' · ' + max + ' Schritte');
+      afkBand.title = lim.join('\n');
+      if (!afk.timer) afk.timer = setInterval(renderAfkTime, 10000);
+    } else {
+      byId('ab-step').textContent = '';
+      byId('ab-cost').textContent = '';
+      afkBand.title = '';
+      clearInterval(afk.timer);
+      afk.timer = 0;
+    }
+    renderAfkTime();
+    moodSync();
+  }
+  /** Du bist zurueck (Nachricht geschrieben): Band zeigt "Willkommen zurueck", bis state.afk weg ist. */
+  function afkBack() {
+    if (!afkRunning()) return;
+    afk.endingSince = state.afk.since;
+    renderAfk();
+  }
+
+  /** "Ich bin zurueck" (laeuft) bzw. "Abbrechen" (startet gleich): POST /api/afk {action:"stop"}. */
+  async function afkStop() {
+    if (afk.stopping || ended) return;
+    const running = afkRunning();
+    const before = running ? state.afk.since : null;
+    afk.stopping = true;
+    if (running) afk.endingSince = before;
+    const hadFocus = afkBand.contains(document.activeElement);
+    renderAfk();
+    const r = await post('/api/afk', { action: 'stop' });
+    afk.stopping = false;
+    if (!r.ok) {
+      if (afk.endingSince === before) afk.endingSince = null;
+      renderAfk();
+      toast(r.error || 'Das hat nicht geklappt.', 'error');
+      return;
+    }
+    if (!running) toast('AFK-Modus abgebrochen – ich bleibe hier.', 'info');
+    renderAfk();
+    if (hadFocus && (afkBand.hidden || byId('ab-btn').hidden)) focusInput();
+  }
+  byId('ab-btn').addEventListener('click', () => afkStop());
+
+  // ---------- Im Chat: Schritte als Trennzeile, Bericht als Karte ----------
+  function addAfkNotice(text) {
+    const t = String(text == null ? '' : text).trim();
+    if (!t) return null;
+    if (RE_AFK_REPORT.test(t)) return addAfkReport(t, false);
+    const row = h('div', 'afk-note' + (t.length > 70 ? ' long' : ''));
+    row.setAttribute('role', 'note');
+    row.dataset.text = t;
+    const chip = h('span', 'an-chip');
+    chip.append(icon('moon'), h('span', 'an-text', t.replace(/\*\*/g, '')));
+    row.append(h('span', 'an-line'), chip, h('span', 'an-line'));
+    msgs.append(row);
+    added();
+    return row;
+  }
+
+  /** Bericht zerlegen: "**Während du weg warst** (3 Min., 2 Schritte, ca. 0,01 EUR). Grund" + Abschnitte. */
+  function parseAfkReport(text) {
+    const lines = String(text).replace(/\r\n?/g, '\n').split('\n');
+    const first = lines.shift() || '';
+    const m = first.match(/^\s*\*\*[^*]+\*\*\s*(?:\(([^)]*)\))?\.?\s*(.*)$/);
+    const meta = m && m[1] ? m[1].split(/,\s+/).map((x) => x.replace(/\bEUR\b/g, '€').replace(/^1 Schritte$/, '1 Schritt').trim()).filter(Boolean) : [];
+    const reason = m ? m[2].trim() : first.replace(/\*\*/g, '').trim();
+    const secs = [];
+    let cur = { title: '', lines: [] };
+    const push = () => { if (cur.title || cur.lines.join('').trim()) secs.push(cur); };
+    for (const l of lines) {
+      const s = l.match(/^\s*\*\*([^*\n]+?):?\*\*:?\s*(.*)$/); // "**Ergebnis:** …" / "**Fragen an dich:**"
+      if (s) {
+        push();
+        cur = { title: s[1].trim(), lines: s[2] ? [s[2]] : [] };
+      } else cur.lines.push(l);
+    }
+    push();
+    return { meta, reason, secs, ok: !!m };
+  }
+  const AFK_SEC = [
+    [/^ergebnis/i, 'result', 'checkCircle'],
+    [/erledigt|notiz/i, 'notes', 'pen'],
+    [/vorschl/i, 'proposals', 'brain'],
+    [/frage/i, 'questions', 'help'],
+  ];
+
+  function addAfkReport(text, claimed) {
+    const t = String(text).trim();
+    const rep = parseAfkReport(t);
+    const card = h('section', 'afk-report');
+    card.setAttribute('aria-label', 'Während du weg warst');
+    card.dataset.text = t;
+    if (claimed) card.dataset.claimed = '1';
+    const head = h('div', 'ar-head');
+    const ic = h('span', 'ar-ic');
+    ic.setAttribute('aria-hidden', 'true');
+    ic.append(icon('moon'));
+    const titles = h('div', 'ar-titles');
+    titles.append(h('h3', 'ar-title', 'Während du weg warst'));
+    if (rep.meta.length) {
+      const meta = h('div', 'ar-meta');
+      for (const x of rep.meta) meta.append(h('span', null, x));
+      titles.append(meta);
+    }
+    head.append(ic, titles);
+    card.append(head);
+    if (!rep.ok) { // unbekanntes Format: einfach als Markdown (sicher: escaped)
+      const body = h('div', 'md ar-sec-body');
+      body.innerHTML = renderMarkdown(t);
+      card.append(body);
+    } else if (rep.reason) card.append(h('p', 'ar-reason', rep.reason));
+    let talk = false;
+    if (rep.ok) {
+      for (const s of rep.secs) {
+        const kind = AFK_SEC.find(([re]) => re.test(s.title)) || [null, s.title ? 'other' : 'plain', 'info'];
+        if (kind[1] === 'proposals' || kind[1] === 'questions') talk = true;
+        const sec = h('div', 'ar-sec ' + kind[1]);
+        if (s.title) {
+          const st = h('h4', 'ar-sec-title');
+          st.append(icon(kind[2]), h('span', null, s.title));
+          sec.append(st);
+        }
+        const body = h('div', 'md ar-sec-body');
+        body.innerHTML = renderMarkdown(s.lines.join('\n').trim()); // sicher: escaped
+        sec.append(body);
+        card.append(sec);
+      }
+    }
+    if (talk) {
+      const foot = h('div', 'ar-foot');
+      const b = h('button', 'btn small ar-talk');
+      b.type = 'button';
+      b.append(icon('chat'), h('span', null, 'Vorschläge besprechen'));
+      b.title = '„' + AFK_TALK + '“ ins Eingabefeld setzen';
+      b.addEventListener('click', () => {
+        const v = input.value.replace(/\s+$/, '');
+        if (!v.includes(AFK_TALK)) input.value = v ? v + '\n' + AFK_TALK : AFK_TALK;
+        autosize();
+        recallIdx = -1;
+        closeCmdPop();
+        if (focusInput()) input.setSelectionRange(input.value.length, input.value.length);
+      });
+      foot.append(b, h('span', 'ar-hint', 'Nichts davon passiert ohne dein Okay.'));
+      card.append(foot);
+    }
+    msgs.append(card);
+    added();
+    return card;
+  }
+
+  /** Ereignis afk_report: die Karte kam schon mit der Notice – dann nur bestaetigen (nie doppelt). */
+  function onAfkReport(ev) {
+    const t = String(ev.text == null ? '' : ev.text).trim();
+    if (!t || ended) return;
+    const reason = String(ev.reason || '');
+    const cards = msgs.querySelectorAll('.afk-report');
+    const last = cards[cards.length - 1];
+    if (last && !last.dataset.claimed && last.dataset.text === t) {
+      last.dataset.claimed = '1';
+      last.dataset.reason = reason;
+      return;
+    }
+    // Bericht-Notice kam in anderem Format (als Trennzeile): durch die Karte ersetzen
+    const notes = msgs.querySelectorAll('.afk-note');
+    const ln = notes[notes.length - 1];
+    const card = addAfkReport(t, true);
+    card.dataset.reason = reason;
+    if (ln && ln.dataset.text === t) { ln.replaceWith(card); added(); }
   }
 
   for (const b of document.querySelectorAll('[data-prompt]')) {
@@ -6310,7 +6766,7 @@
       histBuilding = false;
     }
     if (keep) { msgs.append(keep.row); reply = keep; }
-    else if (wasBusy && !afkRunning()) ensureReply();
+    else if (wasBusy && !afkRunning()) ensureReply().placeholder = true; // Antwort laeuft, ihr Anfang fehlt
     historyReady = true;
     // Der Anfang der laufenden Antwort fehlt evtl. -> nach ihrem Ende den Verlauf neu laden
     resyncOnEnd = wasBusy;
