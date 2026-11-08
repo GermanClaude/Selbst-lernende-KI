@@ -1914,6 +1914,30 @@
     return src ? { src, name: HL.anzeigeName(b.name, b.url), save: true } : null;
   }
 
+  /** Eigene Blase nach dem Echo: die lokalen data:-Vorschauen gegen die Bilder vom Server tauschen
+   *  (spart Speicher bei langen Gespraechen, und "Speichern" in der Grossansicht geht sofort).
+   *  Getauscht wird erst, wenn alle Server-Bilder geladen sind – sonst bleibt die Vorschau. */
+  function serverImagesFor(row, imgs) {
+    const old = row && row.querySelector('.u-imgs');
+    const list = imgs.map(serverImg).filter(Boolean);
+    if (!old || !list.length || list.length !== old.children.length) return;
+    const box = userImages(list);
+    const pics = [...box.querySelectorAll('img')];
+    let left = pics.length;
+    let failed = false;
+    const one = (ok) => {
+      if (!ok) failed = true;
+      if (--left > 0 || failed || !old.isConnected) return;
+      const at = [...old.children].indexOf(document.activeElement);
+      old.replaceWith(box);
+      if (at >= 0 && box.children[at]) box.children[at].focus({ preventScroll: true });
+    };
+    for (const img of pics) {
+      img.addEventListener('load', () => one(true), { once: true });
+      img.addEventListener('error', () => one(false), { once: true });
+    }
+  }
+
   function userImages(list) {
     const box = h('div', 'u-imgs' + (list.length === 1 ? ' one' : ''));
     const shown = list.map((b) => ({ src: b.src, name: b.name || 'Bild', caption: b.name || '', save: b.save !== false }));
@@ -2665,7 +2689,11 @@
     while (pendingSent.length && Date.now() - pendingSent[0].t > 60000) pendingSent.shift();
     let k = cid ? pendingSent.findIndex((p) => p.cid === cid) : -1;
     if (k < 0 && !cid) k = pendingSent.findIndex((p) => p.text === t && !p.imgs);
-    if (k >= 0) { pendingSent.splice(k, 1); return; }
+    if (k >= 0) {
+      const own = pendingSent.splice(k, 1)[0];
+      if (own.imgs && imgs.length) serverImagesFor(own.row, imgs);
+      return;
+    }
     if (!t && !imgs.length) return;
     addUser(t, imgs.map(serverImg).filter(Boolean));
     if (!t) return;
