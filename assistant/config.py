@@ -217,6 +217,33 @@ class FeedbackSettings:
 
 
 @dataclass
+class SehenSettings:
+    # Live-Sehen: Nova schaut (nur wenn du es einschaltest) auf deinen Bildschirm und/oder
+    # durch deine Webcam und meldet sich von selbst, wenn etwas Wichtiges passiert.
+    aktiv: bool = False                  # beim Start gleich einschalten (nur mit Zustimmung)
+    quelle: str = "auto"                 # auto | bildschirm | webcam | beides
+    aufnahme: str = "auto"               # Bildschirm-Technik: auto | dxcam | mss
+    fps: int = 15                        # Bilder pro Sekunde fuer die Aenderungserkennung (1-240)
+    monitor: int = 0                     # 0 = Hauptbildschirm
+    aufmerksamkeit: str = "normal"       # niedrig | normal | hoch (wie leicht sich Nova meldet)
+    min_abstand_sekunden: int = 20       # so lange mindestens zwischen zwei Wortmeldungen
+    max_weckungen_pro_stunde: int = 20   # hoechstens so viele Wortmeldungen pro Stunde (hart: 360)
+    max_euro_pro_stunde: float = 0.30    # hoechstens so viel Kosten pro Stunde (Ollama: kostenlos)
+    max_stunden: float = 3.0             # danach schaltet sich Live-Sehen von selbst aus
+    bilder_an_ki: bool = True            # Modelle mit Augen bekommen einen verkleinerten Ausschnitt
+    max_kante: int = 1280                # so gross hoechstens (laengste Seite in Pixeln)
+    jpeg_qualitaet: int = 75
+    ocr: bool = True                     # Text in geaenderten Bereichen erkennen (Windows-Texterkennung)
+    ocr_sprache: str = "de-DE"
+    sprechen: bool = True                # Wortmeldungen vorlesen (wenn Vorlesen/Jarvis an ist)
+    bei_abwesenheit: bool = False        # auch im AFK-Modus zusehen (dann nur Text, keine Bilder)
+    hotkey_pause: str = "Strg+Alt+Umschalt+S"  # weltweite Taste: sofort wegschauen / weiter
+    ausnahmen: list = field(default_factory=list)  # weitere Programme (z.B. "banking.exe") oder Fenstertitel
+    einverstanden_am: str = ""           # wann du zugestimmt hast (leer = noch nie)
+    einverstanden_fuer: str = ""         # fuer welches Gehirn (Wechsel = neu fragen)
+
+
+@dataclass
 class MemorySettings:
     db_path: str = "data/memory.sqlite3"
     max_facts_in_context: int = 60
@@ -316,6 +343,7 @@ class Config:
     provider_auto_switched: str = ""  # eingestelltes Gehirn hatte keinen Schluessel -> gewechselt
     afk: AfkSettings = field(default_factory=AfkSettings)
     bilder: BilderSettings = field(default_factory=BilderSettings)
+    sehen: SehenSettings = field(default_factory=SehenSettings)
     feedback: FeedbackSettings = field(default_factory=FeedbackSettings)
     cloudflare_api_key: str | None = None  # Bildgenerator (optional, eigener Gratis-Schluessel)
     cloudflare_account_id: str | None = None
@@ -571,6 +599,7 @@ def load_config(project_root: Path | None = None) -> Config:
         about=_load_about(config_dir / "ueber_mich.json"),
         afk=_merge(AfkSettings(), raw.get("afk", {})),
         bilder=_merge(BilderSettings(), raw.get("bilder", {})),
+        sehen=_merge(SehenSettings(), raw.get("sehen", {})),
         feedback=_merge(FeedbackSettings(), raw.get("feedback", {})),
         cloudflare_api_key=os.environ.get("CLOUDFLARE_AI_API_KEY") or None,
         cloudflare_account_id=os.environ.get("CLOUDFLARE_ACCOUNT_ID") or None,

@@ -26,5 +26,8 @@ pywebview>=6.2 ; sys_platform == "win32"
 #   ... offline statt Google:             pip install faster-whisper
 #   Sprachausgabe (Text -> Stimme):       pip install pyttsx3
 #   PC-Steuerung (Maus/Tastatur lokal):   pip install pyautogui
+#   Live-Sehen am Bildschirm (Windows):   im Chat "/sehen einrichten"
+#                                         (= pip install numpy mss dxcam comtypes winrt-Windows.Media.Ocr ...)
+#                                         Webcam in der App braucht nichts extra.
 #   Build zur .exe:                       pip install pyinstaller
 # -----------------------------------------------------------------------------

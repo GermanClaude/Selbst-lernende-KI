@@ -14,7 +14,9 @@ koennen. Der Server spricht nur mit der eigenen Oberflaeche:
        /api/answer, /api/voice, /api/toggle, /api/profile, /api/memory, /api/jarvis, /api/tutorial,
        /api/setup, /api/modell, /api/update, /api/feedback, /api/feedback/spaeter,
        /api/feedback/gezeigt, /api/bilder/einstellen,
-       /api/ollama/laden, /api/ollama/abbrechen, /api/ollama/adresse, /api/ollama/starten
+       /api/ollama/laden, /api/ollama/abbrechen, /api/ollama/adresse, /api/ollama/starten,
+       /api/sehen (Live-Sehen an/aus/pause/Quelle/Kamera-Meldung)
+  POST /api/kamera/bild  ein Webcam-Bild (rohe JPEG/PNG/WebP-Bytes, hoechstens 2 MB) - nur im Speicher
 Anfragen duerfen hoechstens 1 MB gross sein - /api/send und /api/feedback (mit Bildern) 40 MB.
 """
 from __future__ import annotations
@@ -41,6 +43,8 @@ _GROSSE_ANFRAGEN = ("/api/send", "/api/feedback")
 _MAX_VERWERFEN = 64 * 1024 * 1024             # zu grosse Anfrage bis hierhin noch lesen (sauberes 413)
 _MAX_BILD_DATEI = 30 * 1024 * 1024            # groesser liefert /api/bild nichts aus
 _BILD_ARTEN = ("h", "e")                      # hochgeladen | erstellt
+_MAX_KAMERA_BILD = 2 * 1024 * 1024            # /api/kamera/bild: ein Webcam-Bild
+_KAMERA_TYPEN = ("image/jpeg", "image/png", "image/webp")
 _ZU_GROSS = ("Die Nachricht ist zu gro\u00df (h\u00f6chstens 40 MB). Bitte weniger oder kleinere "
              "Bilder anh\u00e4ngen.")
 
@@ -240,6 +244,8 @@ class AppServer:
                 if not self._host_ok() or not self._token_ok({}):
                     self.close_connection = True  # Inhalt ungelesen -> nicht weiter auf dieser Verbindung
                     return self._deny()
+                if url.path == "/api/kamera/bild":
+                    return self._kamera_bild()
                 try:
                     length = int(self.headers.get("Content-Length") or 0)
                     if length < 0:
@@ -264,6 +270,30 @@ class AppServer:
                     logger.exception("Fehler bei %s", url.path)
                     return self._json({"ok": False, "error": str(exc)}, 500)
 
+            def _kamera_bild(self) -> None:
+                """Webcam-Bild aus dem Fenster (rohe Bytes). Typ an den Bytes geprueft, nie gespeichert."""
+                from ..bilder import erkenne_typ
+
+                try:
+                    length = int(self.headers.get("Content-Length") or 0)
+                except ValueError:
+                    length = -1
+                if length <= 0:
+                    self.close_connection = True
+                    return self._json({"ok": False, "error": "ungueltige Anfrage"}, 400)
+                if length > _MAX_KAMERA_BILD:
+                    self._verwerfen(length)
+                    return self._send(413, json.dumps({"ok": False, "error": "Bild zu gro\u00df"}).encode("utf-8"),
+                                      "application/json; charset=utf-8", {"Connection": "close"})
+                try:
+                    data = self.rfile.read(length)
+                except OSError:
+                    self.close_connection = True
+                    return None
+                if len(data) != length or erkenne_typ(data) not in _KAMERA_TYPEN:
+                    return self._json({"ok": False, "error": "kein Bild"}, 415)
+                return self._json(server.controller.kamera_bild(data))
+
             def _post(self, url, body: dict):
                 ctl = server.controller
                 if url.path == "/api/send":
@@ -279,6 +309,8 @@ class AppServer:
                     return self._json(ctl.queue_action(str(body.get("action", "")), body.get("id")))
                 if url.path == "/api/afk":
                     return self._json(ctl.afk(body))
+                if url.path == "/api/sehen":
+                    return self._json(ctl.sehen_api(body))
                 if url.path == "/api/stop":
                     ctl.stop()
                     return self._json({"ok": True})

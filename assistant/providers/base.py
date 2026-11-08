@@ -45,7 +45,9 @@ SUMMARY_INSTRUCTION = (
     "kann. Beginne mit der aktuellen Aufgabe und ihrem Ziel und damit, was als Naechstes "
     "zu tun ist. Behalte ausserdem: Namen, Vorlieben, Entscheidungen; was bereits erledigt "
     "ist (welche Dateien gelesen, angelegt oder geaendert wurden, mit Pfad und dem "
-    "Wichtigsten zum Inhalt); offene Probleme."
+    "Wichtigsten zum Inhalt); offene Probleme. Was die KI nebenbei per Live-Sehen auf dem Bildschirm "
+    "oder der Webcam bemerkt hat, gehoert NICHT in die Zusammenfassung (ausser der Mensch hat danach "
+    "ausdruecklich gefragt)."
 )
 
 

@@ -195,4 +195,9 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    # Zuerst: das "Auge" von Live-Sehen laeuft als eigener Prozess - in der .exe startet Windows
+    # dafuer dieselbe Datei nochmal; freeze_support() fuehrt dann nur das Auge aus.
+    import multiprocessing
+
+    multiprocessing.freeze_support()
     sys.exit(main())

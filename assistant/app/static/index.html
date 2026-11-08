@@ -91,6 +91,14 @@
         <button class="switch" id="sw-vorlesen" type="button" role="switch" aria-checked="false"
                 aria-labelledby="lbl-vorlesen" aria-describedby="sub-vorlesen"><span class="knob"></span></button>
       </div>
+      <div class="switch-row sehen-row" id="row-sehen">
+        <div class="switch-text">
+          <span class="switch-title" id="lbl-sehen"><span data-icon="eye"></span>Live-Sehen</span>
+          <span class="switch-sub" id="sub-sehen">schaut zu und meldet sich von selbst</span>
+        </div>
+        <button class="switch" id="sw-sehen" type="button" role="switch" aria-checked="false"
+                aria-labelledby="lbl-sehen" aria-describedby="sub-sehen"><span class="knob"></span></button>
+      </div>
       <div class="switch-row" data-toggle="sofort_senden" id="row-sofort" hidden>
         <div class="switch-text">
           <span class="switch-title" id="lbl-sofort">Gesprochenes sofort senden</span>
@@ -160,6 +168,24 @@
           <div class="ab-last" id="ab-last"><span class="ab-note" id="ab-note"></span><span class="ab-counts" id="ab-counts"></span></div>
         </div>
         <button class="btn small ab-btn" id="ab-btn" type="button">Ich bin zurück</button>
+      </div>
+    </div>
+
+    <!-- Live-Sehen laeuft: immer sichtbar, solange Nova zusieht (mit Pause und Ausschalten) -->
+    <div class="sehen-band" id="sehen-band" role="region" aria-labelledby="sb2-title" data-mode="an" hidden>
+      <div class="ab-inner">
+        <span class="sehen-eye" aria-hidden="true"><span data-icon="eye"></span></span>
+        <div class="ab-main">
+          <div class="ab-top">
+            <span class="ab-title sehen-title" id="sb2-title" role="status">Nova sieht zu</span>
+            <span class="ab-meta" id="sb2-meta"><span class="ab-meta-in"><span id="sb2-quelle"></span><span id="sb2-anzahl"></span><span id="sb2-kosten"></span></span></span>
+          </div>
+          <div class="ab-last"><span class="ab-note" id="sb2-last"></span></div>
+        </div>
+        <div class="sehen-btns">
+          <button class="btn small sehen-pause" id="sb2-pause" type="button" title="Sofort wegschauen (F4)">Pause</button>
+          <button class="btn small sehen-stop" id="sb2-stop" type="button" title="Live-Sehen ausschalten">Ausschalten</button>
+        </div>
       </div>
     </div>
 
@@ -491,6 +517,25 @@
             <button class="switch" id="sec-sw-erlauben" type="button" role="switch" aria-checked="false"
                     data-switch="erlauben" aria-labelledby="sec-lbl-erlauben" aria-describedby="sec-erlauben-text"><span class="knob"></span></button>
           </div>
+          <div class="sec-card sehen-card" id="sec-sehen">
+            <div class="sec-ic" data-icon="eye"></div>
+            <div class="sec-main">
+              <div class="sec-top">
+                <span class="sec-title" id="sec-lbl-sehen">Live-Sehen</span>
+                <span class="sec-badge" id="sec-sehen-badge">Aus</span>
+              </div>
+              <p class="sec-text" id="sec-sehen-text">Nova schaut auf deinen Bildschirm oder durch deine Webcam und meldet sich von selbst, wenn etwas Wichtiges passiert – zum Beispiel ein Fehlerfenster. Nur, wenn du es einschaltest. Bilder werden nie gespeichert.</p>
+              <div class="segctl sehen-seg" id="sec-sehen-quelle" role="radiogroup" aria-label="Was Nova sehen soll">
+                <button class="segctl-btn" type="button" role="radio" aria-checked="true" data-quelle="auto">Automatisch</button>
+                <button class="segctl-btn" type="button" role="radio" aria-checked="false" data-quelle="bildschirm">Bildschirm</button>
+                <button class="segctl-btn" type="button" role="radio" aria-checked="false" data-quelle="webcam">Webcam</button>
+                <button class="segctl-btn" type="button" role="radio" aria-checked="false" data-quelle="beides">Beides</button>
+              </div>
+              <p class="sec-text sehen-hint" id="sec-sehen-hint" hidden></p>
+            </div>
+            <button class="switch" id="sec-sw-sehen" type="button" role="switch" aria-checked="false"
+                    aria-labelledby="sec-lbl-sehen" aria-describedby="sec-sehen-text"><span class="knob"></span></button>
+          </div>
           <div class="sec-facts" id="sec-facts" aria-live="polite"></div>
         </div>
       </section>
@@ -635,6 +680,27 @@
     <div class="dlg-foot">
       <button class="btn ghost" id="afk-cancel" type="button">Abbrechen</button>
       <button class="btn primary afk-go" id="afk-go" type="button"><span data-icon="moon"></span><span id="afk-go-text">Los geht's</span></button>
+    </div>
+  </div>
+</div>
+
+<!-- Live-Sehen: Zustimmung beim ersten Mal (und nach einem Gehirn-Wechsel) -->
+<div class="modal sehen-modal" id="sehen-modal" hidden>
+  <div class="dialog sehen-dialog" id="sehen-dialog" role="dialog" aria-modal="true" aria-labelledby="sd-title" aria-describedby="sd-intro" tabindex="-1">
+    <div class="dlg-head">
+      <div class="dlg-icon"><span data-icon="eye"></span></div>
+      <div class="dlg-titles">
+        <h2 class="dlg-title" id="sd-title">Live-Sehen einschalten?</h2>
+        <p class="dlg-sub" id="sd-sub">Bitte einmal in Ruhe lesen.</p>
+      </div>
+    </div>
+    <div class="dlg-body sehen-body">
+      <p id="sd-intro"></p>
+      <ul class="sehen-list" id="sd-list"></ul>
+    </div>
+    <div class="dlg-foot">
+      <button class="btn ghost" id="sd-cancel" type="button">Abbrechen</button>
+      <button class="btn primary" id="sd-ok" type="button"><span data-icon="eye"></span><span>Ich verstehe – einschalten</span></button>
     </div>
   </div>
 </div>
@@ -866,5 +932,6 @@
 <div class="toasts" id="toasts" aria-live="polite"></div>
 <script src="/static/helfer.js"></script>
 <script src="/static/app.js"></script>
+<script src="/static/sehen.js"></script>
 </body>
 </html>

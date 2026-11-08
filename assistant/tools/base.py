@@ -108,6 +108,11 @@ class ToolRegistry:
         tool = self.get(name)
         if tool is None:
             return (f"Unbekanntes Werkzeug: {name}", True)
+        erlaubt = ctx.extra.get("nur_diese_werkzeuge")
+        if erlaubt is not None and name not in erlaubt:
+            # Wortmeldung von Live-Sehen: nur lesen (Bildschirminhalt koennte Anweisungen enthalten)
+            return ("Das geht in einer Wortmeldung von Live-Sehen nicht - hier darfst du nur lesen. Schlag es "
+                    "deinem Menschen in Worten vor.", True)
         # Eingabe ist bereits ein dict (vom SDK geparst); defensiv absichern.
         if isinstance(raw_input, str):
             try:

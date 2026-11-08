@@ -34,6 +34,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt pyinstaller==6.22.3 pyinstaller-hooks-contrib==2026.9 pywebview==6.2.1 pythonnet==3.2.1 clr_loader==0.3.1 sounddevice SpeechRecognition pyttsx3 pyautogui pillow
 
+      - name: Live-Sehen (Bildschirm, Texterkennung) dazu
+        continue-on-error: true
+        shell: bash
+        run: |
+          pip install numpy==2.5.4 dxcam==0.3.0 comtypes==1.4.17 mss==10.2.0 winrt-runtime==4.1.0 "winrt-Windows.Media.Ocr==4!10.0.28000.2957" "winrt-Windows.Graphics.Imaging==4!10.0.28000.2957" "winrt-Windows.Storage.Streams==4!10.0.28000.2957" "winrt-Windows.Globalization==4!10.0.28000.2957" "winrt-Windows.Foundation==4!10.0.28000.2957" "winrt-Windows.Foundation.Collections==4!10.0.28000.2957"
+          python -c "import comtypes.client as c; c.GetModule('UIAutomationCore.dll'); print('UIA-Wrapper erzeugt')"
+
       - name: Live-Mitschrift (vosk) dazu
         continue-on-error: true
         shell: bash
