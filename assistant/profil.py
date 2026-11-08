@@ -177,6 +177,7 @@ def apply_character(config, key: str) -> Character:
 def save_persona(config, text: str) -> None:
     root = Path(config.project_root)
     (root / "config").mkdir(parents=True, exist_ok=True)
+    text = text.replace("\r\n", "\n")
     (root / "config" / "persona.md").write_text(text, encoding="utf-8")
     config.persona_text = text
 
@@ -184,6 +185,7 @@ def save_persona(config, text: str) -> None:
 def save_values(config, text: str) -> None:
     root = Path(config.project_root)
     (root / "config").mkdir(parents=True, exist_ok=True)
+    text = text.replace("\r\n", "\n")
     (root / "config" / "werte.md").write_text(text, encoding="utf-8")
     config.values_text = text
 

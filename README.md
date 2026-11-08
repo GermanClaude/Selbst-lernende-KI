@@ -242,6 +242,16 @@ spricht direkt, DeepSeek und Claude verstehen nur Text. Bis Nova anfängt zu
 sprechen, vergehen meist 1–2 Sekunden. Einstellungen unter `[voice]`
 (`pause`, `unterbrechen`, `live_mitschrift`, `live_genau`, `live_denktiefe`).
 
+## Novas Sphäre und die Einrichtung in der App
+
+In der App hat Nova eine leuchtende **Sphäre** als Gesicht – sie zeigt, was Nova gerade
+tut (nachdenken, arbeiten, schreiben, vorlesen, zuhören). Antippen startet den
+Jarvis-Modus. Aussehen ändern: einfach Nova fragen („mach deine Sphäre grün“).
+
+Beim ersten Start öffnet sich **„Gehirn & Schlüssel“**: DeepSeek oder Claude wählen,
+Schlüssel einfügen, fertig. Den Schlüssel kannst du auch einfach in den Chat einfügen
+(App und Terminal) – er geht nie an die KI. `/gehirn` zeigt bzw. wechselt das Gehirn.
+
 ## Charakter & Profil
 
 Wie Nova sein soll, stellst du selbst ein – in der App unter **„Charakter &

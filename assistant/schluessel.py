@@ -66,9 +66,9 @@ def classify(exc: Exception, provider: str) -> tuple[str, str]:
         return "invalid", (f"Der {name}-Schluessel wurde abgelehnt - er ist falsch, unvollstaendig kopiert oder "
                            f"geloescht. Hol dir unter {info['url']} einen neuen und fuege ihn einfach hier ein.")
     if status == 402 or "insufficient balance" in text or "credit balance" in text:
-        where = ("platform.deepseek.com -> \"Top up\"" if provider == "deepseek"
-                 else "console.anthropic.com -> \"Billing\"")
-        return "balance", (f"Der Schluessel stimmt, aber dein {name}-Guthaben ist leer. Lade unter {where} "
+        where = ("platform.deepseek.com unter \u201eTop up\u201c" if provider == "deepseek"
+                 else "console.anthropic.com unter \u201eBilling\u201c")
+        return "balance", (f"Der Schluessel stimmt, aber dein {name}-Guthaben ist leer. Lade auf {where} "
                            "etwas auf - dann geht es sofort weiter.")
     if status == 403 or "permission" in kind_name:
         return "forbidden", f"{name} erlaubt diesem Schluessel das nicht (gesperrt oder nicht freigeschaltet)."

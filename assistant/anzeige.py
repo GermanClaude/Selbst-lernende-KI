@@ -12,7 +12,8 @@ import re
 from functools import lru_cache
 from pathlib import Path
 
-_WORD = re.compile(r"(?<![\w\\/.=$%-])[A-Za-z]+(?![\w\\/=(-]|\.\w)")
+# Wortgrenzen: nicht in Pfaden, Dateinamen, Optionen (--x, -x) - aber in "DeepSeek-Schluessel".
+_WORD = re.compile(r"(?<![\w\\/.=$%])(?<!--)(?<!\s-)[A-Za-z]+(?![\w\\/=(-]|\.\w)")
 
 
 @lru_cache(maxsize=1)

@@ -137,3 +137,23 @@ def test_app_setup_endpoint_reports_problems(app_server, monkeypatch):
     status, body = _req(app_server, "/api/setup", {"provider": "deepseek", "api_key": "sk-falsch1234567890abcdefgh"})
     assert body["ok"] is False and body["kind"] == "invalid" and "abgelehnt" in body["error"]
     assert _req(app_server, "/api/state")[1]["api_key_missing"] is True
+
+
+def test_brain_with_a_key_is_used_automatically(tmp_path, monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    (tmp_path / ".env").write_text("DEEPSEEK_API_KEY=sk-1234567890abcdef1234567890ab\n", encoding="utf-8")
+    cfg = load_config(tmp_path)                      # eingestellt ist Claude, Schluessel nur fuer DeepSeek
+    assert cfg.active_provider == "deepseek" and cfg.provider_auto_switched == "claude" and cfg.api_key
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    (tmp_path / ".env").write_text("", encoding="utf-8")
+    assert load_config(tmp_path).active_provider == "claude"                   # ohne Schluessel: wie eingestellt
+
+
+def test_server_texts_get_umlauts():
+    from assistant.anzeige import schoen
+
+    kind, msg = schluessel.classify(Err(401), "deepseek")
+    assert "Schlüssel" in schoen(msg) and "füge" in schoen(msg)
+    _, msg = schluessel.classify(Err(402), "deepseek")
+    assert "->" not in msg and "„Top up“" in msg
