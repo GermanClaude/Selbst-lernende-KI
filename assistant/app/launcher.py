@@ -270,6 +270,10 @@ def run_native_window(server, ctl, title: str, storage: Path, on_quit_holder: di
         return False
     shown = threading.Event()
     try:
+        webview.settings["ALLOW_DOWNLOADS"] = True  # "Speichern" bei Bildern (Download-Links)
+    except Exception:  # noqa: BLE001 - aeltere pywebview ohne settings
+        pass
+    try:
         logger.info("App: Programmfenster wird geoeffnet (pywebview %s, Profil %s)",
                     getattr(webview, "__version__", "?"), storage)
         window = webview.create_window(

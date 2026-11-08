@@ -138,6 +138,26 @@ def test_feedback_befehle_oeffnen_den_dialog_im_fenster():
     assert "low === '/feedback'" in send and "low === '/bewertung'" in send and "openFeedback(" in send
 
 
+def test_eigene_blase_bekommt_nach_dem_echo_die_server_bilder():
+    # Gefunden im E2E-Test: die eigene Blase behielt die data:-Vorschauen (Speicher, kein "Speichern").
+    echo = APP_JS[APP_JS.index("function onUserEcho(ev)"):]
+    echo = echo[:echo.index("\n  }\n")]
+    assert "serverImagesFor(own.row, imgs)" in echo
+    tausch = APP_JS[APP_JS.index("function serverImagesFor(row, imgs)"):]
+    tausch = tausch[:tausch.index("\n  }\n")]
+    # erst tauschen, wenn alle Server-Bilder geladen sind - sonst bleibt die Vorschau
+    assert "'load'" in tausch and "'error'" in tausch and "old.replaceWith(box)" in tausch
+
+
+def test_leiste_baut_vorhandene_miniaturen_nicht_neu():
+    # Gefunden im E2E-Test: jede Aenderung baute alle Miniaturen neu (alle ploppten erneut auf).
+    tray = APP_JS[APP_JS.index("function makeTray(o)"):]
+    render = tray[tray.index("function render()"):]
+    render = render[:render.index("\n    }\n")]
+    assert "o.list.replaceChildren()" not in render
+    assert "nodes.get(s.id)" in render and "nodes.set(s.id" in render
+
+
 # ---------------------------------------------------------------------------
 # Datenschutz & Sicherheit
 # ---------------------------------------------------------------------------

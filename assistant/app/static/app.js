@@ -3030,6 +3030,7 @@
    *  o: {box, list, count, err, clearBtn?, max(), kante, gesamt, tooBig, onChange?, focusEmpty?} */
   function makeTray(o) {
     const slots = []; // in Reihenfolge: {id, name, loading} bzw. fertig {id, name, data, w, h, bytes}
+    const nodes = new Map(); // id -> {li, loading}: schon gebaute Miniaturen
     let seq = 0;
     let errTimer = 0;
     const ready = () => slots.filter((s) => !s.loading);
@@ -3065,8 +3066,12 @@
         fId = li ? li.dataset.id : '';
         fKind = ae.classList.contains('att-del') ? 'del' : 'view';
       }
-      o.list.replaceChildren();
+      // Vorhandene Miniaturen bleiben stehen (kein neues Aufploppen, kein neues Dekodieren);
+      // nur neue/fertig gewordene Bilder werden gebaut.
+      const want = [];
       for (const s of slots) {
+        const had = nodes.get(s.id);
+        if (had && had.loading === !!s.loading) { want.push(had.li); continue; }
         const li = h('li', 'att-item' + (s.loading ? ' loading' : ''));
         li.dataset.id = String(s.id);
         if (s.loading) {
@@ -3093,8 +3098,13 @@
         del.append(icon('x'));
         del.addEventListener('click', () => remove(s, true));
         li.append(del);
-        o.list.append(li);
+        nodes.set(s.id, { li, loading: !!s.loading });
+        want.push(li);
       }
+      const keep = new Set(want);
+      for (const [id, n] of nodes) if (!keep.has(n.li)) nodes.delete(id);
+      for (const el of [...o.list.children]) if (!keep.has(el)) el.remove();
+      want.forEach((li, k) => { if (o.list.children[k] !== li) o.list.insertBefore(li, o.list.children[k] || null); });
       const n = slots.length;
       o.count.textContent = n ? n + ' von ' + o.max() : '';
       o.count.title = n ? HL.bildText(n) + ' angehängt, höchstens ' + o.max() : '';
