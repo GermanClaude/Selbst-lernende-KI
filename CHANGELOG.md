@@ -4,6 +4,18 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.12.0 – 2026-11-09
+
+- **Handy als Kamera verbindet zuverlässiger:** Nova wartet jetzt geduldiger auf das Handy und
+  findet es auch, wenn der Handy-Browser seine Adresse versteckt.
+- **Neuer Knopf „Firewall freigeben“** im Fenster „Handy als Kamera“: Windows fragt einmal nach
+  (Ja klicken) – danach lässt die Windows-Firewall das Handy-Bild durch. Das war meist der Grund
+  für „Keine Verbindung zu Nova“.
+- **Klare Fehlermeldungen:** Statt immer nur „selbes WLAN“ sagt Nova jetzt genau, woran es
+  hängt (z. B. Firewall, anderes Netz, falscher Browser) – mit einem Tipp, was hilft.
+- **Tipp fürs Handy:** Wird die Seite in der Google-App statt in Chrome geöffnet, sagt die Seite
+  jetzt, dass man sie in Chrome (Android) bzw. Safari (iPhone) öffnen soll.
+
 ## 0.11.1 – 2026-11-09
 
 - **Korrektur „Handy als Kamera“:** Im Kopplungs-Fenster erschien statt des QR-Codes nur ein

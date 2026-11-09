@@ -3256,6 +3256,14 @@ button.att-thumb:hover { border-color: var(--accent); box-shadow: var(--shadow-s
 .handy-code { font-family: var(--mono, ui-monospace, monospace); font-size: calc(17px * var(--font-scale)); letter-spacing: .08em; }
 .handy-link { flex: 1 1 auto; min-width: 0; font-size: calc(12px * var(--font-scale)); }
 .sehen-handy { flex: none; }
+.handy-grund {
+  margin: 12px 0 0; padding: 9px 12px; border: 1px solid var(--danger-border);
+  border-radius: calc(var(--radius) * 0.833); background: var(--danger-soft);
+}
+.sehen-body .handy-grund p { margin: 0; font-size: calc(13.5px * var(--font-scale)); }
+.sehen-body .handy-grund .handy-grund-text { color: var(--danger); font-weight: 600; }
+.sehen-body .handy-grund .handy-tipp { margin-top: 4px; color: var(--text); }
+.sehen-body .handy-firewall-ok { margin: 10px 0 0; color: var(--ok); font-size: calc(13.5px * var(--font-scale)); }
 
 /* =====================================================================
    Spielmodus: Band „Nova spielt …“, Dialog, Berichtsbilder

@@ -377,7 +377,7 @@
   // "handy_koppeln" und werden beim Schließen oder Verbinden sofort wieder aus der Seite entfernt.
   // ---------------------------------------------------------------------
   const hModal = byId('handy-modal');
-  const handy = { ablauf: 0, timer: 0, zurueck: null };
+  const handy = { ablauf: 0, timer: 0, zurueck: null, fwLaeuft: false };
 
   function handyGeheimnisWeg() {
     const bild = byId('hd-qr-bild');
@@ -395,10 +395,10 @@
     const zustand = h ? String(h.zustand || '') : '';
     const status = byId('hd-status');
     let text = 'Noch nicht gekoppelt.';
-    if (zustand === 'wartet') text = 'Wartet auf dein Handy – Code scannen.';
+    if (zustand === 'wartet') text = h && h.schritt === 'verbindet' ? 'Das Handy meldet sich – verbinde …' : 'Wartet auf dein Handy – Code scannen.';
     else if (zustand === 'verbunden') text = 'Verbunden – ' + name + ' sieht durch dein Handy.';
-    else if (zustand === 'getrennt') text = 'Getrennt.' + (h && h.fehler ? ' ' + h.fehler : '') + ' „Neu koppeln“ startet von vorn.';
-    else if (zustand === 'fehler') text = 'Fehler: ' + (h && h.fehler ? h.fehler : 'unbekannt') + '.';
+    else if (zustand === 'getrennt') text = 'Getrennt.' + (h && h.fehler ? ' ' + satz(h.fehler) : '') + ' „Neu koppeln“ startet von vorn.';
+    else if (zustand === 'fehler') text = h && h.gescheitert ? 'Keine Verbindung zum Handy.' : 'Fehler: ' + satz(h && h.fehler ? h.fehler : 'unbekannt');
     if (zustand === 'verbunden') handyGeheimnisWeg(); // gekoppelt: Link/QR nicht mehr zeigen
     const rest = handy.ablauf ? Math.max(0, Math.round(handy.ablauf - Date.now() / 1000)) : 0;
     const cd = byId('hd-countdown');
@@ -409,6 +409,49 @@
     } else cd.textContent = '';
     status.textContent = text;
     byId('hd-beenden').hidden = !(st && (st.quellen || []).includes('handy'));
+    // Genauer Grund (von Nova am PC ermittelt) + ein konkreter Tipp
+    const gescheitert = !!(h && h.gescheitert && zustand === 'fehler');
+    byId('hd-grund').hidden = !gescheitert;
+    byId('hd-grund-text').textContent = gescheitert ? satz(h.fehler || '') : '';
+    byId('hd-tipp').textContent = gescheitert && h.tipp ? 'Tipp: ' + satz(h.tipp) : '';
+    const fw = h && h.firewall && typeof h.firewall === 'object' ? h.firewall : {};
+    const fwBtn = byId('hd-firewall');
+    fwBtn.hidden = !(fw.anbieten && (gescheitert || zustand === 'wartet' || zustand === 'getrennt'));
+    if (!handy.fwLaeuft) fwBtn.disabled = false;
+    fwBtn.classList.toggle('primary', gescheitert);
+    fwBtn.classList.toggle('ghost', !gescheitert);
+    const fwOk = byId('hd-firewall-ok');
+    fwOk.hidden = !(fw.frei && zustand !== 'verbunden');
+    fwOk.textContent = fw.frei ? '✓ Windows-Firewall ist für ' + name + ' freigegeben.' : '';
+    // Mit Python gestartet: kein Knopf, sondern eine Anleitung (nur wenn es klemmt)
+    const fwHinweis = byId('hd-firewall-hinweis');
+    fwHinweis.hidden = !(fw.hinweis && gescheitert);
+    fwHinweis.textContent = fw.hinweis && gescheitert ? String(fw.hinweis) : '';
+  }
+
+  function satz(text) {
+    const t = String(text || '').trim();
+    return !t || /[.!?…)“]$/.test(t) ? t : t + '.';
+  }
+
+  async function handyFirewall() {
+    const btn = byId('hd-firewall');
+    if (handy.fwLaeuft) return;
+    handy.fwLaeuft = true;
+    btn.disabled = true;
+    handyFehler('');
+    const alt = btn.textContent;
+    btn.textContent = 'Bitte die Windows-Abfrage bestätigen …';
+    try {
+      const r = await post('/api/kamera/firewall', {});
+      if (r && r.sehen) { st = r.sehen; render(); }
+      if (!r || !r.ok) handyFehler((r && r.error) || 'Die Firewall-Freigabe ging nicht.');
+    } finally {
+      handy.fwLaeuft = false;
+      btn.textContent = alt;
+      btn.disabled = false;
+      handyRender();
+    }
   }
 
   function handyFehler(text) {
@@ -468,6 +511,7 @@
 
   if (hModal) {
     byId('hd-neu').addEventListener('click', () => handyKoppeln(false));
+    byId('hd-firewall').addEventListener('click', () => handyFirewall());
     byId('hd-schliessen').addEventListener('click', () => handySchliessen());
     byId('hd-beenden').addEventListener('click', async () => {
       handySchliessen();

@@ -1155,6 +1155,17 @@ class AppController(CLI):
                 "hinweis": schoen(qr["hinweis"]), "tipps": schoen(ergebnis.get("hinweis") or ""),
                 "sehen": dienst.status()}
 
+    def handy_firewall(self) -> dict:
+        """POST /api/kamera/firewall: Windows-Firewall fuer die Handy-Kamera freigeben (nur auf Klick;
+        Windows fragt per UAC nach). Der Befehl ist fest - aus der Anfrage wird nichts uebernommen."""
+        from ..kamera import firewall
+
+        ok, text = firewall.freigeben()
+        self._notice(text, "sehen")
+        self._state_changed()
+        return {"ok": ok, "message": schoen(text), "error": "" if ok else schoen(text),
+                "sehen": self.sehen.status()}
+
     def _sehen_handy(self) -> None:
         """/sehen handy im Fenster: der Dialog holt sich Link und QR-Code selbst (nie in den Chat)."""
         self._event({"type": "open", "what": "handy"})

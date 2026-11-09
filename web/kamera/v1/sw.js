@@ -6,7 +6,7 @@
  */
 "use strict";
 
-const SPEICHER = "nova-kamera-v1-1";
+const SPEICHER = "nova-kamera-v1-2";
 const HUELLE = [
   "./",
   "index.html",

@@ -802,12 +802,20 @@
       <ul class="sehen-list" id="hd-tipps">
         <li><b>Gleiches WLAN:</b> Handy und PC im selben WLAN (kein Gäste-WLAN, kein mobiles Netz).</li>
         <li><b>Strom:</b> Handy am besten ans Ladekabel, Bildschirm anlassen.</li>
-        <li><b>Firewall:</b> Fragt Windows einmal nach, „Private Netzwerke“ erlauben.</li>
+        <li><b>Firewall:</b> Fragt Windows einmal nach, „Private Netzwerke“ erlauben. Fragt Windows nie nach, unten auf „Firewall freigeben“ klicken.</li>
         <li><b>WLAN „Öffentlich“?</b> Dann blockiert Windows die Verbindung – in den WLAN-Einstellungen auf „Privat“ stellen.</li>
+        <li><b>Am Handy:</b> den Link in Chrome bzw. Safari öffnen – nicht in der Google-App oder einem QR-Scanner.</li>
       </ul>
+      <div class="handy-grund" id="hd-grund" role="status" hidden>
+        <p class="handy-grund-text" id="hd-grund-text"></p>
+        <p class="handy-tipp" id="hd-tipp"></p>
+      </div>
+      <p class="handy-firewall-ok" id="hd-firewall-ok" hidden></p>
+      <p class="handy-hinweis" id="hd-firewall-hinweis" hidden></p>
       <p class="afk-err" id="hd-fehler" role="alert" hidden></p>
     </div>
     <div class="dlg-foot">
+      <button class="btn ghost" id="hd-firewall" type="button" hidden title="Windows fragt einmal nach (Administrator). Erlaubt nur Nova, nur aus deinem Heimnetz.">Firewall freigeben</button>
       <button class="btn ghost" id="hd-beenden" type="button">Beenden</button>
       <button class="btn ghost" id="hd-schliessen" type="button">Schließen</button>
       <button class="btn primary" id="hd-neu" type="button">Neu koppeln</button>
