@@ -969,7 +969,7 @@ class SehDienst:
         zustand = str(st.get("zustand") or "getrennt")
         return {"zustand": zustand, "fehler": st.get("fehler"),
                 "bild_alter": st.get("bild_alter"), "kamera": st.get("kamera"), "ablauf": st.get("ablauf"),
-                "grund": st.get("grund"), "tipp": st.get("tipp"),
+                "schritt": st.get("schritt"), "grund": st.get("grund"), "tipp": st.get("tipp"),
                 "gescheitert": bool(st.get("verbindung_gescheitert")),
                 "firewall": self._firewall_anzeige(zustand)}
 

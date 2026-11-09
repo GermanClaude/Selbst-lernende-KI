@@ -76,7 +76,7 @@ GRUENDE = {
     "mdns": ("Vom Handy kam am PC nichts an \u2013 und der Browser am Handy versteckt seine Adresse.",
              f"Erst {_FIREWALL_TIPP}. Am Handy den Link in Chrome bzw. Safari \u00f6ffnen "
              "(nicht in der Google-App oder einem QR-Scanner)."),
-    "keine-pakete": ("Vom Handy kam am PC nichts an.",
+    "keine-pakete": ("Die Pr\u00fcfpakete des Handys kommen am PC nicht an.",
                      f"Meist blockiert die Windows-Firewall: {_FIREWALL_TIPP}. Hilft das nicht: {_ROUTER_TIPP}."),
     "keine-verbindung": ("Handy und PC haben sich im WLAN nicht gefunden.",
                          f"Erst {_FIREWALL_TIPP}. Hilft das nicht: {_ROUTER_TIPP}."),
@@ -508,7 +508,9 @@ class HandyKamera:
             await self._sende("fehler", {"grund": "kein-lan", "g": self._versuch_geraet})
             self._setze_grund("kein-lan")
             return
-        self._schritt = "verbindet"
+        with self._sperre:  # neuer Versuch: alter Fehler gilt nicht mehr
+            self._zustand, self._schritt = "wartet", "verbindet"
+            self._fehler = self._grund = self._tipp = None
         aufgeloest = {}
         if k.mdns and not k.ip_lan:
             # Browser versteckt die Adresse: selbst aufloesen (sonst bleibt nur, auf das Handy zu warten)

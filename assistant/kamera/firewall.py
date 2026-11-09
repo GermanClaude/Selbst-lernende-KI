@@ -116,6 +116,12 @@ def _runas(programm: str, parameter: str) -> int | None:
     info.nShow = sw_hide
     shell32, kernel32 = ctypes.windll.shell32, ctypes.windll.kernel32
     shell32.ShellExecuteExW.argtypes = [ctypes.POINTER(SHELLEXECUTEINFOW)]
+    shell32.ShellExecuteExW.restype = wintypes.BOOL
+    kernel32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+    kernel32.WaitForSingleObject.restype = wintypes.DWORD
+    kernel32.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+    kernel32.GetExitCodeProcess.restype = wintypes.BOOL
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
     if not shell32.ShellExecuteExW(ctypes.byref(info)):
         return -1 if kernel32.GetLastError() == 1223 else None  # 1223 = ERROR_CANCELLED (UAC "Nein")
     if not info.hProcess:

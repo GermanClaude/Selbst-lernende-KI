@@ -8,6 +8,7 @@ import ipaddress
 import json
 import threading
 import time
+import uuid
 
 import pytest
 
@@ -59,7 +60,7 @@ class FakeHandy:
     """Spielt die Handy-Seite (wie kamera.js): Angebot schicken, Antwort setzen, DataChannel."""
 
     def __init__(self, link, relay, geraet="testhandy01", zusatz_kandidat=None, oeffentlich=False,
-                 antwort_setzen=True, seq_start=0):
+                 antwort_setzen=True, seq_start=0, mdns=False):
         self.kopplung = sig.Kopplung.aus_link(link, jetzt=time.time())
         self.kanal = sig.Kanal(self.kopplung, "h")
         self.relay = relay
@@ -68,6 +69,8 @@ class FakeHandy:
         self.oeffentlich = oeffentlich        # alle eigenen Kandidaten auf eine oeffentliche Adresse biegen
         self.antwort_setzen = antwort_setzen  # False: Antwort nie verwenden (Versuch laeuft ins Leere)
         self.kanal._seq = seq_start
+        self.mdns = mdns                      # eigene Adressen hinter xxxx.local verstecken (wie Chrome)
+        self.mdns_namen = {}                  # name -> echte Adresse
         self.dc_nachrichten = []
         self.signal = []
         self.pc = None
@@ -88,6 +91,19 @@ class FakeHandy:
         sdp = self.pc.localDescription.sdp
         if self.zusatz_kandidat:
             sdp = sdp.replace("a=end-of-candidates", self.zusatz_kandidat + "\r\na=end-of-candidates", 1)
+        if self.mdns:
+            zeilen = []
+            for zeile in sdp.split("\r\n"):
+                if zeile.startswith("a=candidate:"):
+                    teile = zeile.split()
+                    name = next((n for n, ip in self.mdns_namen.items() if ip == teile[4]), None)
+                    if name is None:
+                        name = f"{uuid.uuid4()}.local"
+                        self.mdns_namen[name] = teile[4]
+                    teile[4] = name
+                    zeile = " ".join(teile)
+                zeilen.append(zeile)
+            sdp = "\r\n".join(zeilen)
         if self.oeffentlich:
             zeilen = []
             for zeile in sdp.split("\r\n"):
@@ -149,6 +165,8 @@ def relay():
 def _kamera(relay, **kw):
     kw.setdefault("lan_pruefung", lan_fuer_test)
     kw.setdefault("warte_intervall", 0.5)
+    kw.setdefault("pc_netze", lambda: [])  # Netz-Vergleich nur, wo ein Test ihn vorgibt
+    kw.setdefault("aiortc_mdns", False)     # kein Multicast im Test
     return HandyKamera(relay, **kw)
 
 
@@ -376,3 +394,100 @@ def _warte_sync(bedingung, timeout=10):
             return True
         time.sleep(0.05)
     return False
+
+
+# -- Versteckte Adressen (mDNS) und Fehlersuche ----------------------------------------------------
+def test_versteckte_adresse_wird_ueber_das_system_aufgeloest(relay):
+    namen = {}
+    gefragt = []
+
+    def aufloeser(name):
+        gefragt.append(name)
+        return namen.get(name)
+
+    kamera = _kamera(relay, mdns_aufloeser=aufloeser)
+    info = kamera.start()
+    handy = FakeHandy(info.link, relay, mdns=True)
+    handy.mdns_namen = namen  # derselbe Speicher: der "Systemresolver" kennt die Namen
+    ht = HandyThread(handy)
+    try:
+        assert ht.rufe(handy.verbinden()).typ == "antwort"
+        assert kamera.warte_auf("verbunden", 20), kamera.status()
+        diagnose = kamera.status()["diagnose"]
+        assert diagnose["kandidaten"]["ip"] == 0 and diagnose["kandidaten"]["mdns"] >= 1
+        assert diagnose["mdns_aufgeloest"] >= 1 and gefragt
+        assert diagnose["eingehend"] > 0  # Pruefpakete vom Handy wurden gezaehlt
+        assert kamera.status()["grund"] is None
+    finally:
+        kamera.stop()
+        ht.ende()
+
+
+def test_nicht_aufloesbare_adresse_verbindet_trotzdem_ueber_die_pruefpakete(relay):
+    """Nur xxxx.local, nicht aufloesbar: Nova wartet auf die Pakete des Handys (peer-reflexiv)
+    statt sofort aufzugeben (a=end-of-candidates wird entfernt)."""
+    kamera = _kamera(relay, mdns_aufloeser=lambda name: None)
+    info = kamera.start()
+    handy = FakeHandy(info.link, relay, mdns=True)
+    ht = HandyThread(handy)
+    try:
+        assert ht.rufe(handy.verbinden()).typ == "antwort"
+        assert kamera.warte_auf("verbunden", 20), kamera.status()
+        assert kamera.status()["diagnose"]["mdns_aufgeloest"] == 0
+    finally:
+        kamera.stop()
+        ht.ende()
+
+
+def _scheitern(relay, **kw):
+    """Handy schickt ein Angebot, setzt die Antwort aber nie -> Zeitueberschreitung mit Diagnose."""
+    handy_kw = {k: kw.pop(k) for k in ("mdns",) if k in kw}
+    kamera = _kamera(relay, verbinden_timeout=1.5, **kw)
+    info = kamera.start()
+    handy = FakeHandy(info.link, relay, antwort_setzen=False, **handy_kw)
+    ht = HandyThread(handy)
+    try:
+        assert ht.rufe(handy.verbinden()).typ == "antwort"
+        assert kamera.warte_auf("fehler", 10)
+        return kamera.status()
+    finally:
+        kamera.stop()
+        ht.ende()
+
+
+def test_diagnose_keine_pakete_vom_handy(relay):
+    status = _scheitern(relay)
+    assert status["grund"] == "keine-pakete" and status["verbindung_gescheitert"] is True
+    assert status["diagnose"]["eingehend"] == 0
+    assert "Firewall freigeben" in status["tipp"] and "Router" in status["tipp"]
+
+
+def test_diagnose_versteckte_adresse_und_nichts_kommt_an(relay):
+    status = _scheitern(relay, mdns=True, mdns_aufloeser=lambda name: None)
+    assert status["grund"] == "mdns"
+    assert "Chrome" in status["tipp"] and "Firewall freigeben" in status["tipp"]
+
+
+def test_diagnose_anderes_netz(relay):
+    status = _scheitern(relay, pc_netze=lambda: [ipaddress.ip_network("10.99.0.0/16")])
+    assert status["grund"] == "anderes-netz"
+    assert status["diagnose"]["netz_passt"] is False
+    assert "verschiedenen Netzen" in status["fehler"] and "10.99.0.0/16" in status["fehler"]
+    assert "G\u00e4ste-WLAN" in status["tipp"]
+
+
+def test_kein_lan_angebot_hat_grund_und_tipp(relay):
+    kamera = _kamera(relay, lan_pruefung=lambda adresse: False)
+    info = kamera.start()
+    handy = FakeHandy(info.link, relay)
+    ht = HandyThread(handy)
+    try:
+        assert ht.rufe(handy.verbinden()).daten["grund"] == "kein-lan"  # Protokoll unveraendert
+        assert kamera.warte_auf("fehler", 5)
+        status = kamera.status()
+        assert status["grund"] == "kein-lan" and status["verbindung_gescheitert"]
+        assert status["diagnose"]["kandidaten"]["nicht_lan"] >= 1 and status["diagnose"]["kandidaten"]["ip"] == 0
+        assert "mobile Daten" in status["tipp"]
+    finally:
+        kamera.stop()
+        ht.ende()

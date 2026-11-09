@@ -395,7 +395,7 @@
     const zustand = h ? String(h.zustand || '') : '';
     const status = byId('hd-status');
     let text = 'Noch nicht gekoppelt.';
-    if (zustand === 'wartet') text = 'Wartet auf dein Handy – Code scannen.';
+    if (zustand === 'wartet') text = h && h.schritt === 'verbindet' ? 'Das Handy meldet sich – verbinde …' : 'Wartet auf dein Handy – Code scannen.';
     else if (zustand === 'verbunden') text = 'Verbunden – ' + name + ' sieht durch dein Handy.';
     else if (zustand === 'getrennt') text = 'Getrennt.' + (h && h.fehler ? ' ' + satz(h.fehler) : '') + ' „Neu koppeln“ startet von vorn.';
     else if (zustand === 'fehler') text = h && h.gescheitert ? 'Keine Verbindung zum Handy.' : 'Fehler: ' + satz(h && h.fehler ? h.fehler : 'unbekannt');
