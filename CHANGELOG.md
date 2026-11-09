@@ -4,7 +4,7 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
-## 0.11.2 – 2026-11-09
+## 0.12.0 – 2026-11-09
 
 - **Handy als Kamera verbindet zuverlässiger:** Nova wartet jetzt geduldiger auf das Handy und
   findet es auch, wenn der Handy-Browser seine Adresse versteckt.
