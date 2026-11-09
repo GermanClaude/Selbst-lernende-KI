@@ -87,6 +87,8 @@ def test_qr_svg_und_text():
     link = "https://germanclaude.github.io/Selbst-lernende-KI/kamera/v1/#p=" + "A" * 72
     svg = qr.qr_svg(link)
     assert svg.startswith("<svg") and "nova-qr" in svg and "<?xml" not in svg
+    # Ohne xmlns zeigt der Browser das SVG im <img> (data:-URL) nicht an -> leeres Bild im Dialog.
+    assert 'xmlns="http://www.w3.org/2000/svg"' in svg.split(">", 1)[0]
     text = qr.qr_text(link)
     assert text and any(z in text for z in ("\u2580", "\u2584", "\u2588"))
     daten = qr.qr_daten(link, "ABCD-EFGH")
