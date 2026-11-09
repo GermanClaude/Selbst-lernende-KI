@@ -981,9 +981,13 @@ class SehDienst:
 
             moeglich = firewall.moeglich()
             frei = moeglich and firewall.freigegeben()
+            # Mit Python gestartet: kein Knopf (sonst stuende die Firewall fuer jedes Python-Skript offen)
+            hinweis = None if moeglich else firewall.anleitung()
         except Exception:  # noqa: BLE001
             moeglich = frei = False
-        return {"moeglich": moeglich, "frei": frei, "anbieten": moeglich and not frei and zustand != "verbunden"}
+            hinweis = None
+        return {"moeglich": moeglich, "frei": frei, "anbieten": moeglich and not frei and zustand != "verbunden",
+                "hinweis": hinweis if zustand != "verbunden" else None}
 
 
 class StillFilter:

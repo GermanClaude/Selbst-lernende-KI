@@ -156,32 +156,36 @@ def test_diagnose_ohne_geheimnisse():
 
 
 # -- Firewall ------------------------------------------------------------------------------------------
-def test_befehl_ist_fest_und_pfad_in_anfuehrungszeichen():
-    pfad = r"C:\Program Files\Nova\KI.exe"
-    befehl = firewall.befehl_parameter(pfad)
-    assert befehl == ('advfirewall firewall add rule name="Nova Handy-Kamera" dir=in action=allow '
-                      'program="C:\\Program Files\\Nova\\KI.exe" protocol=UDP profile=private,public '
-                      'remoteip=localsubnet enable=yes')
-    with pytest.raises(ValueError):
-        firewall.befehl_parameter('C:\\x" dir=out action=allow program="C:\\y.exe')
+SYSTEM = r"C:\Windows\System32"
 
 
-def test_pfad_pruefung(tmp_path):
-    exe = tmp_path / "KI.exe"
-    exe.write_bytes(b"MZ")
-    py = tmp_path / "python.exe"
-    py.write_bytes(b"MZ")
-    assert firewall.pfad_ok(str(exe), eingefroren=True)
-    assert not firewall.pfad_ok(str(exe), eingefroren=False)      # mit Python gestartet: nur python*.exe
-    assert firewall.pfad_ok(str(py), eingefroren=False)
-    for name in ("pythonw.exe", "python3.exe", "python3.12.exe", "python312.exe"):
+def test_befehl_loescht_erst_und_legt_dann_eine_regel_an():
+    pfad = r"C:\Users\Tom & Jerry\Nova\KI.exe"
+    programm, parameter = firewall.befehl(SYSTEM, pfad)
+    assert programm == r"C:\Windows\System32\cmd.exe"
+    netsh = r'"C:\Windows\System32\netsh.exe"'
+    loeschen = f'{netsh} advfirewall firewall delete rule name=all dir=in program="{pfad}"'
+    anlegen = (f'{netsh} advfirewall firewall add rule name="Nova Handy-Kamera" dir=in '
+               f'action=allow program="{pfad}" protocol=UDP profile=private,public remoteip=localsubnet enable=yes')
+    assert parameter == f'/d /v:off /s /c "{loeschen} & {anlegen}"'
+    # nur EIN Aufruf mit Adminrechten: Loeschen (auch Sperr-Regeln, Doppelte) und Anlegen zusammen
+    assert parameter.count("delete rule") == 1 and parameter.count("add rule") == 1
+    assert parameter.index("delete rule") < parameter.index("add rule")
+    for boese in ('C:\\x" & calc & ".exe', "C:\\%TEMP%\\KI.exe", "C:\\a!b!\\KI.exe", "C:\\a\nb\\KI.exe"):
+        with pytest.raises(ValueError):
+            firewall.befehl(SYSTEM, boese)
+
+
+def test_pfad_pruefung_nur_fertige_app(tmp_path):
+    for name in ("KI.exe", "KI-App.exe", "ki-app.exe", "KI (1).exe"):
         (tmp_path / name).write_bytes(b"MZ")
-        assert firewall.pfad_ok(str(tmp_path / name), eingefroren=False), name
-    assert not firewall.pfad_ok(str(tmp_path / "fehlt.exe"), eingefroren=True)
-    assert not firewall.pfad_ok("KI.exe", eingefroren=True)       # relativ
-    assert not firewall.pfad_ok(str(tmp_path / "KI.txt"), eingefroren=True)
-    assert not firewall.pfad_ok('C:\\a"b.exe', eingefroren=True)
-    assert not firewall.pfad_ok("", eingefroren=True)
+        assert firewall.pfad_ok(str(tmp_path / name)), name
+    for name in ("python.exe", "pythonw.exe", "anderes.exe", "KI.exe.txt"):
+        (tmp_path / name).write_bytes(b"MZ")
+        assert not firewall.pfad_ok(str(tmp_path / name)), name
+    assert not firewall.pfad_ok(str(tmp_path / "fehlt" / "KI.exe"))
+    assert not firewall.pfad_ok("KI.exe")                     # relativ
+    assert not firewall.pfad_ok('C:\\a"b\\KI.exe') and not firewall.pfad_ok("")
 
 
 def test_freigeben_nur_unter_windows(monkeypatch):
@@ -190,7 +194,7 @@ def test_freigeben_nur_unter_windows(monkeypatch):
     monkeypatch.setattr(firewall, "ist_windows", lambda: False)
     ok, text = firewall.freigeben()
     assert not ok and "Windows" in text and aufrufe == []
-    assert firewall.moeglich() is False
+    assert firewall.moeglich() is False and firewall.anleitung() is None
 
 
 @pytest.fixture
@@ -198,66 +202,109 @@ def windows(monkeypatch, tmp_path):
     exe = tmp_path / "KI.exe"
     exe.write_bytes(b"MZ")
     aufrufe = []
-    ergebnis = {"code": 0}
+    ergebnis = {"code": 0, "regel": True}
 
-    def runas(programm, parameter):
-        aufrufe.append((programm, parameter))
+    def runas(programm, parameter, hwnd=None):
+        aufrufe.append((programm, parameter, hwnd))
         return ergebnis["code"]
 
     monkeypatch.setattr(firewall, "ist_windows", lambda: True)
     monkeypatch.setattr(firewall, "_prozess_pfad", lambda: str(exe))
     monkeypatch.setattr(firewall.sys, "frozen", True, raising=False)
-    monkeypatch.setattr(firewall, "_netsh_pfad", lambda: r"C:\Windows\System32\netsh.exe")
+    monkeypatch.setattr(firewall, "_system_ordner", lambda: SYSTEM)
+    monkeypatch.setattr(firewall, "_fenster", lambda: 4711)
     monkeypatch.setattr(firewall, "_runas", runas)
+    monkeypatch.setattr(firewall, "regel_vorhanden", lambda system=None: ergebnis["regel"])
     monkeypatch.setattr(firewall, "_FREIGEGEBEN", set())
     return types.SimpleNamespace(exe=exe, aufrufe=aufrufe, ergebnis=ergebnis)
 
 
-def test_freigeben_ruft_netsh_mit_runas(windows):
-    assert firewall.moeglich() and not firewall.freigegeben()
+def test_freigeben_eine_uac_abfrage_vor_dem_nova_fenster(windows):
+    assert firewall.moeglich() and not firewall.freigegeben() and firewall.anleitung() is None
     ok, text = firewall.freigeben()
     assert ok and "Neu verbinden" in text
-    assert windows.aufrufe == [(r"C:\Windows\System32\netsh.exe", firewall.befehl_parameter(str(windows.exe)))]
+    assert windows.aufrufe == [(*firewall.befehl(SYSTEM, str(windows.exe)), 4711)]
     assert firewall.freigegeben()
 
 
-def test_freigeben_abgelehnt_oder_fehler(windows):
-    windows.ergebnis["code"] = -1  # UAC "Nein"
+@pytest.mark.parametrize("code, regel, wort", [(-1, True, "Abgebrochen"), (None, True, "Unklar"),
+                                                (1, True, "abgelehnt"), (0, False, "Unklar")])
+def test_freigeben_nur_bei_null_und_vorhandener_regel(windows, code, regel, wort):
+    windows.ergebnis.update(code=code, regel=regel)
     ok, text = firewall.freigeben()
-    assert not ok and "Abgebrochen" in text and not firewall.freigegeben()
-    windows.ergebnis["code"] = 1
-    assert firewall.freigeben()[0] is False
+    assert not ok and wort in text and not firewall.freigegeben()
 
 
-def test_freigeben_unbekanntes_programm(windows, monkeypatch):
-    monkeypatch.setattr(firewall.sys, "frozen", False, raising=False)  # KI.exe, aber nicht eingefroren
-    ok, _ = firewall.freigeben()
-    assert not ok and windows.aufrufe == [] and not firewall.moeglich()
+def test_regel_ungeprueft_aber_netsh_meldet_null_zaehlt(windows):
+    windows.ergebnis.update(code=0, regel=None)  # Pruefung ging nicht - netsh meldete aber Erfolg
+    assert firewall.freigeben()[0] is True
 
 
-def test_dienst_bietet_firewall_nur_unter_windows_an(windows, tmp_path):
+def test_mit_python_gestartet_kein_knopf_sondern_anleitung(windows, monkeypatch):
+    monkeypatch.setattr(firewall.sys, "frozen", False, raising=False)
+    assert not firewall.moeglich() and firewall.programm_pfad() is None
+    assert "Windows-Sicherheit" in firewall.anleitung()
+    ok, text = firewall.freigeben()
+    assert not ok and windows.aufrufe == [] and "Windows-Sicherheit" in text
+
+
+def test_regel_pruefen_ohne_adminrechte(monkeypatch):
+    befehle = []
+
+    def run(befehl, **kw):
+        befehle.append(befehl)
+        return types.SimpleNamespace(returncode=antwort["code"])
+
+    antwort = {"code": 0}
+    monkeypatch.setattr(firewall.subprocess, "run", run)
+    assert firewall.regel_vorhanden(SYSTEM) is True
+    antwort["code"] = 1
+    assert firewall.regel_vorhanden(SYSTEM) is False
+    assert befehle[0].endswith('netsh.exe" advfirewall firewall show rule name="Nova Handy-Kamera"')
+
+    def kaputt(*a, **kw):
+        raise OSError("weg")
+
+    monkeypatch.setattr(firewall.subprocess, "run", kaputt)
+    assert firewall.regel_vorhanden(SYSTEM) is None
+
+
+def _dienst(tmp_path):
     from assistant.config import load_config
     from assistant.sehen.dienst import SehDienst
 
-    class Handy:
-        def __init__(self, st):
-            self.st = st
+    return SehDienst(load_config(tmp_path), on_notiz=lambda t: None, wecken=lambda p: None, sieht_bilder=lambda: True,
+                     bildschirm_moeglich=False, speichern=lambda k, v: None, mit_thread=False)
 
-        def status(self):
-            return self.st
 
-    d = SehDienst(load_config(tmp_path), on_notiz=lambda t: None, wecken=lambda p: None, sieht_bilder=lambda: True,
-                  bildschirm_moeglich=False, speichern=lambda k, v: None, mit_thread=False)
-    d._handy = Handy({"zustand": "fehler", "fehler": "Vom Handy kam nichts an.", "grund": "keine-pakete",
-                      "tipp": "Firewall freigeben", "verbindung_gescheitert": True})
+class _Handy:
+    def __init__(self, st):
+        self.st = st
+
+    def status(self):
+        return self.st
+
+
+def test_dienst_bietet_firewall_nur_unter_windows_an(windows, tmp_path):
+    d = _dienst(tmp_path)
+    d._handy = _Handy({"zustand": "fehler", "fehler": "Vom Handy kam nichts an.", "grund": "keine-pakete",
+                       "tipp": "Firewall freigeben", "verbindung_gescheitert": True})
     anzeige = d.status()["handy"]
     assert anzeige["gescheitert"] is True and anzeige["grund"] == "keine-pakete" and anzeige["tipp"]
-    assert anzeige["firewall"] == {"moeglich": True, "frei": False, "anbieten": True}
-    d._handy = Handy({"zustand": "verbunden"})
+    assert anzeige["firewall"] == {"moeglich": True, "frei": False, "anbieten": True, "hinweis": None}
+    d._handy = _Handy({"zustand": "verbunden"})
     assert d.status()["handy"]["firewall"]["anbieten"] is False
     firewall._FREIGEGEBEN.add(str(windows.exe).lower())
-    d._handy = Handy({"zustand": "fehler", "verbindung_gescheitert": True})
-    assert d.status()["handy"]["firewall"] == {"moeglich": True, "frei": True, "anbieten": False}
+    d._handy = _Handy({"zustand": "fehler", "verbindung_gescheitert": True})
+    assert d.status()["handy"]["firewall"] == {"moeglich": True, "frei": True, "anbieten": False, "hinweis": None}
+
+
+def test_dienst_mit_python_zeigt_anleitung(windows, monkeypatch, tmp_path):
+    monkeypatch.setattr(firewall.sys, "frozen", False, raising=False)
+    d = _dienst(tmp_path)
+    d._handy = _Handy({"zustand": "fehler", "verbindung_gescheitert": True})
+    fw = d.status()["handy"]["firewall"]
+    assert fw["moeglich"] is False and fw["anbieten"] is False and "Windows-Sicherheit" in fw["hinweis"]
 
 
 def test_app_route_firewall_mit_token_und_host(monkeypatch, tmp_path):
@@ -323,8 +370,9 @@ def test_app_dialog_zeigt_grund_und_firewall_knopf():
     static = Path(__file__).resolve().parent.parent / "assistant" / "app" / "static"
     html = (static / "index.html").read_text(encoding="utf-8")
     js = (static / "sehen.js").read_text(encoding="utf-8")
-    for element in ('id="hd-firewall"', 'id="hd-grund"', 'id="hd-tipp"', 'id="hd-firewall-ok"'):
+    for element in ('id="hd-firewall"', 'id="hd-grund"', 'id="hd-tipp"', 'id="hd-firewall-ok"',
+                    'id="hd-firewall-hinweis"'):
         assert element in html
     assert "Firewall freigeben" in html
     assert "post('/api/kamera/firewall', {})" in js  # nichts aus der Seite geht in den Befehl
-    assert "fw.anbieten" in js and "h.tipp" in js
+    assert "fw.anbieten" in js and "h.tipp" in js and "fw.hinweis" in js

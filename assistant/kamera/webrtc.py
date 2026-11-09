@@ -512,11 +512,13 @@ class HandyKamera:
             self._zustand, self._schritt = "wartet", "verbindet"
             self._fehler = self._grund = self._tipp = None
         aufgeloest = {}
-        if k.mdns and not k.ip_lan:
+        if k.mdns:
             # Browser versteckt die Adresse: selbst aufloesen (sonst bleibt nur, auf das Handy zu warten)
             aufgeloest = await self._mdns_aufloesen(k.mdns_namen[:MAX_MDNS_NAMEN])
             angebot = sig.mdns_ersetzen(angebot, aufgeloest)
             if not self.aiortc_mdns:
+                # Windows: nur aufgeloeste Adressen an aiortc (auch in gemischten Angeboten); die uebrigen
+                # Namen fallen weg - die Pruefpakete des Handys kommen dann als peer-reflexive Kandidaten.
                 angebot = sig.filtere_sdp(angebot, lambda a: not sig.ist_mdns_name(a) and self._lan(a))[0]
         angebot = sig.ohne_kandidaten_ende(angebot)
         versuch.mdns_aufgeloest = len(aufgeloest)
@@ -676,15 +678,34 @@ class HandyKamera:
             await self._getrennt("Verbindung zum Handy beendet.")
 
     def _paar_im_lan(self, pc) -> bool:
-        """Best effort: das von ICE gewaehlte Paar nochmals pruefen (auch peer-reflexive)."""
+        """Das von ICE gewaehlte Paar nochmals pruefen (auch peer-reflexive). Im Zweifel: False.
+
+        Fehlt die interne Struktur von aioice (andere Version), werden ersatzweise ALLE Kandidaten der
+        Gegenseite geprueft, die die ICE-Transporte kennen (dazu gehoeren auch gelernte peer-reflexive).
+        Geht beides nicht, gilt die Verbindung als nicht im LAN (lieber trennen als ins Internet senden)."""
         try:
-            for verbindung in self._ice_verbindungen(pc):
-                for paar in verbindung._nominated.values():
-                    if not self._lan(paar.remote_addr[0]):
-                        return False
-        except Exception:  # noqa: BLE001 - interne Struktur von aiortc/aioice anders
-            return True
-        return True
+            verbindungen = [v for v in self._ice_verbindungen(pc) if hasattr(v, "_nominated")]
+            paare = [paar for v in verbindungen for paar in v._nominated.values()]
+            if paare:
+                return all(self._lan(paar.remote_addr[0]) for paar in paare)
+            return self._ferne_kandidaten_im_lan(pc)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("Handy-Kamera: Adresspaar nicht pr\u00fcfbar (%s) - getrennt", type(exc).__name__)
+            return False
+
+    def _ferne_kandidaten_im_lan(self, pc) -> bool:
+        """Ersatzpruefung ueber die oeffentliche Schnittstelle der ICE-Transporte."""
+        transporte = [t.receiver.transport.transport for t in pc.getTransceivers()]
+        if getattr(pc, "sctp", None) is not None:
+            transporte.append(pc.sctp.transport.transport)
+        adressen = []
+        for ice in transporte:
+            for kandidat in ice.getRemoteCandidates():
+                adressen.append(getattr(kandidat, "ip", None) or "")
+        if not adressen:
+            log.warning("Handy-Kamera: kein Adresspaar und keine Kandidaten der Gegenseite bekannt - getrennt")
+            return False
+        return all(self._lan(adresse) for adresse in adressen)
 
     async def _getrennt(self, grund: str) -> None:
         with self._sperre:

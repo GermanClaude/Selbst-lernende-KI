@@ -423,6 +423,10 @@
     const fwOk = byId('hd-firewall-ok');
     fwOk.hidden = !(fw.frei && zustand !== 'verbunden');
     fwOk.textContent = fw.frei ? '✓ Windows-Firewall ist für ' + name + ' freigegeben.' : '';
+    // Mit Python gestartet: kein Knopf, sondern eine Anleitung (nur wenn es klemmt)
+    const fwHinweis = byId('hd-firewall-hinweis');
+    fwHinweis.hidden = !(fw.hinweis && gescheitert);
+    fwHinweis.textContent = fw.hinweis && gescheitert ? String(fw.hinweis) : '';
   }
 
   function satz(text) {

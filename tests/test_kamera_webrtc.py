@@ -60,7 +60,7 @@ class FakeHandy:
     """Spielt die Handy-Seite (wie kamera.js): Angebot schicken, Antwort setzen, DataChannel."""
 
     def __init__(self, link, relay, geraet="testhandy01", zusatz_kandidat=None, oeffentlich=False,
-                 antwort_setzen=True, seq_start=0, mdns=False):
+                 antwort_setzen=True, seq_start=0, mdns=False, vor_antwort=None):
         self.kopplung = sig.Kopplung.aus_link(link, jetzt=time.time())
         self.kanal = sig.Kanal(self.kopplung, "h")
         self.relay = relay
@@ -71,6 +71,7 @@ class FakeHandy:
         self.kanal._seq = seq_start
         self.mdns = mdns                      # eigene Adressen hinter xxxx.local verstecken (wie Chrome)
         self.mdns_namen = {}                  # name -> echte Adresse
+        self.vor_antwort = vor_antwort        # wird mit Novas Antwort aufgerufen, bevor sie gesetzt wird
         self.dc_nachrichten = []
         self.signal = []
         self.pc = None
@@ -126,6 +127,8 @@ class FakeHandy:
                 if nachricht.typ == "antwort":
                     if not self.antwort_setzen:
                         return nachricht
+                    if self.vor_antwort is not None:
+                        self.vor_antwort(nachricht)
                     await self.pc.setRemoteDescription(RTCSessionDescription(nachricht.daten["sdp"], "answer"))
                     return nachricht
                 if nachricht.typ in ("fehler", "besetzt"):
@@ -491,3 +494,106 @@ def test_kein_lan_angebot_hat_grund_und_tipp(relay):
     finally:
         kamera.stop()
         ht.ende()
+
+
+# -- Nur LAN: auch aufgeloeste und peer-reflexive Adressen werden geprueft ---------------------------
+def test_aufloesung_auf_oeffentliche_adresse_wird_verworfen(relay):
+    kamera = _kamera(relay, lan_pruefung=sig.ist_lan_adresse, mdns_aufloeser=lambda name: "8.8.8.8")
+    assert asyncio.run(kamera._mdns_aufloesen(["abc.local"])) == {}
+    kamera = _kamera(relay, mdns_aufloeser=lambda name: "abc2.local")  # nie wieder ein Name
+    assert asyncio.run(kamera._mdns_aufloesen(["abc.local"])) == {}
+
+
+def test_aufloesung_auf_8888_verbindet_nur_ueber_die_echte_adresse(relay):
+    kamera = _kamera(relay, mdns_aufloeser=lambda name: "8.8.8.8")
+    info = kamera.start()
+    handy = FakeHandy(info.link, relay, mdns=True)
+    ht = HandyThread(handy)
+    try:
+        assert ht.rufe(handy.verbinden()).typ == "antwort"
+        assert kamera.warte_auf("verbunden", 20), kamera.status()
+        assert kamera.status()["diagnose"]["mdns_aufgeloest"] == 0
+        ferne = _ferne_adressen(kamera._pc)
+        assert ferne and "8.8.8.8" not in ferne and all(lan_fuer_test(a) for a in ferne)
+    finally:
+        kamera.stop()
+        ht.ende()
+
+
+def _ferne_adressen(pc):
+    return [c.ip for t in pc.getTransceivers() for c in t.receiver.transport.transport.getRemoteCandidates()]
+
+
+def test_windows_gemischtes_angebot_ohne_local_namen(relay):
+    gefragt = []
+    kamera = _kamera(relay, aiortc_mdns=False, mdns_aufloeser=lambda name: gefragt.append(name))
+    info = kamera.start()
+    name = "0d6f7a1e-2b3c-4d5e-8f90-a1b2c3d4e5f6.local"
+    handy = FakeHandy(info.link, relay, zusatz_kandidat=f"a=candidate:77 1 udp 2122260223 {name} 40001 typ host")
+    ht = HandyThread(handy)
+    try:
+        assert ht.rufe(handy.verbinden()).typ == "antwort"
+        assert kamera.warte_auf("verbunden", 20), kamera.status()
+        assert gefragt == [name]  # auch im gemischten Angebot aufgeloest (hier: ohne Erfolg) ...
+        assert not any(a.endswith(".local") for a in _ferne_adressen(kamera._pc))  # ... und weggelassen
+    finally:
+        kamera.stop()
+        ht.ende()
+
+
+def test_peer_reflexive_pruefung_von_ausserhalb_des_lan_wird_getrennt(relay):
+    """Handy versteckt seine Adresse; die Pruefpakete kommen von einer Adresse, die NICHT als LAN gilt
+    -> Nova lernt sie (peer-reflexiv), trennt aber, statt zu verbinden."""
+    verboten = set()
+
+    def lan(adresse):
+        return adresse not in verboten and (sig.ist_mdns_name(adresse) or lan_fuer_test(adresse))
+
+    def sperren(antwort):  # ab jetzt gelten alle echten Adressen dieses Rechners als "Internet"
+        for zeile in antwort.daten["sdp"].split("\r\n"):
+            if zeile.startswith("a=candidate:"):
+                verboten.add(zeile.split()[4])
+
+    kamera = _kamera(relay, lan_pruefung=lan, mdns_aufloeser=lambda name: None)
+    info = kamera.start()
+    handy = FakeHandy(info.link, relay, mdns=True, vor_antwort=sperren)
+    ht = HandyThread(handy)
+    try:
+        assert ht.rufe(handy.verbinden()).typ == "antwort" and verboten
+        assert kamera.warte_auf("fehler", 20), kamera.status()
+        assert kamera.status()["grund"] == "nicht-lan"
+        time.sleep(0.5)
+        assert kamera.zustand == "fehler" and kamera.latest_frame() is None
+    finally:
+        kamera.stop()
+        ht.ende()
+
+
+class _Obj:
+    def __init__(self, **kw):
+        self.__dict__.update(kw)
+
+
+def _fake_pc(connection=None, ferne=()):
+    ice = _Obj(getRemoteCandidates=lambda: [_Obj(ip=a) for a in ferne])
+    if connection is not None:
+        ice._connection = connection
+    transceiver = _Obj(receiver=_Obj(transport=_Obj(transport=ice)))
+    return _Obj(getTransceivers=lambda: [transceiver], sctp=None)
+
+
+def test_paar_im_lan_im_zweifel_nein():
+    kamera = HandyKamera(sig.SpeicherRelay(), lan_pruefung=sig.ist_lan_adresse)
+    paar = lambda ip: _Obj(remote_addr=(ip, 5000))  # noqa: E731
+    assert kamera._paar_im_lan(_fake_pc(_Obj(_nominated={1: paar("192.168.178.20")}))) is True
+    assert kamera._paar_im_lan(_fake_pc(_Obj(_nominated={1: paar("8.8.8.8")}))) is False
+    # interne Struktur fehlt -> Ersatzpruefung ueber die Kandidaten der Gegenseite
+    assert kamera._paar_im_lan(_fake_pc(None, ["192.168.178.20"])) is True
+    assert kamera._paar_im_lan(_fake_pc(None, ["192.168.178.20", "8.8.8.8"])) is False
+    assert kamera._paar_im_lan(_fake_pc(None, [])) is False  # nichts bekannt -> trennen
+    assert kamera._paar_im_lan(_fake_pc(_Obj(), ["10.0.0.5"])) is True  # ohne _nominated -> Ersatz
+
+    def kaputt():
+        raise RuntimeError("anders gebaut")
+
+    assert kamera._paar_im_lan(_Obj(getTransceivers=kaputt, sctp=None)) is False  # Ausnahme -> trennen
