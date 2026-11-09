@@ -1,5 +1,9 @@
 # Hinweise fuer Aenderungen an diesem Projekt
 
+- **Zuerst `docs/ENTWICKLUNG.md` lesen** (Projektkarte, Stand, offene Punkte) und sie am Ende
+  jeder groesseren Aenderung aktualisieren - sie ist das Gedaechtnis des Projekts, falls ein
+  Chat verloren geht.
+
 - Sprache im Code, in Kommentaren und Meldungen: Deutsch (ohne Umlaute im
   Python-Code, mit Umlauten in Markdown-Dokumenten und in sichtbaren Texten der
   App-Oberflaeche `assistant/app/static/`).

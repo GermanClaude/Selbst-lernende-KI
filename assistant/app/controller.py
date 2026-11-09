@@ -78,6 +78,7 @@ COMMANDS = [
     ("/sehen", "Live-Sehen: Nova schaut auf Bildschirm/Webcam (an, aus, pause, status)"),
     ("/spiel", "Spielmodus: Nova spielt selbst (z.B. Manor Lords) - start, nacht, stopp, kalibrieren"),
     ("/sehen handy", "Handy als Kamera koppeln (QR-Code)"),
+    ("/scan", "Sicherheits-Check: Malware, Spyware, Trojaner, Infostealer (gruendlich, datei <pfad>)"),
     ("/modell", "Modell waehlen - schnell oder besonders stark"),
     ("/denken", "wie gruendlich die KI nachdenkt (schnell ... maximal)"),
     ("/feedback", "Feedback & Bewertung an den Entwickler schicken"),

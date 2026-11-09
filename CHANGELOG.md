@@ -4,6 +4,28 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.13.0 – 2026-11-09
+
+**Sicherheits-Check: Nova sucht nach Schadsoftware**
+- Sag einfach „Scan meinen PC auf Viren“ oder tippe **`/scan`**. Nova sucht nach Spuren von
+  **Malware, Spyware, Trojanern und Infostealern** (Programme, die Passwörter klauen).
+- Geprüft werden: der Windows-Virenschutz und seine bisherigen Funde, alles, was beim Start
+  automatisch mitläuft (Autostart und Aufgabenplanung), laufende Programme (ob sie digital
+  signiert sind und wohin sie sich verbinden), neue Programmdateien und Skripte der letzten
+  7 Tage und die hosts-Datei.
+- Typische Tricks erkennt Nova sofort: als Dokument getarnte Programme („Rechnung.pdf.exe“),
+  falsche Windows-Programme („svchost.exe“ im falschen Ordner), versteckte oder verschlüsselte
+  Befehle im Autostart, Programme im Temp-Ordner, Cheat-/Crack-Dateien.
+- Du bekommst eine **nummerierte Liste** (hoch / mittel / niedrig). Danach fragst du einfach
+  „Was hältst du davon?“ – Nova bewertet jeden Fund fachlich, sagt dir, was harmlos ist und was
+  nicht, und **du suchst aus**, was passieren soll. Nova löscht nie etwas von selbst.
+- **`/scan gruendlich`** schaut 30 Tage zurück und in mehr Ordner (dauert ein paar Minuten).
+- **`/scan datei <pfad>`** prüft eine einzelne Datei mit Windows Defender, Signatur und
+  Prüfsumme (inklusive Link zu VirusTotal).
+- Harmlos? **`/scan ignorieren 3`** (oder „Nr. 3 ist okay“) – dann meldet Nova den Fund nicht mehr.
+- Der Check kostet nichts (läuft ohne KI); nur die Einschätzung danach braucht das Gehirn.
+  Nur unter Windows.
+
 ## 0.12.0 – 2026-11-09
 
 - **Handy als Kamera verbindet zuverlässiger:** Nova wartet jetzt geduldiger auf das Handy und

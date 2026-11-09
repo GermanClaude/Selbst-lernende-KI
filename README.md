@@ -367,6 +367,19 @@ soll, oder lass sie über Nacht allein eine Stadt bauen.
 - Tipps: „Randloses Vollbild“, Spiel nicht als Administrator starten, Bildschirm nicht sperren
   lassen, ein Modell nehmen, das Bilder sieht.
 
+## Sicherheits-Check: Malware, Spyware, Infostealer (Windows)
+
+Nova sucht auf Wunsch nach Spuren von Schadsoftware – nur lesend, sie löscht nie etwas selbst.
+
+- Start: „Scan meinen PC auf Viren“ sagen oder `/scan` (`/scan gruendlich` = 30 Tage, mehr Ordner).
+- Geprüft: Windows-Defender-Status und -Funde, Autostart und Aufgabenplanung, laufende Programme
+  (Signatur, Internetverbindungen), neue Programmdateien/Skripte, hosts-Datei.
+- Ergebnis: nummerierte Liste (hoch/mittel/niedrig), gespeichert unter `workspace/sicherheit/`.
+  Danach „Was hältst du davon?“ fragen – Nova ordnet jeden Fund fachlich ein, **du** wählst aus.
+- Einzelne Datei: `/scan datei <pfad>` (Windows Defender, Signatur, SHA256 + VirusTotal-Link).
+- Harmlose Funde ausblenden: `/scan ignorieren 3 5`.
+- Der Check selbst kostet nichts; die Faustregeln stehen in `assistant/sicherheit.py`.
+
 ## Bilder: zeigen und erstellen lassen
 
 - **Bilder zeigen:** In der App mit **Strg+V** einfügen, ins Fenster ziehen oder über die
@@ -472,6 +485,7 @@ stoppt die Steuerung sofort.
 | `/modell [name]` | Modell zeigen bzw. wählen (z.B. `/modell sonnet`, `/modell deepseek pro`) |
 | `/sehen [an\|aus\|pause\|status]` | Live-Sehen: Nova schaut auf Bildschirm/Webcam |
 | `/spiel [start\|nacht\|stopp\|kalibrieren] <Ziel>` | Spielmodus: Nova spielt selbst (z. B. Manor Lords) |
+| `/scan [gruendlich\|datei <pfad>\|ignorieren <nr>]` | Sicherheits-Check: Malware, Spyware, Trojaner, Infostealer |
 | `/bild <Pfad> [Frage]` | Bild anhängen (ohne Pfad: aus der Zwischenablage) |
 | `/feedback` | Feedback & Bewertung an den Entwickler schicken |
 | `/denken [stufe]` | Denk-Tiefe: schnell, ausgewogen, gründlich, sehr gründlich, maximal |

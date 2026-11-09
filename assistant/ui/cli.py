@@ -51,6 +51,10 @@ Sonderbefehle (mit '/' beginnen):
   /sehen handy        - dein Handy als Kamera: QR-Code scannen (Handy und PC im selben WLAN);
                        /sehen handy aus beendet es
   /sehen einrichten   - die Pakete fuer Live-Sehen installieren (numpy, dxcam, mss, Handy-Kamera ...)
+  /scan [gruendlich]  - Sicherheits-Check: sucht Spuren von Malware, Spyware, Trojanern und
+                       Infostealern (nur lesen, Windows). Danach: "Was haeltst du davon?" fragen.
+  /scan datei <pfad>  - eine einzelne Datei pruefen (Signatur, SHA256, Windows Defender)
+  /scan ignorieren <nr ...> - harmlose Funde (Nummern aus dem letzten Bericht) kuenftig nicht melden
   /feedback           - Feedback & Bewertung an den Entwickler schicken (auch /bewertung)
   /denken [stufe]     - wie gruendlich die KI nachdenkt: schnell, ausgewogen, gruendlich ...
   /app                - zur App wechseln (eigenes Fenster statt Terminal)
@@ -850,6 +854,46 @@ class CLI:
             return False
         self.sehen.zustimmen()
         return True
+
+    # -- Sicherheits-Check (assistant/sicherheit.py) --------------------------------
+    def _scan_command(self, args: str) -> None:
+        """/scan [gruendlich] | /scan datei <pfad> | /scan letzter - laeuft ohne KI (kostet nichts)."""
+        from .. import sicherheit
+
+        teile = args.strip().split(None, 1)
+        sub = teile[0].lower() if teile else ""
+        if sub in ("datei", "file"):
+            pfad = teile[1].strip().strip('"') if len(teile) > 1 else ""
+            if not pfad:
+                print("So geht es: /scan datei <pfad>")
+                return
+            print(_c("Pruefe die Datei (Signatur, SHA256, Windows Defender) …", GREY))
+            print(sicherheit.datei_pruefen(pfad))
+            return
+        if sub in ("letzter", "letzten", "bericht"):
+            print(sicherheit.letzter_bericht(self.tool_ctx.permissions.workspace_root)
+                  or "Noch kein Bericht gespeichert - starte einen mit /scan.")
+            return
+        if sub in ("ignorieren", "ignoriere", "ok", "harmlos"):
+            print(sicherheit.ignorieren(self.tool_ctx.permissions.workspace_root, teile[1] if len(teile) > 1 else ""))
+            return
+        if sub not in ("", "schnell", "gruendlich", "gründlich", "voll"):
+            print("So geht es: /scan | /scan gruendlich | /scan datei <pfad> | /scan letzter | "
+                  "/scan ignorieren <nr ...>")
+            return
+        gruendlich = sub in ("gruendlich", "gründlich", "voll")
+        print(_c("Sicherheits-Check laeuft (nur lesen) - "
+                 + ("das dauert einige Minuten …" if gruendlich else "etwa 1-2 Minuten …"), GREY))
+        try:
+            text, funde = sicherheit.pc_scannen(gruendlich, ordner=self.tool_ctx.permissions.workspace_root)
+        except Exception as exc:  # noqa: BLE001 - ein Fehler darf die Sitzung nicht beenden
+            logger.exception("Sicherheits-Check fehlgeschlagen")
+            print(_c(f"Der Sicherheits-Check ging nicht: {exc}", YELLOW))
+            return
+        print(text)
+        if funde:
+            print(_c("\nFrag mich einfach: \"Was haeltst du davon?\" - dann schaue ich mir die Funde fachlich an "
+                     "und du suchst aus, was passieren soll (z.B. \"Kuemmere dich um 2 und 5\").", CYAN))
 
     def _sehen_command(self, args: list[str]) -> None:
         from ..sehen.einstellungen import QUELLEN, regeln_aus
@@ -1742,6 +1786,8 @@ class CLI:
             self._feedback_terminal()
         elif base in ("/sehen", "/livesehen", "/live-sehen"):
             self._sehen_command(cmd.split()[1:])
+        elif base in ("/scan", "/sicherheit", "/virenscan", "/sicherheitscheck"):
+            self._scan_command(cmd.split(None, 1)[1] if len(cmd.split(None, 1)) > 1 else "")
         elif base in ("/bild", "/bilder"):
             self._bild_hilfe()  # im Terminal faengt _loop /bild vorher ab
         elif _bildpfad(cmd.split()[0], self._bild_basis()):  # "/home/ich/foto.png Was ist das?"
