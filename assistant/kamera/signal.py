@@ -543,3 +543,88 @@ def filtere_sdp(sdp: str, pruefung=None) -> tuple[str, int, int]:
         zeilen.append(zeile)
     text = "\r\n".join(zeilen).rstrip("\r\n") + "\r\n"
     return text, behalten, verworfen
+
+
+# -- SDP: Kandidaten zaehlen (Diagnose), mDNS-Namen ersetzen --------------------------------
+def _kandidat_teile(zeile: str) -> list[str] | None:
+    teile = zeile.strip().split()
+    if len(teile) < 8 or teile[6] != "typ":
+        return None
+    return teile
+
+
+def ist_mdns_name(adresse: str) -> bool:
+    return bool(re.fullmatch(r"[A-Za-z0-9\-]{1,63}\.local", (adresse or "").strip()))
+
+
+@dataclass
+class KandidatenZahl:
+    """Was ein Angebot an Kandidaten enthielt (fuer Protokoll und Fehlersuche - ohne SDP)."""
+
+    ip_lan: int = 0              # Host-Kandidat mit Privatadresse
+    mdns: int = 0                # Host-Kandidat mit verstecktem Namen (xxxx.local)
+    nicht_lan: int = 0           # oeffentliche Adresse, srflx/relay, kaputt ...
+    lan_ips: list = field(default_factory=list)   # die Privatadressen (fuer den Netz-Vergleich)
+    mdns_namen: list = field(default_factory=list)
+
+    @property
+    def nutzbar(self) -> int:
+        return self.ip_lan + self.mdns
+
+    def als_dict(self) -> dict:
+        return {"ip": self.ip_lan, "mdns": self.mdns, "nicht_lan": self.nicht_lan}
+
+
+def kandidaten_zaehlen(sdp: str, pruefung=None) -> KandidatenZahl:
+    """Zaehlt die Kandidaten eines SDP nach Art (doppelte Adressen, z.B. je m-Zeile, nur einmal)."""
+    pruefe = pruefung or ist_lan_adresse
+    zahl = KandidatenZahl()
+    gesehen: set[tuple[str, str]] = set()
+    for zeile in (sdp or "").replace("\r\n", "\n").split("\n"):
+        if not zeile.startswith("a=candidate:"):
+            continue
+        teile = _kandidat_teile(zeile[2:])
+        if teile is None:
+            zahl.nicht_lan += 1
+            continue
+        schluessel = (teile[4].lower(), teile[5])
+        if schluessel in gesehen:
+            continue
+        gesehen.add(schluessel)
+        adresse = teile[4]
+        if teile[7] != "host" or not pruefe(adresse):
+            zahl.nicht_lan += 1
+        elif ist_mdns_name(adresse):
+            zahl.mdns += 1
+            if adresse.lower() not in zahl.mdns_namen:
+                zahl.mdns_namen.append(adresse.lower())
+        else:
+            zahl.ip_lan += 1
+            if adresse not in zahl.lan_ips:
+                zahl.lan_ips.append(adresse)
+    return zahl
+
+
+def mdns_ersetzen(sdp: str, adressen: dict) -> str:
+    """Ersetzt mDNS-Namen in Kandidaten-Zeilen durch aufgeloeste Adressen ({name: ip}).
+
+    Nicht aufgeloeste Namen bleiben stehen (aiortc versucht es dann selbst)."""
+    if not adressen:
+        return sdp
+    klein = {str(k).lower(): str(v) for k, v in adressen.items() if v}
+    zeilen = []
+    for zeile in (sdp or "").replace("\r\n", "\n").split("\n"):
+        if zeile.startswith("a=candidate:"):
+            teile = zeile.split(" ")
+            if len(teile) > 4 and teile[4].lower() in klein:
+                teile[4] = klein[teile[4].lower()]
+                zeile = " ".join(teile)
+        zeilen.append(zeile)
+    return "\r\n".join(zeilen).rstrip("\r\n") + "\r\n"
+
+
+def ohne_kandidaten_ende(sdp: str) -> str:
+    """Entfernt "a=end-of-candidates": sonst gibt aiortc sofort auf, wenn kein Kandidat des Handys
+    nutzbar ist - statt auf dessen Pruefpakete zu warten (daraus lernt es die echte Adresse)."""
+    zeilen = [z for z in (sdp or "").replace("\r\n", "\n").split("\n") if z.strip() != "a=end-of-candidates"]
+    return "\r\n".join(zeilen).rstrip("\r\n") + "\r\n"

@@ -109,8 +109,11 @@ def test_koppeln_link_nur_in_der_antwort_nie_im_zustand(dienst, caplog):
     assert "WLAN" in antwort["hinweis"] and "Firewall" in antwort["hinweis"]
     assert d.aktiv and d.quellen == {"handy"} and d.handys[0].nimm is not None
     status = d.status()
-    assert status["handy"] == {"zustand": "wartet", "fehler": None, "bild_alter": 0.4, "kamera": "hinten",
-                               "ablauf": 1}
+    assert {k: status["handy"][k] for k in ("zustand", "fehler", "bild_alter", "kamera", "ablauf")} == {
+        "zustand": "wartet", "fehler": None, "bild_alter": 0.4, "kamera": "hinten", "ablauf": 1}
+    # nur diese Felder - nie Link/Code/Schluessel
+    assert set(status["handy"]) == {"zustand", "fehler", "bild_alter", "kamera", "ablauf", "grund", "tipp",
+                                    "gescheitert", "firewall"}
     roh = json.dumps(status, ensure_ascii=False) + " ".join(d.notizen) + caplog.text
     assert "GEHEIM" not in roh and CODE not in roh and "#p=" not in roh
 

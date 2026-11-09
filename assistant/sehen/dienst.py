@@ -966,8 +966,24 @@ class SehDienst:
         if self._handy is None and "handy" not in self.quellen:
             return None
         st = self._handy_status() if self._handy is not None else {"zustand": "getrennt"}
-        return {"zustand": str(st.get("zustand") or "getrennt"), "fehler": st.get("fehler"),
-                "bild_alter": st.get("bild_alter"), "kamera": st.get("kamera"), "ablauf": st.get("ablauf")}
+        zustand = str(st.get("zustand") or "getrennt")
+        return {"zustand": zustand, "fehler": st.get("fehler"),
+                "bild_alter": st.get("bild_alter"), "kamera": st.get("kamera"), "ablauf": st.get("ablauf"),
+                "grund": st.get("grund"), "tipp": st.get("tipp"),
+                "gescheitert": bool(st.get("verbindung_gescheitert")),
+                "firewall": self._firewall_anzeige(zustand)}
+
+    @staticmethod
+    def _firewall_anzeige(zustand: str) -> dict:
+        """Windows-Firewall-Freigabe anbieten? (nur Anzeige - freigegeben wird nur per Klick)"""
+        try:
+            from ..kamera import firewall  # noqa: PLC0415
+
+            moeglich = firewall.moeglich()
+            frei = moeglich and firewall.freigegeben()
+        except Exception:  # noqa: BLE001
+            moeglich = frei = False
+        return {"moeglich": moeglich, "frei": frei, "anbieten": moeglich and not frei and zustand != "verbunden"}
 
 
 class StillFilter:

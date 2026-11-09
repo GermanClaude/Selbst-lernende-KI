@@ -22,7 +22,6 @@
   const WIEDER_S = 15 * 60;       // so lange darf ein Tab nach Ablauf neu verbinden
 
   const TEXTE = {
-    wlan: "Keine Verbindung zu Nova. Handy und PC müssen im selben WLAN sein (kein Gäste-WLAN, kein mobiles Netz).",
     verloren: "Verbindung zu Nova verloren. Tippe auf „Neu verbinden“.",
     besetzt: "Nova ist schon mit einem anderen Handy verbunden.",
     keineAntwort: "Nova antwortet nicht. Läuft Nova am PC und zeigt noch den QR-Code? Sonst bitte neu koppeln.",
@@ -31,9 +30,30 @@
     altBrowser: "Dieser Browser kann das leider nicht. Bitte Safari oder Chrome auf den neuesten Stand bringen.",
     unsicher: "Die Kamera geht nur über eine sichere Verbindung (https).",
     nichtLan: "Verbindung abgelehnt: Die Gegenstelle ist nicht in deinem WLAN. Bitte den QR-Code in Nova neu scannen.",
+    // Drei verschiedene Gründe, wenn keine Verbindung zustande kommt – je mit einem konkreten Tipp.
+    keinLan: "Nova hat von diesem Handy keine Adresse im Heimnetz bekommen – Handy und PC müssen im selben WLAN sein. Tipp: Am Handy das WLAN einschalten und mobile Daten ausschalten.",
+    zeitAus: "Nova und dein Handy finden sich im WLAN nicht. Tipp: Am PC in Nova auf „Firewall freigeben“ klicken, dann hier „Neu verbinden“.",
+    iceFehler: "Die Verbindung zu Nova ist gescheitert. Tipp: Im Router „WLAN-Geräte dürfen miteinander kommunizieren“ einschalten (kein Gäste-WLAN).",
+    grundAmPc: "Den genauen Grund zeigt Nova am PC.",
+    browserAndroid: "Bitte im Browser Chrome öffnen (⋮ → „In Chrome öffnen“).",
+    browserIos: "Bitte in Safari öffnen (Teilen-Symbol → „In Safari öffnen“).",
+    eingebaut: "Du bist in einem eingebauten Browser (z. B. der Google-App) – damit klappt die Verbindung oft nicht.",
   };
 
   class NutzerFehler extends Error {}
+
+  // Eingebauter Browser (WebView der Google-App, eines QR-Scanners, von Facebook …)? Die verstecken die
+  // eigene WLAN-Adresse oft (nur „xxxx.local“) – dann findet Nova das Handy schlecht.
+  const UA = navigator.userAgent || "";
+  const IOS = /iPhone|iPad|iPod/.test(UA) || (/Macintosh/.test(UA) && navigator.maxTouchPoints > 1);
+  const EINGEBAUT = /; wv\)/.test(UA) || /\bGSA\//.test(UA) || /FBAN|FBAV|FB_IAB|Instagram|Line\/|MicroMessenger|Snapchat/.test(UA);
+  function browserTipp() { return IOS ? TEXTE.browserIos : TEXTE.browserAndroid; }
+  /** Fehlertext + Browser-Tipp, wenn der Browser die Adresse versteckt (oder eingebaut ist) + Hinweis auf Nova. */
+  function mitTipps(text) {
+    let t = text;
+    if (EINGEBAUT || z.nurMdns) t += " " + browserTipp();
+    return t + " " + TEXTE.grundAmPc;
+  }
 
   const ui = {
     badge: $("badge"), status: $("status"),
@@ -48,6 +68,7 @@
     kopplung: null, kanal: null, relay: new S.NtfyRelay(RELAY_BASIS), geraet: null,
     pc: null, dc: null, sender: null, geprueft: false, strom: null, seite: "environment", lauf: 0, scanLauf: 0,
     verbunden: false, aktiv: false, wachBleiben: false, wakeLock: null, pingTimer: null, abbruch: null,
+    nurMdns: false,
   };
 
   // -- Anzeige -----------------------------------------------------------------------------
@@ -247,9 +268,25 @@
     sendeDc({ t: "status", kamera: z.seite === "user" ? "vorne" : "hinten", sichtbar: document.visibilityState === "visible" });
   }
 
+  /** Zählt die eigenen Kandidaten: echte IP oder versteckter Name (xxxx.local)? */
+  function adressArten(sdp) {
+    const arten = { ip: 0, mdns: 0 };
+    for (const zeile of String(sdp || "").split(/\r?\n/)) {
+      if (zeile.indexOf("a=candidate:") !== 0) continue;
+      const teile = zeile.trim().split(/\s+/);
+      if (teile.length < 8 || teile[7] !== "host") continue;
+      if (/\.local$/i.test(teile[4])) arten.mdns += 1; else arten.ip += 1;
+    }
+    return arten;
+  }
+
   async function verbinden() {
     schliessePc();
     const lauf = ++z.lauf;
+    // Das Angebot entsteht erst, wenn die Kamera läuft: Nur dann geben Chrome/Safari die echte
+    // WLAN-Adresse preis – sonst verstecken sie sie hinter „xxxx.local“, und Nova findet das Handy schlecht.
+    const kamera = z.strom && z.strom.getVideoTracks()[0];
+    if (!kamera || kamera.readyState !== "live") throw new NutzerFehler("Die Kamera läuft nicht. Bitte noch einmal auf „Kamera starten“ tippen.");
     status("Verbinde mit Nova …");
     const pc = new RTCPeerConnection({ iceServers: [] });
     z.pc = pc;
@@ -271,6 +308,8 @@
     if (lauf !== z.lauf) return;
     const sdp = schlankesSdp(pc.localDescription.sdp);
     if (sdp.indexOf("a=candidate:") < 0) throw new NutzerFehler("Das Handy hat keine Netzwerkverbindung. Ist das WLAN an?");
+    const arten = adressArten(sdp);
+    z.nurMdns = arten.mdns > 0 && arten.ip === 0;
     const text = await z.kanal.verpacke("angebot", { sdp: sdp, g: z.geraet });
     const seit = await z.relay.senden(z.kanal.thema, text);
     await aufAntwortWarten(pc, lauf, seit);
@@ -304,7 +343,7 @@
           setTimeout(() => {
             if (lauf === z.lauf && pc.connectionState !== "connected") {
               schliessePc();
-              status(TEXTE.wlan, "schlecht");
+              status(mitTipps(TEXTE.zeitAus), "schlecht");
               ui.btnStart.textContent = "Neu verbinden";
               ui.btnStart.hidden = false;
             }
@@ -314,7 +353,7 @@
         if (m.typ === "besetzt") throw new NutzerFehler(TEXTE.besetzt);
         if (m.typ === "fehler") {
           const g = m.daten.grund;
-          if (g === "kein-lan") throw new NutzerFehler(TEXTE.wlan);
+          if (g === "kein-lan") throw new NutzerFehler(mitTipps(TEXTE.keinLan));
           if (g === "pc-kein-lan") throw new NutzerFehler("Der PC ist nicht mit dem Heimnetz verbunden (WLAN/LAN prüfen).");
           if (g === "noch-verbunden") throw new NutzerFehler("Nova hängt noch an der alten Verbindung. Bitte in ein paar Sekunden noch einmal versuchen.");
           if (g === "angebot") throw new NutzerFehler("Nova versteht das Videoformat dieses Browsers nicht. Bitte einen anderen Browser versuchen.");
@@ -351,7 +390,7 @@
       liveAnzeige(false);
       ui.btnStopp.hidden = false;
       ui.btnStart.textContent = "Neu verbinden";
-      status(war ? TEXTE.verloren : TEXTE.wlan, "schlecht");
+      status(war ? TEXTE.verloren : mitTipps(TEXTE.iceFehler), "schlecht");
     }
   }
 
@@ -641,9 +680,10 @@
     }
     if (gekoppelt) {
       zeige("gekoppelt");
-      status("Bereit. Tippe auf „Kamera starten“.");
+      status(EINGEBAUT ? TEXTE.eingebaut + " " + browserTipp() : "Bereit. Tippe auf „Kamera starten“.", EINGEBAUT ? "schlecht" : "");
     } else if (!ui.status.textContent) {
       zeige("ohne");
+      if (EINGEBAUT) status(TEXTE.eingebaut + " " + browserTipp(), "schlecht");
     }
     if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js", { scope: "./" }).catch(() => {});
 

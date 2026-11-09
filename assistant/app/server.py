@@ -17,6 +17,7 @@ koennen. Der Server spricht nur mit der eigenen Oberflaeche:
        /api/feedback/gezeigt, /api/bilder/einstellen,
        /api/ollama/laden, /api/ollama/abbrechen, /api/ollama/adresse, /api/ollama/starten,
        /api/sehen (Live-Sehen an/aus/pause/Quelle/Kamera-Meldung), /api/spiel (Spielmodus)
+  POST /api/kamera/firewall  Windows-Firewall fuer die Handy-Kamera freigeben (fester Befehl, UAC)
   POST /api/kamera/bild  ein Webcam-Bild (rohe JPEG/PNG/WebP-Bytes, hoechstens 2 MB) - nur im Speicher
 Anfragen duerfen hoechstens 1 MB gross sein - /api/send und /api/feedback (mit Bildern) 40 MB.
 """
@@ -314,6 +315,8 @@ class AppServer:
                     return self._json(ctl.sehen_api(body))
                 if url.path == "/api/spiel":
                     return self._json(ctl.spiel_api(body))
+                if url.path == "/api/kamera/firewall":  # Handy-Kamera: Windows-Firewall freigeben (UAC)
+                    return self._json(ctl.handy_firewall())
                 if url.path == "/api/stop":
                     ctl.stop()
                     return self._json({"ok": True})
