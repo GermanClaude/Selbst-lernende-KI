@@ -72,7 +72,7 @@ COMMANDS = [
     ("/name", "der KI einen anderen Namen geben"),
     ("/sprache", "Stand der Spracheingabe"),
     ("/sprache einrichten", "Spracheingabe installieren"),
-    ("/gehirn", "DeepSeek, Claude oder Ollama - Schluessel einfach in den Chat einfuegen"),
+    ("/gehirn", "DeepSeek, Claude, Gemini oder Ollama - Schluessel einfach in den Chat einfuegen"),
     ("/ollama", "Ollama: kostenlose KI auf deinem PC (Stand, Modelle laden)"),
     ("/afk", "ich bin weg - die KI arbeitet allein weiter (mit Bericht)"),
     ("/sehen", "Live-Sehen: Nova schaut auf Bildschirm/Webcam (an, aus, pause, status)"),
@@ -204,7 +204,7 @@ class AppController(CLI):
             "ollama_pull": self.ollama_lader.zustand() if hasattr(self, "ollama_lader") else None,
             "api_key_missing": not self.config.api_key,
             "provider_name": schoen({"deepseek": "DeepSeek", "claude": "Claude (Anthropic)",
-                                     "ollama": "Ollama (kostenlos)"}.get(
+                                     "gemini": "Gemini (Google)", "ollama": "Ollama (kostenlos)"}.get(
                 self.config.active_provider, self.config.active_provider)),
             "update": {"new": self._pending_update.new} if self._pending_update else None,
             "update_status": self._update_status(),

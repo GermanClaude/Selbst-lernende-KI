@@ -23,7 +23,7 @@ arbeitet weiter, während du weg bist – und läuft auf Wunsch komplett kostenl
 | | |
 |---|---|
 | 🆓 **Kostenlos möglich** | Mit **Ollama** läuft Nova komplett auf deinem PC – ohne Konto, ohne Schlüssel, ohne Kosten. Deine Gespräche verlassen den Rechner nicht. |
-| 🔀 **Du wählst das Gehirn** | **Claude** (am stärksten), **DeepSeek** (Bruchteile eines Cents pro Nachricht) oder **jedes Ollama-Modell** (Qwen, Llama, Gemma, Mistral …) – auch LM Studio. Umschalten mit einem Klick, das Gedächtnis bleibt. |
+| 🔀 **Du wählst das Gehirn** | **Claude** (am stärksten), **DeepSeek** (Bruchteile eines Cents pro Nachricht), **Gemini** von Google (mit Gratis-Einstieg) oder **jedes Ollama-Modell** (Qwen, Llama, Gemma, Mistral …) – auch LM Studio. Umschalten mit einem Klick, das Gedächtnis bleibt. |
 | 🧠 **Sie lernt dich kennen** | Nova merkt sich dauerhaft, was du ihr erzählst – Vorlieben, Projekte, Korrekturen. Du kannst ihr Gedächtnis jederzeit ansehen, ergänzen und löschen. |
 | 🎭 **Du erziehst sie** | Charakter, Tonfall, Name, Werte und Grenzen legst du selbst fest – per Klick oder in Textdateien. |
 | 🖥️ **Sie kann wirklich etwas tun** | Dateien, Internet, Programme, Maus und Tastatur, Bildschirm und Kamera – aber nur, was **du** erlaubst. |
@@ -46,7 +46,7 @@ arbeitet weiter, während du weg bist – und läuft auf Wunsch komplett kostenl
 <td><img src="docs/bilder/charakter.png" alt="Charakter und Profil"><br>
 <b>🎭 Charakter nach Wahl</b> – freundlich, sachlich, Butler im Jarvis-Stil, Mentor, bester Kumpel, kreativ oder Motivations-Coach – und danach frei anpassbar.</td>
 <td><img src="docs/bilder/gehirn.png" alt="Gehirn und Schlüssel"><br>
-<b>🔀 Drei Gehirne</b> – Claude, DeepSeek oder Ollama. Modell und Denk-Tiefe frei wählbar, die Kosten immer im Blick.</td>
+<b>🔀 Vier Gehirne</b> – Claude, DeepSeek, Gemini oder Ollama. Modell und Denk-Tiefe frei wählbar, die Kosten immer im Blick.</td>
 </tr>
 <tr>
 <td><img src="docs/bilder/afk.png" alt="AFK-Modus"><br>
@@ -95,7 +95,7 @@ arbeitet weiter, während du weg bist – und läuft auf Wunsch komplett kostenl
    (unter „Assets“) und in einen eigenen Ordner legen, z. B. `Desktop\Nova`.
 2. Doppelklick. Beim ersten Start öffnet sich **„Gehirn & Schlüssel“**.
 3. Gehirn wählen – **Ollama** (kostenlos, [ollama.com](https://ollama.com/download) installieren),
-   **DeepSeek** oder **Claude** (Schlüssel einfügen) – fertig.
+   **DeepSeek**, **Gemini** oder **Claude** (Schlüssel einfügen) – fertig.
 
 > 🟢 **Noch nie programmiert?** Die **[Schritt-für-Schritt-Anleitung → ANLEITUNG.md](ANLEITUNG.md)**
 > erklärt alles ganz einfach.
@@ -109,7 +109,7 @@ start.bat            # Windows (Terminal) – oder start-app.bat für das App-Fe
 ./start.sh           # Linux/macOS  (./start.sh app für das App-Fenster)
 ```
 Beim ersten Start richtet sich alles automatisch ein. Schlüssel kommen in `.env`
-(`ANTHROPIC_API_KEY=…`, `DEEPSEEK_API_KEY=…`) – oder einfach in den Chat einfügen.
+(`ANTHROPIC_API_KEY=…`, `DEEPSEEK_API_KEY=…`, `GEMINI_API_KEY=…`) – oder einfach in den Chat einfügen.
 
 Von Hand:
 ```bash
@@ -121,15 +121,16 @@ python -m assistant              # --app für das Fenster
 
 ---
 
-## Die Gehirne: Claude, DeepSeek, Ollama – und andere Modelle
+## Die Gehirne: Claude, DeepSeek, Gemini, Ollama – und andere Modelle
 
 | Gehirn | Stärke | Kosten | Datenschutz | Einstellung |
 |---|---|---|---|---|
 | **Claude** (Anthropic) | höchste Qualität: Opus, Sonnet, Haiku, Fable | höher | Cloud | `aktiv = "claude"` |
 | **DeepSeek** | sehr gut: Flash, V4 Pro | **extrem günstig** | Cloud | `aktiv = "deepseek"` |
+| **Gemini** (Google) | stark: 3.8 Flash, 3.5 Flash-Lite, Gemini 4 Hydrogen/Argon/Carbon | günstig, **Gratis-Einstieg** | Cloud | `aktiv = "gemini"` |
 | **Ollama** | je nach Modell und PC | **kostenlos** | **bleibt auf deinem PC** | `aktiv = "ollama"` |
 
-**Wechseln:** in der App auf **„Gehirn“** klicken, im Chat `/gehirn ollama|deepseek|claude`,
+**Wechseln:** in der App auf **„Gehirn“** klicken, im Chat `/gehirn ollama|deepseek|gemini|claude`,
 oder in `config/settings.toml` unter `[provider]`.
 
 **Andere Modelle:** Über Ollama läuft **jedes** lokale Modell – z. B. `qwen3.5:4b` (Standard,
@@ -192,9 +193,10 @@ In der App unter **Gehirn & Schlüssel** oder im Chat mit `/modell` und `/denken
 |--------|---------|------------|
 | **Claude** | Opus 5.5 (stark, Standard), Sonnet 5.5 (schnell), Haiku 5.5 (blitzschnell, sehr günstig), Fable 5.1 (das stärkste, langsamer) | schnell · ausgewogen · gründlich · sehr gründlich · maximal |
 | **DeepSeek** | Flash (schnell, Standard), V4 Pro (stärker) | schnell (ohne Nachdenken) · ausgewogen · gründlich · maximal |
+| **Gemini** | 3.8 Flash (Standard), 3.5 Flash-Lite, Gemini 4 Hydrogen, Argon, Carbon | schnell · ausgewogen · gründlich |
 | **Ollama** | jedes installierte Modell, z. B. Qwen 3.5 (4B/9B), Gemma, Llama, Mistral | aus (schnell) · an (gründlich, wenn das Modell nachdenken kann) |
 
-Beispiele: `/modell sonnet`, `/modell deepseek pro`, `/modell ollama qwen3.5:9b`, `/denken schnell`, `/denken gründlich`.
+Beispiele: `/modell sonnet`, `/modell deepseek pro`, `/modell gemini carbon`, `/modell ollama qwen3.5:9b`, `/denken schnell`, `/denken gründlich`.
 Faustregel: Für Alltagsfragen reicht **schnell** oder **ausgewogen** – für knifflige
 Programmier-Aufgaben lieber **gründlich**. Mehr Denk-Tiefe heißt: bessere Antworten,
 aber länger warten und etwas höhere Kosten. Das Gespräch läuft beim Wechsel weiter.
@@ -313,7 +315,7 @@ In der App hat Nova eine leuchtende **Sphäre** als Gesicht – sie zeigt, was N
 tut (nachdenken, arbeiten, schreiben, vorlesen, zuhören). Antippen startet den
 Jarvis-Modus. Aussehen ändern: einfach Nova fragen („mach deine Sphäre grün“).
 
-Beim ersten Start öffnet sich **„Gehirn & Schlüssel“**: Ollama, DeepSeek oder Claude wählen,
+Beim ersten Start öffnet sich **„Gehirn & Schlüssel“**: Ollama, DeepSeek, Gemini oder Claude wählen,
 (bei Bedarf) Schlüssel einfügen, fertig. Den Schlüssel kannst du auch einfach in den Chat einfügen
 (App und Terminal) – er geht nie an die KI. `/gehirn` zeigt bzw. wechselt das Gehirn.
 
@@ -535,7 +537,7 @@ stoppt die Steuerung sofort.
 | `/bild <Pfad> [Frage]` | Bild anhängen (ohne Pfad: aus der Zwischenablage) |
 | `/feedback` | Feedback & Bewertung an den Entwickler schicken |
 | `/denken [stufe]` | Denk-Tiefe: schnell, ausgewogen, gründlich, sehr gründlich, maximal |
-| `/gehirn [deepseek\|claude\|ollama]` | Gehirn zeigen bzw. wechseln |
+| `/gehirn [deepseek\|claude\|gemini\|ollama]` | Gehirn zeigen bzw. wechseln |
 | `/ollama [laden <modell>]` | Ollama-Status zeigen bzw. ein Modell herunterladen |
 | `/update` | jetzt nach einer neuen Version schauen |
 | `/versionen` | gesicherte alte Versionen anzeigen |
@@ -563,6 +565,7 @@ assistant/
     base.py          Token-/Kostenzählung, Werkzeug-Hilfen
     anthropic_provider.py   Claude
     deepseek_provider.py    DeepSeek (OpenAI-kompatibel)
+    gemini_provider.py      Gemini (Google, OpenAI-kompatibel)
     ollama_provider.py      Ollama / LM Studio (lokal, kostenlos)
   ollama.py        Ollama einrichten, Modelle laden
   abwesend.py      AFK-Modus

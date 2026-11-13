@@ -7,6 +7,7 @@ warten und mehr Kosten. Fuer Alltagsfragen reicht "schnell" oder "ausgewogen".
 Gespeichert wird in config/settings.toml:
   [claude]   model = "claude-opus-5-5"   effort = "medium"   (low|medium|high|xhigh|max)
   [deepseek] model = "deepseek-flash"    denken = "aus"      (aus|low|high|max)
+  [gemini]   model = "gemini-3.8-flash"  denken = "low"      (low|medium|high)
   [ollama]   model = "qwen3.5:4b"        denken = "aus"      (aus|an)  - jedes Ollama-Modell
 """
 from __future__ import annotations
@@ -44,6 +45,26 @@ DEEPSEEK_MODELLE = [
      "preis": (0.66, 0.022, 1.98), "preis_spitze": (1.32, 0.044, 3.96), "sieht_bilder": False},
 ]
 
+# Google Gemini (OpenAI-kompatibel). Alle sehen Bilder. "preis_neu": (ab Datum, neuer Preis) -
+# Google hat Preiserhoehungen angekuendigt (Stand 13.11.2026).
+GEMINI_MODELLE = [
+    {"id": "gemini-3.8-flash", "name": "Gemini 3.8 Flash", "kurz": "flash",
+     "info": "schnell und guenstig - der Standard, mit kostenlosem Einstieg", "tempo": "schnell",
+     "preis": (0.75, 0.075, 3.75), "preis_neu": ("2027-01-01", (1.5, 0.15, 7.5)), "sieht_bilder": True},
+    {"id": "gemini-3.5-flash-lite", "name": "Gemini 3.5 Flash-Lite", "kurz": "lite",
+     "info": "blitzschnell und am guenstigsten - fuer einfache Sachen", "tempo": "sehr schnell",
+     "preis": (0.3, 0.03, 2.5), "sieht_bilder": True},
+    {"id": "gemini-4-hydrogen", "name": "Gemini 4 Hydrogen", "kurz": "hydrogen",
+     "info": "Gemini 4, auf Tempo getrimmt - stark und flott", "tempo": "schnell",
+     "preis": (1.5, 0.075, 7.5), "sieht_bilder": True},
+    {"id": "gemini-4-argon", "name": "Gemini 4 Argon", "kurz": "argon",
+     "info": "sehr stark, schneller als Carbon", "tempo": "mittel",
+     "preis": (2.0, 0.1, 10.0), "preis_neu": ("2026-12-01", (4.0, 0.2, 20.0)), "sieht_bilder": True},
+    {"id": "gemini-4-carbon", "name": "Gemini 4 Carbon", "kurz": "carbon",
+     "info": "das staerkste Gemini - fuer sehr schwere Aufgaben, langsamer und teurer", "tempo": "langsam",
+     "preis": (2.0, 0.1, 10.0), "preis_neu": ("2026-12-01", (4.0, 0.2, 20.0)), "sieht_bilder": True},
+]
+
 # DeepSeek-Modell, das Bilder ansieht: beschreibt sie fuer Modelle ohne Augen (V4 Pro).
 DEEPSEEK_SEHMODELL = "deepseek-flash"
 
@@ -59,7 +80,8 @@ def _ollama_modelle() -> list[dict]:
 
 OLLAMA_MODELLE = _ollama_modelle()
 
-MODELLE = {"claude": CLAUDE_MODELLE, "deepseek": DEEPSEEK_MODELLE, "ollama": OLLAMA_MODELLE}
+MODELLE = {"claude": CLAUDE_MODELLE, "deepseek": DEEPSEEK_MODELLE, "gemini": GEMINI_MODELLE,
+           "ollama": OLLAMA_MODELLE}
 
 # Denk-Tiefen: (Wert in settings.toml, Name fuer Menschen, Erklaerung)
 DENKTIEFEN = {
@@ -75,6 +97,11 @@ DENKTIEFEN = {
         ("low", "ausgewogen", "denkt kurz nach"),
         ("high", "gruendlich", "denkt laenger nach - fuer knifflige Aufgaben"),
         ("max", "maximal", "so gruendlich wie moeglich - dauert laenger"),
+    ],
+    "gemini": [
+        ("low", "schnell", "denkt nur ganz kurz nach - fuer Alltagsfragen"),
+        ("medium", "ausgewogen", "denkt etwas nach - guter Mittelweg"),
+        ("high", "gruendlich", "denkt laenger nach - fuer knifflige Aufgaben"),
     ],
     "ollama": [
         ("aus", "schnell", "antwortet sofort, ohne vorher nachzudenken"),
@@ -117,7 +144,8 @@ def sieht_bilder(provider: str, model_id: str) -> bool:
     info = modell_info(provider, wanted)
     if info is not None:
         return bool(info.get("sieht_bilder", False))
-    return provider == "claude"  # Ollama: fragt der Provider Ollama selbst (Faehigkeiten des Modells)
+    # Unbekannte Claude- und Gemini-Modelle: ja. Ollama: fragt der Provider Ollama selbst.
+    return provider in ("claude", "gemini")
 
 
 def modell_name(provider: str, model_id: str) -> str:
@@ -133,6 +161,8 @@ def aktuelle_denktiefe(config, provider: str | None = None) -> str:
     provider = provider or config.active_provider
     if provider == "ollama":
         return config.ollama.denken
+    if provider == "gemini":
+        return config.gemini.denken
     return config.deepseek.denken if provider == "deepseek" else config.claude.effort
 
 
@@ -142,6 +172,8 @@ def _section(config, provider: str):
         return config.deepseek, "denken"
     if provider == "ollama":
         return config.ollama, "denken"
+    if provider == "gemini":
+        return config.gemini, "denken"
     return config.claude, "effort"
 
 
@@ -220,6 +252,50 @@ def normalisiere_deepseek(deepseek, denken_gesetzt: bool) -> None:
     deepseek.denken = _deepseek_stufe(deepseek.denken) or "aus"
 
 
+def normalisiere_gemini(gemini) -> None:
+    """Unsinnige Werte aus [gemini] nicht abstuerzen lassen; abgeloeste Modelle umstellen."""
+    from .config import DEFAULT_GEMINI_MODEL, GEMINI_BASE_URL
+
+    if not isinstance(gemini.model, str) or not _MODELL_ID.match(gemini.model.strip().lower()):
+        gemini.model = DEFAULT_GEMINI_MODEL
+    gemini.model = gemini.model.strip()
+    if gemini.model.lower() in ALTE_GEMINI_NAMEN:
+        gemini.model = ALTE_GEMINI_NAMEN[gemini.model.lower()]
+    gemini.denken = _gemini_stufe(gemini.denken) or "low"
+    if not isinstance(gemini.base_url, str) or not gemini.base_url.startswith("https://"):
+        gemini.base_url = GEMINI_BASE_URL
+    try:
+        gemini.max_tokens = min(65536, max(2048, int(gemini.max_tokens)))
+    except (TypeError, ValueError):
+        gemini.max_tokens = 16384
+
+
+# Abgeloeste Gemini-Modelle (Google leitet sie ab 01.12.2026 um) -> Nachfolger
+ALTE_GEMINI_NAMEN = {
+    "gemini-2.5-flash": "gemini-3.8-flash",
+    "gemini-2.5-pro": "gemini-4-argon",
+    "gemini-2.0-flash": "gemini-3.8-flash",
+    "gemini-2.0-flash-lite": "gemini-3.5-flash-lite",
+}
+
+
+def _gemini_stufe(wert) -> str | None:
+    wert = str(wert or "").strip().lower().replace("\u00fc", "ue")
+    if wert in ("low", "medium", "high"):
+        return wert
+    return {"aus": "low", "off": "low", "none": "low", "minimal": "low", "schnell": "low", "an": "medium",
+            "ausgewogen": "medium", "mittel": "medium", "gruendlich": "high", "xhigh": "high", "max": "high",
+            "maximal": "high", "sehr gruendlich": "high"}.get(wert)
+
+
+def gemini_denken(config, override: str | None = None) -> str:
+    """Denk-Stufe fuer Gemini. Im Live-Modus (override = Claude-Stufe) zaehlt Tempo."""
+    if override:
+        return {"low": "low", "medium": "low", "high": "medium", "xhigh": "high", "max": "high"}.get(
+            override, _gemini_stufe(override) or "low")
+    return _gemini_stufe(config.gemini.denken) or "low"
+
+
 def _deepseek_stufe(wert) -> str | None:
     wert = str(wert or "").strip().lower()
     if wert in ("aus", "low", "high", "max"):
@@ -250,6 +326,11 @@ def preise(provider: str, model_id: str, now: datetime | None = None,
         return None
     if provider == "deepseek" and _spitzenzeit(now):
         return info["preis_spitze"]
+    if "preis_neu" in info:
+        ab, neu = info["preis_neu"]
+        heute = (now or datetime.now(timezone.utc)).astimezone(timezone.utc).date().isoformat()
+        if heute >= ab:
+            return neu
     if "lang_ab" in info and prompt_tokens > info["lang_ab"]:
         return info["preis_lang"]
     return info["preis"]
@@ -268,6 +349,8 @@ def _finde_modell(provider: str, wanted: str) -> str | None:
         return None
     if provider == "deepseek" and wanted in ALTE_DEEPSEEK_NAMEN:
         return ALTE_DEEPSEEK_NAMEN[wanted][0]
+    if provider == "gemini" and wanted in ALTE_GEMINI_NAMEN:
+        return ALTE_GEMINI_NAMEN[wanted]
     if provider == "ollama":
         from .ollama import finde_empfohlen
 
@@ -280,15 +363,16 @@ def _finde_modell(provider: str, wanted: str) -> str | None:
         raw = (wanted_raw or "").strip()
         return raw if _OLLAMA_ID.match(raw) and ".." not in raw else None
     for m in MODELLE.get(provider, []):
-        names = {m["id"], m["kurz"], m["name"].lower(), m["name"].lower().replace("claude ", "").replace("deepseek ", "")}
+        names = {m["id"], m["kurz"], m["name"].lower(),
+                 m["name"].lower().replace("claude ", "").replace("deepseek ", "").replace("gemini ", "")}
         if wanted in names or wanted.replace(" ", "-") in names:
             return m["id"]
     return None
 
 
 def fremdes_modell(wanted: str) -> str | None:
-    """Gehoert der Name zu Claude oder DeepSeek? -> dieses Gehirn (sonst None)."""
-    for other in ("claude", "deepseek"):
+    """Gehoert der Name zu Claude, DeepSeek oder Gemini? -> dieses Gehirn (sonst None)."""
+    for other in ("claude", "deepseek", "gemini"):
         if _finde_modell(other, wanted):
             return other
     return None
@@ -309,6 +393,8 @@ def finde_denktiefe(provider: str, wanted: str) -> str | None:
             return stufe
     if provider == "ollama":
         return _ollama_stufe(raw)
+    if provider == "gemini":
+        return _gemini_stufe(raw)
     idx = _WORTE.get(raw)
     if idx is None:
         return None
@@ -333,7 +419,7 @@ def waehle(config, provider: str | None = None, model: str | None = None,
         found = _finde_modell(provider, model) or (model.strip() if model.strip() == section.model else None)
         if not found and provider == "ollama":
             other = fremdes_modell(model)
-            hint = (f"'{model}' ist ein Modell von {'Claude' if other == 'claude' else 'DeepSeek'} - Ollama nutzt "
+            hint = (f"'{model}' ist ein Modell von {_GEHIRN_NAME.get(other, other)} - Ollama nutzt "
                     f"eigene Modelle (z.B. qwen3.5:4b). Zu {other} wechseln: /gehirn {other}") if other \
                 else f"'{model}' ist kein gueltiger Modellname fuer Ollama (z.B. qwen3.5:4b)."
             return {"ok": False, "changed": False, "provider": provider, "message": hint}
@@ -374,6 +460,9 @@ def waehle(config, provider: str | None = None, model: str | None = None,
     if provider == "claude" and new_model == "claude-fable-5-1" and new_level in ("xhigh", "max"):
         message += " Achtung: Fable denkt so sehr lange und ist teuer."
     return {"ok": True, "message": message, "changed": changed, "provider": provider}
+
+
+_GEHIRN_NAME = {"claude": "Claude", "deepseek": "DeepSeek", "gemini": "Gemini", "ollama": "Ollama"}
 
 
 def _ollama_fehlt(config, modell: str, http=None) -> str:
@@ -426,6 +515,13 @@ def _preis_text(m: dict, rate: float = 0.92) -> str:
     text = f"ca. {_zahl(inp * rate)} \u20ac / {_zahl(out * rate)} \u20ac pro 1 Mio. Token"
     if "preis_spitze" in m:
         text += " (werktags tagsueber doppelt)"
+    if "preis_neu" in m:
+        ab, neu = m["preis_neu"]
+        if datetime.now(timezone.utc).date().isoformat() >= ab:
+            text = f"ca. {_zahl(neu[0] * rate)} \u20ac / {_zahl(neu[2] * rate)} \u20ac pro 1 Mio. Token"
+        else:
+            tag = f"{ab[8:10]}.{ab[5:7]}.{ab[0:4]}"
+            text += f" (ab {tag}: {_zahl(neu[0] * rate)} \u20ac / {_zahl(neu[2] * rate)} \u20ac)"
     return text
 
 

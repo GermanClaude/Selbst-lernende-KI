@@ -1,4 +1,4 @@
-"""Das "Gehirn": orchestriert den aktiven Provider (Claude, DeepSeek oder Ollama).
+"""Das "Gehirn": orchestriert den aktiven Provider (Claude, DeepSeek, Gemini oder Ollama).
 
 Brain ist bewusst schlank. Die eigentliche Modell-Kommunikation und der
 Werkzeug-Loop liegen im jeweiligen Provider (assistant/providers/). Brain kuemmert

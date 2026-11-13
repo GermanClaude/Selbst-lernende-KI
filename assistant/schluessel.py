@@ -1,7 +1,7 @@
 """API-Schluessel einrichten - direkt im Chat (App und Terminal).
 
 Fuegt dein Mensch einen Schluessel in den Chat ein ("sk-..." fuer DeepSeek,
-"sk-ant-..." fuer Claude), wird er NIE an die KI geschickt, sondern:
+"sk-ant-..." fuer Claude, "AQ..." bzw. "AIza..." fuer Gemini), wird er NIE an die KI geschickt, sondern:
   1. erkannt (welches Gehirn?),
   2. kurz ausprobiert (stimmt er? ist Guthaben da?),
   3. in .env gespeichert und das passende Gehirn eingeschaltet.
@@ -32,6 +32,13 @@ PROVIDERS = {
         "url": "https://console.anthropic.com/settings/keys",
         "prefix": "sk-ant-",
     },
+    "gemini": {
+        "name": "Gemini (Google)",
+        "env": "GEMINI_API_KEY",
+        "info": "stark und schnell, kostenloser Einstieg moeglich",
+        "url": "https://aistudio.google.com/apikey",
+        "prefix": "AIza",
+    },
     "ollama": {
         "name": "Ollama (kostenlos, auf deinem PC)",
         "env": "",
@@ -42,7 +49,7 @@ PROVIDERS = {
     },
 }
 
-_KEY = re.compile(r"(?<![A-Za-z0-9_\-])(sk-[A-Za-z0-9_\-]{20,})(?![A-Za-z0-9_\-])")
+_KEY = re.compile(r"(?<![A-Za-z0-9_\-])(sk-[A-Za-z0-9_\-]{20,}|AIza[A-Za-z0-9_\-]{30,}|AQ\.[A-Za-z0-9_\-]{20,})(?![A-Za-z0-9_\-])")
 
 
 def find_key(text: str) -> str | None:
@@ -74,6 +81,8 @@ def find_cloudflare_token(text: str) -> str | None:
 
 
 def provider_for_key(key: str) -> str:
+    if key.startswith(("AIza", "AQ.")):
+        return "gemini"
     return "claude" if key.startswith("sk-ant-") else "deepseek"
 
 
@@ -84,6 +93,8 @@ def mask(key: str) -> str:
 def key_of(config, provider: str) -> str | None:
     if provider == "ollama":
         return None  # kein Schluessel noetig
+    if provider == "gemini":
+        return config.gemini_api_key
     return config.deepseek_api_key if provider == "deepseek" else config.anthropic_api_key
 
 
@@ -108,16 +119,24 @@ def classify(exc: Exception, provider: str) -> tuple[str, str]:
     kind_name = type(exc).__name__.lower()
     if isinstance(exc, ImportError):
         return "missing", f"Fuer {name} fehlt ein Paket ({exc}). Starte einmal start.bat, das installiert es."
-    if status == 401 or "authentication" in kind_name or "invalid api key" in text or "invalid x-api-key" in text:
+    if (status == 401 or "authentication" in kind_name or "invalid api key" in text or "invalid x-api-key" in text
+            or "api key not valid" in text or "api_key_invalid" in text):
         return "invalid", (f"Der {name}-Schluessel wurde abgelehnt - er ist falsch, unvollstaendig kopiert oder "
                            f"geloescht. Hol dir unter {info['url']} einen neuen und fuege ihn einfach hier ein.")
     if status == 402 or "insufficient balance" in text or "credit balance" in text:
-        where = ("platform.deepseek.com unter \u201eTop up\u201c" if provider == "deepseek"
-                 else "console.anthropic.com unter \u201eBilling\u201c")
+        where = {"deepseek": "platform.deepseek.com unter \u201eTop up\u201c",
+                 "gemini": "aistudio.google.com unter \u201eBilling\u201c"}.get(
+            provider, "console.anthropic.com unter \u201eBilling\u201c")
         return "balance", (f"Der Schluessel stimmt, aber dein {name}-Guthaben ist leer. Lade auf {where} "
                            "etwas auf - dann geht es sofort weiter.")
+    if provider == "gemini" and ("location is not supported" in text or "user location" in text):
+        return "forbidden", "Gemini ist in deinem Land (oder ueber deine Verbindung) leider nicht verfuegbar."
     if status == 403 or "permission" in kind_name:
         return "forbidden", f"{name} erlaubt diesem Schluessel das nicht (gesperrt oder nicht freigeschaltet)."
+    if provider == "gemini" and (status == 429 or "resource_exhausted" in text or "quota" in text):
+        return "busy", ("Gemini: Das Kontingent ist gerade aufgebraucht (beim kostenlosen Zugang gibt es "
+                        "Grenzen pro Minute und pro Tag). Kurz warten - oder unter aistudio.google.com die "
+                        "Abrechnung einrichten. Der Schluessel scheint zu stimmen.")
     if status == 429 or "ratelimit" in kind_name:
         return "busy", f"{name} ist gerade ausgelastet (zu viele Anfragen). Der Schluessel scheint zu stimmen."
     if status and int(status) >= 500:
@@ -151,7 +170,13 @@ def test_key(config, provider: str, key: str) -> tuple[bool, str, str]:
     """Probiert den Schluessel kurz aus. -> (ok, Art, Meldung)"""
     name = PROVIDERS[provider]["name"]
     try:
-        if provider == "deepseek":
+        if provider == "gemini":
+            from openai import OpenAI, Timeout
+
+            client = OpenAI(api_key=key, base_url=config.gemini.base_url,
+                            timeout=Timeout(25.0, connect=10.0), max_retries=0)
+            client.models.list()  # kostet nichts, zeigt aber, ob der Schluessel stimmt
+        elif provider == "deepseek":
             from openai import OpenAI, Timeout
 
             client = OpenAI(api_key=key, base_url=config.deepseek.base_url,
@@ -180,6 +205,8 @@ def save_key(config, provider: str, key: str) -> Path:
     os.environ[env] = key
     if provider == "deepseek":
         config.deepseek_api_key = key
+    elif provider == "gemini":
+        config.gemini_api_key = key
     else:
         config.anthropic_api_key = key
     return path

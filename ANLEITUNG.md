@@ -12,6 +12,7 @@ Schritt nach. 🙂
 > |---|---|---|
 > | **Ollama** – läuft direkt auf deinem PC | **kostenlos** | Ollama installieren, ein Modell laden (z. B. Qwen, Llama, Gemma) |
 > | **DeepSeek** – im Internet | **extrem günstig** (Bruchteile eines Cents pro Nachricht) | einen Schlüssel (API-Key) mit ein paar Euro Guthaben |
+> | **Gemini** (Google) – im Internet | günstig, **kostenloser Einstieg** möglich | einen Schlüssel von aistudio.google.com |
 > | **Claude** (Anthropic) – im Internet | etwas teurer | einen Schlüssel (API-Key) mit Guthaben |
 >
 > Du kannst jederzeit wechseln – das Gedächtnis bleibt dabei erhalten.
@@ -26,7 +27,7 @@ Schritt nach. 🙂
    > Windows-Warnung „Der Computer wurde geschützt“? → **„Weitere Informationen“** →
    > **„Trotzdem ausführen“**.
 4. Beim ersten Start öffnet sich **„Gehirn & Schlüssel“**: Wähle **Ollama** (kostenlos),
-   **DeepSeek** oder **Claude** – den Schlüssel einfach einfügen, „Prüfen & speichern“, fertig.
+   **DeepSeek**, **Gemini** oder **Claude** – den Schlüssel einfach einfügen, „Prüfen & speichern“, fertig.
 5. Ab jetzt holt sich Nova neue Versionen selbst (deine alte Version wird jedes Mal gesichert).
 
 Mehr brauchst du nicht. 🎉 Die Schritte unten sind nur nötig, wenn du Nova **aus dem
@@ -123,6 +124,15 @@ git clone -b ccr-cfa1ff8c-wgsyxb https://github.com/GermanClaude/Selbst-lernende
 4. Den Schlüssel (beginnt mit `sk-...`) sofort **kopieren**.
    ⚠️ Er wird nur **einmal** angezeigt.
 
+### Gemini von Google (mit kostenlosem Einstieg)
+1. <https://aistudio.google.com/apikey> öffnen und mit deinem Google-Konto anmelden.
+2. **„API-Schlüssel erstellen“** (Create API key) klicken und den Schlüssel kopieren
+   (beginnt mit `AQ.` oder `AIza`).
+3. Zum Ausprobieren reicht der **kostenlose Zugang** (mit Grenzen pro Minute und Tag). Für mehr
+   richtest du in AI Studio die Abrechnung ein.
+- Modelle: Gemini 3.8 Flash (Standard), 3.5 Flash-Lite (am günstigsten), Gemini 4 Hydrogen,
+  Argon und Carbon (das stärkste).
+
 ### Claude (am stärksten, teurer)
 <https://console.anthropic.com/> → Konto, Guthaben, unter **„API Keys“** einen
 Schlüssel erstellen (beginnt mit `sk-ant-...`) und kopieren. Wählbar sind dann Opus, Sonnet,
@@ -150,6 +160,10 @@ Haiku und Fable – von „blitzschnell und billig“ bis „das Stärkste“.
      ```
      ANTHROPIC_API_KEY=sk-ant-hier-dein-schluessel
      ```
+   - Oder Gemini:
+     ```
+     GEMINI_API_KEY=AQ.hier-dein-schluessel
+     ```
    - Die jeweils andere Zeile einfach so lassen.
    - **Mit Ollama** brauchst du keinen Schlüssel – dann den Editor einfach wieder schließen.
 6. **Speichern** (Strg + S) und den Editor **schließen**.
@@ -161,7 +175,7 @@ Fertig eingerichtet. 🎉
 ## Schritt 5 – Das Gehirn auswählen
 
 **Am einfachsten:** in der App auf **„Gehirn“** in der Seitenleiste klicken (oder im Chat
-`/gehirn ollama`, `/gehirn deepseek`, `/gehirn claude` tippen). Einen Schlüssel kannst du
+`/gehirn ollama`, `/gehirn deepseek`, `/gehirn gemini`, `/gehirn claude` tippen). Einen Schlüssel kannst du
 auch einfach in den Chat einfügen – Nova erkennt, wofür er ist, und schaltet um. Der
 Schlüssel wird dabei nie an die KI geschickt.
 
@@ -173,7 +187,7 @@ Schlüssel wird dabei nie an die KI geschickt.
    [provider]
    aktiv = "claude"
    ```
-   Ändere es zu `"deepseek"` (billig) oder `"ollama"` (kostenlos auf deinem PC).
+   Ändere es zu `"deepseek"` (billig), `"gemini"` (Google) oder `"ollama"` (kostenlos auf deinem PC).
 4. **Speichern** und schließen.
 
 ---

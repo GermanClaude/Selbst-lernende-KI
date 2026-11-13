@@ -176,7 +176,7 @@ class SehDienst:
 
     def warnung(self) -> str:
         r = regeln_aus(self.config.sehen)
-        gehirn = {"claude": "Claude von Anthropic", "deepseek": "DeepSeek",
+        gehirn = {"claude": "Claude von Anthropic", "deepseek": "DeepSeek", "gemini": "Gemini von Google",
                   "ollama": "Ollama auf deinem PC"}.get(self.config.active_provider, self.config.active_provider)
         lokal = self.config.active_provider == "ollama"
         wohin = (" Mit Ollama bleibt alles auf deinem PC." if lokal

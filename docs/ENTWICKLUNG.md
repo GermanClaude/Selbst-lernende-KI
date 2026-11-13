@@ -9,8 +9,8 @@ aktualisieren**, damit nie wieder Wissen verloren geht, wenn ein Chat verschwind
 
 Ein persönlicher KI-Assistent für Windows (läuft auch unter Linux/macOS, viele Extras nur
 Windows). Python-Projekt, ausgeliefert als `KI.exe` (Terminal) und `KI-App.exe` (eigenes Fenster
-per pywebview). Drei austauschbare „Gehirne“: Claude (Anthropic API-Schlüssel), DeepSeek, Ollama
-(lokal, kostenlos). Nova hat ein Langzeitgedächtnis (SQLite), Werkzeuge (Dateien, Shell, Web,
+per pywebview). Vier austauschbare „Gehirne“: Claude (Anthropic API-Schlüssel), DeepSeek, Gemini
+(Google, OpenAI-kompatibel), Ollama (lokal, kostenlos). Nova hat ein Langzeitgedächtnis (SQLite), Werkzeuge (Dateien, Shell, Web,
 PC-Steuerung, Agenten …) und fragt vor riskanten Aktionen nach (`assistant/permissions.py`).
 
 ## Stand
@@ -46,7 +46,8 @@ verwenden** – darin stehen Gedächtnis, Profil und Dateipfade.
 | Bereich | Dateien |
 |---|---|
 | Start, Konfiguration | `run_ki.py`, `assistant/__main__.py`, `assistant/config.py`, `config/` |
-| Denken, Verlauf, Kosten | `assistant/brain.py`, `assistant/providers/` (anthropic, deepseek, ollama), `assistant/modelle.py` |
+| Denken, Verlauf, Kosten | `assistant/brain.py`, `assistant/providers/` (anthropic, deepseek, gemini, ollama), `assistant/modelle.py` |
+| Gemini-Besonderheiten | `providers/gemini_provider.py`: Denk-Signaturen an Werkzeug-Aufrufen unverändert zurückschicken (sonst 400), Nachdenken nicht abschaltbar, Schema ohne `additionalProperties`. Modelle/Preise (mit Datum der angekündigten Erhöhungen) in `modelle.py` – **Stand 13.11.2026, regelmäßig prüfen** |
 | Werkzeuge | `assistant/tools/` – jedes Werkzeug eine Klasse mit `name`, `description`, `input_schema`, `run()`; Anmeldung in `tools/__init__.py` |
 | Claude-Grenzen | `tools/base.py` `grenzen_einhalten()` – max. 20 „strict“-Werkzeuge, max. 24 optionale Angaben |
 | Berechtigungen | `assistant/permissions.py` (`Risk.SAFE/MODERATE/DANGEROUS/AUTOSTART`, Stützräder, AFK strenger) |

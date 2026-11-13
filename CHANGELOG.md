@@ -4,6 +4,24 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.14.0 – 2026-11-13
+
+**Neues Gehirn: Google Gemini**
+- Neben Claude, DeepSeek und Ollama kann Nova jetzt auch mit **Gemini** von Google denken.
+- Einrichten: Schlüssel unter **aistudio.google.com/apikey** erstellen und einfach in den Chat
+  einfügen – oder in **„Gehirn & Schlüssel“ → „Gemini (Google)“**. Nova erkennt den Schlüssel
+  (beginnt mit `AQ.` oder `AIza`), probiert ihn kurz aus und schaltet um. Der Schlüssel geht nie
+  an die KI.
+- **Kostenloser Einstieg möglich:** Google bietet einen Gratis-Zugang mit Grenzen pro Minute
+  und Tag. Ist er aufgebraucht, sagt Nova dir das verständlich.
+- Fünf Modelle zur Wahl: **Gemini 3.8 Flash** (Standard, schnell und günstig),
+  **3.5 Flash-Lite** (am günstigsten), **Gemini 4 Hydrogen** (flott), **Argon** (sehr stark)
+  und **Carbon** (das stärkste). Alle sehen Bilder.
+- Denk-Tiefe: schnell, ausgewogen oder gründlich (`/denken`). Im Terminal: `/gehirn gemini`,
+  `/modell gemini carbon`.
+- Die Kostenanzeige kennt die Gemini-Preise – auch die von Google angekündigten
+  Preiserhöhungen (Argon/Carbon ab 1.12.2026, Flash ab 1.1.2027).
+
 ## 0.13.1 – 2026-11-13
 
 **Sicherheits-Check: kurz und übersichtlich**

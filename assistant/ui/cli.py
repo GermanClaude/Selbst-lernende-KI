@@ -26,7 +26,7 @@ Sonderbefehle (mit '/' beginnen):
   /stuetzraeder an|aus - an: fragt vor allem, nur Arbeitsordner; aus: darf alles
   /aussehen [zuruecksetzen] - Aussehen der App anzeigen bzw. zuruecksetzen
   /name <Name> [= Bedeutung] - der KI einen anderen Namen geben
-  /gehirn [deepseek|claude|ollama] - Gehirn zeigen bzw. wechseln (Schluessel: einfach in den Chat einfuegen)
+  /gehirn [deepseek|claude|gemini|ollama] - Gehirn zeigen bzw. wechseln (Schluessel: einfach in den Chat einfuegen)
   /modell [name]      - Modell zeigen bzw. waehlen (z.B. /modell sonnet, /modell flash, /modell qwen3.5:9b)
   /ollama             - Ollama (kostenlos, auf deinem PC): laeuft es? welche Modelle sind da?
   /ollama laden <modell> - ein Modell fuer Ollama herunterladen (z.B. /ollama laden qwen3.5:4b)
@@ -1073,7 +1073,7 @@ class CLI:
         from ..schluessel import PROVIDERS, braucht_schluessel, key_of, mask
 
         if args:
-            wanted = args[0].lower().replace("anthropic", "claude")
+            wanted = args[0].lower().replace("anthropic", "claude").replace("google", "gemini")
             if wanted not in PROVIDERS:
                 print(_c(f"Moeglich: {', '.join(PROVIDERS)} - z.B. /gehirn deepseek", YELLOW))
                 return
@@ -1089,7 +1089,7 @@ class CLI:
             state = (f"Schluessel {mask(key)}" if key else "kein Schluessel") if braucht_schluessel(pid) \
                 else "kein Schluessel noetig"
             print(_c(f"{mark} {info['name']}: {info['info']} ({state})", CYAN))
-        print(_c("Wechseln: /gehirn deepseek, /gehirn claude oder /gehirn ollama. Neuer Schluessel: einfach "
+        print(_c("Wechseln: /gehirn deepseek, /gehirn claude, /gehirn gemini oder /gehirn ollama. Neuer Schluessel: einfach "
                  "einfuegen.", GREY))
 
     # -- AFK-Modus: allein weiterarbeiten, waehrend du weg bist (abwesend.py) -------
@@ -1266,9 +1266,9 @@ class CLI:
 
     def _split_provider(self, args: list[str]) -> tuple[str, list[str]]:
         """'/modell deepseek pro' -> ('deepseek', ['pro']); ohne Gehirn-Name: das aktive."""
-        if args and args[0].lower() in ("claude", "anthropic", "deepseek", "ollama"):
+        if args and args[0].lower() in ("claude", "anthropic", "deepseek", "gemini", "google", "ollama"):
             low = args[0].lower()
-            return ("claude" if low == "anthropic" else low), args[1:]
+            return {"anthropic": "claude", "google": "gemini"}.get(low, low), args[1:]
         return self.config.active_provider, args
 
     def _apply_model_choice(self, provider: str, model: str | None = None, denken: str | None = None) -> None:
@@ -2145,6 +2145,7 @@ KEY_HINT = (
     "ich pruefe ihn und richte alles ein:\n"
     "  DeepSeek (guenstig): beginnt mit sk-...      -> https://platform.deepseek.com/api_keys\n"
     "  Claude (stark):      beginnt mit sk-ant-...  -> https://console.anthropic.com/settings/keys\n"
+    "  Gemini (Google):     beginnt mit AQ. / AIza  -> https://aistudio.google.com/apikey\n"
     "  Oder ganz ohne Schluessel und kostenlos: Ollama auf deinem PC -> /gehirn ollama"
 )
 JARVIS_HINT = (

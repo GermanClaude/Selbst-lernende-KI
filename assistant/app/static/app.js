@@ -1091,7 +1091,7 @@
   const micBtn = byId('mic-btn');
   const composer = byId('composer');
 
-  const PROVIDERS = { deepseek: 'DeepSeek', anthropic: 'Claude (Anthropic)', claude: 'Claude (Anthropic)', ollama: 'Ollama (kostenlos)' };
+  const PROVIDERS = { deepseek: 'DeepSeek', anthropic: 'Claude (Anthropic)', claude: 'Claude (Anthropic)', gemini: 'Gemini (Google)', google: 'Gemini (Google)', ollama: 'Ollama (kostenlos)' };
   const fmtInt = (n) => (Number(n) || 0).toLocaleString('de-DE');
   function fmtEur(v) {
     v = Number(v) || 0;
@@ -6784,11 +6784,12 @@
   const SU_FALLBACK = [
     { id: 'deepseek', name: 'DeepSeek', info: 'sehr günstig, gut für jeden Tag', url: 'https://platform.deepseek.com/api_keys' },
     { id: 'claude', name: 'Claude (Anthropic)', info: 'sehr stark, teurer', url: 'https://console.anthropic.com/settings/keys' },
+    { id: 'gemini', name: 'Gemini (Google)', info: 'stark und schnell, kostenloser Einstieg möglich', url: 'https://aistudio.google.com/apikey' },
     { id: 'ollama', name: 'Ollama (kostenlos, auf deinem PC)', info: 'kostenlos, läuft auf deinem PC – ohne Schlüssel, ohne Internet',
       url: HL.OLLAMA_DOWNLOAD, needsKey: false },
   ];
-  const SU_TOPUP = { deepseek: 'https://platform.deepseek.com/top_up', claude: 'https://console.anthropic.com/settings/billing' };
-  const SU_ICON = { deepseek: 'zap', claude: 'sparkles', ollama: 'monitor' };
+  const SU_TOPUP = { deepseek: 'https://platform.deepseek.com/top_up', claude: 'https://console.anthropic.com/settings/billing', gemini: 'https://aistudio.google.com/apikey' };
+  const SU_ICON = { deepseek: 'zap', claude: 'sparkles', gemini: 'star', ollama: 'monitor' };
   const su = {
     where: '',          // '' | 'modal' | 'pane'
     welcome: false, data: null, sel: '', loading: false, gen: 0, reqGen: 0, checking: false, result: null,
@@ -6854,7 +6855,7 @@
   /** Ohne Antwort vom Server: die beiden bekannten Gehirne (aus dem Zustand). */
   function fallbackSetup() {
     const low = String(state.provider || '').toLowerCase();
-    const cur = low === 'deepseek' || low === 'ollama' ? low : 'claude';
+    const cur = low === 'deepseek' || low === 'ollama' || low === 'gemini' ? low : 'claude';
     return {
       provider: cur,
       providers: SU_FALLBACK.map((p) => Object.assign({ needsKey: true }, p, {
@@ -7359,9 +7360,10 @@
       page.rel = 'noopener';
     }
     li('Öffne die ', page, ' und melde dich an.');
-    li('Klicke auf ', b('„Create new API key“'), '.');
+    li('Klicke auf ', b(p.id === 'gemini' ? '„API-Schlüssel erstellen“ (Create API key)' : '„Create new API key“'), '.');
     li('Kopiere den Schlüssel und füge ihn hier oben ein.');
     if (p.id === 'deepseek') li('Lade unter ', b('„Top up“'), ' etwas Guthaben auf – ohne Guthaben kann ich nicht antworten.');
+    else if (p.id === 'gemini') li('Zum Ausprobieren reicht der kostenlose Zugang (mit Grenzen pro Minute und Tag). Mehr geht, wenn du in AI Studio die ', b('Abrechnung'), ' einrichtest.');
     else if (p.id === 'claude') li('Guthaben (Credits) lädst du unter ', b('„Billing“'), ' auf.');
   }
 
@@ -7525,7 +7527,7 @@
   function suDetect() {
     const v = suInput.value.trim();
     if (v.length < 20 || !su.data) return;
-    const want = /^sk-ant-/.test(v) ? 'claude' : /^sk-/.test(v) ? 'deepseek' : '';
+    const want = /^sk-ant-/.test(v) ? 'claude' : /^sk-/.test(v) ? 'deepseek' : /^(AQ\.|AIza)/.test(v) ? 'gemini' : '';
     const p = want && su.data.providers.find((x) => x.id === want);
     if (!p || want === su.sel) return;
     su.sel = want;

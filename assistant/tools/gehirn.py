@@ -12,12 +12,12 @@ class GehirnEinstellenTool(Tool):
         "Zeigt oder aendert, welches Modell du nutzt und wie gruendlich du nachdenkst - NUR auf "
         "ausdruecklichen Wunsch deines Menschen (z.B. 'denk schneller', 'antworte schneller', 'nimm "
         "Sonnet', 'denk gruendlicher'). aktion: 'anzeigen' oder 'setzen'. modell: bei Claude opus | "
-        "sonnet | haiku | fable, bei DeepSeek flash | pro, bei Ollama ein heruntergeladenes Modell (z.B. "
+        "sonnet | haiku | fable, bei DeepSeek flash | pro, bei Gemini flash | lite | hydrogen | argon | carbon, bei Ollama ein heruntergeladenes Modell (z.B. "
         "qwen3.5:4b). denken: schnell | ausgewogen | gruendlich | sehr gruendlich | maximal. Gilt ab deiner "
         "naechsten Antwort, das Gespraech bleibt erhalten. Mehr Denk-Tiefe = bessere Antworten bei schweren "
-        "Aufgaben, aber laengeres Warten und hoehere Kosten. Zwischen Claude, DeepSeek und Ollama (kostenlos, "
+        "Aufgaben, aber laengeres Warten und hoehere Kosten. Zwischen Claude, DeepSeek, Gemini und Ollama (kostenlos, "
         "auf dem PC) wechselt dein Mensch selbst: in der App unter 'Gehirn & Schluessel' oder mit /gehirn "
-        "ollama (bzw. /gehirn claude, /gehirn deepseek) - sag ihm das, wenn er wechseln moechte. Neue "
+        "ollama (bzw. /gehirn claude, /gehirn deepseek, /gehirn gemini) - sag ihm das, wenn er wechseln moechte. Neue "
         "Ollama-Modelle laedt er mit /ollama laden <modell>."
     )
     input_schema = {

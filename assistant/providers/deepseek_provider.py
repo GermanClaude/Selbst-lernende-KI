@@ -133,6 +133,8 @@ class DeepSeekProvider(LLMProvider):
                             "name": tc["name"],
                             "arguments": _valid_json_or_empty(tc["arguments"]),
                         },
+                        # Gemini: "Denk-Signatur" muss unveraendert zurueck (sonst Fehler 400).
+                        **({"extra_content": tc["extra_content"]} if tc.get("extra_content") else {}),
                     }
                     for tc in tool_calls
                 ]
@@ -359,6 +361,9 @@ class DeepSeekProvider(LLMProvider):
                     slot = tool_acc.setdefault(idx, {"id": "", "name": "", "arguments": ""})
                     if getattr(tc, "id", None):
                         slot["id"] = tc.id
+                    extra = (getattr(tc, "model_extra", None) or {}).get("extra_content")
+                    if extra:  # Gemini haengt hier seine Denk-Signatur an
+                        slot["extra_content"] = extra
                     fn = getattr(tc, "function", None)
                     if fn:
                         if getattr(fn, "name", None):

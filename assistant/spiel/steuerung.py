@@ -116,7 +116,7 @@ class SpielSteuerung:
         return str(self.einst.stopp_taste or "Strg+Alt+Umschalt+P")
 
     def warnung(self) -> str:
-        gehirn = {"claude": "Claude von Anthropic", "deepseek": "DeepSeek",
+        gehirn = {"claude": "Claude von Anthropic", "deepseek": "DeepSeek", "gemini": "Gemini von Google",
                   "ollama": "Ollama auf deinem PC"}.get(self.config.active_provider, self.config.active_provider)
         kosten = (" Mit Ollama kostet es nichts." if self.config.kostenlos else
                   f" Das kostet Geld \u2013 h\u00f6chstens {_eur(self.einst.max_euro)} \u20ac pro Sitzung, nachts "
@@ -232,7 +232,7 @@ class SpielSteuerung:
             sieht = False
         if not sieht:
             hinweise.append("Achtung: Dein Modell sieht keine Bilder \u2013 der Spielmodus braucht eigentlich ein "
-                            "Modell mit Augen (z.B. Claude Sonnet/Haiku, DeepSeek Flash oder ein Ollama-Modell mit "
+                            "Modell mit Augen (z.B. Claude Sonnet/Haiku, DeepSeek Flash, Gemini oder ein Ollama-Modell mit "
                             "\u201evision\u201c). Ich bekomme nur erkannten Text.")
         with self._lock:
             if self.aktiv:
