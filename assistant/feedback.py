@@ -11,6 +11,9 @@ Ablauf:
      nach (beim Start und alle 30 Minuten). Hoechstens 3 Sendungen pro Stunde und 10 pro Tag.
   4. Nachfrage-Plan (Pop-up "Wie gefaellt dir Nova?"): nach etwa einer Stunde Nutzung, danach
      alle paar Tage - Zustand in data/feedback_state.json.
+  5. Bewertungen: Sterne zaehlen (anonym, pro Installation nur die letzte) zum Durchschnitt; Text
+     und Name werden nur oeffentlich, wenn die Person es ankreuzt. bewertungen() holt Durchschnitt
+     und oeffentliche Rezensionen vom Apps-Skript (?aktion=bewertungen, 1 Stunde zwischengespeichert).
 
 Ziel-URL (erste gueltige gewinnt): [feedback] adresse > FEEDBACK_URL > Datei
 feedback-endpoint.txt auf dem Standard-Branch des Repos (24 h zwischengespeichert).
@@ -50,7 +53,7 @@ FEEDBACK_URL = ""
 FERN_DATEI = "feedback-endpoint.txt"
 
 APP_NAME = "Nova"          # das Apps-Skript nimmt nur app == "Nova" an (nicht der KI-Name!)
-PAYLOAD_VERSION = 1
+PAYLOAD_VERSION = 2
 ARTEN = ("bewertung", "feedback", "bug", "idee")
 AUSLOESER = ("popup", "menue")
 MAX_BILDER = 5
@@ -58,6 +61,11 @@ MAX_KANTE = 1920
 MAX_BILDER_BYTES = 10 * 1024 * 1024
 MAX_TEXT = 20000
 MAX_KONTAKT = 200
+MAX_NAME = 40
+MAX_REZENSION = 600
+MAX_REZENSIONEN = 30
+BEWERTUNGEN_GUELTIG = timedelta(hours=1)
+BEWERTUNGEN_FEHLER_WARTEN = timedelta(minutes=15)
 MAX_PRO_STUNDE = 3
 MAX_PRO_TAG = 10
 AUSGANG_MAX_TAGE = 30
@@ -429,20 +437,36 @@ def _system() -> str:
         return "?"
 
 
+def kennung(root: Any = None) -> str:
+    """Zufaellige, anonyme Kennung dieser Installation (damit pro Installation nur die letzte
+    Bewertung zaehlt). Enthaelt nichts ueber den PC oder die Person."""
+    def holen(stand: dict) -> str:
+        wert = stand.get("kennung")
+        if not (isinstance(wert, str) and re.fullmatch(r"[0-9a-f]{16,40}", wert)):
+            wert = secrets.token_hex(12)
+            stand["kennung"] = wert
+        return wert
+
+    return _stand_aendern(_wurzel(root), holen)
+
+
 def baue_payload(kind: Any, stars: Any, text: Any, contact: Any, bilder: Any, trigger: Any,
-                 config) -> dict:
+                 config, oeffentlich: Any = False, name: Any = None) -> dict:
     """Die Nachricht an das Apps-Skript. Wirft BildFehler (Bilder) oder FeedbackFehler (leer).
 
     kind: bewertung | feedback | bug | idee (auch lob/fehler/sonstiges/...; sonst feedback)
     stars: 1-5 oder None; text: bis 20000 Zeichen; contact: optional, bis 200 Zeichen
     bilder: Liste aus Bild, Bytes, Pfaden, data:-URLs oder {"name", "data"} (hoechstens 5)
-    trigger: popup | menue"""
+    trigger: popup | menue
+    oeffentlich: Text (+ Name) als Rezension zeigen - nur mit Sternen; name: optional, bis 40 Zeichen"""
     sterne = _sterne(stars)
     inhalt = _STEUERZEICHEN.sub("", str(text if text is not None else "")).strip()[:MAX_TEXT]
     kontakt = " ".join(_STEUERZEICHEN.sub(" ", str(contact or "")).split())[:MAX_KONTAKT]
     fertig = bilder_vorbereiten(bilder)
     if sterne is None and not inhalt and not fertig:
         raise FeedbackFehler("Bitte gib Sterne oder einen kurzen Text ein.")
+    oeffentlich = oeffentlich is True and sterne is not None
+    anzeigename = " ".join(_STEUERZEICHEN.sub(" ", str(name or "")).split())[:MAX_NAME] if oeffentlich else ""
     return {
         "app": APP_NAME,
         "v": PAYLOAD_VERSION,
@@ -454,6 +478,9 @@ def baue_payload(kind: Any, stars: Any, text: Any, contact: Any, bilder: Any, tr
         "os": _system(),
         "brain": _gehirn(config),
         "trigger": _ausloeser(trigger),
+        "public": oeffentlich,
+        "name": anzeigename,
+        "install": kennung(config) if getattr(config, "project_root", None) else "",
         "website": "",  # Honigtopf: Bots fuellen ihn, das Skript verwirft dann
         "images": [{"name": b.name, "mime": b.mime, "data": b.b64()} for b in fertig],
     }
@@ -587,6 +614,7 @@ def senden(payload: dict, url: str | None, post: Callable | None = None, *, root
 
 def abschicken(config, kind: Any = "feedback", stars: Any = None, text: Any = "",
                contact: Any = None, bilder: Any = None, trigger: Any = "menue", *,
+               oeffentlich: Any = False, name: Any = None,
                post: Callable | None = None, fetch: Callable | None = None,
                jetzt: datetime | None = None) -> Ergebnis:
     """Alles in einem (fuer Server und Terminal): bauen, Ziel finden, senden, Plan merken.
@@ -595,14 +623,90 @@ def abschicken(config, kind: Any = "feedback", stars: Any = None, text: Any = ""
     Gesendet oder gespeichert zaehlt als "Feedback gegeben" (keine Nachfrage in naechster Zeit)."""
     root, jetzt = _wurzel(config), _jetzt(jetzt)
     try:
-        payload = baue_payload(kind, stars, text, contact, bilder, trigger, config)
+        payload = baue_payload(kind, stars, text, contact, bilder, trigger, config,
+                               oeffentlich=oeffentlich, name=name)
     except (BildFehler, FeedbackFehler) as exc:
         _log("abgelehnt", "ungueltig")
         return Ergebnis("abgelehnt", str(exc), "ungueltig")
     ergebnis = senden(payload, ziel_url(config, fetch=fetch, jetzt=jetzt), post, root=root, jetzt=jetzt)
     if ergebnis.ok:
         gesendet(jetzt, root=root)
+        if ergebnis.status == "gesendet" and payload.get("stars"):
+            # Neue Bewertung -> Durchschnitt beim naechsten Anzeigen frisch holen
+            _stand_aendern(root, lambda stand: stand.pop("bewertungen", None))
     return ergebnis
+
+
+# -- Bewertungen (Durchschnitt + oeffentliche Rezensionen) ----------------------------
+def _google_get(url: str, timeout: float = FERN_TIMEOUT) -> bytes:
+    """Abruf beim Apps-Skript - bewusst OHNE GitHub-Token (der darf nie zu Google)."""
+    import requests
+
+    resp = requests.get(url, headers={"User-Agent": f"Nova/{__version__} (Bewertungen)",
+                                      "Accept": "application/json"}, timeout=timeout)
+    resp.raise_for_status()
+    return resp.content
+
+
+def _kurz(wert: Any, laenge: int) -> str:
+    return " ".join(_STEUERZEICHEN.sub(" ", str(wert if wert is not None else "")).split())[:laenge]
+
+
+def sterne_text(schnitt: float) -> str:
+    """4.6 -> 5 volle Sterne (gerundet auf ganze Sterne, mit leeren Sternen aufgefuellt)."""
+    voll = int(min(5, max(0, round(float(schnitt or 0)))))
+    return "\u2605" * voll + "\u2606" * (5 - voll)
+
+
+def bewertungen_saeubern(roh: Any) -> dict | None:
+    """Antwort des Apps-Skripts pruefen und auf sichere, kurze Werte bringen (oder None)."""
+    if not isinstance(roh, dict) or roh.get("ok") is not True:
+        return None
+    anzahl = _ganzzahl(roh.get("anzahl"), 0, 0)
+    schnitt = round(min(5.0, max(0.0, _zahl(roh.get("schnitt")))), 1) if anzahl else 0.0
+    verteilung_roh = roh.get("verteilung") if isinstance(roh.get("verteilung"), dict) else {}
+    verteilung = {str(i): _ganzzahl(verteilung_roh.get(str(i)), 0, 0) for i in range(1, 6)}
+    rezensionen = []
+    for r in (roh.get("oeffentlich") if isinstance(roh.get("oeffentlich"), list) else [])[:MAX_REZENSIONEN]:
+        if not isinstance(r, dict):
+            continue
+        sterne = _sterne(r.get("sterne"))
+        text = _kurz(r.get("text"), MAX_REZENSION)
+        if sterne is None or not text:
+            continue
+        datum = _kurz(r.get("datum"), 10)
+        rezensionen.append({"sterne": sterne, "text": text, "name": _kurz(r.get("name"), MAX_NAME) or "Anonym",
+                            "datum": datum if re.fullmatch(r"\d{4}-\d{2}-\d{2}", datum) else "",
+                            "version": _kurz(r.get("version"), 30)})
+    return {"anzahl": anzahl, "schnitt": schnitt, "verteilung": verteilung, "oeffentlich": rezensionen}
+
+
+def bewertungen(config, *, fetch: Callable | None = None, holen: Callable | None = None,
+                jetzt: datetime | None = None, netz: bool = True) -> dict | None:
+    """Durchschnitt und oeffentliche Rezensionen - 1 Stunde zwischengespeichert. Ohne Postfach
+    oder Netz: der letzte bekannte Stand (oder None).
+    fetch: wie bei ziel_url (feedback-endpoint.txt); holen: Abruf beim Apps-Skript (Tests)."""
+    root, jetzt = _wurzel(config), _jetzt(jetzt)
+    stand = _lade_stand(root).get("bewertungen")
+    alt = stand.get("daten") if isinstance(stand, dict) else None
+    zeit = _zeit(stand.get("zeit")) if isinstance(stand, dict) else None
+    warten = BEWERTUNGEN_GUELTIG if isinstance(stand, dict) and stand.get("ok", True) else BEWERTUNGEN_FEHLER_WARTEN
+    if zeit is not None and jetzt - warten < zeit <= jetzt + timedelta(minutes=1):
+        return bewertungen_saeubern({"ok": True, **alt}) if isinstance(alt, dict) else None
+    if not netz:
+        return bewertungen_saeubern({"ok": True, **alt}) if isinstance(alt, dict) else None
+    url = ziel_url(config, fetch=fetch, jetzt=jetzt)
+    if not url:
+        return None
+    try:
+        daten = bewertungen_saeubern(json.loads((holen or _google_get)(url + "?aktion=bewertungen")))
+    except Exception:  # noqa: BLE001 - offline usw.; Text enthaelt die URL -> nicht loggen
+        daten = None
+    neu = {"zeit": _iso(jetzt), "ok": daten is not None, "daten": daten if daten is not None else alt}
+    _stand_aendern(root, lambda s: s.__setitem__("bewertungen", neu))
+    if daten is None:
+        return bewertungen_saeubern({"ok": True, **alt}) if isinstance(alt, dict) else None
+    return daten
 
 
 # -- Ausgang -------------------------------------------------------------------------

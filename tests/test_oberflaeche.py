@@ -196,7 +196,9 @@ def test_sichtbare_texte_mit_umlauten():
         "Feedback &amp; Bewertung", "Jetzt senden", "Abbrechen",
         "Was gefällt dir? Was können wir besser machen? Fehler bitte genau beschreiben.",
         "Deine E-Mail für Rückfragen", "Text, Bewertung, App-Version und Bilder werden per E-Mail an den Entwickler "
-        "geschickt. Bitte keine Passwörter oder privaten Daten.", "Wie gefällt dir Nova?", "Später",
+        "geschickt. Deine Sterne zählen anonym zum Durchschnitt. Bitte keine Passwörter oder privaten Daten.",
+        "Meine Bewertung öffentlich zeigen", "Name für die Rezension", "Rezensionen ansehen",
+        "Wie gefällt dir Nova?", "Später",
         "Bilder (optional)", "einen Ausschnitt kopieren und hier mit", "Bilder hier ablegen",
     ):
         assert text in HTML, text

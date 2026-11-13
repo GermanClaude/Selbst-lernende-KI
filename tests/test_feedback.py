@@ -244,9 +244,10 @@ def test_payload_hat_genau_die_vereinbarten_felder():
     cfg = SimpleNamespace(active_provider="deepseek", active_model="deepseek-flash")
     p = feedback.baue_payload("bug", 2, "  Der Knopf geht nicht.  ", " ich bei beispiel ", None, "popup", cfg)
     assert p == {
-        "app": "Nova", "v": 1, "version": __version__, "kind": "bug", "stars": 2,
+        "app": "Nova", "v": 2, "version": __version__, "kind": "bug", "stars": 2,
         "text": "Der Knopf geht nicht.", "contact": "ich bei beispiel", "os": platform.platform(),
         "brain": "deepseek/deepseek-flash", "trigger": "popup", "website": "", "images": [],
+        "public": False, "name": "", "install": "",
     }
     assert feedback.baue_payload("idee", None, "x", None, [], "menue", None)["brain"] == "?"
 

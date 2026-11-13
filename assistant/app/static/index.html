@@ -124,7 +124,7 @@
       <button class="sb-btn" type="button" data-cmd="/update"><span data-icon="refresh"></span>Nach Updates suchen</button>
       <button class="sb-btn" type="button" data-cmd="/versionen"><span data-icon="history"></span>Versionen</button>
       <button class="sb-btn" type="button" data-cmd="/autostart"><span data-icon="power"></span>Autostart prüfen</button>
-      <button class="sb-btn" type="button" id="sb-feedback" aria-haspopup="dialog" title="Feedback &amp; Bewertung schicken (/feedback)"><span data-icon="star"></span>Feedback &amp; Bewertung</button>
+      <button class="sb-btn" type="button" id="sb-feedback" aria-haspopup="dialog" title="Feedback &amp; Bewertung schicken (/feedback)"><span data-icon="star"></span>Feedback &amp; Bewertung<span class="sb-score" id="sb-score" hidden></span></button>
       <button class="sb-btn" type="button" data-cmd="/hilfe"><span data-icon="help"></span>Hilfe</button>
       <button class="sb-btn" type="button" id="sb-terminal" aria-haspopup="dialog"><span data-icon="terminal"></span>Terminal-Version öffnen</button>
     </nav>
@@ -836,6 +836,15 @@
     </div>
     <div class="dlg-body fb-body" id="fb-form">
       <p class="fb-note" id="fb-note" hidden><span data-icon="info"></span><span id="fb-note-text"></span></p>
+      <div class="fb-score" id="fb-score" hidden>
+        <div class="fbs-top">
+          <span class="fbs-stars" id="fbs-stars" aria-hidden="true"></span>
+          <b class="fbs-avg" id="fbs-avg"></b>
+          <span class="fbs-count" id="fbs-count"></span>
+          <button class="btn small ghost fbs-more" id="fbs-more" type="button" aria-expanded="false" aria-controls="fbs-list" hidden>Rezensionen ansehen</button>
+        </div>
+        <ul class="fbs-list" id="fbs-list" hidden></ul>
+      </div>
       <div class="fb-pick">
         <span class="field-label" id="fb-stars-label">Deine Bewertung <span class="opt">(optional)</span></span>
         <div class="fb-rate">
@@ -869,7 +878,14 @@
         <span class="field-label">Deine E-Mail für Rückfragen <span class="opt">(optional)</span></span>
         <input class="input" id="fb-contact" type="email" maxlength="200" autocomplete="email" spellcheck="false" inputmode="email">
       </label>
-      <p class="fb-privacy"><span data-icon="shield"></span><span>Text, Bewertung, App-Version und Bilder werden per E-Mail an den Entwickler geschickt. Bitte keine Passwörter oder privaten Daten.</span></p>
+      <div class="fb-public">
+        <label class="fb-check"><input type="checkbox" id="fb-pub"><span>Meine Bewertung öffentlich zeigen <span class="opt">(Sterne und Text – nie deine E-Mail)</span></span></label>
+        <label class="field" id="fb-name-row" hidden>
+          <span class="field-label">Name für die Rezension <span class="opt">(optional – leer = „Anonym“)</span></span>
+          <input class="input" id="fb-name" type="text" maxlength="40" autocomplete="nickname" spellcheck="false">
+        </label>
+      </div>
+      <p class="fb-privacy"><span data-icon="shield"></span><span>Text, Bewertung, App-Version und Bilder werden per E-Mail an den Entwickler geschickt. Deine Sterne zählen anonym zum Durchschnitt. Bitte keine Passwörter oder privaten Daten.</span></p>
       <p class="fb-err" id="fb-err" role="alert" hidden></p>
     </div>
     <div class="dlg-body fb-done" id="fb-done" role="status" hidden>

@@ -1613,6 +1613,7 @@ class AppController(CLI):
                 self.config, kind=str(data.get("kind") or "feedback"), stars=data.get("stars"),
                 text=str(data.get("text") or ""), contact=str(contact) if contact else None,
                 bilder=images or None, trigger=str(data.get("trigger") or "menue"),
+                oeffentlich=data.get("public") is True, name=str(data.get("name") or "")[:200],
                 post=self._feedback_post, fetch=self._feedback_fetch)
         finally:
             self._feedback_lock.release()
@@ -1621,6 +1622,17 @@ class AppController(CLI):
         if ergebnis.status == "gesendet":
             self._feedback_ausgang_bald()
         return ergebnis.als_antwort()
+
+    def bewertungen(self) -> dict:
+        """GET /api/bewertungen - Durchschnitt und oeffentliche Rezensionen (1 Stunde gemerkt)."""
+        from .. import feedback
+
+        try:
+            daten = feedback.bewertungen(self.config, fetch=self._feedback_fetch)
+        except Exception as exc:  # noqa: BLE001
+            logger.info("Bewertungen: %s", type(exc).__name__)
+            daten = None
+        return {"ok": True, "bewertungen": daten}
 
     def feedback_seen(self, which: str = "gezeigt") -> dict:
         """POST /api/feedback/gezeigt (Pop-up erscheint) und /api/feedback/spaeter (weggeklickt):

@@ -1,0 +1,44 @@
+# Holt alle 6 Stunden Sterne-Durchschnitt und oeffentliche Rezensionen vom Feedback-Postfach
+# (Apps-Skript) und schreibt sie in die README und nach docs/bewertungen.json.
+# Ohne Postfach (feedback-endpoint.txt fehlt) oder ohne Aenderung passiert nichts.
+name: Bewertungen aktualisieren
+
+on:
+  schedule:
+    - cron: "23 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: bewertungen
+  cancel-in-progress: false
+
+jobs:
+  bewertungen:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Pakete
+        run: pip install requests
+
+      - name: Bewertungen holen
+        run: python packaging/bewertungen.py
+
+      - name: Speichern, wenn sich etwas geaendert hat
+        run: |
+          if [ -z "$(git status --porcelain -- README.md docs/bewertungen.json)" ]; then
+            echo "Keine Aenderung."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md docs/bewertungen.json
+          git commit -m "Bewertungen aktualisiert [skip ci]"
+          git push

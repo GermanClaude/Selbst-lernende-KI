@@ -3290,3 +3290,21 @@ button.att-thumb:hover { border-color: var(--accent); box-shadow: var(--shadow-s
 .spiel-bilder a { display: block; flex: 1 1 140px; max-width: 220px; border-radius: calc(var(--radius) * .75); overflow: hidden; border: 1px solid var(--border); }
 .spiel-bilder img { display: block; width: 100%; height: auto; }
 @media (max-width: 560px) { .spiel-grenzen { grid-template-columns: 1fr; } }
+
+/* Bewertungen: Durchschnitt, Rezensionen, "oeffentlich zeigen" */
+.sb-score { margin-left: auto; font-size: 12px; font-weight: 600; color: var(--warn); }
+.fb-score { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px;
+  margin-bottom: 4px; background: var(--surface-2); }
+.fbs-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.fbs-stars, .fbs-st { color: var(--warn); letter-spacing: 1px; }
+.fbs-stars { font-size: 18px; }
+.fbs-count { color: var(--text-3); }
+.fbs-more { margin-left: auto; }
+.fbs-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 8px; max-height: 240px; overflow: auto; }
+.fbs-item { border-top: 1px solid var(--border); padding-top: 8px; }
+.fbs-head { display: flex; gap: 8px; align-items: baseline; font-size: 13px; }
+.fbs-date { color: var(--text-3); margin-left: auto; font-size: 12px; }
+.fbs-item p { margin: 4px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.fb-public { display: grid; gap: 8px; }
+.fb-check { display: flex; gap: 8px; align-items: flex-start; cursor: pointer; }
+.fb-check input { margin-top: 3px; }

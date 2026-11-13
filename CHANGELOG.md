@@ -4,6 +4,21 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.15.0 – 2026-11-13
+
+**Bewertungen: Sterne für alle sichtbar**
+- Im Fenster **„Feedback & Bewertung“** siehst du jetzt, wie Nova bewertet wird: den
+  **Durchschnitt** (z. B. „★★★★★ 4,6 von 5 · 23 Bewertungen“) und die neuesten
+  **Rezensionen** anderer Nutzer. Der Schnitt steht auch in der Seitenleiste.
+- Neu beim Bewerten: **„Meine Bewertung öffentlich zeigen“** – dann erscheinen deine Sterne und
+  dein Text (wahlweise mit einem Namen) als Rezension. Deine E-Mail-Adresse wird nie gezeigt;
+  Links, E-Mail-Adressen und Telefonnummern werden aus dem Text entfernt.
+- Deine Sterne zählen immer anonym zum Durchschnitt – pro Installation nur deine letzte
+  Bewertung (du kannst sie also jederzeit ändern).
+- Auch auf der **GitHub-Seite** steht jetzt die aktuelle Bewertung – sie wird automatisch alle
+  6 Stunden aktualisiert.
+- Im Terminal fragt `/feedback` ebenfalls, ob die Bewertung öffentlich sein darf.
+
 ## 0.14.0 – 2026-11-13
 
 **Neues Gehirn: Google Gemini**

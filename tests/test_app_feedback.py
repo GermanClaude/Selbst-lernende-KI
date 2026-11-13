@@ -281,7 +281,8 @@ def test_terminal_feedback_asks_step_by_step_and_sends(terminal_fb, tmp_path, ca
                        "9", "4",                       # Sterne: erst ungueltig
                        "Tolle App", "Zweite Zeile", "",  # Text, leere Zeile = fertig
                        str(tmp_path / "fehlt.png"), f'"{tmp_path / "mit leer.png"}"',
-                       "rueckfrage@example.invalid"])
+                       "rueckfrage@example.invalid",
+                       "j", "Testi"])                  # oeffentlich zeigen, als "Testi"
     cli._handle_command("/feedback")
     out = capsys.readouterr().out
     assert "Bitte eine Zahl von 1 bis 4" in out and "Bitte eine Zahl von 1 bis 5" in out
@@ -292,6 +293,7 @@ def test_terminal_feedback_asks_step_by_step_and_sends(terminal_fb, tmp_path, ca
     assert payload["kind"] == "idee" and payload["stars"] == 4 and payload["text"] == "Tolle App\nZweite Zeile"
     assert payload["contact"] == "rueckfrage@example.invalid" and payload["trigger"] == "menue"
     assert len(payload["images"]) == 1 and payload["images"][0]["name"] == "mit leer.png"
+    assert payload["public"] is True and payload["name"] == "Testi" and payload["install"]
 
 
 def test_terminal_feedback_can_be_cancelled_and_needs_content(terminal_fb, capsys):
@@ -310,7 +312,7 @@ def test_terminal_feedback_can_be_cancelled_and_needs_content(terminal_fb, capsy
 
 
 def test_terminal_hint_once_when_due_and_feedback_after_it_counts_as_popup(terminal_fb, tmp_path, capsys):
-    cli = terminal_fb(["", "5", "Super", "", "", ""])
+    cli = terminal_fb(["", "5", "Super", "", "", "", ""])
     feedback.nutzung_hinzufuegen(2 * 3600, root=tmp_path)
     inputs = iter(["/feedback"])
 

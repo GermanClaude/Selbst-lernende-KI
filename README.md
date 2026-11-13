@@ -33,6 +33,16 @@ arbeitet weiter, während du weg bist – und läuft auf Wunsch komplett kostenl
 
 ---
 
+## ⭐ Bewertungen
+
+<!-- BEWERTUNGEN:START -->
+**Noch keine Bewertungen** – sei die erste Person! In Nova: **„Feedback & Bewertung“** in der Seitenleiste (oder `/feedback`).
+<!-- BEWERTUNGEN:ENDE -->
+
+*Wird automatisch alle 6 Stunden aktualisiert.*
+
+---
+
 ## Was sie kann – in Bildern
 
 <table>

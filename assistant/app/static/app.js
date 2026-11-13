@@ -8223,6 +8223,9 @@
     gen: 0, closeTimer: 0 };
   const fbText = byId('fb-text');
   const fbContact = byId('fb-contact');
+  const fbPub = byId('fb-pub');
+  const fbName = byId('fb-name');
+  fbPub.addEventListener('change', () => { byId('fb-name-row').hidden = !fbPub.checked; });
   const fbErr = byId('fb-err');
   const fbGo = byId('fb-go');
   const fbCancel = byId('fb-cancel');
@@ -8384,7 +8387,41 @@
       : n + ' frühere Rückmeldungen warten noch und werden automatisch gesendet.');
     byId('fb-note-text').textContent = notes.join(' ');
     byId('fb-note').hidden = !notes.length;
+    fbLoadScore(gen);
   }
+
+  /** Durchschnitt + oeffentliche Rezensionen (GET /api/bewertungen) - im Fenster und in der Seitenleiste */
+  async function fbLoadScore(gen) {
+    const s = HL.bewertungAnzeige(await getJson('/api/bewertungen'));
+    const chip = byId('sb-score');
+    chip.hidden = !s;
+    if (s) chip.textContent = '★ ' + s.schnittText;
+    if (gen !== undefined && (gen !== fb.gen || fmodal.hidden)) return;
+    const box = byId('fb-score');
+    box.hidden = !s;
+    if (!s) return;
+    byId('fbs-stars').textContent = s.sterne;
+    byId('fbs-avg').textContent = s.schnittText + ' von 5';
+    byId('fbs-count').textContent = '· ' + s.anzahlText;
+    const more = byId('fbs-more');
+    const list = byId('fbs-list');
+    more.hidden = !s.rezensionen.length;
+    list.replaceChildren(...s.rezensionen.map((r) => {
+      const li = h('li', 'fbs-item');
+      const kopf = h('div', 'fbs-head');
+      kopf.append(h('span', 'fbs-st', '★'.repeat(r.sterne) + '☆'.repeat(5 - r.sterne)), h('b', null, r.name),
+        h('span', 'fbs-date', r.datum ? r.datum.split('-').reverse().join('.') : ''));
+      li.append(kopf, h('p', null, r.text));
+      return li;
+    }));
+  }
+  byId('fbs-more').addEventListener('click', () => {
+    const list = byId('fbs-list');
+    list.hidden = !list.hidden;
+    byId('fbs-more').setAttribute('aria-expanded', list.hidden ? 'false' : 'true');
+    byId('fbs-more').textContent = list.hidden ? 'Rezensionen ansehen' : 'Rezensionen ausblenden';
+  });
+  setTimeout(() => { fbLoadScore(); }, 4000); // Sterne in der Seitenleiste (einmal nach dem Start)
 
   function closeFeedback() {
     if (fmodal.hidden) return;
@@ -8412,6 +8449,9 @@
     fb.done = '';
     fbText.value = '';
     fbContact.value = '';
+    fbPub.checked = false;
+    fbName.value = '';
+    byId('fb-name-row').hidden = true;
     fbTray.clear();
     fbErr.hidden = true;
     markStars(fbStars, 0);
@@ -8459,7 +8499,12 @@
     }
     const body = HL.feedbackDaten({
       kind: fb.kind, stars: fb.stars, text: fbText.value, contact: fbContact.value, images: imgs, trigger: fb.trigger,
+      public: fbPub.checked, name: fbName.value,
     });
+    if (fbPub.checked && !fb.stars) {
+      fbError('Für eine öffentliche Bewertung brauche ich ein paar Sterne.', fbStars.querySelector('[tabindex="0"]'));
+      return;
+    }
     fbErr.hidden = true;
     fbSending(true);
     const r = await post('/api/feedback', body);

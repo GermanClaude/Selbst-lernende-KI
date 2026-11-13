@@ -7,7 +7,7 @@ koennen. Der Server spricht nur mit der eigenen Oberflaeche:
   GET  /, /static/*      Oberflaeche
   GET  /api/events       Ereignisstrom (Server-Sent Events)
   GET  /api/state, /api/history, /api/profile, /api/memory, /api/tutorial, /api/appearance, /custom.css,
-       /api/setup, /api/feedback, /api/ollama
+       /api/setup, /api/feedback, /api/bewertungen, /api/ollama
   GET  /api/bild/<h|e|s>/<name>?t=   Bild anzeigen: h = hochgeladen (data/bilder/hochgeladen),
                                    e = erstellt (<Arbeitsordner>/bilder), s = Spielbericht
                                    (<Arbeitsordner>/spiele/<Datum>) - nur PNG/JPEG/GIF/WebP
@@ -189,6 +189,8 @@ class AppServer:
                     return self._json(ctl.setup_info())
                 if url.path == "/api/feedback":
                     return self._json(ctl.feedback_status())
+                if url.path == "/api/bewertungen":
+                    return self._json(ctl.bewertungen())
                 if url.path == "/api/ollama":
                     return self._json(ctl.ollama_info())
                 if url.path.startswith("/api/bild/"):

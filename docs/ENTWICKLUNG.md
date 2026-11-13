@@ -61,7 +61,7 @@ verwenden** – darin stehen Gedächtnis, Profil und Dateipfade.
 | Bilder | `bilder.py`, `bildgenerator.py` (AI Horde / Cloudflare), `tools/bild_tools.py` |
 | Sicherheits-Check | `sicherheit.py` (Sammeln per PowerShell → Signaturen → Faustregeln → Bericht), `tools/sicherheit.py` |
 | Updates, Autostart | `updater.py`, `austausch.py` (exe tauschen, Verknüpfungen), `selbststart.py` |
-| Feedback | `feedback.py`, `docs/FEEDBACK_EINRICHTEN.md` |
+| Feedback & Bewertungen | `feedback.py` (inkl. `bewertungen()`), `packaging/nova-feedback.gs` (Apps-Skript: Mail + Tabelle + `?aktion=bewertungen`), `packaging/bewertungen.py` + `.github/workflows/bewertungen.yml` (README-Abschnitt alle 6 h), `docs/FEEDBACK_EINRICHTEN.md` |
 | Build | `packaging/` (PyInstaller), `.github/workflows/` |
 
 ## Regeln (Kurzfassung aus CLAUDE.md)

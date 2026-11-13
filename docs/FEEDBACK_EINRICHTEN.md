@@ -2,6 +2,11 @@
 
 Nutzer können in Nova über **„Feedback & Bewertung“** Sterne, Text, Fehlerberichte und
 Bilder schicken. Die Nachricht kommt bei dir als **E-Mail mit Bildern im Anhang** an.
+Sterne-Bewertungen sammelt das Skript zusätzlich in der Google-Tabelle **„Nova Bewertungen“**
+(legt es beim ersten Test selbst in deinem Google Drive an). Daraus berechnet es den Durchschnitt,
+den Nova und die GitHub-Seite anzeigen; Text und Name erscheinen nur, wenn die Person
+„öffentlich zeigen“ angekreuzt hat. **Rezension ausblenden:** in der Tabelle in der Spalte
+„Sichtbar“ `FALSE` eintragen (nach höchstens 5 Minuten weg).
 
 Damit das geht, ohne dass deine Adresse irgendwo in der App oder im öffentlichen Code
 steht, läuft ein kleines Skript **in deinem eigenen Google-Konto**. Es schickt jede
@@ -24,8 +29,9 @@ Das musst du **einmal** am PC machen (ca. 10 Minuten):
 4. Google fragt nach Berechtigungen: **„Berechtigungen prüfen“** → dein Konto wählen. Bei
    „Google hat diese App nicht überprüft“ auf **„Erweitert“** → **„Zu Nova Feedback wechseln
    (unsicher)“** → **„Zulassen“**. Das ist normal, weil es dein eigenes Skript ist.
-   Kurz danach kommt eine Mail **„[Nova-Feedback] Test“** (zur Sicherheit auch im
-   Spam-Ordner nachsehen).
+   Kurz danach kommt eine Mail **„[Nova-Feedback] Test“** mit dem Link zur Bewertungs-Tabelle
+   (zur Sicherheit auch im Spam-Ordner nachsehen). Google fragt dabei auch nach Zugriff auf
+   Tabellen – das ist für die Bewertungen.
 5. Oben rechts **„Bereitstellen“** → **„Neue Bereitstellung“** → beim Zahnrad neben
    „Typ auswählen“ **„Web-App“** wählen:
    - Beschreibung: `Nova Feedback`
@@ -37,7 +43,9 @@ Das musst du **einmal** am PC machen (ca. 10 Minuten):
    endet auf `/exec`) und an Claude schicken. Sie ist kein Passwort und zeigt deine
    E-Mail-Adresse nicht.
 7. Test: die URL im Browser öffnen. Es muss `{"ok":true,"dienst":"nova-feedback"}`
-   erscheinen.
+   erscheinen. Mit `?aktion=bewertungen` am Ende siehst du den Bewertungs-Stand.
+   Die URL kommt dann in die Datei `feedback-endpoint.txt` im Repo – daraus holen sich Nova und die
+   GitHub-Action „Bewertungen aktualisieren“ die Adresse.
 8. Empfehlung: in Gmail einen Filter anlegen. Betreff enthält „[Nova-Feedback]“ → Label
    „Nova-Feedback“. (Bitte **nicht** „Nie als Spam einstufen“ wählen – die Adresse der Web-App
    ist öffentlich, so bleibt Googles Spamschutz aktiv.)

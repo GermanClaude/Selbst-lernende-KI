@@ -245,6 +245,28 @@
       images: (Array.isArray(x.images) ? x.images : []).filter((b) => b && istBildDaten(b.data))
         .slice(0, MAX_FEEDBACK).map((b) => ({ name: dateiName(b.name, dataUrlTyp(b.data)), data: b.data })),
       trigger: x.trigger === 'popup' ? 'popup' : 'menue',
+      public: x.public === true && sterne(x.stars) !== null,
+      name: x.public === true ? String(x.name == null ? '' : x.name).replace(/\s+/g, ' ').trim().slice(0, 40) : '',
+    };
+  }
+
+  /** Antwort von GET /api/bewertungen -> {anzahl, schnitt, text, rezensionen} oder null */
+  function bewertungAnzeige(r) {
+    const b = r && typeof r === 'object' && r.bewertungen && typeof r.bewertungen === 'object' ? r.bewertungen : null;
+    if (!b) return null;
+    const anzahl = Number(b.anzahl);
+    const schnitt = Number(b.schnitt);
+    if (!Number.isInteger(anzahl) || anzahl < 1 || !(schnitt >= 1 && schnitt <= 5)) return null;
+    const voll = Math.max(0, Math.min(5, Math.round(schnitt)));
+    const rezensionen = (Array.isArray(b.oeffentlich) ? b.oeffentlich : []).filter((x) => x && typeof x === 'object'
+      && sterne(x.sterne) !== null && typeof x.text === 'string' && x.text.trim()).slice(0, 30).map((x) => ({
+      sterne: sterne(x.sterne), text: x.text.trim().slice(0, 600), name: String(x.name || 'Anonym').slice(0, 40),
+      datum: /^\d{4}-\d{2}-\d{2}$/.test(String(x.datum || '')) ? String(x.datum) : '' }));
+    return {
+      anzahl, schnitt, sterne: '★'.repeat(voll) + '☆'.repeat(5 - voll),
+      schnittText: schnitt.toFixed(1).replace('.', ','),
+      anzahlText: anzahl === 1 ? '1 Bewertung' : anzahl + ' Bewertungen',
+      rezensionen,
     };
   }
 
@@ -391,6 +413,7 @@
     istBildDaten, dateiName, anzeigeName, bildUrl, normBilder, anzahlBilder, bildText, groesseText,
     gesamtLaenge, neueId, echoSchluessel, textGewinnt,
     FEEDBACK_ARTEN, STERNE_TEXT, sterne, feedbackArt, feedbackLeer, feedbackDaten, feedbackErgebnis, nachfrageFrei,
+    bewertungAnzeige,
     ANBIETER, normBilderSetup, aktivText, kontoIdOk, tokenOk, cloudflareDaten,
   };
 }));

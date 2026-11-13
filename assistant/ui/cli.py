@@ -537,6 +537,10 @@ class CLI:
 
         trigger = "popup" if self._feedback_from_hint else "menue"
         print(_c("\nFeedback & Bewertung", BOLD))
+        schnitt = feedback.bewertungen(self.config, fetch=self._feedback_fetch, netz=self._feedback_fetch is None)
+        if schnitt and schnitt["anzahl"]:
+            print(_c(f"Nova steht gerade bei {feedback.sterne_text(schnitt['schnitt'])} "
+                     f"({str(schnitt['schnitt']).replace('.', ',')} von 5, {schnitt['anzahl']} Bewertungen).", CYAN))
         print(_c("Text, Bewertung, App-Version und Bilder werden per E-Mail an den Entwickler geschickt. "
                  "Bitte keine Passwoerter oder privaten Daten. (q = abbrechen)", GREY))
         try:
@@ -582,6 +586,12 @@ class CLI:
                 except BildFehler as exc:
                     print(_c(str(exc), YELLOW))
             contact = _feedback_frage("Deine E-Mail fuer Rueckfragen (optional, Enter = keine): ")
+            oeffentlich, name = False, ""
+            if stars is not None and text.strip():
+                antwort = _feedback_frage("Deine Bewertung oeffentlich zeigen (Sterne + Text, ohne E-Mail)? [j/N]: ")
+                oeffentlich = antwort.lower() in ("j", "ja", "y", "yes")
+                if oeffentlich:
+                    name = _feedback_frage("Unter welchem Namen? (Enter = anonym): ")
         except _FeedbackAbbruch:
             print(_c("Abgebrochen - es wurde nichts gesendet.", GREY))
             return
@@ -594,6 +604,7 @@ class CLI:
             return
         try:
             ergebnis = feedback.abschicken(self.config, kind, stars, text, contact or None, bilder, trigger,
+                                           oeffentlich=oeffentlich, name=name,
                                            post=self._feedback_post, fetch=self._feedback_fetch)
         finally:
             self._feedback_lock.release()
