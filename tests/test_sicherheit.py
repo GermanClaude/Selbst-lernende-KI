@@ -162,6 +162,70 @@ def test_ignorieren(tmp_path):
     assert rest == [] and weg == 2
 
 
+def test_installer_im_temp_ordner_wird_ein_sammeleintrag():
+    t = "C:\\Users\\max\\AppData\\Local\\Temp\\vs123.uti\\"
+    namen = [f"teil{i}.dll" for i in range(300)] + ["setup.exe", "helfer.exe"]
+    daten = {"dateien": [{"pfad": t + n, "groesse": 1, "erstellt": "2026-11-08T10:00:00"} for n in namen]}
+    # setup.exe signiert, die DLLs nachweislich unsigniert, helfer.exe ungeprueft (Liste gekappt)
+    sigs = {(t + n).lower(): UNSIGNIERT for n in namen if n.endswith(".dll")}
+    sigs[(t + "setup.exe").lower()] = SIGNIERT
+    funde = bewerten(daten, sigs, ORTE)
+    assert len(funde) == 1
+    (fund,) = funde
+    assert fund.titel == "300 auffaellige Dateien in vs123.uti" and fund.stufe == "mittel"
+    assert fund.pfad.lower() == t.rstrip("\\").lower()
+    assert any(g.startswith("z.B. teil0.dll") for g in fund.gruende)
+
+
+def test_temp_unterordner_werden_nach_oberstem_ordner_gesammelt():
+    t = "C:\\Users\\max\\AppData\\Local\\Temp\\pytest-of-max\\"
+    daten = {"dateien": [{"pfad": t + f"lauf{i}\\test_{i}\\KI.exe", "groesse": 1, "erstellt": "2026-11-08T10:00:00"}
+                         for i in range(20)]}
+    sigs = {(t + f"lauf{i}\\test_{i}\\KI.exe").lower(): UNSIGNIERT for i in range(20)}
+    (fund,) = bewerten(daten, sigs, ORTE)
+    assert fund.titel == "20 auffaellige Dateien in pytest-of-max"
+    assert "z.B. KI.exe" in fund.gruende[-2]
+
+
+def test_ungepruefte_signatur_im_temp_ordner_reicht_nicht():
+    daten = {"dateien": [{"pfad": "C:\\Users\\max\\AppData\\Local\\Temp\\x\\tool.exe", "groesse": 1,
+                          "erstellt": "2026-11-08T10:00:00"}]}
+    assert bewerten(daten, {}, ORTE) == []
+
+
+def test_hoch_bleibt_einzeln_sichtbar():
+    dl = "C:\\Users\\max\\Downloads\\"
+    daten = {"dateien": [{"pfad": dl + n, "groesse": 1, "erstellt": "2026-11-08T10:00:00"}
+                         for n in ["Rechnung.pdf.exe", "a.scr", "b.scr", "c.scr", "d.scr"]]}
+    titel = sorted(f.titel for f in bewerten(daten, {}, ORTE))
+    assert titel == ["4 auffaellige Dateien in Downloads", "Rechnung.pdf.exe"]
+
+
+def test_kurzfassung_fuer_den_chat(tmp_path):
+    daten = {"dateien": [{"pfad": f"C:\\Users\\max\\Downloads\\ordner{i}\\Cheat{i}.exe", "groesse": 1,
+                          "erstellt": "2026-11-08T10:00:00"} for i in range(40)]}
+    funde = bewerten(daten, {}, ORTE)
+    assert len(funde) == 40
+    voll = sicherheit.bericht(daten, funde, gruendlich=False)
+    kurz = sicherheit.kurzfassung(voll, max_eintraege=25, datei="C:\\x\\scan.txt")
+    assert "[25] " in kurz and "[26] " not in kurz
+    assert "… und 15 weitere Funde (15 mittel). Vollstaendige Liste: C:\\x\\scan.txt" in kurz
+    assert kurz.rstrip().endswith("Nichts wurde geloescht oder veraendert.")
+    assert sicherheit.kurzfassung("kurz", 25) == "kurz"
+    sicherheit.speichern(voll, tmp_path, funde)
+    assert "[26] " not in sicherheit.letzter_bericht(tmp_path)
+    assert "[40] " in sicherheit.letzter_bericht(tmp_path, ganz=True)
+
+
+def test_ignorierter_ordner_blendet_alles_darin_aus():
+    t = "C:\\Users\\max\\AppData\\Local\\Temp\\vs123.uti"
+    funde = [sicherheit.Fund("mittel", "Datei", "x", pfad=t + "\\a\\b.dll"),
+             sicherheit.Fund("mittel", "Datei", "300 auffaellige Dateien in vs123.uti", pfad=t),
+             sicherheit.Fund("mittel", "Datei", "y", pfad="C:\\Users\\max\\Downloads\\c.exe")]
+    rest, weg = sicherheit.ignorierte_entfernen(funde, {t.lower(): "Installer"})
+    assert weg == 2 and [f.titel for f in rest] == ["y"]
+
+
 def test_hosts_umleitungen():
     daten = {"hosts": ["127.0.0.1 localhost", "0.0.0.0 werbung.example", "203.0.113.5 login.bank.example"]}
     (fund,) = bewerten(daten, {}, ORTE)
@@ -199,3 +263,10 @@ def test_werkzeug(tmp_path, monkeypatch):
     assert not err and out == f"OK True {tmp_path.name}"
     out, _ = registry.execute(ctx, "sicherheits_check", {"aktion": "datei_pruefen", "umfang": "schnell", "pfad": ""})
     assert "brauche ich einen pfad" in out
+
+
+def test_zufalls_namen():
+    for name in ("x7k2m9p4q1", "a3f9c0e1b2d4", "ab12cd34ef"):
+        assert sicherheit.zufalls_name(name), name
+    for name in ("vcruntime140", "python314", "msvcp140_1", "setup", "Discord", "api-ms-win-core", "chrome"):
+        assert not sicherheit.zufalls_name(name), name

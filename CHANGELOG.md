@@ -4,6 +4,19 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.13.1 – 2026-11-13
+
+**Sicherheits-Check: kurz und übersichtlich**
+- Der Bericht von `/scan` ist jetzt **kurz**: Im Chat stehen höchstens die **25 wichtigsten
+  Funde** – der Rest steht in der gespeicherten Datei (ganze Liste: `/scan letzter`).
+- **Viele Dateien im selben Ordner** (z. B. ein Installer, der hunderte Dateien in den
+  Temp-Ordner entpackt) werden zu **einem Eintrag** zusammengefasst, statt jede Datei
+  einzeln aufzuzählen. Gefährliche Funde (HOCH) bleiben immer einzeln sichtbar.
+- **Weniger Fehlalarme:** Dateien, deren Signatur nicht geprüft werden konnte, gelten nicht
+  mehr automatisch als verdächtig, und normale Namen mit Versionsnummer (z. B.
+  „vcruntime140.dll“) gelten nicht mehr als „zufällig“.
+- `/scan ignorieren` mit der Nummer eines Sammel-Eintrags blendet den **ganzen Ordner** aus.
+
 ## 0.13.0 – 2026-11-09
 
 **Sicherheits-Check: Nova sucht nach Schadsoftware**

@@ -2,9 +2,12 @@
  * Nova Feedback - kleines Google-Apps-Skript, das Feedback aus der App per E-Mail an dich schickt.
  *
  * Einrichtung: siehe docs/FEEDBACK_EINRICHTEN.md
- * Wichtig: Hier steht KEINE E-Mail-Adresse. Das Skript schickt die Mail an das Google-Konto,
- * dem es gehoert ("Ausfuehren als: Ich"). So bleibt deine Adresse ueberall verborgen.
+ * Wichtig: Im oeffentlichen Repo steht KEINE E-Mail-Adresse. Ohne EMPFAENGER schickt das Skript
+ * die Mail an das Google-Konto, dem es gehoert ("Ausfuehren als: Ich"). Soll sie an eine andere
+ * Adresse gehen, trag sie NUR in deiner Kopie bei Google unten bei EMPFAENGER ein.
  */
+
+var EMPFAENGER = '';   // leer = an dich selbst (das Konto, dem das Skript gehoert)
 
 var MAX_BILDER = 5;
 var MAX_BILDER_BYTES = 15 * 1024 * 1024;   // MailApp erlaubt 25 MB je Mail
@@ -13,9 +16,13 @@ var ARTEN = {bewertung: 'Bewertung', feedback: 'Feedback', bug: 'Fehler', idee: 
 
 /** Einmal im Editor ausfuehren (oben "Ausfuehren"): erteilt die Berechtigungen und schickt dir
  *  eine Test-Mail. Kommt sie an, funktioniert alles - dann als Web-App bereitstellen. */
+function empfaenger() {
+  return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(EMPFAENGER) ? EMPFAENGER : Session.getEffectiveUser().getEmail();
+}
+
 function testMail() {
   MailApp.sendEmail({
-    to: Session.getEffectiveUser().getEmail(),
+    to: empfaenger(),
     subject: '[Nova-Feedback] Test',
     body: 'Wenn du das liest, funktioniert das Feedback-Skript. Jetzt noch als Web-App bereitstellen (Schritt 5 der Anleitung).',
     name: 'Nova Feedback'
@@ -73,7 +80,7 @@ function doPost(e) {
       text || '(kein Text)'
     ];
     var mail = {
-      to: Session.getEffectiveUser().getEmail(),
+      to: empfaenger(),
       subject: '[Nova-Feedback] ' + art + (sterne ? ' ' + sterne + '★' : '') + ' – v' + String(d.version || '?').slice(0, 30),
       body: zeilen.join('\n'),
       name: 'Nova Feedback',

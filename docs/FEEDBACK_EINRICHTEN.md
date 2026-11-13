@@ -16,6 +16,9 @@ Das musst du **einmal** am PC machen (ca. 10 Minuten):
    [`packaging/nova-feedback.gs`](../packaging/nova-feedback.gs) einfügen. Oben links auf
    „Unbenanntes Projekt“ klicken und **„Nova Feedback“** eintragen. Speichern
    (Disketten-Symbol oder Strg+S).
+   *Soll das Feedback an eine **andere** Adresse gehen als die des Google-Kontos?* Dann oben im
+   Skript bei `var EMPFAENGER = '';` die Adresse eintragen – **nur hier bei Google**, nie in
+   der Datei im Repo (die ist öffentlich).
 3. Oben in der Leiste steht bei der Funktionsauswahl **„testMail“** → auf **„Ausführen“**
    klicken.
 4. Google fragt nach Berechtigungen: **„Berechtigungen prüfen“** → dein Konto wählen. Bei

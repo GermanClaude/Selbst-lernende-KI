@@ -68,7 +68,19 @@ _TARN_NAMEN = re.compile(
     r"free[-_ .]?(robux|vbucks|nitro)|nitro[-_ .]?gen|generator|aimbot|wallhack|trainer|mod[-_ .]?menu", re.I)
 _DOPPELTE_ENDUNG = re.compile(r"\.(pdf|docx?|xlsx?|pptx?|jpe?g|png|gif|txt|mp3|mp4|avi|mkv|zip|rar|7z)"
                               r"\s*\.(exe|scr|com|pif|bat|cmd|js|jse|vbs|vbe|hta|lnk)$", re.I)
-_ZUFALLS_NAME = re.compile(r"^(?=.*\d)(?=.*[a-z])[a-z0-9]{10,}$|^[a-f0-9]{8,}$", re.I)
+_HEX_NAME = re.compile(r"^(?=.*\d)[a-f0-9]{12,}$", re.I)
+
+
+def zufalls_name(stamm: str) -> bool:
+    """Wirkt der Name ausgewuerfelt (z.B. 'x7k2m9p4q1', 'a3f9c0e1b2d4')? Normale Namen mit einer
+    Versionsnummer ('vcruntime140', 'python314') zaehlen nicht."""
+    s = stamm.lower()
+    if _HEX_NAME.match(s):
+        return True
+    if len(s) < 8 or not s.isalnum():
+        return False
+    wechsel = sum(1 for a, b in zip(s, s[1:]) if a.isdigit() != b.isdigit())
+    return wechsel >= 4
 # Geheimnisse in Befehlszeilen (Tokens, Passwoerter) nie an die KI.
 _GEHEIM = [
     (re.compile(r"(?i)((?:pass(?:word|wort)?|pwd|token|secret|api[-_]?key|key)\s*[=:]\s*)\S+"), r"\1…"),
@@ -328,8 +340,11 @@ def sammeln(gruendlich: bool = False) -> dict:
     return daten if isinstance(daten, dict) else {}
 
 
+MAX_SIGNATUREN = 400  # mehr dauert zu lange - die wichtigsten (Prozesse, Autostarts, .exe) zuerst
+
+
 def signaturen(pfade: list[str]) -> dict[str, dict]:
-    pfade = sorted({p for p in pfade if p})[:250]
+    pfade = list(dict.fromkeys(p for p in pfade if p))[:MAX_SIGNATUREN]
     if not pfade or sys.platform != "win32":
         return {}
     with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as datei:
@@ -352,18 +367,19 @@ def signaturen(pfade: list[str]) -> dict[str, dict]:
 #  2) Bewerten (Faustregeln - reine Funktionen, gut testbar)
 # ---------------------------------------------------------------------------
 def kandidaten(daten: dict, orte: Orte) -> list[str]:
-    """Welche Dateien brauchen eine Signatur-Pruefung?"""
+    """Welche Dateien brauchen eine Signatur-Pruefung? Wichtigste zuerst (die Liste wird gekappt):
+    laufende Programme, Autostarts, dann Programme (.exe ...), zuletzt Bibliotheken (.dll)."""
     pfade: list[str] = []
     for p in daten.get("prozesse") or []:
         if p.get("pfad") and orte.im_benutzerordner(p["pfad"]):
-            pfade.append(p["pfad"])
+            pfade.append(_env_pfad(p["pfad"]))
     for a in daten.get("autostart") or []:
         ziel = _env_pfad(programm_aus_befehl(a.get("befehl", "")))
         if ziel and orte.im_benutzerordner(ziel):
             pfade.append(ziel)
-    for d in daten.get("dateien") or []:
-        if str(d.get("pfad", "")).lower().endswith(_PROGRAMM_ENDUNGEN):
-            pfade.append(d["pfad"])
+    dateien = [str(d.get("pfad", "")) for d in daten.get("dateien") or []]
+    pfade += [p for p in dateien if p.lower().endswith(_PROGRAMM_ENDUNGEN) and not p.lower().endswith(".dll")]
+    pfade += [p for p in dateien if p.lower().endswith(".dll")]
     return pfade
 
 
@@ -443,13 +459,15 @@ def _datei_regeln(pfad: str, orte: Orte, sig: dict | None) -> tuple[str | None, 
         hoeher("hoch")
         gruende.append(f"traegt den Namen eines Windows-Programms ({name}), liegt aber nicht im Windows-Ordner")
     signiert = _signiert(sig)
-    if orte.in_temp(pfad) and low.endswith(_PROGRAMM_ENDUNGEN) and signiert is not True:
+    # Nur nachweislich unsignierte - ungeprueft (Liste gekappt) zaehlt nicht, sonst meldet jeder
+    # Installer, der hunderte Dateien nach Temp entpackt, alle einzeln.
+    if orte.in_temp(pfad) and low.endswith(_PROGRAMM_ENDUNGEN) and signiert is False:
         hoeher("mittel")
         gruende.append("Programmdatei im Temp-Ordner (beliebter Ort fuer Schadsoftware)")
     if _TARN_NAMEN.search(name):
         hoeher("mittel")
         gruende.append("Name wie Cheat/Crack/Injector/Generator - eine sehr haeufige Tarnung fuer Infostealer")
-    if _ZUFALLS_NAME.match(Path(low).stem) and orte.im_benutzerordner(pfad) and low.endswith(_PROGRAMM_ENDUNGEN):
+    if zufalls_name(Path(low).stem) and orte.im_benutzerordner(pfad) and low.endswith(_PROGRAMM_ENDUNGEN):
         hoeher("niedrig")
         gruende.append("zufaellig wirkender Name")
     if signiert is False and low.endswith(_PROGRAMM_ENDUNGEN):
@@ -609,9 +627,57 @@ def bewerten(daten: dict, sigs: dict[str, dict] | None = None, orte: Orte | None
     funde += _autostart_funde(daten, orte, sigs)
     prozesse = _prozess_funde(daten, orte, sigs, eigene)
     funde += prozesse
-    funde += _datei_funde(daten, orte, sigs, {f.pfad.lower() for f in prozesse} | eigene)
+    funde += _ordner_zusammenfassen(_datei_funde(daten, orte, sigs, {f.pfad.lower() for f in prozesse} | eigene),
+                                    orte)
     funde += _hosts_funde(daten)
     return sorted(funde, key=lambda f: STUFEN.index(f.stufe) if f.stufe in STUFEN else 9)
+
+
+AB_SAMMELN = 4  # so viele auffaellige Dateien im selben Ordner -> ein Sammel-Eintrag
+
+
+def _sammel_ordner(pfad: str, orte: Orte) -> str:
+    """Wonach gesammelt wird: im Temp-Ordner nach dem obersten Unterordner (ein Installer oder
+    Programm legt dort oft viele verschachtelte Ordner an), sonst nach dem Ordner der Datei."""
+    p = _env_pfad(pfad).replace("/", "\\")
+    for t in orte.temp:
+        if orte.unter(p, t):
+            rest = p[len(t):].strip("\\").split("\\")
+            if len(rest) > 1:
+                return p[:len(t)] + "\\" + rest[0]
+    return p.rsplit("\\", 1)[0] if "\\" in p else p
+
+
+def _ordner_zusammenfassen(funde: list[Fund], orte: Orte) -> list[Fund]:
+    """Viele Funde im selben Ordner (z.B. ein Installer, der nach Temp entpackt) -> ein Eintrag.
+    HOCH-Funde bleiben immer einzeln sichtbar."""
+    gruppen: dict[str, list[Fund]] = {}
+    for f in funde:
+        if f.bereich == "Datei" and f.pfad and f.stufe != "hoch":
+            gruppen.setdefault(_sammel_ordner(f.pfad, orte).lower(), []).append(f)
+    zusammen = {k for k, liste in gruppen.items() if len(liste) >= AB_SAMMELN}
+    aus: list[Fund] = []
+    for f in funde:
+        key = _sammel_ordner(f.pfad, orte).lower() if f.pfad else ""
+        if f.bereich == "Datei" and f.stufe != "hoch" and key in zusammen:
+            continue
+        aus.append(f)
+    for key in sorted(zusammen):
+        liste = gruppen[key]
+        stufe = min((f.stufe for f in liste), key=STUFEN.index)
+        gruende: list[str] = []
+        for f in liste:
+            for g in f.gruende:
+                if not g.startswith("neu seit") and g not in gruende:
+                    gruende.append(g)
+        namen = list(dict.fromkeys(Path(f.pfad.replace("\\", "/")).name for f in liste))
+        ordner = _sammel_ordner(liste[0].pfad, orte)
+        aus.append(Fund(stufe, "Datei", f"{len(liste)} auffaellige Dateien in {Path(ordner.replace(chr(92), '/')).name}",
+                        pfad=ordner,
+                        gruende=gruende[:4] + ["z.B. " + ", ".join(namen[:6]) + (" …" if len(namen) > 6 else ""),
+                                               "Viele Dateien in einem Ordner stammen oft von einem Installer oder "
+                                               "Programm - pruefe, wozu der Ordner gehoert."]))
+    return aus
 
 
 def _eigene_dateien() -> set[str]:
@@ -648,6 +714,26 @@ def bericht(daten: dict, funde: list[Fund], gruendlich: bool) -> str:
     zeilen += ["", "Hinweis: Das sind Faustregeln, keine Urteile. Viele Funde sind harmlos (z.B. eigene oder "
                    "unsignierte Hobby-Programme). Nichts wurde geloescht oder veraendert."]
     return "\n".join(zeilen)
+
+
+MAX_IM_CHAT = 25  # so viele Funde zeigt der Bericht im Chat; der Rest steht in der gespeicherten Datei
+
+
+def kurzfassung(text: str, max_eintraege: int = MAX_IM_CHAT, datei: Path | str | None = None) -> str:
+    """Bericht fuer den Chat: hoechstens max_eintraege Funde (die wichtigsten stehen oben)."""
+    zeilen = text.splitlines()
+    koepfe = [i for i, z in enumerate(zeilen) if re.match(r"^\[\d+\] ", z)]
+    if len(koepfe) <= max_eintraege:
+        return text
+    schnitt = koepfe[max_eintraege]
+    ende = next((i for i in range(schnitt, len(zeilen)) if zeilen[i].startswith("Hinweis: Das sind Faustregeln")),
+                len(zeilen))
+    rest = [zeilen[i] for i in koepfe[max_eintraege:]]
+    zahl = {s: sum(1 for z in rest if f" {STUFE_TEXT[s]} - " in z) for s in STUFEN}
+    teile = ", ".join(f"{n} {s}" for s, n in zahl.items() if n)
+    wo = f" Vollstaendige Liste: {datei}" if datei else " Vollstaendige Liste: /scan letzter"
+    return "\n".join(zeilen[:schnitt] + ["", f"… und {len(rest)} weitere Funde ({teile}).{wo}", ""]
+                     + zeilen[ende:])
 
 
 def _schluessel(fund: Fund) -> str:
@@ -714,14 +800,25 @@ def ignorieren(ordner: Path, auswahl: str) -> str:
 
 
 def ignorierte_entfernen(funde: list[Fund], ignoriert: dict[str, str]) -> tuple[list[Fund], int]:
-    rest = [f for f in funde if _schluessel(f) not in ignoriert and _norm(f.pfad) not in ignoriert]
+    ordner = [k for k in ignoriert if ":" in k]  # ignorierter Ordner -> alles darin auch
+
+    def weg(f: Fund) -> bool:
+        p = _norm(f.pfad)
+        return (_schluessel(f) in ignoriert or p in ignoriert
+                or bool(p) and any(p.startswith(o + "\\") for o in ordner))
+
+    rest = [f for f in funde if not weg(f)]
     return rest, len(funde) - len(rest)
 
 
-def letzter_bericht(ordner: Path) -> str | None:
+def letzter_bericht(ordner: Path, ganz: bool = False) -> str | None:
+    """Der zuletzt gespeicherte Bericht - fuer den Chat gekuerzt (ganz=True: vollstaendig)."""
     ziel = Path(ordner) / _SPEICHER_ORDNER
     berichte = sorted(ziel.glob("scan-*.txt")) if ziel.is_dir() else []
-    return berichte[-1].read_text(encoding="utf-8") if berichte else None
+    if not berichte:
+        return None
+    text = berichte[-1].read_text(encoding="utf-8")
+    return text if ganz else kurzfassung(text, datei=berichte[-1])
 
 
 def pc_scannen(gruendlich: bool = False, ordner: Path | None = None) -> tuple[str, list[Fund]]:
@@ -736,10 +833,10 @@ def pc_scannen(gruendlich: bool = False, ordner: Path | None = None) -> tuple[st
     text = bericht(daten, funde, gruendlich)
     if weg:
         text += f"\n{weg} Fund(e) auf deinen Wunsch ignoriert (Liste: sicherheit/{_IGNORIERT} im Arbeitsordner)."
-    if ordner is not None:
-        gespeichert = speichern(text, ordner, funde)
-        if gespeichert:
-            text += f"\nGespeichert: {gespeichert}"
+    gespeichert = speichern(text, ordner, funde) if ordner is not None else None
+    text = kurzfassung(text, datei=gespeichert)  # im Chat nur die wichtigsten Funde
+    if gespeichert:
+        text += f"\nGespeichert: {gespeichert}"
     return text, funde
 
 
