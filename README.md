@@ -1,142 +1,188 @@
-# Selbst-lernende-KI 🧠
+<div align="center">
 
-Ein **lokaler, lernfähiger KI-Assistent** für deinen PC – im Stil von „Jarvis“.
-Du redest mit ihr wie mit einem Menschen (per Tastatur oder Sprache), sie merkt
-sich mit der Zeit immer mehr über dich, sie hat Zugang zum Internet und kann –
-wenn **du** es erlaubst – deinen Computer bedienen: Dateien lesen, schreiben,
-bearbeiten, löschen, Programme starten, Dinge herunterladen und sogar Maus und
-Tastatur steuern.
+# Nova 🧠✨
 
-> 🟢 **Noch nie programmiert?** Nimm die **[Schritt-für-Schritt-Anleitung für
-> Anfänger → ANLEITUNG.md](ANLEITUNG.md)**. Dort ist alles ganz einfach erklärt.
+### Deine eigene, selbstlernende KI für den PC – im Stil von „Jarvis“
 
-> **Wichtig und ehrlich vorab:** Diese KI trainiert **kein** eigenes neuronales
-> Netz von Grund auf (das ist über Nacht auf einem normalen PC unmöglich). Ihr
-> „Gehirn“ ist das Claude-Modell von Anthropic, das über das Internet denkt.
-> Das **Lernen** passiert durch ein dauerhaftes Gedächtnis: Sie notiert sich
-> Fakten, Vorlieben, Korrekturen und Zusammenfassungen und wird dadurch mit
-> jeder Nutzung persönlicher und treffsicherer. Dieses Gedächtnis kannst du
-> sogar selbst ansehen und korrigieren. Ihren Charakter und ihre Werte legst du
-> in zwei Textdateien fest – so „erziehst“ du sie.
+**Sie redet mit dir, merkt sich, was dir wichtig ist, sieht deinen Bildschirm, spielt Spiele,
+arbeitet weiter, während du weg bist – und läuft auf Wunsch komplett kostenlos auf deinem PC.**
+
+[**⬇️ KI-App.exe herunterladen**](https://github.com/GermanClaude/Selbst-lernende-KI/releases/latest) ·
+[📖 Anleitung für Anfänger](ANLEITUNG.md) ·
+[🆕 Neuigkeiten](CHANGELOG.md) ·
+[🛠️ Mitentwickeln](docs/ENTWICKLUNG.md)
+
+![Nova – Startbildschirm](docs/bilder/start.png)
+
+</div>
 
 ---
 
-## Was sie kann
+## Warum Nova?
 
-- 💬 **Natürliches Gespräch** in vollständigen Sätzen, auf Deutsch.
-- 🔀 **Drei Gehirne zur Auswahl**: **Claude** (sehr stark), **DeepSeek** (extrem günstig)
-  oder **Ollama** (kostenlos, läuft auf deinem eigenen PC, ganz ohne Schlüssel).
-- 💶 **Sparmodus + Live-Kostenanzeige**: so wenig Token wie möglich bei voller
-  Leistung; `/kosten` zeigt jederzeit den geschätzten Verbrauch.
-- 🧠 **Lernen & Gedächtnis**: merkt sich dauerhaft, was ihr wichtig ist über dich.
+| | |
+|---|---|
+| 🆓 **Kostenlos möglich** | Mit **Ollama** läuft Nova komplett auf deinem PC – ohne Konto, ohne Schlüssel, ohne Kosten. Deine Gespräche verlassen den Rechner nicht. |
+| 🔀 **Du wählst das Gehirn** | **Claude** (am stärksten), **DeepSeek** (Bruchteile eines Cents pro Nachricht) oder **jedes Ollama-Modell** (Qwen, Llama, Gemma, Mistral …) – auch LM Studio. Umschalten mit einem Klick, das Gedächtnis bleibt. |
+| 🧠 **Sie lernt dich kennen** | Nova merkt sich dauerhaft, was du ihr erzählst – Vorlieben, Projekte, Korrekturen. Du kannst ihr Gedächtnis jederzeit ansehen, ergänzen und löschen. |
+| 🎭 **Du erziehst sie** | Charakter, Tonfall, Name, Werte und Grenzen legst du selbst fest – per Klick oder in Textdateien. |
+| 🖥️ **Sie kann wirklich etwas tun** | Dateien, Internet, Programme, Maus und Tastatur, Bildschirm und Kamera – aber nur, was **du** erlaubst. |
+| 🛡️ **Sicher von Anfang an** | Stützräder (fragt vor jeder Änderung), Arbeitsordner als Sandbox, Papierkorb statt Löschen, Kostengrenzen, Not-Aus. |
+| 🔄 **Wird ständig besser** | Neue Versionen installiert Nova selbst – die alte wird vorher gesichert, ein Klick bringt sie zurück. |
+| 🇩🇪 **Komplett auf Deutsch** | Oberfläche, Antworten, Anleitung – alles für Nicht-Techniker erklärt. |
+
+---
+
+## Was sie kann – in Bildern
+
+<table>
+<tr>
+<td width="50%"><img src="docs/bilder/chat.png" alt="Chat mit Nova"><br>
+<b>💬 Reden wie mit einem Menschen</b> – per Tastatur, Sprache (F2) oder im Jarvis-Modus ganz ohne Tippen. Sie erinnert sich auch im nächsten Gespräch an dich.</td>
+<td width="50%"><img src="docs/bilder/gedaechtnis.png" alt="Novas Gedächtnis"><br>
+<b>🧠 Ein Gedächtnis, das du siehst</b> – alles, was Nova über dich gelernt hat, durchsuchbar, ergänzbar, löschbar.</td>
+</tr>
+<tr>
+<td><img src="docs/bilder/charakter.png" alt="Charakter und Profil"><br>
+<b>🎭 Charakter nach Wahl</b> – freundlich, sachlich, Butler im Jarvis-Stil, Mentor, bester Kumpel, kreativ oder Motivations-Coach – und danach frei anpassbar.</td>
+<td><img src="docs/bilder/gehirn.png" alt="Gehirn und Schlüssel"><br>
+<b>🔀 Drei Gehirne</b> – Claude, DeepSeek oder Ollama. Modell und Denk-Tiefe frei wählbar, die Kosten immer im Blick.</td>
+</tr>
+<tr>
+<td><img src="docs/bilder/afk.png" alt="AFK-Modus"><br>
+<b>🌙 „Ich bin mal weg“</b> – Nova arbeitet allein weiter (recherchieren, planen, Dateien anlegen) und gibt dir danach einen Bericht. Mit Zeit- und Kostengrenze.</td>
+<td><img src="docs/bilder/spiel.png" alt="Spielmodus"><br>
+<b>🎮 Spielmodus</b> – Nova spielt Einzelspieler-Spiele selbst (z. B. Manor Lords), auch über Nacht, mit Bericht und Bildern am Morgen.</td>
+</tr>
+</table>
+
+### Alle Fähigkeiten auf einen Blick
+
+- 💬 **Natürliches Gespräch** auf Deutsch – getippt, gesprochen (F2) oder live im **Jarvis-Modus**
+  (sie spricht ab dem ersten fertigen Satz, du kannst sie jederzeit unterbrechen).
+- 🧠 **Lernen & Gedächtnis**: dauerhaft, durchsuchbar, von dir korrigierbar.
 - 🌐 **Internet**: Websuche und Webseiten lesen.
-- 📁 **Dateien**: lesen, schreiben, bearbeiten, auflisten, (sicher) löschen.
-- 🖥️ **PC-Steuerung** (optional): Maus, Tastatur, Bildschirmfotos – wie ein Mensch.
-- ⌨️ **Shell**: Befehle ausführen, Programme starten, Dinge installieren.
-- 🎙️ **Sprachsteuerung** (optional): zuhören und vorlesen.
-- 🎭 **Persönlichkeit & Werte**, die du selbst in Textdateien festlegst.
-- 🌙 **AFK-Modus**: „Ich bin mal weg“ – sie arbeitet allein weiter, sicher und mit Bericht.
+- 📁 **Dateien**: lesen, schreiben, bearbeiten, auflisten, sicher löschen (Papierkorb).
+- ⌨️ **Programme & Befehle** ausführen, Dinge installieren (nach Freigabe).
+- 🖱️ **PC-Steuerung**: Maus, Tastatur, Bildschirmfotos – wie ein Mensch.
+- 👀 **Live-Sehen**: schaut auf Wunsch auf deinen Bildschirm oder durch die Webcam und meldet
+  sich, wenn etwas Wichtiges passiert (z. B. eine Fehlermeldung). Passwortfelder sieht sie nie.
+- 📱 **Handy als Kamera**: QR-Code scannen, fertig – ohne App aus dem Store.
+- 🖼️ **Bilder verstehen und erstellen** – einfach einfügen, oder „Mal mir …“ sagen (kostenlos).
+- 🌙 **AFK-Modus**: arbeitet allein weiter, sicher und mit Bericht.
+- 🎮 **Spielmodus**: spielt selbst, auch über Nacht.
+- 🛡️ **Sicherheits-Check** (`/scan`): sucht nach Spuren von Malware, Spyware, Trojanern und
+  Infostealern und erklärt dir jeden Fund – du entscheidest, was passiert.
+- 🤖 **Agenten**: große Aufgaben verteilt sie an Helfer (Recherche, Umsetzung, Prüfer).
 - ⚡ **Schnell oder gründlich**: Modell und Denk-Tiefe frei wählbar.
-- 🖼️ **Bilder**: Bilder in den Chat einfügen (Nova sieht sie) und Bilder erstellen lassen –
-  kostenlos.
-- ⭐ **Feedback & Bewertung**: Lob, Ideen und Fehler mit Bildern direkt an den Entwickler.
-- 🔒 **Sicherheit zuerst**: ein Berechtigungssystem mit „Safe Mode“, Nachfragen
-  und einem Papierkorb, damit nichts versehentlich zerstört wird.
-- 📦 **Als `.exe` baubar** für den Doppelklick-Start unter Windows.
+- 💶 **Sparmodus + Live-Kostenanzeige** – oder ganz kostenlos mit Ollama.
+- ⭐ **Feedback** mit Sternen und Bildern direkt an den Entwickler.
+- 🔄 **Automatische Updates** mit Sicherung der alten Version.
+- 🪟 **Als App oder im Terminal** – eigene `KI-App.exe` mit Fenster, oder `KI.exe` für die Konsole.
+
+> **Ehrlich vorab:** Nova trainiert **kein** eigenes neuronales Netz von Grund auf (das geht auf
+> einem normalen PC nicht). Ihr „Gehirn“ ist ein großes Sprachmodell – Claude, DeepSeek oder ein
+> Modell, das über Ollama auf deinem PC läuft. Das **Lernen** passiert über ein dauerhaftes
+> Gedächtnis: Sie notiert sich Fakten, Vorlieben, Korrekturen und Zusammenfassungen und wird
+> dadurch mit jeder Nutzung persönlicher und treffsicherer.
 
 ---
 
 ## Schnellstart
 
-### 1. Voraussetzungen
-- Python 3.10 oder neuer
-- Ein Anthropic-API-Schlüssel von <https://console.anthropic.com/>
+### Der einfachste Weg (Windows, ohne Python)
+1. **[`KI-App.exe` herunterladen](https://github.com/GermanClaude/Selbst-lernende-KI/releases/latest)**
+   (unter „Assets“) und in einen eigenen Ordner legen, z. B. `Desktop\Nova`.
+2. Doppelklick. Beim ersten Start öffnet sich **„Gehirn & Schlüssel“**.
+3. Gehirn wählen – **Ollama** (kostenlos, [ollama.com](https://ollama.com/download) installieren),
+   **DeepSeek** oder **Claude** (Schlüssel einfügen) – fertig.
 
-### 2. Gehirn wählen & Schlüssel eintragen
-Kopiere `.env.example` zu `.env` und trage den Schlüssel des Gehirns ein, das du
-nutzen willst:
-```
-ANTHROPIC_API_KEY=sk-ant-...   # für Claude
-DEEPSEEK_API_KEY=sk-...        # für DeepSeek (günstig)
-```
-Welches Gehirn aktiv ist, stellst du in `config/settings.toml` ein:
-```toml
-[provider]
-aktiv = "deepseek"   # oder "claude"
-```
+> 🟢 **Noch nie programmiert?** Die **[Schritt-für-Schritt-Anleitung → ANLEITUNG.md](ANLEITUNG.md)**
+> erklärt alles ganz einfach.
 
-### 3. Starten
-**Windows:** Doppelklick auf `start.bat`
-**Linux/macOS:**
+### Aus dem Quellcode (Windows, Linux, macOS)
+Voraussetzung: Python 3.10 oder neuer – und ein Schlüssel **oder** Ollama.
 ```bash
-./start.sh
+git clone -b ccr-cfa1ff8c-wgsyxb https://github.com/GermanClaude/Selbst-lernende-KI.git
+cd Selbst-lernende-KI
+start.bat            # Windows (Terminal) – oder start-app.bat für das App-Fenster
+./start.sh           # Linux/macOS  (./start.sh app für das App-Fenster)
 ```
-Beim ersten Start richtet sich alles automatisch ein. Danach kannst du einfach
-losreden.
+Beim ersten Start richtet sich alles automatisch ein. Schlüssel kommen in `.env`
+(`ANTHROPIC_API_KEY=…`, `DEEPSEEK_API_KEY=…`) – oder einfach in den Chat einfügen.
 
-Alternativ von Hand:
+Von Hand:
 ```bash
 python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-python -m assistant
+python -m assistant              # --app für das Fenster
 ```
 
 ---
 
-## Als `.exe` bauen (Windows)
+## Die Gehirne: Claude, DeepSeek, Ollama – und andere Modelle
 
-```bat
-packaging\build.bat
-```
-Danach liegen zwei Programme in `dist\`: **`KI.exe`** (im Terminal) und
-**`KI-App.exe`** (eigenes Programmfenster). (Unter Linux/macOS: `packaging/build.sh` → `dist/KI`.)
+| Gehirn | Stärke | Kosten | Datenschutz | Einstellung |
+|---|---|---|---|---|
+| **Claude** (Anthropic) | höchste Qualität: Opus, Sonnet, Haiku, Fable | höher | Cloud | `aktiv = "claude"` |
+| **DeepSeek** | sehr gut: Flash, V4 Pro | **extrem günstig** | Cloud | `aktiv = "deepseek"` |
+| **Ollama** | je nach Modell und PC | **kostenlos** | **bleibt auf deinem PC** | `aktiv = "ollama"` |
 
-Wo die `.exe` ihre Dateien sucht:
-- Liegt sie im `dist`-Ordner des Projekts, nutzt sie `.env`, `config\`, `data\`
-  und `workspace\` des **Projektordners** – also dasselbe Gedächtnis wie `start.bat`.
-- Kopierst du sie woandershin, nutzt sie den **Ordner der `.exe`** und legt dort
-  beim ersten Start `.env` und `config\settings.toml` an.
-- `/status` im Chat zeigt, welche Einstellungs- und Schlüssel-Datei sie gerade liest.
+**Wechseln:** in der App auf **„Gehirn“** klicken, im Chat `/gehirn ollama|deepseek|claude`,
+oder in `config/settings.toml` unter `[provider]`.
 
-> Hinweis: Eine Windows-`.exe` muss **auf Windows** gebaut werden. Der Code ist
-> plattformübergreifend; die Build-Skripte gibt es für beide Welten.
-
----
-
-## So „erziehst“ du deine KI
-
-Zwei Dateien im Ordner `config/` bestimmen, wer deine KI ist:
-
-| Datei | Wofür |
-|-------|-------|
-| `config/persona.md` | Charakter, Tonfall, Name, Verhalten |
-| `config/werte.md` | Grundsätze, Regeln, Grenzen („Gewissen“) |
-
-Ändere sie, wie du magst – die KI liest sie bei jedem Start neu. Zusätzlich lernt
-sie **im Gespräch**: Sage ihr Dinge wie „merk dir, dass ich morgens geduzt werden
-will“, und sie legt das in ihrem Gedächtnis ab.
-
-> Die eingebauten Sicherheitsgrenzen des zugrunde liegenden Modells (vom Anbieter)
-> bleiben bestehen; `werte.md` bestimmt das Verhalten **deiner** KI darüber hinaus.
+**Andere Modelle:** Über Ollama läuft **jedes** lokale Modell – z. B. `qwen3.5:4b` (Standard,
+3–4 GB, sieht Bilder), `qwen3.5:9b`, `gemma4:e4b`, `llama`, `mistral`, `deepseek-r1` … (am
+besten eins mit Werkzeugen, „tools“). Modelle lädt Nova per Knopfdruck herunter
+(`/ollama laden <modell>`). Auch **LM Studio** und andere OpenAI-kompatible Server gehen:
+unter `[ollama]` die Adresse eintragen, z. B. `http://localhost:1234/v1`.
 
 ---
 
-## Gehirn wählen: Claude oder DeepSeek 💶
+## So „erziehst“ du Nova
 
-Du kannst zwischen zwei „Gehirnen“ umschalten (in `config/settings.toml`):
+Nova wird zu **deiner** KI – auf vier Wegen:
 
-| Provider | Stärke | Kosten | Einstellung |
-|----------|--------|--------|-------------|
-| **Claude** (Anthropic) | höchste Qualität | höher | `aktiv = "claude"` |
-| **DeepSeek** | sehr gut, OpenAI-kompatibel | **extrem günstig** | `aktiv = "deepseek"` |
+1. **Charakter wählen** – in der App unter **„Charakter & Profil“** (oder `/charakter butler`):
+   freundlich, sachlich, Butler, Mentor, Kumpel, kreativ, Coach – oder ganz eigener Text.
+2. **Stil einstellen** – du/Sie, kurz oder ausführlich, wie viel Humor, mit oder ohne Emojis
+   (`/stil anrede Sie`, `/stil laenge kurz` …).
+3. **Ihr von dir erzählen** – unter **„Über mich“** (Name, Hobbys, Projekte, was ihr wichtig sein
+   soll, was sie nie tun soll) oder einfach im Gespräch: „Merk dir, dass ich morgens kurze
+   Antworten mag.“ Unter **„Gedächtnis“** siehst und korrigierst du alles, was sie gelernt hat.
+4. **Werte und Grenzen festlegen** – ihr „Gewissen“ steht in `config/werte.md`, die
+   Persönlichkeit in `config/persona.md`. Beides liest sie bei jedem Gespräch neu; Updates fassen
+   es nie an.
 
-**DeepSeek einrichten:**
-1. Schlüssel von <https://platform.deepseek.com/> in `.env` als `DEEPSEEK_API_KEY`.
-2. In `config/settings.toml`: `[provider] aktiv = "deepseek"`.
-3. Modell steht auf `deepseek-flash` (schnell, extrem günstig). Für schwere
-   Aufgaben gibt es `deepseek-v4-pro`. Die alten Namen `deepseek-chat` und
-   `deepseek-reasoner` hat DeepSeek abgeschaltet – sie werden automatisch umgestellt.
+Außerdem: Sag ihr, wie sie aussehen soll („mach deine Sphäre orange“, „größere Schrift“), gib
+ihr einen anderen Namen (`/name MAX = Mein Assistent X`) und stell mit den **Stützrädern** ein,
+wie selbstständig sie handeln darf.
+
+> Die eingebauten Sicherheitsgrenzen des jeweiligen Modells bleiben bestehen; `werte.md`
+> bestimmt das Verhalten **deiner** KI darüber hinaus.
+
+---
+
+## Nova weiterentwickeln
+
+Nova ist Open Source und so gebaut, dass man leicht mitbauen kann:
+
+- **Projektkarte, Regeln und offene Punkte:** [`docs/ENTWICKLUNG.md`](docs/ENTWICKLUNG.md) –
+  zuerst lesen (auch für KI-Assistenten wie Claude Code; `CLAUDE.md` verweist darauf).
+- **Neues Werkzeug** = eine kleine Klasse in `assistant/tools/` mit Name, Beschreibung,
+  Eingabe-Schema und `run()` – Vorlage z. B. `tools/system_info.py`. Das Risiko prüft
+  `ctx.permissions.require(...)`.
+- **Neues Gehirn:** `assistant/providers/` (gemeinsame Basis in `base.py`).
+- **Tests:** `python -m pytest -q` (rund 1000 Tests, ohne Netz).
+- **Neue Version veröffentlichen:** `__version__` in `assistant/__init__.py` erhöhen, oben in
+  `CHANGELOG.md` die Neuerungen für Nicht-Techniker beschreiben, auf den Standard-Branch bringen.
+  GitHub baut dann automatisch `KI.exe` + `KI-App.exe`, und alle Installationen holen sich die
+  neue Version selbst.
+
+---
+
+## Gehirn im Detail
 
 ### Modell und Denk-Tiefe wählen (schnell oder gründlich)
 
@@ -146,8 +192,9 @@ In der App unter **Gehirn & Schlüssel** oder im Chat mit `/modell` und `/denken
 |--------|---------|------------|
 | **Claude** | Opus 5.5 (stark, Standard), Sonnet 5.5 (schnell), Haiku 5.5 (blitzschnell, sehr günstig), Fable 5.1 (das stärkste, langsamer) | schnell · ausgewogen · gründlich · sehr gründlich · maximal |
 | **DeepSeek** | Flash (schnell, Standard), V4 Pro (stärker) | schnell (ohne Nachdenken) · ausgewogen · gründlich · maximal |
+| **Ollama** | jedes installierte Modell, z. B. Qwen 3.5 (4B/9B), Gemma, Llama, Mistral | aus (schnell) · an (gründlich, wenn das Modell nachdenken kann) |
 
-Beispiele: `/modell sonnet`, `/modell deepseek pro`, `/denken schnell`, `/denken gründlich`.
+Beispiele: `/modell sonnet`, `/modell deepseek pro`, `/modell ollama qwen3.5:9b`, `/denken schnell`, `/denken gründlich`.
 Faustregel: Für Alltagsfragen reicht **schnell** oder **ausgewogen** – für knifflige
 Programmier-Aufgaben lieber **gründlich**. Mehr Denk-Tiefe heißt: bessere Antworten,
 aber länger warten und etwas höhere Kosten. Das Gespräch läuft beim Wechsel weiter.
@@ -169,16 +216,15 @@ Der **Sparmodus** (`[sparsam] aktiv = true`, standardmäßig an) sorgt dafür:
 
 ### Was kostet das ungefähr?
 
-Mit `deepseek-flash` (Preise ca. `$0,15` pro 1 Mio. Input-Token, `$0,003` für
+Mit **Ollama: nichts** – nur Strom. Mit `deepseek-flash` (Preise ca. `$0,15` pro 1 Mio. Input-Token, `$0,003` für
 Cache-Treffer, `$0,60` für Output; werktags 2–5 und 7–11 Uhr deutscher Winterzeit
 doppelt so viel) kostet eine typische Chat-Nachricht mit etwas
 Kontext oft **deutlich unter einem Zehntelcent**. Ein gemessenes Beispiel aus dem
 Projekt (Frage + Werkzeugnutzung + Antwort) lag bei **~0,00005 €**.
 
 > Grobe Einordnung: Bei **10 €** Guthaben und sparsamer, alltäglicher Nutzung
-> (einige Dutzend Nachrichten pro Tag) kommst du realistisch **sehr lange** hin –
-> die „10 Tage“ aus deiner Frage sind damit locker drin, bei moderater Nutzung
-> eher Wochen. Der genaue Wert hängt davon ab, wie viel du schreibst und wie
+> (einige Dutzend Nachrichten pro Tag) kommst du realistisch **viele Wochen** hin.
+> Der genaue Wert hängt davon ab, wie viel du schreibst und wie
 > große Dateien/Webseiten die KI liest. Mit `/kosten` siehst du den laufenden
 > Verbrauch jederzeit live.
 
@@ -267,8 +313,8 @@ In der App hat Nova eine leuchtende **Sphäre** als Gesicht – sie zeigt, was N
 tut (nachdenken, arbeiten, schreiben, vorlesen, zuhören). Antippen startet den
 Jarvis-Modus. Aussehen ändern: einfach Nova fragen („mach deine Sphäre grün“).
 
-Beim ersten Start öffnet sich **„Gehirn & Schlüssel“**: DeepSeek oder Claude wählen,
-Schlüssel einfügen, fertig. Den Schlüssel kannst du auch einfach in den Chat einfügen
+Beim ersten Start öffnet sich **„Gehirn & Schlüssel“**: Ollama, DeepSeek oder Claude wählen,
+(bei Bedarf) Schlüssel einfügen, fertig. Den Schlüssel kannst du auch einfach in den Chat einfügen
 (App und Terminal) – er geht nie an die KI. `/gehirn` zeigt bzw. wechselt das Gehirn.
 
 ## Charakter & Profil
@@ -433,7 +479,7 @@ habt – und handelt so, wie du es nach allem, was sie über dich weiß, wollen 
 ## Automatische Updates
 
 Einmal am Tag schaut die KI im GitHub-Repo nach einer neuen Version. Gibt es eine,
-erklärt dir deine KI (Claude oder DeepSeek) in eigenen Worten, was neu ist, und
+erklärt dir deine KI in eigenen Worten, was neu ist, und
 installiert sie – die bisherige Version wird vorher im Ordner `versionen\`
 gesichert. Danach startet sie von selbst neu (über `start.bat` / `start.sh`).
 
@@ -517,6 +563,14 @@ assistant/
     base.py          Token-/Kostenzählung, Werkzeug-Hilfen
     anthropic_provider.py   Claude
     deepseek_provider.py    DeepSeek (OpenAI-kompatibel)
+    ollama_provider.py      Ollama / LM Studio (lokal, kostenlos)
+  ollama.py        Ollama einrichten, Modelle laden
+  abwesend.py      AFK-Modus
+  sehen/           Live-Sehen (Bildschirm, Webcam)
+  kamera/          Handy als Kamera (WebRTC, QR-Code)
+  spiel/           Spielmodus (z. B. Manor Lords)
+  sicherheit.py    Sicherheits-Check (/scan)
+  bildgenerator.py Bilder erstellen (AI Horde / Cloudflare)
   voice.py         Sprachein-/-ausgabe (F2-Sprechtaste)
   live.py          Jarvis-Modus: durchgehend zuhoeren, live mitschreiben, unterbrechen
   updater.py       automatische Updates + gesicherte alte Versionen
@@ -525,7 +579,8 @@ assistant/
   ui/cli.py        die Chat-Oberfläche
 config/            persona.md, werte.md, settings(.example).toml
 packaging/         PyInstaller-Spec + Build-Skripte
-tests/             pytest-Tests (44 Stück)
+tests/             pytest-Tests (rund 1000)
+docs/              ENTWICKLUNG.md (Projektkarte), Bilder
 run_ki.py          Start-Skript (auch für die .exe)
 start.bat/.sh      Direktstart ohne Build
 ```
@@ -534,19 +589,20 @@ start.bat/.sh      Direktstart ohne Build
 
 ## Technische Hinweise
 
-- **Modell:** Standard ist Claude `claude-opus-5-5` (adaptives „Thinking“,
-  einstellbare Denk-Tiefe über `effort`). Alternativ DeepSeek `deepseek-flash`
-  (Nachdenken über `denken`). Wählbar in der App, mit `/modell` und `/denken` oder in
+- **Modell:** Claude `claude-opus-5-5` (adaptives „Thinking“, einstellbare Denk-Tiefe über
+  `effort`), DeepSeek `deepseek-flash` (Nachdenken über `denken`) oder ein lokales
+  Ollama-Modell (Standard `qwen3.5:4b`). Wählbar in der App, mit `/modell` und `/denken` oder in
   `config/settings.toml`.
-- **Tests:** 44 Stück (pytest), decken Gedächtnis, Berechtigungen, Werkzeuge,
-  beide Provider (mit gefälschten Clients, ohne Netz) und die Kostenrechnung ab.
+- **Tests:** rund 1000 (pytest), decken Gedächtnis, Berechtigungen, Werkzeuge, alle drei
+  Gehirne (mit gefälschten Clients, ohne Netz), App, Updates und die Kostenrechnung ab.
 - **Langer Verlauf:** Sehr lange Gespräche werden automatisch zusammengefasst
   („Kompaktierung“) und als Episode ins Gedächtnis geschrieben – das hält die
   Nutzung schnell und bezahlbar und ist mit „preserved thinking“ kompatibel
   (der Gesprächsverlauf wird nur angehängt, nie nachträglich verändert).
-- **Kosten:** Jede Antwort ruft die Anthropic-API auf und kostet entsprechend
-  deinem Tarif. Die Denk-Tiefe (`effort`) ist der wichtigste Kostenhebel.
-- **Datenschutz:** Gedächtnis und Logs liegen **lokal** bei dir (`data/`, `logs/`).
+- **Kosten:** Mit Claude oder DeepSeek kostet jede Antwort entsprechend dem Tarif des
+  Anbieters – die Denk-Tiefe ist der wichtigste Kostenhebel. Mit Ollama kostet es nichts.
+- **Datenschutz:** Gedächtnis und Logs liegen **lokal** bei dir (`data/`, `logs/`). Mit
+  Ollama verlassen auch die Gespräche deinen PC nicht.
 
 ---
 

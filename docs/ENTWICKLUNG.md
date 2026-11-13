@@ -21,6 +21,15 @@ PC-Steuerung, Agenten …) und fragt vor riskanten Aktionen nach (`assistant/per
 - Zuletzt dazugekommen: **0.13.0 Sicherheits-Check** (`assistant/sicherheit.py`,
   `assistant/tools/sicherheit.py`, Befehl `/scan`, Tests `tests/test_sicherheit.py`).
 
+## Screenshots (`docs/bilder/`)
+
+Die Bilder in der README stammen aus einer **Demo-Nova ohne echte Nutzerdaten** (frische Kopie
+des Codes, `[provider] aktiv = "ollama"`, Updates aus, Demo-Person „Alex“). Gestartet mit
+`python -m assistant --app --browser`, die Adresse steht in `data/app.json`; fotografiert mit
+Playwright und installiertem Edge (`channel="msedge"`, 1280×820, Zoom 1,5, dunkles Design),
+danach auf 1440 px Breite verkleinert. **Nie Screenshots aus einer echten Installation
+verwenden** – darin stehen Gedächtnis, Profil und Dateipfade.
+
 ## Ablauf einer Änderung (Release)
 
 1. Code ändern, Tests: `python -m pytest -q`.

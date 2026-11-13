@@ -4,17 +4,40 @@ Diese Anleitung erklärt **ganz einfach**, wie du deine KI zum Laufen bringst �
 auch wenn du noch nie programmiert hast. Lies von oben nach unten und mach jeden
 Schritt nach. 🙂
 
-> **Was ist das hier?** Ein Programm, mit dem du auf deinem Computer mit einer KI
-> redest (wie in einem Chat). Das „Denken“ übernimmt ein KI-Dienst im Internet –
-> **DeepSeek** (sehr billig) oder **Claude** (sehr stark). Dafür brauchst du einen
-> kleinen „Schlüssel“ (API-Key). Keine Sorge, ich zeige dir alles.
+> **Was ist das hier?** Nova – ein Programm, mit dem du auf deinem Computer mit einer KI
+> redest (wie in einem Chat, oder einfach per Stimme). Das „Denken“ übernimmt ein
+> KI-Modell, das du dir aussuchst:
+>
+> | Gehirn | Kosten | Was du brauchst |
+> |---|---|---|
+> | **Ollama** – läuft direkt auf deinem PC | **kostenlos** | Ollama installieren, ein Modell laden (z. B. Qwen, Llama, Gemma) |
+> | **DeepSeek** – im Internet | **extrem günstig** (Bruchteile eines Cents pro Nachricht) | einen Schlüssel (API-Key) mit ein paar Euro Guthaben |
+> | **Claude** (Anthropic) – im Internet | etwas teurer | einen Schlüssel (API-Key) mit Guthaben |
+>
+> Du kannst jederzeit wechseln – das Gedächtnis bleibt dabei erhalten.
 
 ---
 
-## Was du brauchst (einmalig)
+## 🚀 Der schnellste Weg: die fertige App (ohne Python)
+
+1. Öffne <https://github.com/GermanClaude/Selbst-lernende-KI/releases/latest>.
+2. Lade unter **„Assets“** die Datei **`KI-App.exe`** herunter.
+3. Leg sie in einen eigenen Ordner, z. B. `Desktop\Nova`, und starte sie mit Doppelklick.
+   > Windows-Warnung „Der Computer wurde geschützt“? → **„Weitere Informationen“** →
+   > **„Trotzdem ausführen“**.
+4. Beim ersten Start öffnet sich **„Gehirn & Schlüssel“**: Wähle **Ollama** (kostenlos),
+   **DeepSeek** oder **Claude** – den Schlüssel einfach einfügen, „Prüfen & speichern“, fertig.
+5. Ab jetzt holt sich Nova neue Versionen selbst (deine alte Version wird jedes Mal gesichert).
+
+Mehr brauchst du nicht. 🎉 Die Schritte unten sind nur nötig, wenn du Nova **aus dem
+Quellcode** starten oder selbst daran mitbauen willst.
+
+---
+
+## Was du für den Quellcode-Weg brauchst (einmalig)
 1. Einen Windows-PC (für Mac/Linux steht unten ein Extra-Hinweis).
-2. **Python** (du hast 3.14 ✅ – wir prüfen in Schritt 1, ob Windows es auch findet).
-3. Einen **API-Schlüssel** (ein paar Euro Guthaben; DeepSeek ist am günstigsten).
+2. **Python** 3.10 oder neuer – wir prüfen in Schritt 1, ob Windows es findet.
+3. Einen **API-Schlüssel** (DeepSeek ist am günstigsten) **oder** Ollama (kostenlos, ohne Schlüssel).
 4. Rund **15 Minuten** beim ersten Mal.
 
 ---
@@ -79,24 +102,31 @@ git clone -b ccr-cfa1ff8c-wgsyxb https://github.com/GermanClaude/Selbst-lernende
 
 ---
 
-## Schritt 3 – Einen API-Schlüssel holen (nur einen brauchst du)
+## Schritt 3 – Ein Gehirn aussuchen (eins reicht)
 
-### DeepSeek (billig) – empfohlen
+### Ganz kostenlos: Ollama (läuft auf deinem PC)
+1. Ollama von <https://ollama.com/download> installieren (Windows: `OllamaSetup.exe`).
+2. Später in Nova unter **„Gehirn & Schlüssel“ → „Ollama“** ein empfohlenes Modell mit einem
+   Klick herunterladen – z. B. `qwen3.5:4b` (ca. 3–4 GB, kann Werkzeuge benutzen und Bilder
+   sehen). Für starke PCs: `qwen3.5:9b`.
+3. **Jedes andere Ollama-Modell geht auch** (Llama, Gemma, Mistral, DeepSeek-R1 …) – am besten
+   eins mit „tools“. Auch **LM Studio** und andere OpenAI-kompatible Server funktionieren
+   (Adresse unter `[ollama]` in `config/settings.toml`, z. B. `http://localhost:1234/v1`).
+- Vorteil: kostenlos, ohne Konto, deine Gespräche verlassen den PC nicht.
+- Nachteil: schwächer als DeepSeek/Claude; braucht mindestens 8 GB Arbeitsspeicher
+  (mit Grafikkarte deutlich schneller).
+
+### DeepSeek (extrem günstig, sehr gut)
 1. <https://platform.deepseek.com/> öffnen, Konto erstellen.
 2. Etwas Guthaben aufladen (10 €/$ reichen sehr lange).
 3. Menüpunkt **„API Keys“** → **„Create new API key“**.
 4. Den Schlüssel (beginnt mit `sk-...`) sofort **kopieren**.
    ⚠️ Er wird nur **einmal** angezeigt.
 
-### Oder ganz kostenlos: Ollama (läuft auf deinem PC)
-
-Ohne Schlüssel und ohne Kosten: Ollama von <https://ollama.com/download> installieren,
-dann in Nova unter **„Gehirn & Schlüssel“ → „Ollama“** ein empfohlenes Modell herunterladen
-(z.B. `qwen3.5:4b`, ca. 3–4 GB). Schwächer als DeepSeek/Claude und je nach PC langsamer.
-
-### Oder Claude (stärker, teurer)
+### Claude (am stärksten, teurer)
 <https://console.anthropic.com/> → Konto, Guthaben, unter **„API Keys“** einen
-Schlüssel erstellen (beginnt mit `sk-ant-...`) und kopieren.
+Schlüssel erstellen (beginnt mit `sk-ant-...`) und kopieren. Wählbar sind dann Opus, Sonnet,
+Haiku und Fable – von „blitzschnell und billig“ bis „das Stärkste“.
 
 ---
 
@@ -121,15 +151,21 @@ Schlüssel erstellen (beginnt mit `sk-ant-...`) und kopieren.
      ANTHROPIC_API_KEY=sk-ant-hier-dein-schluessel
      ```
    - Die jeweils andere Zeile einfach so lassen.
+   - **Mit Ollama** brauchst du keinen Schlüssel – dann den Editor einfach wieder schließen.
 6. **Speichern** (Strg + S) und den Editor **schließen**.
 
 Fertig eingerichtet. 🎉
 
 ---
 
-## Schritt 5 – Das günstige Gehirn (DeepSeek) auswählen
+## Schritt 5 – Das Gehirn auswählen
 
-Standardmäßig ist **Claude** eingestellt. Für **DeepSeek** (billig):
+**Am einfachsten:** in der App auf **„Gehirn“** in der Seitenleiste klicken (oder im Chat
+`/gehirn ollama`, `/gehirn deepseek`, `/gehirn claude` tippen). Einen Schlüssel kannst du
+auch einfach in den Chat einfügen – Nova erkennt, wofür er ist, und schaltet um. Der
+Schlüssel wird dabei nie an die KI geschickt.
+
+**Oder von Hand:**
 1. Im Projektordner den Unterordner **`config`** öffnen.
 2. Die Datei **`settings.toml`** öffnen (Rechtsklick → „Öffnen mit“ → „Editor“).
 3. Ganz oben steht:
@@ -137,11 +173,7 @@ Standardmäßig ist **Claude** eingestellt. Für **DeepSeek** (billig):
    [provider]
    aktiv = "claude"
    ```
-   Ändere es zu:
-   ```
-   [provider]
-   aktiv = "deepseek"
-   ```
+   Ändere es zu `"deepseek"` (billig) oder `"ollama"` (kostenlos auf deinem PC).
 4. **Speichern** und schließen.
 
 ---
@@ -253,9 +285,11 @@ Dateien sie gerade liest.
 
 ## 💶 Bleibt es billig?
 
-Ja. Mit DeepSeek und dem eingebauten **Sparmodus** kostet eine normale Nachricht
-oft **Bruchteile eines Cents**. Mit `/kosten` siehst du es live. 10 € Guthaben
-reichen bei normaler Nutzung sehr lange.
+Ja. Mit **Ollama** kostet es gar nichts. Mit DeepSeek und dem eingebauten **Sparmodus**
+kostet eine normale Nachricht oft **Bruchteile eines Cents** – 10 € Guthaben reichen bei
+normaler Nutzung sehr lange. Mit `/kosten` (oder in der Seitenleiste) siehst du den
+Verbrauch live, und für AFK-Modus, Live-Sehen und Spielmodus legst du selbst eine
+Kostengrenze fest.
 
 ---
 
