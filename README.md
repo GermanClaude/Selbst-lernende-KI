@@ -36,7 +36,23 @@ arbeitet weiter, während du weg bist – und läuft auf Wunsch komplett kostenl
 ## ⭐ Bewertungen
 
 <!-- BEWERTUNGEN:START -->
-**Noch keine Bewertungen** – sei die erste Person! In Nova: **„Feedback & Bewertung“** in der Seitenleiste (oder `/feedback`).
+### ★★★★★ 5,0 von 5 · 3 Bewertungen
+
+| Sterne | Anteil | Anzahl |
+|---|---|---:|
+| ★★★★★ | ██████████ | 3 |
+| ★★★★ |  | 0 |
+| ★★★ |  | 0 |
+| ★★ |  | 0 |
+| ★ |  | 0 |
+
+**Neueste Rezensionen:**
+
+> ★★★★★ **Anonym** · 13.11.2026  
+> Beste Programm alda wirklisch
+
+
+*Pro Installation zählt nur die letzte Bewertung. Text und Name erscheinen nur, wenn die Person es ausdrücklich erlaubt. Bewerten: in Nova unter „Feedback & Bewertung“ (oder `/feedback`).*
 <!-- BEWERTUNGEN:ENDE -->
 
 *Wird automatisch alle 6 Stunden aktualisiert.*
