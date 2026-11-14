@@ -48,8 +48,8 @@ arbeitet weiter, während du weg bist – und läuft auf Wunsch komplett kostenl
 
 **Neueste Rezensionen:**
 
-> ★★★★★ **Anonym** · 13.11.2026  
-> Beste Programm alda wirklisch
+> ★★★★★ **Die deutsche Legende** · 14.11.2026  
+> wewdwadawd
 
 
 *Pro Installation zählt nur die letzte Bewertung. Text und Name erscheinen nur, wenn die Person es ausdrücklich erlaubt. Bewerten: in Nova unter „Feedback & Bewertung“ (oder `/feedback`).*
