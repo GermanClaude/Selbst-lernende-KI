@@ -36,17 +36,20 @@ arbeitet weiter, während du weg bist – und läuft auf Wunsch komplett kostenl
 ## ⭐ Bewertungen
 
 <!-- BEWERTUNGEN:START -->
-### ★★★★★ 5,0 von 5 · 3 Bewertungen
+### ★★★★★ 5,0 von 5 · 5 Bewertungen
 
 | Sterne | Anteil | Anzahl |
 |---|---|---:|
-| ★★★★★ | ██████████ | 3 |
+| ★★★★★ | ██████████ | 5 |
 | ★★★★ |  | 0 |
 | ★★★ |  | 0 |
 | ★★ |  | 0 |
 | ★ |  | 0 |
 
 **Neueste Rezensionen:**
+
+> ★★★★★ **Anonym** · 18.11.2026  
+> supa
 
 > ★★★★★ **Die deutsche Legende** · 14.11.2026  
 > wewdwadawd

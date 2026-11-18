@@ -1,14 +1,21 @@
 {
- "anzahl": 3,
+ "anzahl": 5,
  "schnitt": 5.0,
  "verteilung": {
   "1": 0,
   "2": 0,
   "3": 0,
   "4": 0,
-  "5": 3
+  "5": 5
  },
  "oeffentlich": [
+  {
+   "sterne": 5,
+   "text": "supa",
+   "name": "Anonym",
+   "datum": "2026-11-18",
+   "version": "0.15.0"
+  },
   {
    "sterne": 5,
    "text": "wewdwadawd",
