@@ -4,6 +4,24 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.21.0 – 2026-11-21
+
+**AFK-Modus arbeitet jetzt wirklich weiter – ohne Dauerfragen**
+- Bisher war Nova im AFK-Modus (wenn du weg bist) sehr vorsichtig: sie durfte nur lesen,
+  recherchieren und Entwürfe anlegen, alles andere schrieb sie nur als Vorschlag auf.
+- Neu: Wenn du Nova ohnehin **volle Freiheit** gegeben hast (Stützräder „aus" oder „alles"/
+  Vollzugriff), **handelt sie im AFK jetzt wirklich** – Dateien ändern, Befehle ausführen, bei
+  Bedarf Maus und Tastatur steuern – und entscheidet dabei nach eigenem Ermessen, so wie du es
+  wollen würdest, **ohne ständig nachzufragen**. Gedacht genau dafür: du duschst, isst, schaust
+  einen Film – und sie macht in der Zeit deinen Auftrag fertig.
+- **Es bleibt mit Verstand:** Schwer Umkehrbares oder was andere betrifft (viel löschen,
+  verschicken, posten, Geld ausgeben, Konten/Einstellungen dauerhaft ändern) macht sie nur, wenn
+  der Auftrag das klar meint – sonst schreibt sie es als Vorschlag. **Automatische Starts** richtet
+  sie im AFK nie ein, und Anweisungen aus Webseiten/Dateien befolgt sie weiterhin nicht.
+- **Mausbewegung oder eine versehentliche Taste beenden den AFK-Modus NICHT.** Er endet nur, wenn
+  du ihm wirklich schreibst/sagst oder auf Stopp drückst. Zeit- und Kostengrenzen gelten weiter.
+- Willst du es lieber vorsichtig wie bisher: `[permissions] afk_autonom = false`.
+
 ## 0.20.0 – 2026-11-21
 
 **Stimme bequem in der App auswählen**

@@ -1201,6 +1201,7 @@ class CLI:
         from ..abwesend import run_session, settings_session
 
         session = settings_session(self.config.afk, auftrag, minutes, budget, start_eur=self.brain.cost_now_eur())
+        session.autonom = self.permissions.afk_autonomie_moeglich()  # wirklich handeln statt nur vorschlagen
         cost = f"{session.max_eur:.2f}".replace(".", ",")
         print(_c(f"\n[AFK-Modus] Ich arbeite allein weiter - hoechstens {session.max_minutes} Min. und ca. "
                  f"{cost} EUR." + (f" Auftrag: {session.auftrag}" if session.auftrag else ""), BOLD))

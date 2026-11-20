@@ -390,8 +390,13 @@ class PermissionSettings:
     autostart_immer_fragen: bool = True
     # Vollzugriff ("Stuetzraeder: alles"): hebt zusaetzlich die letzten Bremsen auf -
     # die Shell-Sperrliste und die Autostart-Rueckfrage. Dann darf die KI am ganzen PC
-    # wirklich ALLES ohne Rueckfrage. Der AFK-Schutz bleibt trotzdem bestehen.
+    # wirklich ALLES ohne Rueckfrage.
     vollzugriff: bool = False
+    # AFK-Vollmacht: Darf die KI, waehrend du weg bist, EIGENSTAENDIG handeln (Dateien aendern,
+    # Befehle ausfuehren, den PC/Maus/Tastatur steuern) - statt nur Vorschlaege zu schreiben?
+    # Wirkt nur, wenn du Nova ohnehin volle Freiheit gegeben hast (Stuetzraeder "aus" oder "alles").
+    # Automatische Starts bleiben im AFK immer gesperrt. false = AFK bleibt vorsichtig (nur Vorschlaege).
+    afk_autonom: bool = True
 
 
 @dataclass

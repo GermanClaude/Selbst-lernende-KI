@@ -560,6 +560,7 @@ class AppController(CLI):
 
         session = settings_session(self.config.afk, request.get("auftrag", ""), request.get("minutes"),
                                    request.get("budget"), start_eur=self.brain.cost_now_eur())
+        session.autonom = self.permissions.afk_autonomie_moeglich()  # wirklich handeln statt nur vorschlagen
         self._afk = session
         self.tool_ctx.extra["afk_session"] = session
         return session

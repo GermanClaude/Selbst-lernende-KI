@@ -14,6 +14,7 @@ def test_away_rules_are_strict_and_never_ask(tmp_path):
     cfg.permissions.auto_confirm = True
     cfg.permissions.safe_mode = False
     cfg.permissions.allow_full_filesystem = True
+    cfg.permissions.afk_autonom = False  # ohne AFK-Vollmacht bleibt der AFK-Modus vorsichtig
     asked = []
     pm = PermissionManager(cfg.permissions, tmp_path / "ws", confirm_fn=lambda m, r: asked.append(m) or True)
     (tmp_path / "ws").mkdir()

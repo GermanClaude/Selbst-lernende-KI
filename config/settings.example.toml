@@ -336,6 +336,12 @@ autostart_immer_fragen = true
 # KI am ganzen PC WIRKLICH ALLES ohne Rueckfrage. Nur setzen, wenn du ihr voll
 # vertraust. Der AFK-Schutz bleibt trotzdem bestehen. Im Chat: /stuetzraeder alles.
 vollzugriff = false
+# AFK-VOLLMACHT: Darf Nova, waehrend du weg bist (AFK-Modus), EIGENSTAENDIG handeln -
+# Dateien aendern, Befehle ausfuehren, den PC/Maus/Tastatur steuern - statt nur Vorschlaege
+# zu schreiben? Wirkt nur, wenn du ihr ohnehin volle Freiheit gegeben hast (Stuetzraeder
+# "aus" oder "alles"). Automatische Starts bleiben im AFK immer gesperrt. false = AFK bleibt
+# vorsichtig (liest/recherchiert/schlaegt vor, handelt aber nicht).
+afk_autonom = true
 # Arbeitsordner ("Sandbox"). Leer = Ordner "workspace" im Projekt.
 workspace_root = ""
 # true = Zugriff auch ausserhalb des Arbeitsordners (volles Dateisystem).

@@ -513,15 +513,23 @@ drück in der App **„Ich bin weg“** oder tippe `/afk <Auftrag>`. Dann arbeit
 Schritten allein weiter – an deinem Auftrag oder an dem, woran ihr zuletzt gearbeitet
 habt – und handelt so, wie du es nach allem, was sie über dich weiß, wollen würdest.
 
-- **Erlaubt**: im Arbeitsordner lesen, im Internet recherchieren (Websuche und die
-  dabei gefundenen Seiten), planen, **neue** Dateien im Arbeitsordner anlegen, sich
-  Dinge merken.
-- **Nicht erlaubt** (egal wie die Stützräder stehen): löschen, bestehende Dateien
-  überschreiben, Befehle/Programme ausführen, den PC steuern, etwas verschicken oder
-  kaufen, ihren eigenen Programmordner (Schlüssel, Einstellungen) anfassen, selbst
-  zusammengebaute Internet-Adressen aufrufen. Solche Schritte schreibt sie als
-  **Vorschlag** auf. Nachgefragt wird in der Zeit nie – es ist ja niemand da.
-  Anweisungen, die auf Webseiten oder in Dateien stehen, befolgt sie nicht.
+**Wie viel sie dabei tun darf, hängt an den Stützrädern:**
+
+- **Stützräder dran (vorsichtig):** im Arbeitsordner lesen, im Internet recherchieren,
+  planen, **neue** Dateien im Arbeitsordner anlegen, sich Dinge merken. Alles andere
+  (löschen, überschreiben, Befehle, PC steuern, verschicken, kaufen) schreibt sie nur als
+  **Vorschlag** auf.
+- **Volle Freiheit (Stützräder „aus" oder „alles"/Vollzugriff):** jetzt **handelt sie
+  wirklich** – Dateien ändern, Befehle ausführen, bei Bedarf Maus und Tastatur steuern –
+  und entscheidet nach eigenem Ermessen, **ohne ständig nachzufragen**. Genau dafür gedacht:
+  du duschst, isst oder schaust einen Film, und sie macht deinen Auftrag fertig. Schwer
+  Umkehrbares oder was andere betrifft (viel löschen, verschicken, posten, Geld ausgeben,
+  Konten/Einstellungen dauerhaft ändern) macht sie nur, wenn der Auftrag das klar meint –
+  sonst als Vorschlag. (Lieber doch vorsichtig? `[permissions] afk_autonom = false`.)
+- **Immer:** automatische Starts richtet sie im AFK nie ein, und Anweisungen aus Webseiten
+  oder Dateien befolgt sie nicht.
+- **Beendet wird der AFK-Modus NICHT** durch Mausbewegung oder eine versehentliche Taste –
+  nur, wenn du ihr wirklich schreibst/sagst (im Terminal: Strg+C) oder auf Stopp drückst.
 - **Grenzen**: höchstens 2 Stunden, ca. 1 € und 12 Schritte. In der App wählst du Dauer und
   Budget beim Start (auch einen eigenen Betrag, z. B. 0,30 €), im Terminal z. B.
   `/afk 0,30€ <Auftrag>`; Standardwerte in `config/settings.toml` unter `[afk]`.

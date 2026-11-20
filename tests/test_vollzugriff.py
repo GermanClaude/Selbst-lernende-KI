@@ -29,12 +29,21 @@ def test_vollzugriff_fragt_bei_autostart_nicht_mehr(tmp_path):
     assert pm_voll.confirm_always("Autostart einrichten").allowed
 
 
-def test_vollzugriff_bleibt_im_afk_modus_vorsichtig(tmp_path):
-    # Auch mit Vollzugriff: wenn der Mensch weg ist, keine Shell, kein Autostart.
+def test_vollzugriff_im_afk_modus_darf_handeln_aber_kein_autostart(tmp_path):
+    # Mit Vollzugriff und AFK-Vollmacht (Standard) handelt Nova im AFK wirklich - nur Autostart bleibt tabu.
     pm, _ = _pm(tmp_path, vollzugriff=True)
     pm.begin_away()
+    assert pm.afk_handlungsfrei() is True
+    assert pm.check_shell("format C: /q").allowed          # Vollzugriff hebt auch die Sperrliste auf
+    assert pm.check(Risk.DANGEROUS, "Loeschen").allowed
+    assert not pm.confirm_always("Autostart einrichten").allowed  # Autostart im AFK trotzdem gesperrt
+
+
+def test_vollzugriff_afk_ohne_vollmacht_bleibt_vorsichtig(tmp_path):
+    pm, _ = _pm(tmp_path, vollzugriff=True, afk_autonom=False)
+    pm.begin_away()
+    assert pm.afk_handlungsfrei() is False
     assert not pm.check_shell("format C: /q").allowed
-    assert not pm.confirm_always("Autostart einrichten").allowed
     assert not pm.check(Risk.DANGEROUS, "Loeschen").allowed
 
 

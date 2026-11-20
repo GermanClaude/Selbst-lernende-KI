@@ -18,7 +18,10 @@ PC-Steuerung, Agenten …) und fragt vor riskanten Aktionen nach (`assistant/per
 - Aktuelle Version: siehe `__version__` in `assistant/__init__.py` und oben in `CHANGELOG.md`.
 - Standard-Branch: `ccr-cfa1ff8c-wgsyxb` (so benannt, weil das Projekt in einer Claude-Cloud-Session
   entstand). Nur dieser Branch erzeugt Releases.
-- Zuletzt dazugekommen: **0.19.0 Stimme waehlbar** (`voice.CloudSpeaker`/`build_speaker`,
+- Zuletzt dazugekommen: **0.21.0 AFK-Vollmacht** (`permissions.afk_autonom`/`afk_handlungsfrei`,
+  `abwesend._RULES_AUTONOM`, Tests `tests/test_afk_autonom.py`) – im AFK wirklich handeln statt nur
+  vorschlagen, wenn volle Freiheit gegeben ist. Davor: **0.20.0 Stimmen-Auswahlliste in der App**,
+  **0.19.0 Stimme waehlbar** (`voice.CloudSpeaker`/`build_speaker`,
   `tools/stimme.py`, Befehl `/stimme`, Tests `tests/test_stimme.py`) – gratis (pyttsx3) oder
   realistisch (OpenAI/ElevenLabs). Davor: 0.18.0 Vollzugriff (dritte Stützräder-Stufe „alles"),
   0.16.0 ChatGPT/OpenAI als fünftes Gehirn, 0.17.0 eigenes Design (update-fest).
@@ -59,7 +62,7 @@ verwenden** – darin stehen Gedächtnis, Profil und Dateipfade.
 | Gedächtnis, Persönlichkeit | `memory.py`, `personality.py`, `profil.py`, `config/werte.md`, `persona.md` |
 | Aussehen / Design | `aussehen.py` (Design-Vorlagen `THEMES`, Hintergrundbild, eigenes CSS – alles über `/custom.css` = `generated_css()` + eigenes CSS), `tools/aussehen.py`. Die Design-Dateien (`config/app-anpassung.*`, `config/app-hintergrund.*`) stehen in `updater._is_protected` → Updates fassen sie nie an. |
 | Sprache / Stimme | `voice.py` (Zuhören: VoiceCapture/Whisper/Google; Vorlesen: `Speaker` = pyttsx3 gratis, `CloudSpeaker` = OpenAI/ElevenLabs realistisch; `build_speaker()` waehlt + faellt auf frei zurueck), `live.py` (Jarvis-Loop, LocalVoice/WindowVoice), `tools/stimme.py` (Werkzeug `stimme_waehlen`), Befehl `/stimme` (`cli.set_stimme`). **OpenAI-TTS `/v1/audio/speech` ist zum 6.1.2027 abgekuendigt** (Nachfolger: Realtime-API) – Modell-Konstanten in `voice.py`, Stand 20.11.2026, regelmaessig pruefen. |
-| AFK-Modus | `abwesend.py`, `tools/abwesenheit.py` |
+| AFK-Modus | `abwesend.py` (Schleife, Rundenprompt – vorsichtig `_RULES_VORSICHTIG` oder autonom `_RULES_AUTONOM` je `AfkSession.autonom`), `tools/abwesenheit.py`. **AFK-Vollmacht:** `permissions.afk_autonomie_moeglich()` (Setting `afk_autonom` + Stützräder „aus"/„alles") und `afk_handlungsfrei()` (= im laufenden AFK) steuern, ob `check/check_shell/resolve_path/check_path_write` im AFK handeln lassen statt nur Vorschlag. Autostart bleibt im AFK immer gesperrt (`confirm_always` lehnt bei `away` ab). AFK endet nur durch echte Nachricht/Stopp – **nicht** durch Maus/Tastatur (kein Aktivitäts-Wächter im Code). |
 | Live-Sehen | `assistant/sehen/` (Auge, Dienst, OCR, Fenster), `tools/sehen.py` |
 | Handy als Kamera | `assistant/kamera/` (WebRTC, Signal-Server, QR, Firewall) |
 | Spielmodus | `assistant/spiel/` (Sitzung, Eingabe-Wächter, Profile z. B. Manor Lords), `tools/spiel.py` |

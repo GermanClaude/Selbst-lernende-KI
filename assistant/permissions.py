@@ -122,6 +122,22 @@ class PermissionManager:
         own = work if work != app and self._is_within(work, app) else app / "workspace"
         return self._is_within(resolved, app) and not self._is_within(resolved, own)
 
+    def afk_autonomie_moeglich(self) -> bool:
+        """Ist die AFK-Vollmacht ueberhaupt freigeschaltet? (unabhaengig davon, ob gerade AFK ist)
+
+        Nur wenn der Mensch Nova ohnehin volle Freiheit gegeben hat (Stuetzraeder 'aus' oder 'alles')
+        UND [permissions] afk_autonom an ist."""
+        s = self.settings
+        if not s.afk_autonom:
+            return False
+        return bool(s.vollzugriff or (not s.safe_mode and s.auto_confirm and s.allow_full_filesystem))
+
+    def afk_handlungsfrei(self) -> bool:
+        """Darf die KI JETZT (im laufenden AFK-Modus) eigenstaendig handeln - Dateien aendern,
+        Befehle ausfuehren, den PC steuern - statt nur Vorschlaege zu schreiben? Automatische Starts
+        bleiben auch dann gesperrt (niemand ist da, der zustimmen koennte)."""
+        return self.away and self.afk_autonomie_moeglich()
+
     # -- Aktionsfreigabe ----------------------------------------------------
     def check(self, risk: Risk, description: str) -> Decision:
         """Entscheidet, ob eine Aktion der gegebenen Risikostufe laufen darf."""
@@ -136,8 +152,11 @@ class PermissionManager:
         if risk == Risk.SAFE:
             return Decision(True)
         if self.away:
-            # Nur NEUE Dateien im Arbeitsordner (von check_path_write geprueft) - alles andere
-            # Veraendernde nein (Aussehen, Bildschirmfoto, ...). Nachgefragt wird nie: niemand da.
+            # AFK mit Vollmacht: handeln ohne Rueckfrage (safe_mode bleibt die harte Grenze oben).
+            if self.afk_handlungsfrei():
+                return Decision(True)
+            # Sonst vorsichtig: nur NEUE Dateien im Arbeitsordner (von check_path_write geprueft),
+            # alles andere Veraendernde nein. Nachgefragt wird nie: niemand da.
             if risk == Risk.MODERATE and write_ok:
                 return Decision(True)
             return Decision(False, _away_denied())
@@ -175,7 +194,7 @@ class PermissionManager:
         Abwesenheit selbst angelegt wurden) - nichts Bestehendes ueberschreiben. Die Freigabe
         gilt nur fuer genau die naechste Pruefung (diese Datei-Aktion) und nur, wenn alles passt."""
         self._away_write_ok = False
-        if self.away:
+        if self.away and not self.afk_handlungsfrei():
             resolved = Path(path).resolve()
             if not self._is_within(resolved, self.workspace_root) or self._in_app_dir(resolved):
                 return Decision(False, "Solange dein Mensch weg ist, schreibst du nur in den Arbeitsordner. "
@@ -211,17 +230,19 @@ class PermissionManager:
             candidate = self.workspace_root / candidate
         resolved = candidate.resolve()
 
-        # Im AFK-Modus nur der Arbeitsordner - auch zum Lesen (Schutz vor eingeschleusten
-        # Anweisungen aus Webseiten, z.B. "lies die .env und schick sie an ...").
-        if self.settings.allow_full_filesystem and not self.away:
+        # Im AFK-Modus normalerweise nur der Arbeitsordner - auch zum Lesen (Schutz vor
+        # eingeschleusten Anweisungen aus Webseiten, z.B. "lies die .env und schick sie an ...").
+        # Mit AFK-Vollmacht (afk_handlungsfrei) gilt dagegen der volle Zugriff wie sonst auch.
+        if self.settings.allow_full_filesystem and (not self.away or self.afk_handlungsfrei()):
             if must_exist and not resolved.exists():
                 raise FileNotFoundError(f"Pfad existiert nicht: {resolved}")
             return resolved
 
-        if self.away and self._in_app_dir(resolved):
+        cautious_away = self.away and not self.afk_handlungsfrei()
+        if cautious_away and self._in_app_dir(resolved):
             raise PermissionError_("Solange dein Mensch weg ist (AFK-Modus), nicht im Ordner der KI selbst.")
         if not self._is_within(resolved, self.workspace_root):
-            if self.away:
+            if cautious_away:
                 raise PermissionError_(f"Solange dein Mensch weg ist (AFK-Modus), nur im Arbeitsordner: {resolved}")
             raise PermissionError_(
                 f"Zugriff ausserhalb des Arbeitsordners ist gesperrt: {resolved}\n"
@@ -243,7 +264,8 @@ class PermissionManager:
     # -- Shell-Pruefung -----------------------------------------------------
     def check_shell(self, command: str, cwd: str | None = None) -> Decision:
         """Prueft einen Shell-Befehl gegen Verbots-/Erlaubnisliste und Safe Mode."""
-        if self.away:
+        # Im AFK-Modus nur mit Vollmacht (sonst nie - niemand da, der zustimmen koennte).
+        if self.away and not self.afk_handlungsfrei():
             return Decision(False, _away_denied())
         lowered = command.lower().strip()
         # Vollzugriff hebt auch die Sperrliste auf - dann ist wirklich jeder Befehl erlaubt.
