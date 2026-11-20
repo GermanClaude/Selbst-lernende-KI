@@ -1,7 +1,8 @@
 """API-Schluessel einrichten - direkt im Chat (App und Terminal).
 
 Fuegt dein Mensch einen Schluessel in den Chat ein ("sk-..." fuer DeepSeek,
-"sk-ant-..." fuer Claude, "AQ..." bzw. "AIza..." fuer Gemini), wird er NIE an die KI geschickt, sondern:
+"sk-ant-..." fuer Claude, "AQ..." bzw. "AIza..." fuer Gemini, "sk-proj-..." fuer OpenAI),
+wird er NIE an die KI geschickt, sondern:
   1. erkannt (welches Gehirn?),
   2. kurz ausprobiert (stimmt er? ist Guthaben da?),
   3. in .env gespeichert und das passende Gehirn eingeschaltet.
@@ -38,6 +39,13 @@ PROVIDERS = {
         "info": "stark und schnell, kostenloser Einstieg moeglich",
         "url": "https://aistudio.google.com/apikey",
         "prefix": "AIza",
+    },
+    "openai": {
+        "name": "ChatGPT (OpenAI)",
+        "env": "OPENAI_API_KEY",
+        "info": "die GPT-Modelle von OpenAI",
+        "url": "https://platform.openai.com/api-keys",
+        "prefix": "sk-proj-",
     },
     "ollama": {
         "name": "Ollama (kostenlos, auf deinem PC)",
@@ -83,7 +91,13 @@ def find_cloudflare_token(text: str) -> str | None:
 def provider_for_key(key: str) -> str:
     if key.startswith(("AIza", "AQ.")):
         return "gemini"
-    return "claude" if key.startswith("sk-ant-") else "deepseek"
+    if key.startswith("sk-ant-"):
+        return "claude"
+    # sk-proj-/sk-svcacct-/sk-admin- gibt es nur bei OpenAI. Ein schlichtes "sk-..." ist nicht
+    # eindeutig (DeepSeek und alte OpenAI-Schluessel sehen gleich aus) -> DeepSeek als Standard.
+    if key.startswith(("sk-proj-", "sk-svcacct-", "sk-admin-")):
+        return "openai"
+    return "deepseek"
 
 
 def mask(key: str) -> str:
@@ -95,6 +109,8 @@ def key_of(config, provider: str) -> str | None:
         return None  # kein Schluessel noetig
     if provider == "gemini":
         return config.gemini_api_key
+    if provider == "openai":
+        return config.openai_api_key
     return config.deepseek_api_key if provider == "deepseek" else config.anthropic_api_key
 
 
@@ -123,9 +139,16 @@ def classify(exc: Exception, provider: str) -> tuple[str, str]:
             or "api key not valid" in text or "api_key_invalid" in text):
         return "invalid", (f"Der {name}-Schluessel wurde abgelehnt - er ist falsch, unvollstaendig kopiert oder "
                            f"geloescht. Hol dir unter {info['url']} einen neuen und fuege ihn einfach hier ein.")
+    if provider == "openai" and ("insufficient_quota" in text or "exceeded your current quota" in text):
+        return "balance", ("Der Schluessel stimmt, aber dein OpenAI-Guthaben ist aufgebraucht. Lade auf "
+                           "platform.openai.com unter \u201eBilling\u201c etwas auf - dann geht es sofort weiter.")
+    if provider == "openai" and ("model_not_found" in text or (status == 404 and "model" in text)):
+        return "model", ("Das eingestellte OpenAI-Modell gibt es nicht (vielleicht abgeschaltet). Waehle ein "
+                         "anderes - z.B. /modell openai 5.2.")
     if status == 402 or "insufficient balance" in text or "credit balance" in text:
         where = {"deepseek": "platform.deepseek.com unter \u201eTop up\u201c",
-                 "gemini": "aistudio.google.com unter \u201eBilling\u201c"}.get(
+                 "gemini": "aistudio.google.com unter \u201eBilling\u201c",
+                 "openai": "platform.openai.com unter \u201eBilling\u201c"}.get(
             provider, "console.anthropic.com unter \u201eBilling\u201c")
         return "balance", (f"Der Schluessel stimmt, aber dein {name}-Guthaben ist leer. Lade auf {where} "
                            "etwas auf - dann geht es sofort weiter.")
@@ -176,6 +199,12 @@ def test_key(config, provider: str, key: str) -> tuple[bool, str, str]:
             client = OpenAI(api_key=key, base_url=config.gemini.base_url,
                             timeout=Timeout(25.0, connect=10.0), max_retries=0)
             client.models.list()  # kostet nichts, zeigt aber, ob der Schluessel stimmt
+        elif provider == "openai":
+            from openai import OpenAI, Timeout
+
+            client = OpenAI(api_key=key, base_url=config.openai.base_url,
+                            timeout=Timeout(25.0, connect=10.0), max_retries=0)
+            client.models.list()  # kostet nichts, zeigt aber, ob der Schluessel stimmt
         elif provider == "deepseek":
             from openai import OpenAI, Timeout
 
@@ -207,6 +236,8 @@ def save_key(config, provider: str, key: str) -> Path:
         config.deepseek_api_key = key
     elif provider == "gemini":
         config.gemini_api_key = key
+    elif provider == "openai":
+        config.openai_api_key = key
     else:
         config.anthropic_api_key = key
     return path

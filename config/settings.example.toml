@@ -66,6 +66,23 @@ max_tokens = 16384
 
 
 # ----------------------------------------------------------------------------
+#  OPENAI / ChatGPT - Schluessel kommt aus .env: OPENAI_API_KEY
+#  Schluessel holen: https://platform.openai.com/api-keys
+# ----------------------------------------------------------------------------
+[openai]
+# Modell (auch mit /modell): "gpt-5.2" = stark, denkt nach und nutzt Werkzeuge (Standard),
+# "gpt-6-sol" = GPT-6 ausgewogen, "gpt-6-luna" = am guenstigsten. (Die neuesten Flaggschiffe
+# wie gpt-6.2-astra nutzen Werkzeuge nur ueber die Responses-API - die kann Nova nicht.)
+model = "gpt-5.2"
+# Denk-Tiefe (auch mit /denken): aus = schnell | low = ausgewogen | medium = gruendlich |
+# high = sehr gruendlich. (gpt-6-sol/luna denken bei Werkzeug-Nutzung nicht.)
+denken = "aus"
+base_url = "https://api.openai.com/v1"
+# Maximale Laenge EINER Antwort - das Nachdenken zaehlt mit (zu wenig = leere Antwort).
+max_tokens = 16384
+
+
+# ----------------------------------------------------------------------------
 #  OLLAMA - kostenlos, die Modelle laufen auf deinem PC (kein Schluessel, kein Internet).
 #  Ollama installieren: https://ollama.com/download (oder: winget install Ollama.Ollama)
 #  Modelle herunterladen: in der App unter "Gehirn & Schluessel" oder mit /ollama laden <modell>

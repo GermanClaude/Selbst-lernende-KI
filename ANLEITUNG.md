@@ -13,6 +13,7 @@ Schritt nach. 🙂
 > | **Ollama** – läuft direkt auf deinem PC | **kostenlos** | Ollama installieren, ein Modell laden (z. B. Qwen, Llama, Gemma) |
 > | **DeepSeek** – im Internet | **extrem günstig** (Bruchteile eines Cents pro Nachricht) | einen Schlüssel (API-Key) mit ein paar Euro Guthaben |
 > | **Gemini** (Google) – im Internet | günstig, **kostenloser Einstieg** möglich | einen Schlüssel von aistudio.google.com |
+> | **ChatGPT** (OpenAI) – im Internet | mittlerer Preis | einen Schlüssel von platform.openai.com |
 > | **Claude** (Anthropic) – im Internet | etwas teurer | einen Schlüssel (API-Key) mit Guthaben |
 >
 > Du kannst jederzeit wechseln – das Gedächtnis bleibt dabei erhalten.
@@ -27,7 +28,7 @@ Schritt nach. 🙂
    > Windows-Warnung „Der Computer wurde geschützt“? → **„Weitere Informationen“** →
    > **„Trotzdem ausführen“**.
 4. Beim ersten Start öffnet sich **„Gehirn & Schlüssel“**: Wähle **Ollama** (kostenlos),
-   **DeepSeek**, **Gemini** oder **Claude** – den Schlüssel einfach einfügen, „Prüfen & speichern“, fertig.
+   **DeepSeek**, **Gemini**, **ChatGPT** oder **Claude** – den Schlüssel einfach einfügen, „Prüfen & speichern“, fertig.
 5. Ab jetzt holt sich Nova neue Versionen selbst (deine alte Version wird jedes Mal gesichert).
 
 Mehr brauchst du nicht. 🎉 Die Schritte unten sind nur nötig, wenn du Nova **aus dem
@@ -175,7 +176,7 @@ Fertig eingerichtet. 🎉
 ## Schritt 5 – Das Gehirn auswählen
 
 **Am einfachsten:** in der App auf **„Gehirn“** in der Seitenleiste klicken (oder im Chat
-`/gehirn ollama`, `/gehirn deepseek`, `/gehirn gemini`, `/gehirn claude` tippen). Einen Schlüssel kannst du
+`/gehirn ollama`, `/gehirn deepseek`, `/gehirn gemini`, `/gehirn openai`, `/gehirn claude` tippen). Einen Schlüssel kannst du
 auch einfach in den Chat einfügen – Nova erkennt, wofür er ist, und schaltet um. Der
 Schlüssel wird dabei nie an die KI geschickt.
 
@@ -187,7 +188,7 @@ Schlüssel wird dabei nie an die KI geschickt.
    [provider]
    aktiv = "claude"
    ```
-   Ändere es zu `"deepseek"` (billig), `"gemini"` (Google) oder `"ollama"` (kostenlos auf deinem PC).
+   Ändere es zu `"deepseek"` (billig), `"gemini"` (Google), `"openai"` (ChatGPT) oder `"ollama"` (kostenlos auf deinem PC).
 4. **Speichern** und schließen.
 
 ---

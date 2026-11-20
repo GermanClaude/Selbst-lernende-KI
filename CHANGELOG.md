@@ -4,6 +4,20 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.16.0 – 2026-11-20
+
+**Neues Gehirn: ChatGPT (OpenAI)**
+- Neben Claude, DeepSeek, Gemini und Ollama kann Nova jetzt auch mit **ChatGPT** von OpenAI denken.
+- Einrichten: Schlüssel unter **platform.openai.com/api-keys** erstellen und einfach in den Chat
+  einfügen – oder in **„Gehirn & Schlüssel“ → „ChatGPT (OpenAI)“**. Nova erkennt einen
+  `sk-proj-…`-Schlüssel, probiert ihn kurz aus und schaltet um. Der Schlüssel geht nie an die KI.
+- Drei Modelle: **GPT-5.2** (stark, denkt nach und nutzt Werkzeuge – der Standard),
+  **GPT-6 Sol** (ausgewogen) und **GPT-6 Luna** (am günstigsten). Alle sehen Bilder.
+- Denk-Tiefe wählbar (`/denken`); im Terminal: `/gehirn openai`, `/modell openai luna`.
+- Die Kostenanzeige kennt die OpenAI-Preise.
+- Hinweis: Die allerneuesten Flaggschiffe (z. B. gpt-6.2-astra) nutzen Werkzeuge nur über eine
+  andere Schnittstelle, die Nova nicht verwendet – darum sind sie bewusst nicht in der Liste.
+
 ## 0.15.0 – 2026-11-13
 
 **Bewertungen: Sterne für alle sichtbar**

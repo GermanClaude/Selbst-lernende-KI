@@ -8,6 +8,7 @@ Gespeichert wird in config/settings.toml:
   [claude]   model = "claude-opus-5-5"   effort = "medium"   (low|medium|high|xhigh|max)
   [deepseek] model = "deepseek-flash"    denken = "aus"      (aus|low|high|max)
   [gemini]   model = "gemini-3.8-flash"  denken = "low"      (low|medium|high)
+  [openai]   model = "gpt-5.2"           denken = "aus"      (aus|low|medium|high)
   [ollama]   model = "qwen3.5:4b"        denken = "aus"      (aus|an)  - jedes Ollama-Modell
 """
 from __future__ import annotations
@@ -65,6 +66,22 @@ GEMINI_MODELLE = [
      "preis": (2.0, 0.1, 10.0), "preis_neu": ("2026-12-01", (4.0, 0.2, 20.0)), "sieht_bilder": True},
 ]
 
+# OpenAI / ChatGPT (gleiche OpenAI-Bibliothek, eigene Adresse). Alle sehen Bilder.
+# "denkt": kann ueber Chat Completions gleichzeitig nachdenken UND Werkzeuge nutzen. Die neuesten
+# Flaggschiffe (gpt-6.2-astra ...) koennen das nur ueber die Responses-API - die nutzt Nova nicht,
+# darum sind sie hier nicht dabei. gpt-6-sol/luna nutzen Werkzeuge nur ohne Nachdenken (denkt=False).
+OPENAI_MODELLE = [
+    {"id": "gpt-5.2", "name": "GPT-5.2", "kurz": "5.2",
+     "info": "stark, denkt nach und nutzt Werkzeuge - der Standard", "tempo": "mittel",
+     "preis": (1.75, 0.175, 14.0), "sieht_bilder": True, "denkt": True},
+    {"id": "gpt-6-sol", "name": "GPT-6 Sol", "kurz": "sol",
+     "info": "GPT-6, schnell und ausgewogen (bei Werkzeug-Nutzung ohne tiefes Nachdenken)", "tempo": "schnell",
+     "preis": (2.0, 0.2, 10.0), "sieht_bilder": True, "denkt": False},
+    {"id": "gpt-6-luna", "name": "GPT-6 Luna", "kurz": "luna",
+     "info": "GPT-6, am guenstigsten - fuer einfache Sachen", "tempo": "sehr schnell",
+     "preis": (0.1, 0.01, 0.5), "sieht_bilder": True, "denkt": False},
+]
+
 # DeepSeek-Modell, das Bilder ansieht: beschreibt sie fuer Modelle ohne Augen (V4 Pro).
 DEEPSEEK_SEHMODELL = "deepseek-flash"
 
@@ -81,7 +98,7 @@ def _ollama_modelle() -> list[dict]:
 OLLAMA_MODELLE = _ollama_modelle()
 
 MODELLE = {"claude": CLAUDE_MODELLE, "deepseek": DEEPSEEK_MODELLE, "gemini": GEMINI_MODELLE,
-           "ollama": OLLAMA_MODELLE}
+           "openai": OPENAI_MODELLE, "ollama": OLLAMA_MODELLE}
 
 # Denk-Tiefen: (Wert in settings.toml, Name fuer Menschen, Erklaerung)
 DENKTIEFEN = {
@@ -102,6 +119,12 @@ DENKTIEFEN = {
         ("low", "schnell", "denkt nur ganz kurz nach - fuer Alltagsfragen"),
         ("medium", "ausgewogen", "denkt etwas nach - guter Mittelweg"),
         ("high", "gruendlich", "denkt laenger nach - fuer knifflige Aufgaben"),
+    ],
+    "openai": [
+        ("aus", "schnell", "antwortet schnell, denkt kaum nach"),
+        ("low", "ausgewogen", "denkt kurz nach - guter Mittelweg"),
+        ("medium", "gruendlich", "denkt laenger nach - fuer knifflige Aufgaben"),
+        ("high", "sehr gruendlich", "nimmt sich viel Zeit - fuer schwere Aufgaben"),
     ],
     "ollama": [
         ("aus", "schnell", "antwortet sofort, ohne vorher nachzudenken"),
@@ -144,8 +167,8 @@ def sieht_bilder(provider: str, model_id: str) -> bool:
     info = modell_info(provider, wanted)
     if info is not None:
         return bool(info.get("sieht_bilder", False))
-    # Unbekannte Claude- und Gemini-Modelle: ja. Ollama: fragt der Provider Ollama selbst.
-    return provider in ("claude", "gemini")
+    # Unbekannte Claude-, Gemini- und OpenAI-Modelle: ja. Ollama: fragt der Provider Ollama selbst.
+    return provider in ("claude", "gemini", "openai")
 
 
 def modell_name(provider: str, model_id: str) -> str:
@@ -163,6 +186,8 @@ def aktuelle_denktiefe(config, provider: str | None = None) -> str:
         return config.ollama.denken
     if provider == "gemini":
         return config.gemini.denken
+    if provider == "openai":
+        return config.openai.denken
     return config.deepseek.denken if provider == "deepseek" else config.claude.effort
 
 
@@ -174,6 +199,8 @@ def _section(config, provider: str):
         return config.ollama, "denken"
     if provider == "gemini":
         return config.gemini, "denken"
+    if provider == "openai":
+        return config.openai, "denken"
     return config.claude, "effort"
 
 
@@ -296,6 +323,48 @@ def gemini_denken(config, override: str | None = None) -> str:
     return _gemini_stufe(config.gemini.denken) or "low"
 
 
+def normalisiere_openai(openai) -> None:
+    """Unsinnige Werte aus [openai] nicht abstuerzen lassen."""
+    from .config import DEFAULT_OPENAI_MODEL, OPENAI_BASE_URL
+
+    if not isinstance(openai.model, str) or not _MODELL_ID.match(openai.model.strip().lower()):
+        openai.model = DEFAULT_OPENAI_MODEL
+    openai.model = openai.model.strip()
+    if openai.model.lower() in ALTE_OPENAI_NAMEN:  # abgeloeste Modelle -> Nachfolger
+        openai.model = ALTE_OPENAI_NAMEN[openai.model.lower()]
+    openai.denken = _openai_stufe(openai.denken) or "aus"
+    if not isinstance(openai.base_url, str) or not openai.base_url.startswith("https://"):
+        openai.base_url = OPENAI_BASE_URL
+    try:
+        openai.max_tokens = min(65536, max(2048, int(openai.max_tokens)))
+    except (TypeError, ValueError):
+        openai.max_tokens = 16384
+
+
+def _openai_stufe(wert) -> str | None:
+    wert = str(wert or "").strip().lower().replace("ü", "ue")
+    if wert in ("aus", "low", "medium", "high"):
+        return wert
+    return {"off": "aus", "none": "aus", "nein": "aus", "schnell": "aus", "minimal": "aus", "disabled": "aus",
+            "an": "low", "ein": "low", "ausgewogen": "low", "mittel": "low", "gruendlich": "medium",
+            "sehr gruendlich": "high", "xhigh": "high", "max": "high", "maximal": "high"}.get(wert)
+
+
+def openai_denken(config, override: str | None = None) -> str:
+    """Denk-Stufe fuer OpenAI (aus|low|medium|high). Im Live-Modus zaehlt Tempo."""
+    if override:
+        return {"low": "aus", "medium": "aus", "high": "low", "xhigh": "medium", "max": "high"}.get(
+            override, _openai_stufe(override) or "aus")
+    return _openai_stufe(config.openai.denken) or "aus"
+
+
+def openai_kann_denken(model_id: str) -> bool:
+    """Kann dieses OpenAI-Modell ueber Chat Completions gleichzeitig nachdenken UND Werkzeuge nutzen?
+    Unbekannte (eigene) Modelle: ja annehmen."""
+    info = modell_info("openai", (model_id or "").strip().lower())
+    return info.get("denkt", True) if info else True
+
+
 def _deepseek_stufe(wert) -> str | None:
     wert = str(wert or "").strip().lower()
     if wert in ("aus", "low", "high", "max"):
@@ -351,6 +420,8 @@ def _finde_modell(provider: str, wanted: str) -> str | None:
         return ALTE_DEEPSEEK_NAMEN[wanted][0]
     if provider == "gemini" and wanted in ALTE_GEMINI_NAMEN:
         return ALTE_GEMINI_NAMEN[wanted]
+    if provider == "openai" and wanted in ALTE_OPENAI_NAMEN:
+        return ALTE_OPENAI_NAMEN[wanted]
     if provider == "ollama":
         from .ollama import finde_empfohlen
 
@@ -364,15 +435,25 @@ def _finde_modell(provider: str, wanted: str) -> str | None:
         return raw if _OLLAMA_ID.match(raw) and ".." not in raw else None
     for m in MODELLE.get(provider, []):
         names = {m["id"], m["kurz"], m["name"].lower(),
-                 m["name"].lower().replace("claude ", "").replace("deepseek ", "").replace("gemini ", "")}
+                 m["name"].lower().replace("claude ", "").replace("deepseek ", "").replace("gemini ", "")
+                 .replace("gpt-6 ", "").replace("gpt ", "")}
         if wanted in names or wanted.replace(" ", "-") in names:
             return m["id"]
     return None
 
 
+# Abgeloeste OpenAI-Modelle -> aktueller Nachfolger (OpenAI schaltet die alten ab, siehe
+# platform.openai.com/docs/deprecations; Stand 20.11.2026).
+ALTE_OPENAI_NAMEN = {
+    "gpt-5": "gpt-5.2", "gpt-5.1": "gpt-5.2", "gpt-5-mini": "gpt-6-luna", "gpt-5-nano": "gpt-6-luna",
+    "gpt-4o": "gpt-5.2", "gpt-4.1": "gpt-5.2", "gpt-4": "gpt-5.2", "gpt-4-turbo": "gpt-5.2",
+    "gpt-3.5-turbo": "gpt-6-luna", "o3": "gpt-5.2", "o4-mini": "gpt-6-luna", "chatgpt": "gpt-5.2",
+}
+
+
 def fremdes_modell(wanted: str) -> str | None:
-    """Gehoert der Name zu Claude, DeepSeek oder Gemini? -> dieses Gehirn (sonst None)."""
-    for other in ("claude", "deepseek", "gemini"):
+    """Gehoert der Name zu Claude, DeepSeek, Gemini oder OpenAI? -> dieses Gehirn (sonst None)."""
+    for other in ("claude", "deepseek", "gemini", "openai"):
         if _finde_modell(other, wanted):
             return other
     return None
@@ -395,6 +476,8 @@ def finde_denktiefe(provider: str, wanted: str) -> str | None:
         return _ollama_stufe(raw)
     if provider == "gemini":
         return _gemini_stufe(raw)
+    if provider == "openai":
+        return _openai_stufe(raw)
     idx = _WORTE.get(raw)
     if idx is None:
         return None
@@ -462,7 +545,8 @@ def waehle(config, provider: str | None = None, model: str | None = None,
     return {"ok": True, "message": message, "changed": changed, "provider": provider}
 
 
-_GEHIRN_NAME = {"claude": "Claude", "deepseek": "DeepSeek", "gemini": "Gemini", "ollama": "Ollama"}
+_GEHIRN_NAME = {"claude": "Claude", "deepseek": "DeepSeek", "gemini": "Gemini", "openai": "ChatGPT",
+                "ollama": "Ollama"}
 
 
 def _ollama_fehlt(config, modell: str, http=None) -> str:

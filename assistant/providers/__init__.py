@@ -1,4 +1,4 @@
-"""Provider: austauschbare "Gehirne" (Claude, DeepSeek, Gemini oder Ollama).
+"""Provider: austauschbare "Gehirne" (Claude, DeepSeek, Gemini, OpenAI oder Ollama).
 
 build_provider() waehlt anhand der Konfiguration das aktive Gehirn.
 """
@@ -26,6 +26,10 @@ def build_provider(
         from .gemini_provider import GeminiProvider
 
         return GeminiProvider(config, system_prompt, registry, tool_ctx, client=client)
+    if config.active_provider == "openai":
+        from .openai_provider import OpenAIProvider
+
+        return OpenAIProvider(config, system_prompt, registry, tool_ctx, client=client)
     if config.active_provider == "deepseek":
         from .deepseek_provider import DeepSeekProvider
 

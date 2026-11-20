@@ -1,10 +1,11 @@
 """Konfiguration laden: Provider, Einstellungen, Persona, Werte, Umgebung.
 
 Die .env-Datei wird ohne Zusatzabhaengigkeit (kein python-dotenv noetig) gelesen.
-Es gibt vier "Gehirne" zur Auswahl:
+Es gibt fuenf "Gehirne" zur Auswahl:
   * claude   - Anthropic (sehr stark)
   * deepseek - DeepSeek (OpenAI-kompatibel, extrem guenstig)
   * gemini   - Google Gemini (OpenAI-kompatibel, kostenloser Einstieg moeglich)
+  * openai   - OpenAI / ChatGPT (gpt-Modelle)
   * ollama   - Ollama (kostenlos, die Modelle laufen auf deinem PC, kein Schluessel noetig)
 """
 from __future__ import annotations
@@ -25,6 +26,8 @@ DEFAULT_MODEL = "claude-opus-5-5"
 DEFAULT_DEEPSEEK_MODEL = "deepseek-flash"
 DEFAULT_GEMINI_MODEL = "gemini-3.8-flash"
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
+DEFAULT_OPENAI_MODEL = "gpt-5.2"
+OPENAI_BASE_URL = "https://api.openai.com/v1"
 DEFAULT_OLLAMA_MODEL = "qwen3.5:4b"
 DEFAULT_OLLAMA_ADRESSE = "http://localhost:11434"
 
@@ -129,6 +132,18 @@ class GeminiSettings:
 
 
 @dataclass
+class OpenAISettings:
+    # OpenAI / ChatGPT (Schluessel von https://platform.openai.com/api-keys) - gleiche
+    # OpenAI-Bibliothek, eigene Adresse.
+    model: str = DEFAULT_OPENAI_MODEL
+    # Denk-Tiefe: aus (schnell) | low | medium | high (gruendlich). Nicht jedes Modell kann
+    # nachdenken - dann wird die Angabe weggelassen.
+    denken: str = "aus"
+    base_url: str = OPENAI_BASE_URL
+    max_tokens: int = 16384  # bei Denk-Modellen zaehlt der Denk-Text mit - zu wenig = leere Antwort
+
+
+@dataclass
 class OllamaSettings:
     # Ollama: kostenlose Modelle auf deinem PC (https://ollama.com). Kein Schluessel noetig.
     # Adresse des Ollama-Servers (nur http/https). ".../v1" = OpenAI-kompatibler Server (z.B. LM Studio).
@@ -191,6 +206,9 @@ class PriceSettings:
     gemini_input: float = 0.75
     gemini_cache_hit: float = 0.075
     gemini_output: float = 3.75
+    openai_input: float = 0.25
+    openai_cache_hit: float = 0.025
+    openai_output: float = 2.0
     usd_zu_eur: float = 0.92
 
     def for_provider(self, provider: str) -> tuple[float, float, float]:
@@ -201,6 +219,8 @@ class PriceSettings:
             return (self.deepseek_input, self.deepseek_cache_hit, self.deepseek_output)
         if provider == "gemini":
             return (self.gemini_input, self.gemini_cache_hit, self.gemini_output)
+        if provider == "openai":
+            return (self.openai_input, self.openai_cache_hit, self.openai_output)
         return (self.claude_input, self.claude_cache_hit, self.claude_output)
 
 
@@ -395,6 +415,8 @@ class Config:
     ollama: OllamaSettings = field(default_factory=OllamaSettings)
     gemini: GeminiSettings = field(default_factory=GeminiSettings)
     gemini_api_key: str | None = None
+    openai: OpenAISettings = field(default_factory=OpenAISettings)
+    openai_api_key: str | None = None
 
     # -- Komfort-Eigenschaften ---------------------------------------------
     @property
@@ -413,6 +435,8 @@ class Config:
             return self.ollama.model
         if provider == "gemini":
             return self.gemini.model
+        if provider == "openai":
+            return self.openai.model
         return self.claude.model
 
     @property
@@ -422,6 +446,8 @@ class Config:
             return "ollama"
         if self.active_provider == "gemini":
             return self.gemini_api_key
+        if self.active_provider == "openai":
+            return self.openai_api_key
         return self.deepseek_api_key if self.active_provider == "deepseek" else self.anthropic_api_key
 
     @property
@@ -614,6 +640,7 @@ def load_config(project_root: Path | None = None) -> Config:
     # Modell per Umgebungsvariable erzwingen (zielt auf den aktiven Provider).
     ollama = _merge(OllamaSettings(), raw.get("ollama", {}))
     gemini = _merge(GeminiSettings(), raw.get("gemini", {}))
+    openai = _merge(OpenAISettings(), raw.get("openai", {}))
     if os.environ.get("KI_MODEL"):
         wanted = (provider.aktiv or "claude").strip().lower() if isinstance(provider.aktiv, str) else "claude"
         if wanted == "deepseek":
@@ -622,15 +649,19 @@ def load_config(project_root: Path | None = None) -> Config:
             ollama.model = os.environ["KI_MODEL"]
         elif wanted == "gemini":
             gemini.model = os.environ["KI_MODEL"]
+        elif wanted == "openai":
+            openai.model = os.environ["KI_MODEL"]
         else:
             claude.model = os.environ["KI_MODEL"]
     # Abgeschaltete DeepSeek-Namen (deepseek-chat/-reasoner) auf die aktuellen umstellen.
-    from .modelle import normalisiere_claude, normalisiere_deepseek, normalisiere_gemini, normalisiere_ollama
+    from .modelle import (normalisiere_claude, normalisiere_deepseek, normalisiere_gemini, normalisiere_openai,
+                          normalisiere_ollama)
 
     normalisiere_deepseek(deepseek, denken_gesetzt="denken" in raw.get("deepseek", {}))
     normalisiere_claude(claude)
     normalisiere_ollama(ollama)
     normalisiere_gemini(gemini)
+    normalisiere_openai(openai)
 
     cfg = Config(
         provider=provider,
@@ -662,11 +693,14 @@ def load_config(project_root: Path | None = None) -> Config:
         ollama=ollama,
         gemini=gemini,
         gemini_api_key=os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY") or None,
+        openai=openai,
+        openai_api_key=os.environ.get("OPENAI_API_KEY") or None,
     )
     # Eingestelltes Gehirn ohne Schluessel, das andere hat einen (z.B. nur DEEPSEEK_API_KEY in
     # .env, aber aktiv = "claude"): automatisch das Gehirn nehmen, fuer das es einen Schluessel gibt.
     # Ollama braucht keinen Schluessel - es wird nur genommen, wenn du es selbst gewaehlt hast.
-    keys = {"claude": cfg.anthropic_api_key, "deepseek": cfg.deepseek_api_key, "gemini": cfg.gemini_api_key}
+    keys = {"claude": cfg.anthropic_api_key, "deepseek": cfg.deepseek_api_key, "gemini": cfg.gemini_api_key,
+            "openai": cfg.openai_api_key}
     active = cfg.active_provider
     if active != "ollama" and not keys.get(active):
         other = next((name for name, key in keys.items() if key and name != active), None)
