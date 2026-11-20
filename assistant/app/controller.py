@@ -64,6 +64,7 @@ COMMANDS = [
     ("/neu", "neues Gespraech (Charakter & Profil frisch)"),
     ("/tutorial", "Nova zeigt dir, was sie kann"),
     ("/stuetzraeder", "Stuetzraeder an/aus/alles (Vollzugriff)"),
+    ("/stimme", "Stimme waehlen: gratis oder realistisch"),
     ("/aussehen vorlage hacker", "Design-Vorlage (hacker, mitternacht, dracula, retro, pastell, sonne)"),
     ("/aussehen zuruecksetzen", "App wieder im Original-Aussehen"),
     ("/charakter", "Charakter anzeigen oder waehlen"),
@@ -1702,10 +1703,11 @@ class AppController(CLI):
                 return {"ok": False, "error": schoen(problem), "setup": not getattr(sys, "frozen", False)}
             root = self.config.project_root
             if tts == "server":
-                from ..voice import Speaker
+                from ..voice import build_speaker
 
                 if self._speaker is None:
-                    self._speaker = Speaker(self.config.voice.sprache or "de")
+                    self._speaker = build_speaker(self.config.voice, self.config.stimme_keys,
+                                                  self.config.voice.sprache or "de")
                 voice_out = LocalVoice(self._speaker, emit=self._event)
             else:
                 voice_out = WindowVoice(self._event, progress=progress)
@@ -1841,7 +1843,7 @@ class AppController(CLI):
                 logger.warning("Einstellung nicht gespeichert: %s", exc)
         elif name == "vorlesen":
             if value and not self.voice_out.enabled:
-                self.voice_out = VoiceOutput(True)
+                self.voice_out = VoiceOutput(True, self.config.voice, self.config.stimme_keys)
                 if not self.voice_out.enabled:
                     self._notice("Vorlesen ist noch nicht eingerichtet - schreib `/sprache einrichten vorlesen`.", "warn")
             elif not value:

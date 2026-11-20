@@ -290,6 +290,15 @@ live_genau = false
 live_denktiefe = "low"
 # Antworten vorlesen (pip install pyttsx3) - im Chat: /sprache vorlesen
 speak_responses = false
+# Welche Stimme vorliest - im Chat umstellen mit /stimme:
+#   "frei"       = kostenlose Computerstimme (offline, ohne Konto)
+#   "openai"     = realistisch, nutzt denselben Schluessel wie ChatGPT (guenstig)
+#   "elevenlabs" = die natuerlichste Stimme, eigener Schluessel noetig (kostet mehr)
+stimme = "frei"
+stimme_name = ""       # bestimmte Stimme beim Anbieter (OpenAI z.B. cedar, marin, nova); leer = Standard
+stimme_modell = ""     # Modell erzwingen; leer = Standard des Anbieters
+stimme_tempo = 1.0     # Sprechtempo (1.0 = normal)
+stimme_anweisung = ""  # nur OpenAI: Ton/Stil, z.B. "sprich freundlich und ruhig"
 # Alter Dauer-Sprachmodus (braucht PyAudio) - meist reicht F2.
 enabled = false
 wake_word = ""

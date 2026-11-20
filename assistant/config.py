@@ -355,6 +355,13 @@ class VoiceSettings:
     # Wie tief Claude im Sprachmodus nachdenkt: "low" = schnell, "" = wie im Chat
     live_denktiefe: str = "low"
     live_modell: str = ""  # leer = passendes kleines Vosk-Modell zur Sprache
+    # Welche Stimme vorliest: "frei" (kostenlose Computerstimme), "openai" oder
+    # "elevenlabs" (realistisch, kostet Geld - OpenAI nutzt den ChatGPT-Schluessel).
+    stimme: str = "frei"
+    stimme_name: str = ""       # Name/ID der Stimme beim Anbieter (leer = Standard)
+    stimme_modell: str = ""     # Modell erzwingen (leer = Standard des Anbieters)
+    stimme_tempo: float = 1.0   # Sprechtempo (1.0 = normal)
+    stimme_anweisung: str = ""  # nur OpenAI: Ton/Stil steuern ("sprich freundlich")
 
 
 @dataclass
@@ -421,6 +428,7 @@ class Config:
     gemini_api_key: str | None = None
     openai: OpenAISettings = field(default_factory=OpenAISettings)
     openai_api_key: str | None = None
+    elevenlabs_api_key: str | None = None  # nur fuer die realistische ElevenLabs-Stimme
 
     # -- Komfort-Eigenschaften ---------------------------------------------
     @property
@@ -453,6 +461,11 @@ class Config:
         if self.active_provider == "openai":
             return self.openai_api_key
         return self.deepseek_api_key if self.active_provider == "deepseek" else self.anthropic_api_key
+
+    @property
+    def stimme_keys(self) -> dict:
+        """Schluessel fuer die realistischen Stimmen (OpenAI nutzt den ChatGPT-Schluessel)."""
+        return {"openai": self.openai_api_key, "elevenlabs": self.elevenlabs_api_key}
 
     @property
     def kostenlos(self) -> bool:
@@ -699,6 +712,7 @@ def load_config(project_root: Path | None = None) -> Config:
         gemini_api_key=os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY") or None,
         openai=openai,
         openai_api_key=os.environ.get("OPENAI_API_KEY") or None,
+        elevenlabs_api_key=os.environ.get("ELEVENLABS_API_KEY") or None,
     )
     # Eingestelltes Gehirn ohne Schluessel, das andere hat einen (z.B. nur DEEPSEEK_API_KEY in
     # .env, aber aktiv = "claude"): automatisch das Gehirn nehmen, fuer das es einen Schluessel gibt.

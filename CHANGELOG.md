@@ -4,6 +4,24 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.19.0 – 2026-11-20
+
+**Mit Nova reden – und sie antwortet mit einer Stimme deiner Wahl**
+- Zuhören konnte Nova schon (F2-Sprechtaste und der freihändige Jarvis-Modus `/jarvis`).
+  Neu ist, dass du bei der **Vorlese-Stimme** zwischen gratis und echt klingend wählen kannst:
+  - **Frei** – die eingebaute Computerstimme deines PCs. Kostenlos, offline, ohne Konto (Standard).
+  - **OpenAI** – eine natürliche Stimme über **deinen schon vorhandenen ChatGPT-Schlüssel**
+    (kein neues Konto nötig, günstig). Sag z. B. „nimm eine echtere Stimme" oder tippe
+    `/stimme openai`. Eigene Stimmen wählbar (z. B. `cedar`, `marin`, `nova`, `coral`).
+  - **ElevenLabs** – die natürlichste Stimme überhaupt. Braucht ein eigenes (kostenlos
+    startendes) ElevenLabs-Konto; Schlüssel eintragen mit `/stimme schluessel <KEY>`, dann
+    `/stimme elevenlabs`.
+- Umstellen im Chat mit `/stimme` (zeigt die Auswahl), in der App über **„Stimme wählen"** in
+  der Seitenleiste, oder einfach per Sprache – Nova stellt es selbst um, wenn du sie darum bittest.
+  Anhören mit `/stimme test`. Fehlt ein Schlüssel, sagt Nova es dir und bleibt bei der gratis Stimme.
+- Hinweis: Die realistischen Stimmen kosten je nach Länge etwas Geld. Die kostenlose Stimme bleibt
+  immer als Rückfall erhalten.
+
 ## 0.18.0 – 2026-11-20
 
 **Neue Stufe „Vollzugriff" – Nova darf wirklich alles**

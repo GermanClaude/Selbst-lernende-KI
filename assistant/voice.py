@@ -14,35 +14,43 @@ logger = get_logger()
 
 
 class VoiceOutput:
-    """Spricht Text vor (offline, via pyttsx3)."""
+    """Spricht Text vor - mit der gewaehlten Stimme (kostenlos oder realistisch).
 
-    def __init__(self, enabled: bool = False):
+    Baut je nach Einstellung die passende Stimme (build_speaker): die kostenlose
+    Computerstimme (pyttsx3) oder eine realistische Cloud-Stimme (OpenAI/ElevenLabs).
+    Ohne 'settings' bleibt es die kostenlose Stimme (Rueckwaertskompatibilitaet)."""
+
+    def __init__(self, enabled: bool = False, settings=None, keys: dict | None = None):
         self.enabled = enabled
-        self._engine = None
+        self._speaker = None
         if enabled:
             try:
-                import pyttsx3
-
-                self._engine = pyttsx3.init()
+                self._speaker = build_speaker(settings or _FreieStimme(), keys)
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Sprachausgabe nicht verfuegbar: %s", exc)
+            if not self._speaker or not getattr(self._speaker, "available", False):
                 self.enabled = False
 
     def stop(self) -> None:
         try:
-            if self._engine:
-                self._engine.stop()
+            if self._speaker:
+                self._speaker.stop()
         except Exception:  # noqa: BLE001
             pass
 
     def speak(self, text: str) -> None:
-        if not self.enabled or not self._engine or not text.strip():
+        if not self.enabled or not self._speaker or not text.strip():
             return
         try:
-            self._engine.say(text)
-            self._engine.runAndWait()
+            self._speaker.speak(text)
         except Exception as exc:  # noqa: BLE001
             logger.warning("Sprachausgabe-Fehler: %s", exc)
+
+
+class _FreieStimme:
+    """Mini-Einstellung, wenn VoiceOutput ohne config gebaut wird: immer die freie Stimme."""
+    stimme = "frei"
+    sprache = "de"
 
 
 class VoiceInput:
@@ -521,6 +529,11 @@ class Speaker:
             self._idle.clear()
             self._queue.put((self._generation, text))
 
+    def speak(self, text: str) -> None:
+        """Einfacher Weg (wie VoiceOutput): sprechen und warten, bis fertig."""
+        self.say(text)
+        self.wait()
+
     def wait(self, timeout: float | None = None) -> bool:
         return self._idle.wait(timeout)
 
@@ -539,3 +552,222 @@ class Speaker:
                 self._engine.stop()
         except Exception:  # noqa: BLE001
             pass
+
+
+# ---------------------------------------------------------------------------
+#  Stimmen-Auswahl: kostenlos (Computerstimme) oder realistisch (kostet Geld)
+# ---------------------------------------------------------------------------
+# OpenAI-TTS: nutzt denselben Schluessel wie das ChatGPT-Gehirn (kein neues Konto).
+# ACHTUNG: OpenAI hat /v1/audio/speech samt dieser Modelle zum 6.1.2027 abgekuendigt
+# (Nachfolger: Realtime-API). Laeuft bis dahin; Modell hier bei Bedarf anpassen.
+# Stand 20.11.2026 - regelmaessig pruefen (siehe docs/ENTWICKLUNG.md).
+OPENAI_TTS_URL = "https://api.openai.com/v1/audio/speech"
+OPENAI_TTS_MODELL = "gpt-4o-mini-tts"
+OPENAI_TTS_STANDARD = "cedar"  # laut OpenAI mit "marin" die natuerlichsten Stimmen
+OPENAI_TTS_STIMMEN = ["alloy", "ash", "ballad", "coral", "echo", "fable", "nova", "onyx",
+                      "sage", "shimmer", "verse", "marin", "cedar"]
+
+# ElevenLabs: am natuerlichsten, eigener Schluessel (xi-api-key), kein Sunset.
+ELEVEN_TTS_URL = "https://api.elevenlabs.io/v1/text-to-speech/"
+ELEVEN_VOICES_URL = "https://api.elevenlabs.io/v2/voices"
+ELEVEN_MODELL = "eleven_multilingual_v2"  # gutes Deutsch, stabil fuer lange Texte
+
+_TTS_RATE = 24_000  # OpenAI pcm und ElevenLabs pcm_24000 liefern 24 kHz, 16 bit, mono
+
+STIMMEN = [
+    {"id": "frei", "provider": "lokal", "name": "Frei (Computerstimme)", "kostenlos": True,
+     "info": "die eingebaute Stimme deines PCs - gratis, offline, ohne Konto"},
+    {"id": "openai", "provider": "openai", "name": "OpenAI (realistisch)", "kostenlos": False,
+     "preis": "ca. 0,60 $ je 1 Mio. Zeichen-Tokens", "schluessel": "openai",
+     "info": "natuerliche Stimme ueber deinen vorhandenen ChatGPT-Schluessel (guenstig)"},
+    {"id": "elevenlabs", "provider": "elevenlabs", "name": "ElevenLabs (am echtesten)", "kostenlos": False,
+     "preis": "ca. 0,08 $ je 1.000 Zeichen", "schluessel": "elevenlabs",
+     "info": "die natuerlichste Stimme - braucht ein eigenes (kostenloses) ElevenLabs-Konto"},
+]
+
+
+def stimme_info(stimme: str) -> dict:
+    s = (stimme or "frei").strip().lower()
+    for eintrag in STIMMEN:
+        if eintrag["id"] == s:
+            return eintrag
+    return STIMMEN[0]
+
+
+class CloudSpeaker:
+    """Realistische Stimme aus der Cloud (OpenAI oder ElevenLabs) - gleiche Schnittstelle
+    wie Speaker (say/speak/wait/stop/completed), damit sie ueberall einsetzbar ist.
+
+    Spielt rohes PCM (24 kHz) ueber sounddevice ab. Fehlt sounddevice oder der Schluessel,
+    ist available=False - dann nimmt build_speaker() die kostenlose Stimme.
+    """
+
+    def __init__(self, provider: str, key: str, settings, language: str = "de", http=None):
+        import queue as queue_mod
+        import threading
+
+        self.provider = provider
+        self.key = key or ""
+        self.settings = settings
+        self.language = language
+        self._http = http  # fuer Tests: (url, daten_bytes, header) -> pcm_bytes
+        self._queue: queue_mod.Queue = queue_mod.Queue()
+        self._idle = threading.Event()
+        self._idle.set()
+        self.completed = 0
+        self._generation = 0
+        self._pending = 0
+        self._stop = False
+        self._lock = threading.Lock()
+        self._stream = None
+        self._voice_id = (getattr(settings, "stimme_name", "") or "").strip()
+        self.available = bool(self.key) and (self._http is not None or _importable("sounddevice"))
+        self._thread = None
+        if self.available:
+            self._thread = threading.Thread(target=self._run, name="stimme-cloud", daemon=True)
+            self._thread.start()
+
+    # -- Audio holen --------------------------------------------------------
+    def _request(self, url: str, body: dict, headers: dict) -> bytes:
+        import json
+        data = json.dumps(body).encode("utf-8")
+        if self._http is not None:
+            return self._http(url, data, headers)
+        import urllib.request
+        req = urllib.request.Request(url, data=data, headers=headers, method="POST")
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return resp.read()
+
+    def _synthesize(self, text: str) -> bytes:
+        tempo = float(getattr(self.settings, "stimme_tempo", 1.0) or 1.0)
+        if self.provider == "openai":
+            body = {
+                "model": (getattr(self.settings, "stimme_modell", "") or OPENAI_TTS_MODELL),
+                "input": text,
+                "voice": self._voice_id or OPENAI_TTS_STANDARD,
+                "response_format": "pcm",
+            }
+            anweisung = (getattr(self.settings, "stimme_anweisung", "") or "").strip()
+            if anweisung:
+                body["instructions"] = anweisung
+            headers = {"Authorization": f"Bearer {self.key}", "Content-Type": "application/json"}
+            return self._request(OPENAI_TTS_URL, body, headers)
+        # ElevenLabs
+        voice_id = self._voice_id or self._eleven_default_voice()
+        body = {
+            "text": text,
+            "model_id": (getattr(self.settings, "stimme_modell", "") or ELEVEN_MODELL),
+            "voice_settings": {"stability": 0.5, "similarity_boost": 0.75, "speed": tempo},
+        }
+        headers = {"xi-api-key": self.key, "Content-Type": "application/json"}
+        url = f"{ELEVEN_TTS_URL}{voice_id}?output_format=pcm_24000"
+        return self._request(url, body, headers)
+
+    def _eleven_default_voice(self) -> str:
+        """Ohne gewaehlte Stimme die erste des Kontos nehmen (einmal holen, dann merken)."""
+        if self._voice_id:
+            return self._voice_id
+        try:
+            import json
+            import urllib.request
+            req = urllib.request.Request(ELEVEN_VOICES_URL, headers={"xi-api-key": self.key})
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                voices = json.loads(resp.read().decode("utf-8")).get("voices") or []
+            if voices:
+                self._voice_id = voices[0].get("voice_id", "")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("ElevenLabs-Stimmen nicht abrufbar: %s", exc)
+        return self._voice_id or "21m00Tcm4TlvDq8ikWAM"  # letzter Ausweg (oeffentliche Standardstimme)
+
+    # -- Abspielen ----------------------------------------------------------
+    def _play(self, pcm: bytes) -> None:
+        if not pcm or self._http is not None:  # im Test nicht wirklich abspielen
+            return
+        import sounddevice as sd
+        self._stream = sd.RawOutputStream(samplerate=_TTS_RATE, channels=1, dtype="int16")
+        try:
+            self._stream.start()
+            block = 2 * _TTS_RATE  # ~1 s Haeppchen, damit stop() schnell greift
+            for i in range(0, len(pcm), block):
+                if self._stop:
+                    break
+                self._stream.write(pcm[i:i + block])
+        finally:
+            try:
+                self._stream.stop()
+                self._stream.close()
+            except Exception:  # noqa: BLE001
+                pass
+            self._stream = None
+
+    def _run(self) -> None:
+        while True:
+            item = self._queue.get()
+            if item is None:
+                return
+            generation, text = item
+            if generation != self._generation:
+                continue
+            try:
+                self._stop = False
+                pcm = self._synthesize(text)
+                if generation == self._generation and not self._stop:
+                    self._play(pcm)
+            except Exception as exc:  # noqa: BLE001 - lieber still bleiben als abstuerzen
+                logger.warning("Cloud-Stimme (%s) ging nicht: %s", self.provider, exc)
+            with self._lock:
+                if generation == self._generation:
+                    self.completed += 1
+                    self._pending -= 1
+                    if self._pending <= 0:
+                        self._pending = 0
+                        self._idle.set()
+
+    # -- gleiche Schnittstelle wie Speaker ----------------------------------
+    def say(self, text: str) -> None:
+        text = speech_text(text)
+        if not text or not self.available:
+            return
+        with self._lock:
+            self._pending += 1
+            self._idle.clear()
+            self._queue.put((self._generation, text))
+
+    def speak(self, text: str) -> None:
+        self.say(text)
+        self.wait()
+
+    def wait(self, timeout: float | None = None) -> bool:
+        return self._idle.wait(timeout)
+
+    def stop(self) -> None:
+        with self._lock:
+            self._generation += 1
+            self._stop = True
+            try:
+                while not self._queue.empty():
+                    self._queue.get_nowait()
+            except Exception:  # noqa: BLE001
+                pass
+            self._pending = 0
+            self._idle.set()
+        try:
+            if self._stream is not None:
+                self._stream.abort()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def build_speaker(settings, keys: dict | None = None, language: str = "de", http=None):
+    """Baut die passende Stimme: realistisch (OpenAI/ElevenLabs) wenn gewaehlt UND Schluessel da,
+    sonst die kostenlose Computerstimme. Faellt immer sauber auf 'frei' zurueck."""
+    keys = keys or {}
+    stimme = (getattr(settings, "stimme", "") or "frei").strip().lower()
+    provider = {"chatgpt": "openai", "eleven": "elevenlabs", "11labs": "elevenlabs"}.get(stimme, stimme)
+    if provider in ("openai", "elevenlabs"):
+        key = keys.get(provider)
+        if key:
+            spk = CloudSpeaker(provider, key, settings, language, http=http)
+            if spk.available:
+                return spk
+    return Speaker(language)

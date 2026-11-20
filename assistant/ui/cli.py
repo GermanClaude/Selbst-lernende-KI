@@ -9,6 +9,7 @@ Sonderbefehle (mit '/' beginnen):
   /sprache            - Stand der Spracheingabe (F2) anzeigen
   /sprache einrichten - Spracheingabe installieren
   /sprache vorlesen   - Antworten vorlesen an/aus
+  /stimme [frei|openai|elevenlabs] - Stimme waehlen: gratis oder realistisch (kostet Geld)
   /status             - aktuelle Einstellungen & Sicherheitslage zeigen
   /gedaechtnis        - zeigen, was die KI gelernt hat
   /kosten             - Token-Verbrauch & geschaetzte Kosten dieser Sitzung
@@ -211,7 +212,8 @@ class CLI:
             afk_aktiv=lambda: self.tool_ctx.extra.get("afk_session") is not None,
             sieht_bilder=self._spiel_sieht_bilder, ocr=OcrLeser(config.sehen.ocr_sprache))
         self.tool_ctx.extra["spiel_vorschlag"] = self.spiel.vorschlagen
-        self.voice_out = VoiceOutput(config.voice.speak_responses)
+        self.tool_ctx.extra["set_stimme"] = self.set_stimme  # Werkzeug stimme_waehlen nutzt das
+        self.voice_out = VoiceOutput(config.voice.speak_responses, config.voice, config.stimme_keys)
         self.voice_in = VoiceInput(config.voice.enabled)
         self.voice_mode = config.voice.enabled and self.voice_in.available()
         self.voice_capture = VoiceCapture(config.voice)
@@ -776,7 +778,7 @@ class CLI:
     # -- Jarvis-Modus im Terminal -------------------------------------------------
     def _jarvis_terminal(self) -> None:
         from ..live import LiveLoop, LocalVoice, live_available, recognizer_factory, setup_live
-        from ..voice import Speaker
+        from ..voice import build_speaker
 
         problem = self.voice_capture.problem()
         if problem:
@@ -792,7 +794,7 @@ class CLI:
             ok, message = setup_live(root, settings, progress=_progress_line)
             self._live_setup_failed = not ok  # nicht bei jedem /jarvis erneut versuchen
             print(_c("\r" + message + " " * 10, CYAN if ok else YELLOW))
-        speaker = Speaker(settings.sprache or "de")
+        speaker = build_speaker(settings, self.config.stimme_keys, settings.sprache or "de")
         if not speaker.available:
             print(_c("Zum Vorlesen fehlt pyttsx3 - tippe /sprache einrichten vorlesen. Ich antworte dann nur als Text.",
                      YELLOW))
@@ -1805,6 +1807,8 @@ class CLI:
             self._print_cost_detail()
         elif base == "/sprache":
             self._voice_command(cmd.split()[1:])
+        elif base in ("/stimme", "/voice"):
+            self._stimme_command(cmd.split()[1:])
         elif base == "/update":
             return self._update_command()
         elif base in ("/versionen", "/version"):
@@ -1904,7 +1908,7 @@ class CLI:
                         print(_c("\r" + message + " " * 10, CYAN if ok else YELLOW))
         elif sub == "vorlesen":
             if not self.voice_out.enabled:
-                self.voice_out = VoiceOutput(True)
+                self.voice_out = VoiceOutput(True, self.config.voice, self.config.stimme_keys)
                 print(_c("Vorlesen ist AN." if self.voice_out.enabled else
                          "Vorlesen ist noch nicht eingerichtet - tippe /sprache einrichten vorlesen.", CYAN))
             else:
@@ -1935,6 +1939,83 @@ class CLI:
             return
         self.voice_mode = not self.voice_mode
         print(_c(f"Sprachmodus ist jetzt {'AN' if self.voice_mode else 'AUS'}.", CYAN))
+
+    # -- Stimme (kostenlos oder realistisch) ----------------------------------
+    _STIMME_ALIAS = {"chatgpt": "openai", "eleven": "elevenlabs", "11labs": "elevenlabs",
+                     "lokal": "frei", "aus": "frei", "gratis": "frei", "kostenlos": "frei"}
+
+    def set_stimme(self, stimme: str, name: str = "") -> dict:
+        """Stimme umstellen und speichern. Gibt {'ok','stimme','fehlt_schluessel','name'} zurueck."""
+        from .. import voice as voicemod
+
+        s = self._STIMME_ALIAS.get((stimme or "").strip().lower(), (stimme or "").strip().lower())
+        if s not in ("frei", "openai", "elevenlabs"):
+            raise ValueError(f"Unbekannte Stimme '{stimme}'. Moeglich: frei, openai, elevenlabs.")
+        self.config.voice.stimme = s
+        save_setting(self.config.project_root, "voice", "stimme", toml_string(s))
+        if name:
+            self.config.voice.stimme_name = name.strip()
+            save_setting(self.config.project_root, "voice", "stimme_name", toml_string(name.strip()))
+        # Gespeicherte Stimme neu aufbauen (App: zwischengespeicherten Speaker verwerfen).
+        if hasattr(self, "_speaker"):
+            try:
+                if self._speaker:
+                    self._speaker.stop()
+            except Exception:  # noqa: BLE001
+                pass
+            self._speaker = None
+        if getattr(self, "voice_out", None) and self.voice_out.enabled:
+            self.voice_out = VoiceOutput(True, self.config.voice, self.config.stimme_keys)
+        fehlt = s in ("openai", "elevenlabs") and not self.config.stimme_keys.get(s)
+        return {"ok": True, "stimme": s, "name": self.config.voice.stimme_name,
+                "fehlt_schluessel": fehlt, "info": voicemod.stimme_info(s)}
+
+    def set_elevenlabs_key(self, key: str) -> None:
+        from ..config import save_env_value
+
+        key = (key or "").strip()
+        save_env_value(self.config.project_root, "ELEVENLABS_API_KEY", key)
+        os.environ["ELEVENLABS_API_KEY"] = key
+        self.config.elevenlabs_api_key = key
+
+    def _stimme_command(self, args: list[str]) -> None:
+        from .. import voice as voicemod
+
+        sub = (args[0].lower() if args else "")
+        if sub == "schluessel" and args[1:]:
+            self.set_elevenlabs_key(args[1])
+            print(_c("ElevenLabs-Schluessel gespeichert. Stimme umstellen mit: /stimme elevenlabs", GREEN))
+            return
+        if sub in ("test", "probe"):
+            VoiceOutput(True, self.config.voice, self.config.stimme_keys).speak(
+                "Hallo, so klinge ich mit dieser Stimme.")
+            print(_c("Test gesprochen (wenn die Stimme eingerichtet ist).", GREY))
+            return
+        if not sub:
+            aktuell = voicemod.stimme_info(self.config.voice.stimme)
+            print(_c(f"Aktuelle Stimme: {aktuell['name']}"
+                     + (f" ({self.config.voice.stimme_name})" if self.config.voice.stimme_name else ""), CYAN))
+            for e in voicemod.STIMMEN:
+                marke = "→" if e["id"] == aktuell["id"] else " "
+                preis = "" if e.get("kostenlos") else f"  [{e.get('preis','kostet Geld')}]"
+                print(_c(f" {marke} /stimme {e['id']:<11} {e['info']}{preis}", GREY))
+            print(_c("ElevenLabs-Schluessel: /stimme schluessel <KEY>   |   Anhoeren: /stimme test", GREY))
+            return
+        try:
+            result = self.set_stimme(sub, args[1] if args[1:] else "")
+        except ValueError as exc:
+            print(_c(str(exc), YELLOW))
+            return
+        e = result["info"]
+        if result["fehlt_schluessel"]:
+            if result["stimme"] == "openai":
+                print(_c("Fuer die OpenAI-Stimme fehlt noch der ChatGPT-Schluessel - trag ihn ein mit "
+                         "/schluessel sk-proj-…", YELLOW))
+            else:
+                print(_c("Fuer ElevenLabs fehlt noch der Schluessel - /stimme schluessel <KEY> "
+                         "(kostenlos: https://elevenlabs.io).", YELLOW))
+        else:
+            print(_c(f"Stimme umgestellt auf: {e['name']}. Zum Anhoeren: /stimme test", GREEN))
 
     # -- Automatische Starts ------------------------------------------------
     def _autostart_command(self, args: list[str]) -> None:

@@ -320,6 +320,20 @@ online, kostenlos). Offline-Erkennung: zusätzlich `pip install faster-whisper`
 (beim ersten Sprechen wird das Modell geladen). Einstellungen unter `[voice]`.
 Antworten vorlesen lassen: `/sprache vorlesen` (braucht `pip install pyttsx3`).
 
+### Stimme wählen: gratis oder echt klingend
+
+Mit `/stimme` (oder in der App **„Stimme wählen"**, oder sag einfach „nimm eine echtere
+Stimme") entscheidest du, womit Nova vorliest:
+
+- **`/stimme frei`** – die eingebaute Computerstimme deines PCs. Kostenlos, offline, ohne Konto.
+- **`/stimme openai`** – eine natürliche Stimme über **deinen schon vorhandenen ChatGPT-Schlüssel**
+  (kein neues Konto, günstig). Bestimmte Stimme: `/stimme openai cedar` (auch `marin`, `nova`, `coral` …).
+- **`/stimme elevenlabs`** – die natürlichste Stimme. Braucht ein eigenes, kostenlos startendes
+  Konto von [elevenlabs.io](https://elevenlabs.io); Schlüssel eintragen mit `/stimme schluessel <KEY>`.
+
+Anhören mit `/stimme test`. Die realistischen Stimmen kosten je nach Textlänge etwas Geld –
+fehlt ein Schlüssel, bleibt Nova bei der kostenlosen Stimme.
+
 ## Jarvis-Modus: einfach reden (live)
 
 `/jarvis` (oder in der App der Knopf **Jarvis-Modus**) – und du redest einfach mit
@@ -564,6 +578,7 @@ stoppt die Steuerung sofort.
 | `/sprache` | Stand der Spracheingabe (F2) |
 | `/sprache einrichten` | Spracheingabe installieren |
 | `/sprache vorlesen` | Antworten vorlesen an/aus |
+| `/stimme [frei\|openai\|elevenlabs]` | Vorlese-Stimme wählen: gratis oder realistisch (kostet Geld) |
 | `/jarvis` | Jarvis-Modus: einfach reden, live (zurück: „Chat-Modus“ sagen) |
 | `/afk [Betrag] [Auftrag]` | AFK-Modus: Nova arbeitet allein weiter, z. B. `/afk 0,30€ …` (zurück: Nachricht bzw. Strg+C) |
 | `/modell [name]` | Modell zeigen bzw. wählen (z.B. `/modell sonnet`, `/modell deepseek pro`) |
