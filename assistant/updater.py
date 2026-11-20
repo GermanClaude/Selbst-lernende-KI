@@ -141,6 +141,9 @@ def _http_get(url: str, timeout: float = 15) -> bytes:
 
 def _is_protected(rel: str) -> bool:
     parts = rel.split("/")
+    # config/app-hintergrund.* (selbst gewaehltes Hintergrundbild) nie anfassen.
+    if rel.startswith("config/app-hintergrund."):
+        return True
     return parts[0] in _PROTECTED_DIRS or "__pycache__" in parts or rel in _PROTECTED_FILES or rel.endswith(".pyc")
 
 

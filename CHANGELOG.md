@@ -4,6 +4,22 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.17.0 – 2026-11-20
+
+**Dein eigenes Design – und Updates lassen es in Ruhe**
+- **Design-Vorlagen auf Knopfdruck:** Sag „mach die App hackerhaft“ (oder
+  `/aussehen vorlage hacker`) – Nova stellt den ganzen Look um. Zur Wahl: **hacker**
+  (Terminal-Grün auf Schwarz), **mitternacht**, **dracula**, **retro**, **pastell**, **sonne**.
+  Zurück zum Original: `/aussehen vorlage aus`.
+- **Eigenes Hintergrundbild:** Gib Nova ein Bild („nimm bild.jpg als Hintergrund“ oder
+  `/aussehen hintergrund <pfad>`). Es wird dezent abgedunkelt, damit der Text lesbar bleibt;
+  entfernen mit `/aussehen hintergrund aus`.
+- Dazu wie bisher: Farben, Schriftgröße, Ecken, Begrüßung, Sphäre und ganz eigenes CSS – Nova
+  kann die App frei nach deinen Ideen umbauen.
+- **Wichtig: Updates ändern dein Design nie.** Deine Vorlage, Farben, dein Bild und dein eigenes
+  CSS sind vor Updates geschützt – eine neue Version lässt dein Aussehen unangetastet. Willst du
+  doch wieder das Original, geht das jederzeit mit `/aussehen zuruecksetzen`.
+
 ## 0.16.0 – 2026-11-20
 
 **Neues Gehirn: ChatGPT (OpenAI)**

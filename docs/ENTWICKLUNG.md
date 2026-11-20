@@ -55,6 +55,7 @@ verwenden** – darin stehen Gedächtnis, Profil und Dateipfade.
 | Terminal-Oberfläche | `assistant/ui/cli.py` (alle `/befehle` in `_handle_command`) |
 | App-Oberfläche | `assistant/app/` (controller.py = Logik + Befehlsliste `COMMANDS`, server.py = HTTP-API, static/ = HTML/JS) |
 | Gedächtnis, Persönlichkeit | `memory.py`, `personality.py`, `profil.py`, `config/werte.md`, `persona.md` |
+| Aussehen / Design | `aussehen.py` (Design-Vorlagen `THEMES`, Hintergrundbild, eigenes CSS – alles über `/custom.css` = `generated_css()` + eigenes CSS), `tools/aussehen.py`. Die Design-Dateien (`config/app-anpassung.*`, `config/app-hintergrund.*`) stehen in `updater._is_protected` → Updates fassen sie nie an. |
 | AFK-Modus | `abwesend.py`, `tools/abwesenheit.py` |
 | Live-Sehen | `assistant/sehen/` (Auge, Dienst, OCR, Fenster), `tools/sehen.py` |
 | Handy als Kamera | `assistant/kamera/` (WebRTC, Signal-Server, QR, Firewall) |

@@ -64,6 +64,7 @@ COMMANDS = [
     ("/neu", "neues Gespraech (Charakter & Profil frisch)"),
     ("/tutorial", "Nova zeigt dir, was sie kann"),
     ("/stuetzraeder", "Stuetzraeder an/aus"),
+    ("/aussehen vorlage hacker", "Design-Vorlage (hacker, mitternacht, dracula, retro, pastell, sonne)"),
     ("/aussehen zuruecksetzen", "App wieder im Original-Aussehen"),
     ("/charakter", "Charakter anzeigen oder waehlen"),
     ("/stil", "Anrede, Laenge, Humor, Emojis"),
@@ -1801,7 +1802,12 @@ class AppController(CLI):
     def custom_css(self) -> str:
         from .. import aussehen
 
-        return aussehen.css(self.config.project_root)
+        root = self.config.project_root
+        # Erst das von Nova erzeugte CSS (Vorlage + Hintergrundbild), dann das eigene CSS des
+        # Nutzers - so gewinnt sein handgeschriebenes CSS.
+        erzeugt = aussehen.generated_css(root)
+        eigen = aussehen.css(root)
+        return (erzeugt + "\n" + eigen).strip() if erzeugt else eigen
 
     # -- Schalter -----------------------------------------------------------------
     def toggle(self, name: str, value: bool) -> None:

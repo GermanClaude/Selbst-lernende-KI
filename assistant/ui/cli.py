@@ -24,7 +24,9 @@ Sonderbefehle (mit '/' beginnen):
   /jarvis             - reiner Sprachmodus: einfach reden (Strg+C = zurueck)
   /tutorial           - Nova stellt sich vor und zeigt, was sie kann
   /stuetzraeder an|aus - an: fragt vor allem, nur Arbeitsordner; aus: darf alles
-  /aussehen [zuruecksetzen] - Aussehen der App anzeigen bzw. zuruecksetzen
+  /aussehen [vorlage <name>|hintergrund <pfad>|zuruecksetzen] - Aussehen der App: Vorlage (hacker,
+                       mitternacht, dracula, retro, pastell, sonne), Hintergrundbild, anzeigen oder
+                       zuruecksetzen. Dein Design bleibt bei Updates erhalten.
   /name <Name> [= Bedeutung] - der KI einen anderen Namen geben
   /gehirn [deepseek|claude|gemini|openai|ollama] - Gehirn zeigen bzw. wechseln (Schluessel: einfach in den Chat einfuegen)
   /modell [name]      - Modell zeigen bzw. waehlen (z.B. /modell sonnet, /modell flash, /modell qwen3.5:9b)
@@ -371,15 +373,53 @@ class CLI:
     def _appearance_command(self, args: list[str]) -> None:
         from .. import aussehen
 
-        if args[:1] == ["zuruecksetzen"]:
-            aussehen.reset(self.config.project_root)
-            print(_c("Die App sieht wieder aus wie im Original.", GREEN))
+        root = self.config.project_root
+        sub = (args[0].lower() if args else "")
+
+        def fertig(text: str) -> None:
+            print(_c(text, GREEN))
             notify = self.tool_ctx.extra.get("on_appearance")
             if notify:
                 notify()
+
+        if sub == "zuruecksetzen":
+            aussehen.reset(root)
+            fertig("Die App sieht wieder aus wie im Original.")
             return
-        print(aussehen.describe(self.config.project_root))
-        print(_c("Aendern: sag mir einfach, wie die App aussehen soll (z.B. 'mach sie gruen').", GREY))
+        if sub in ("vorlage", "thema", "design"):
+            name = args[1] if len(args) > 1 else ""
+            if not name:
+                print(_c("Vorlagen: " + ", ".join(aussehen.THEMES) + " (oder 'aus'). "
+                         "z.B. /aussehen vorlage hacker", CYAN))
+                return
+            try:
+                aussehen.set_thema(root, name)
+            except ValueError as exc:
+                print(_c(str(exc), YELLOW))
+                return
+            fertig(f"Design-Vorlage gesetzt: {name}.")
+            return
+        if sub == "hintergrund":
+            rest = args[1:]
+            if rest[:1] == ["aus"]:
+                aussehen.clear_hintergrund(root)
+                fertig("Hintergrundbild entfernt.")
+                return
+            pfad = " ".join(rest).strip().strip('"')
+            if not pfad:
+                print(_c("So geht es: /aussehen hintergrund <pfad-zum-bild>  (oder /aussehen hintergrund aus)", CYAN))
+                return
+            try:
+                from pathlib import Path as _P
+                aussehen.set_hintergrund(root, _P(pfad).expanduser().read_bytes(), _P(pfad).suffix)
+            except (OSError, ValueError) as exc:
+                print(_c(f"Ging nicht: {exc}", YELLOW))
+                return
+            fertig("Hintergrundbild gesetzt.")
+            return
+        print(aussehen.describe(root))
+        print(_c("Aendern: sag mir einfach, wie die App aussehen soll (z.B. 'mach sie hackerhaft', "
+                 "'nimm bild.jpg als Hintergrund') - oder /aussehen vorlage <name>.", GREY))
 
     # -- Tutorial ----------------------------------------------------------------
     def _tutorial_terminal(self) -> None:

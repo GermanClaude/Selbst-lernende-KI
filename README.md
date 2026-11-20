@@ -186,9 +186,12 @@ Nova wird zu **deiner** KI – auf vier Wegen:
    Persönlichkeit in `config/persona.md`. Beides liest sie bei jedem Gespräch neu; Updates fassen
    es nie an.
 
-Außerdem: Sag ihr, wie sie aussehen soll („mach deine Sphäre orange“, „größere Schrift“), gib
-ihr einen anderen Namen (`/name MAX = Mein Assistent X`) und stell mit den **Stützrädern** ein,
-wie selbstständig sie handeln darf.
+Außerdem: Sag ihr, wie sie aussehen soll („mach deine Sphäre orange“, „größere Schrift“, „mach
+die App hackerhaft“), gib ihr ein **eigenes Hintergrundbild**, wähle eine **Design-Vorlage**
+(`/aussehen vorlage hacker|mitternacht|dracula|retro|pastell|sonne`), gib ihr einen anderen Namen
+(`/name MAX = Mein Assistent X`) und stell mit den **Stützrädern** ein, wie selbstständig sie
+handeln darf. **Dein Design bleibt bei Updates erhalten** – eine neue Version ändert dein Aussehen
+nie (zurück zum Original jederzeit mit `/aussehen zuruecksetzen`).
 
 > Die eingebauten Sicherheitsgrenzen des jeweiligen Modells bleiben bestehen; `werte.md`
 > bestimmt das Verhalten **deiner** KI darüber hinaus.
