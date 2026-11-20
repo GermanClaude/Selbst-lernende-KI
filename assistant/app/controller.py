@@ -218,6 +218,7 @@ class AppController(CLI):
             "stuetzraeder": self.training_wheels_state(),
             "full_access": bool(self.permissions.settings.allow_full_filesystem),
             "vollzugriff": bool(self.permissions.settings.vollzugriff),
+            "stimme": self.stimme_zustand(),
             "tutorial_done": self._tutorial_done(),
             "feedback_due": self._feedback_due(),
             "started_by": self.started_by,
@@ -1811,6 +1812,72 @@ class AppController(CLI):
         erzeugt = aussehen.generated_css(root)
         eigen = aussehen.css(root)
         return (erzeugt + "\n" + eigen).strip() if erzeugt else eigen
+
+    # -- Stimme (Auswahl-Liste in der App) ---------------------------------------
+    def stimme_zustand(self) -> dict:
+        """Alles, was die App fuer die Stimmen-Auswahl braucht."""
+        from .. import voice as voicemod
+
+        keys = self.config.stimme_keys
+        optionen = []
+        for e in voicemod.STIMMEN:
+            hat = True if e.get("kostenlos") else bool(keys.get(e["id"]))
+            optionen.append({"id": e["id"], "name": e["name"], "info": e["info"],
+                             "kostenlos": bool(e.get("kostenlos")), "preis": e.get("preis", ""),
+                             "hat_schluessel": hat})
+        return {
+            "aktiv": self.config.voice.stimme or "frei",
+            "name": self.config.voice.stimme_name or "",
+            "optionen": optionen,
+            "openai_stimmen": voicemod.OPENAI_TTS_STIMMEN,
+            "openai_standard": voicemod.OPENAI_TTS_STANDARD,
+        }
+
+    def _eleven_stimmen_liste(self) -> list:
+        """Die Stimmen des ElevenLabs-Kontos holen: [{'id','name'}, …] (leer ohne Schluessel)."""
+        import json
+        import urllib.request
+
+        from .. import voice as voicemod
+
+        key = self.config.elevenlabs_api_key
+        if not key:
+            return []
+        try:
+            req = urllib.request.Request(voicemod.ELEVEN_VOICES_URL, headers={"xi-api-key": key})
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                voices = json.loads(resp.read().decode("utf-8")).get("voices") or []
+            return [{"id": v.get("voice_id", ""), "name": v.get("name", "")} for v in voices if v.get("voice_id")]
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("ElevenLabs-Stimmen nicht abrufbar: %s", exc)
+            return []
+
+    def stimme_api(self, body: dict) -> dict:
+        aktion = str(body.get("action", "waehlen"))
+        if aktion == "schluessel":
+            self.set_elevenlabs_key(str(body.get("key", "")))
+            return {"ok": True, "state": self.state()}
+        if aktion == "laden":  # ElevenLabs-Stimmen des Kontos
+            return {"ok": True, "stimmen": self._eleven_stimmen_liste()}
+        if aktion == "test":
+            from ..voice import VoiceOutput
+
+            text = str(body.get("text") or "Hallo, so klinge ich mit dieser Stimme.")
+
+            def _reden():
+                try:
+                    VoiceOutput(True, self.config.voice, self.config.stimme_keys).speak(text)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("Stimm-Test ging nicht: %s", exc)
+
+            threading.Thread(target=_reden, name="stimme-test", daemon=True).start()
+            return {"ok": True}
+        try:
+            result = self.set_stimme(str(body.get("stimme", "")), str(body.get("name", "")))
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}
+        self._state_changed()
+        return {"ok": True, "state": self.state(), "fehlt_schluessel": result["fehlt_schluessel"]}
 
     # -- Schalter -----------------------------------------------------------------
     def toggle(self, name: str, value: bool) -> None:

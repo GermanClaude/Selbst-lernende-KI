@@ -1325,6 +1325,99 @@
     fact('Zugriff', s.full_access ? 'Ganzer PC' : 'Nur Arbeitsordner', s.full_access ? 'bad' : 'good', s.full_access ? 'monitor' : 'folder');
     fact('Rückfragen', val('auto_confirm') ? 'Aus – fragt nicht' : 'An – fragt vorher', val('auto_confirm') ? 'mid' : 'good',
       val('auto_confirm') ? 'zap' : 'checkCircle');
+    renderStimme();
+  }
+
+  // ---- Stimme waehlen (Auswahl-Liste in der Seitenleiste) ----
+  function fillVoiceNames(sel, items, current) {
+    sel.replaceChildren();
+    for (const it of items) {
+      const o = document.createElement('option');
+      o.value = it.id;
+      o.textContent = it.name;
+      sel.append(o);
+    }
+    if (current && items.some((it) => it.id === current)) sel.value = current;
+  }
+
+  function renderStimme() {
+    const box = byId('row-stimme');
+    const st = state.stimme;
+    if (!box || !st || !Array.isArray(st.optionen)) { if (box) box.hidden = true; return; }
+    box.hidden = false;
+    const prov = byId('stimme-provider');
+    if (prov.dataset.n !== String(st.optionen.length)) {
+      prov.replaceChildren();
+      for (const o of st.optionen) {
+        const opt = document.createElement('option');
+        opt.value = o.id;
+        opt.textContent = o.kostenlos ? o.name : o.name + ' (kostet)';
+        prov.append(opt);
+      }
+      prov.dataset.n = String(st.optionen.length);
+    }
+    prov.value = st.aktiv;
+    const aktiv = st.optionen.find((o) => o.id === st.aktiv) || st.optionen[0];
+    const nameSel = byId('stimme-name');
+    const keyRow = byId('stimme-key-row');
+    let sub = aktiv.info + (!aktiv.kostenlos && aktiv.preis ? ' · ' + aktiv.preis : '');
+    if (st.aktiv === 'openai') {
+      fillVoiceNames(nameSel, st.openai_stimmen.map((v) => ({ id: v, name: v })), st.name || st.openai_standard);
+      nameSel.dataset.prov = 'openai';
+      nameSel.hidden = false;
+      keyRow.hidden = true;
+      if (!aktiv.hat_schluessel) sub = 'Es fehlt noch dein ChatGPT-Schlüssel – unter „Gehirn & Schlüssel“ eintragen.';
+    } else if (st.aktiv === 'elevenlabs') {
+      nameSel.hidden = !(nameSel.dataset.prov === 'elevenlabs' && nameSel.options.length);
+      keyRow.hidden = !!aktiv.hat_schluessel;
+      if (!aktiv.hat_schluessel) sub = 'Füge deinen ElevenLabs-Schlüssel ein (kostenlos auf elevenlabs.io).';
+      else if (nameSel.dataset.prov !== 'elevenlabs' && !nameSel.dataset.loading) {
+        nameSel.dataset.loading = '1';
+        loadElevenVoices().finally(() => { nameSel.dataset.loading = ''; });
+      }
+    } else {
+      nameSel.hidden = true;
+      keyRow.hidden = true;
+    }
+    byId('stimme-sub').textContent = sub;
+  }
+
+  async function loadElevenVoices() {
+    const r = await post('/api/stimme', { action: 'laden' });
+    const sel = byId('stimme-name');
+    if (r && r.ok && Array.isArray(r.stimmen) && r.stimmen.length) {
+      fillVoiceNames(sel, r.stimmen, state.stimme && state.stimme.name);
+      sel.dataset.prov = 'elevenlabs';
+      sel.hidden = false;
+    }
+  }
+
+  async function stimmeWaehlen(stimme, name) {
+    const r = await post('/api/stimme', { action: 'waehlen', stimme, name: name || '' });
+    if (r && r.ok && r.state) applyState(r.state);
+    if (r && r.ok && stimme === 'elevenlabs' && state.stimme && state.stimme.optionen
+        && (state.stimme.optionen.find((o) => o.id === 'elevenlabs') || {}).hat_schluessel) {
+      loadElevenVoices();
+    }
+    if (r && !r.ok && r.error) toast(r.error, 'error');
+  }
+
+  if (byId('stimme-provider')) {
+    byId('stimme-provider').addEventListener('change', (e) => stimmeWaehlen(e.target.value, ''));
+    byId('stimme-name').addEventListener('change', (e) => stimmeWaehlen(byId('stimme-provider').value, e.target.value));
+    byId('stimme-test').addEventListener('click', () => {
+      post('/api/stimme', { action: 'test' });
+      toast('Ich lese einen kurzen Satz vor …', 'info');
+    });
+    byId('stimme-key-save').addEventListener('click', async () => {
+      const key = byId('stimme-key').value.trim();
+      if (!key) return;
+      const r = await post('/api/stimme', { action: 'schluessel', key });
+      byId('stimme-key').value = '';
+      if (r && r.ok && r.state) applyState(r.state);
+      loadElevenVoices();
+      toast('ElevenLabs-Schlüssel gespeichert.', 'ok');
+    });
   }
 
   function renderAlerts() {

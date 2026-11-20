@@ -77,10 +77,15 @@ def test_set_stimme_speichert_und_meldet_fehlenden_schluessel(tmp_path, monkeypa
 
 
 def test_elevenlabs_schluessel_speichern(tmp_path, monkeypatch):
+    import os
+    monkeypatch.delenv("ELEVENLABS_API_KEY", raising=False)
     c = _cli(tmp_path, [], monkeypatch)
-    c.set_elevenlabs_key("xi-geheim")
-    assert load_config(tmp_path).elevenlabs_api_key == "xi-geheim"
-    assert c.set_stimme("elevenlabs")["fehlt_schluessel"] is False
+    try:
+        c.set_elevenlabs_key("xi-geheim")
+        assert load_config(tmp_path).elevenlabs_api_key == "xi-geheim"
+        assert c.set_stimme("elevenlabs")["fehlt_schluessel"] is False
+    finally:
+        os.environ.pop("ELEVENLABS_API_KEY", None)  # set_elevenlabs_key schreibt os.environ direkt
 
 
 def test_werkzeug_stimme_waehlen(tmp_path):
@@ -107,3 +112,30 @@ def test_stimme_info():
     assert voicemod.stimme_info("openai")["kostenlos"] is False
     assert voicemod.stimme_info("frei")["kostenlos"] is True
     assert voicemod.stimme_info("gibtsnicht")["id"] == "frei"  # unbekannt -> Standard
+
+
+def test_app_stimme_api(tmp_path, monkeypatch):
+    import os
+    from assistant.app.controller import AppController
+
+    monkeypatch.delenv("ELEVENLABS_API_KEY", raising=False)  # kein geleakter Schluessel aus anderen Tests
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    cfg = load_config(tmp_path)
+    cfg.update.modus = "aus"
+    cfg.anthropic_api_key = cfg.anthropic_api_key or "sk-ant-test"
+    ctl = AppController(cfg, lambda e: None)
+    try:
+        z = ctl.state()["stimme"]
+        assert z["aktiv"] == "frei" and any(o["id"] == "openai" for o in z["optionen"])
+        assert z["openai_stimmen"] and z["openai_standard"] in z["openai_stimmen"]
+        # Ohne ElevenLabs-Schluessel: Liste leer, Auswahl meldet fehlenden Schluessel.
+        assert ctl.stimme_api({"action": "laden"})["stimmen"] == []
+        r = ctl.stimme_api({"action": "waehlen", "stimme": "elevenlabs"})
+        assert r["ok"] and r["state"]["stimme"]["aktiv"] == "elevenlabs" and r["fehlt_schluessel"] is True
+        # Schluessel speichern -> Option hat jetzt einen Schluessel.
+        r2 = ctl.stimme_api({"action": "schluessel", "key": "xi-abc"})
+        eleven = next(o for o in r2["state"]["stimme"]["optionen"] if o["id"] == "elevenlabs")
+        assert r2["ok"] and eleven["hat_schluessel"] is True
+    finally:
+        ctl.shutdown()
+        os.environ.pop("ELEVENLABS_API_KEY", None)  # unsere "schluessel"-Aktion wieder aufraeumen

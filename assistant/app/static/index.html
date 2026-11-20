@@ -105,6 +105,18 @@
         <button class="switch" id="sw-vorlesen" type="button" role="switch" aria-checked="false"
                 aria-labelledby="lbl-vorlesen" aria-describedby="sub-vorlesen"><span class="knob"></span></button>
       </div>
+      <div class="stimme-box" id="row-stimme" hidden>
+        <label class="stimme-lbl" for="stimme-provider"><span data-icon="mic"></span>Stimme zum Vorlesen</label>
+        <select class="stimme-select" id="stimme-provider" aria-label="Stimme wählen"></select>
+        <p class="stimme-sub" id="stimme-sub"></p>
+        <select class="stimme-select" id="stimme-name" aria-label="Welche Stimme" hidden></select>
+        <div class="stimme-key" id="stimme-key-row" hidden>
+          <input class="stimme-input" id="stimme-key" type="password" autocomplete="off"
+                 placeholder="ElevenLabs-Schlüssel einfügen" />
+          <button class="sb-btn stimme-mini" type="button" id="stimme-key-save">Speichern</button>
+        </div>
+        <button class="sb-btn stimme-mini" type="button" id="stimme-test"><span data-icon="mic"></span>Anhören</button>
+      </div>
       <div class="switch-row sehen-row" id="row-sehen">
         <div class="switch-text">
           <span class="switch-title" id="lbl-sehen"><span data-icon="eye"></span>Live-Sehen</span>
@@ -132,7 +144,6 @@
       <button class="sb-btn" type="button" data-cmd="/update"><span data-icon="refresh"></span>Nach Updates suchen</button>
       <button class="sb-btn" type="button" data-cmd="/versionen"><span data-icon="history"></span>Versionen</button>
       <button class="sb-btn" type="button" data-cmd="/autostart"><span data-icon="power"></span>Autostart prüfen</button>
-      <button class="sb-btn" type="button" data-cmd="/stimme"><span data-icon="mic"></span>Stimme wählen (gratis oder echt)</button>
       <button class="sb-btn" type="button" id="sb-feedback" aria-haspopup="dialog" title="Feedback &amp; Bewertung schicken (/feedback)"><span data-icon="star"></span>Feedback &amp; Bewertung<span class="sb-score" id="sb-score" hidden></span></button>
       <button class="sb-btn" type="button" data-cmd="/hilfe"><span data-icon="help"></span>Hilfe</button>
       <button class="sb-btn" type="button" id="sb-terminal" aria-haspopup="dialog"><span data-icon="terminal"></span>Terminal-Version öffnen</button>

@@ -13,7 +13,7 @@ koennen. Der Server spricht nur mit der eigenen Oberflaeche:
                                    (<Arbeitsordner>/spiele/<Datum>) - nur PNG/JPEG/GIF/WebP
   POST /api/send (Text + Bilder, Warteschlange, interrupt), /api/queue, /api/afk, /api/stop,
        /api/answer, /api/voice, /api/toggle, /api/profile, /api/memory, /api/jarvis, /api/tutorial,
-       /api/setup, /api/modell, /api/update, /api/feedback, /api/feedback/spaeter,
+       /api/setup, /api/modell, /api/stimme, /api/update, /api/feedback, /api/feedback/spaeter,
        /api/feedback/gezeigt, /api/bilder/einstellen,
        /api/ollama/laden, /api/ollama/abbrechen, /api/ollama/adresse, /api/ollama/starten,
        /api/sehen (Live-Sehen an/aus/pause/Quelle/Kamera-Meldung), /api/spiel (Spielmodus)
@@ -345,6 +345,8 @@ class AppServer:
                     return self._json(ctl.setup_save(body))
                 if url.path == "/api/modell":
                     return self._json(ctl.choose_model(body))
+                if url.path == "/api/stimme":
+                    return self._json(ctl.stimme_api(body))
                 if url.path == "/api/update":
                     return self._json(ctl.check_update_now())
                 if url.path == "/api/ollama/laden":

@@ -4,6 +4,16 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.20.0 – 2026-11-21
+
+**Stimme bequem in der App auswählen**
+- Neben dem Chat-Befehl `/stimme` gibt es jetzt in der App-Seitenleiste eine echte
+  **Auswahl-Liste** direkt unter „Vorlesen": Stimme wählen (Frei / OpenAI / ElevenLabs),
+  bei OpenAI zusätzlich die konkrete Stimme (z. B. `cedar`, `marin`, `nova`, `coral`), bei
+  ElevenLabs die Stimmen deines Kontos.
+- **„Anhören"**-Knopf zum Probehören, und ein Feld, um den ElevenLabs-Schlüssel gleich dort
+  einzufügen. Fehlt ein Schlüssel, sagt die Liste es dir.
+
 ## 0.19.0 – 2026-11-20
 
 **Mit Nova reden – und sie antwortet mit einer Stimme deiner Wahl**
