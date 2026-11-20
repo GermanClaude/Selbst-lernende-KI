@@ -18,8 +18,10 @@ PC-Steuerung, Agenten …) und fragt vor riskanten Aktionen nach (`assistant/per
 - Aktuelle Version: siehe `__version__` in `assistant/__init__.py` und oben in `CHANGELOG.md`.
 - Standard-Branch: `ccr-cfa1ff8c-wgsyxb` (so benannt, weil das Projekt in einer Claude-Cloud-Session
   entstand). Nur dieser Branch erzeugt Releases.
-- Zuletzt dazugekommen: **0.13.0 Sicherheits-Check** (`assistant/sicherheit.py`,
-  `assistant/tools/sicherheit.py`, Befehl `/scan`, Tests `tests/test_sicherheit.py`).
+- Zuletzt dazugekommen: **0.18.0 Vollzugriff** (dritte Stützräder-Stufe „alles"):
+  `permissions.vollzugriff`, `cli.set_training_wheels_stufe`, App-Schalter „Vollzugriff",
+  Tests `tests/test_vollzugriff.py`. Davor: 0.16.0 ChatGPT/OpenAI als fünftes Gehirn,
+  0.17.0 eigenes Design (Vorlagen, Hintergrundbild, update-fest).
 
 ## Screenshots (`docs/bilder/`)
 
@@ -51,7 +53,7 @@ verwenden** – darin stehen Gedächtnis, Profil und Dateipfade.
 | Gemini-Besonderheiten | `providers/gemini_provider.py`: Denk-Signaturen an Werkzeug-Aufrufen unverändert zurückschicken (sonst 400), Nachdenken nicht abschaltbar, Schema ohne `additionalProperties`. Modelle/Preise (mit Datum der angekündigten Erhöhungen) in `modelle.py` – **Stand 13.11.2026, regelmäßig prüfen** |
 | Werkzeuge | `assistant/tools/` – jedes Werkzeug eine Klasse mit `name`, `description`, `input_schema`, `run()`; Anmeldung in `tools/__init__.py` |
 | Claude-Grenzen | `tools/base.py` `grenzen_einhalten()` – max. 20 „strict“-Werkzeuge, max. 24 optionale Angaben |
-| Berechtigungen | `assistant/permissions.py` (`Risk.SAFE/MODERATE/DANGEROUS/AUTOSTART`, Stützräder, AFK strenger) |
+| Berechtigungen | `assistant/permissions.py` (`Risk.SAFE/MODERATE/DANGEROUS/AUTOSTART`, Stützräder, AFK strenger). Drei Stufen: `an` / `aus` / `alles` (= `vollzugriff`, hebt zusätzlich Shell-Sperrliste **und** Autostart-Rückfrage auf; AFK bleibt trotzdem sicher). Gesetzt in `cli.py` `set_training_wheels_stufe`, App-Schalter über `controller.toggle("vollzugriff", …)`. |
 | Terminal-Oberfläche | `assistant/ui/cli.py` (alle `/befehle` in `_handle_command`) |
 | App-Oberfläche | `assistant/app/` (controller.py = Logik + Befehlsliste `COMMANDS`, server.py = HTTP-API, static/ = HTML/JS) |
 | Gedächtnis, Persönlichkeit | `memory.py`, `personality.py`, `profil.py`, `config/werte.md`, `persona.md` |

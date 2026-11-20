@@ -23,7 +23,7 @@ Sonderbefehle (mit '/' beginnen):
   /neu                - neues Gespraech (Charakter & Profil frisch geladen)
   /jarvis             - reiner Sprachmodus: einfach reden (Strg+C = zurueck)
   /tutorial           - Nova stellt sich vor und zeigt, was sie kann
-  /stuetzraeder an|aus - an: fragt vor allem, nur Arbeitsordner; aus: darf alles
+  /stuetzraeder an|aus|alles - an: fragt vor allem, nur Arbeitsordner; aus: darf alles; alles: Vollzugriff
   /aussehen [vorlage <name>|hintergrund <pfad>|zuruecksetzen] - Aussehen der App: Vorlage (hacker,
                        mitternacht, dracula, retro, pastell, sonne), Hintergrundbild, anzeigen oder
                        zuruecksetzen. Dein Design bleibt bei Updates erhalten.
@@ -336,38 +336,66 @@ class CLI:
     # -- Stuetzraeder ----------------------------------------------------------
     def training_wheels_state(self) -> str:
         p = self.permissions.settings
-        if p.safe_mode and not p.auto_confirm and not p.allow_full_filesystem:
+        if p.safe_mode and not p.auto_confirm and not p.allow_full_filesystem and not p.vollzugriff:
             return "an"
         if not p.safe_mode and p.auto_confirm and p.allow_full_filesystem:
-            return "aus"
+            return "alles" if p.vollzugriff else "aus"
         return "teilweise"
 
-    def set_training_wheels(self, on: bool) -> None:
-        """An: Safe Mode, nur Arbeitsordner, fragt nach. Aus: ganzer PC, ohne Rueckfrage."""
+    # Die drei Stufen als Schalterstellungen: safe_mode, auto_confirm, allow_full_filesystem, vollzugriff.
+    _WHEELS_STUFEN = {
+        "an":    (True,  False, False, False),
+        "aus":   (False, True,  True,  False),
+        "alles": (False, True,  True,  True),
+    }
+
+    def set_training_wheels_stufe(self, stufe: str) -> None:
+        """an: Safe Mode, nur Arbeitsordner, fragt nach. aus: ganzer PC ohne Rueckfrage.
+        alles: Vollzugriff - auch Shell-Sperrliste und Autostart-Rueckfrage fallen weg."""
         p = self.permissions.settings
-        p.safe_mode, p.auto_confirm, p.allow_full_filesystem = on, not on, not on
-        for key, value in (("safe_mode", on), ("auto_confirm", not on), ("allow_full_filesystem", not on)):
+        safe, auto, full, voll = self._WHEELS_STUFEN[stufe]
+        p.safe_mode, p.auto_confirm, p.allow_full_filesystem, p.vollzugriff = safe, auto, full, voll
+        for key, value in (("safe_mode", safe), ("auto_confirm", auto),
+                           ("allow_full_filesystem", full), ("vollzugriff", voll)):
             save_setting(self.config.project_root, "permissions", key, "true" if value else "false")
+
+    def set_training_wheels(self, on: bool) -> None:
+        """Kurzform fuer die beiden Haupt-Stufen (an/aus)."""
+        self.set_training_wheels_stufe("an" if on else "aus")
 
     def _training_wheels_command(self, args: list[str]) -> None:
         sub = args[0].lower() if args else ""
-        if sub not in ("an", "aus"):
+        if sub in ("vollzugriff", "max", "vollgas", "alle"):
+            sub = "alles"
+        if sub not in ("an", "aus", "alles"):
             state = self.training_wheels_state()
-            print(_c(f"Stuetzraeder: {state.upper()}. Umschalten: /stuetzraeder an  bzw.  /stuetzraeder aus", CYAN))
-            print(_c("  an  = fragt vor jeder Aenderung, nur im Arbeitsordner, keine Shell/PC-Steuerung", GREY))
-            print(_c("  aus = ganzer PC, Shell und PC-Steuerung, keine Rueckfragen", GREY))
+            print(_c(f"Stuetzraeder: {state.upper()}. Umschalten: /stuetzraeder an | aus | alles", CYAN))
+            print(_c("  an    = fragt vor jeder Aenderung, nur im Arbeitsordner, keine Shell/PC-Steuerung", GREY))
+            print(_c("  aus   = ganzer PC, Shell und PC-Steuerung, keine Rueckfragen (Autostart fragt noch)", GREY))
+            print(_c("  alles = Vollzugriff: wirklich ALLES ohne Rueckfrage - auch sonst gesperrte Befehle "
+                     "und automatische Starts", GREY))
             return
         if sub == "aus" and not self._ask_yes(
             "Stuetzraeder AB? Dann darf ich am GANZEN PC alles - Dateien aendern und loeschen, Programme "
             "starten, Maus und Tastatur steuern - ohne vorher zu fragen. [j/N] "
         ):
             return
-        self.set_training_wheels(sub == "an")
+        if sub == "alles" and not self._ask_yes(
+            "VOLLZUGRIFF? Dann faellt auch das letzte Netz: ich darf dann wirklich ALLES ohne Rueckfrage - "
+            "auch sonst gesperrte Befehle (z.B. ganze Ordner oder Laufwerke loeschen, Systemdateien aendern) "
+            "und automatische Starts. Nur machen, wenn du mir voll vertraust. [j/N] "
+        ):
+            return
+        self.set_training_wheels_stufe(sub)
         if sub == "an":
             print(_c("Stuetzraeder sind dran: ich frage vor Aenderungen und bleibe im Arbeitsordner.", GREEN))
-        else:
+        elif sub == "aus":
             print(_c("Stuetzraeder sind ab: ich darf am ganzen PC alles ohne Rueckfrage. "
                      "Automatische Starts frage ich trotzdem.", GREEN))
+        else:
+            print(_c("Vollzugriff ist an: ich darf jetzt wirklich ALLES ohne Rueckfrage - auch sonst "
+                     "gesperrte Befehle und automatische Starts. (Wenn du weg bist, bleibe ich trotzdem "
+                     "vorsichtig.)", GREEN))
 
     # -- Aussehen der App ------------------------------------------------------
     def _appearance_command(self, args: list[str]) -> None:

@@ -4,6 +4,23 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.18.0 – 2026-11-20
+
+**Neue Stufe „Vollzugriff" – Nova darf wirklich alles**
+- Bisher gab es zwei Stufen: **Stützräder an** (fragt vor jeder Änderung, bleibt im
+  Arbeitsordner) und **Stützräder ab** (ganzer PC, ohne Rückfragen – nur automatische
+  Starts fragt sie noch).
+- Neu ist eine dritte Stufe: **Vollzugriff**. Damit fällt auch das letzte Netz – Nova darf
+  dann wirklich **ALLES ohne Rückfrage**: auch sonst gesperrte Befehle (z. B. ganze Ordner
+  oder Laufwerke löschen, Systemdateien ändern) und automatische Starts. Den ganzen PC
+  steuern und durchsuchen – ohne Bremse.
+- Einschalten: im Chat `/stuetzraeder alles`, per Sprache „gib dir Vollzugriff", oder in der
+  App der neue Schalter **Vollzugriff** in der Seitenleiste. Vorher kommt immer eine deutliche
+  Warnung. Zurück geht jederzeit mit `/stuetzraeder aus` oder `/stuetzraeder an`.
+- **Ein Schutz bleibt mit Absicht bestehen:** Wenn du weg bist (AFK-Modus), ist Nova trotzdem
+  vorsichtig und führt keine riskanten Aktionen aus – auch mit Vollzugriff nicht. So kann in
+  deiner Abwesenheit nichts aus dem Ruder laufen.
+
 ## 0.17.0 – 2026-11-20
 
 **Dein eigenes Design – und Updates lassen es in Ruhe**

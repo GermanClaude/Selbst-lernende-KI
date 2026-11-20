@@ -1277,6 +1277,12 @@
     const s = state;
     const val = (key) => (own(pendingVal, key) ? !!pendingVal[key] : !!s[key]);
     for (const id of ['sw-erlauben', 'sec-sw-erlauben']) setSwitch(byId(id), val('auto_confirm'));
+    // Vollzugriff: nur zeigen, wenn die KI den Schalter kennt (aeltere Versionen nicht)
+    byId('row-vollzugriff').hidden = typeof s.vollzugriff !== 'boolean';
+    setSwitch(byId('sw-vollzugriff'), val('vollzugriff'));
+    byId('sub-vollzugriff').textContent = val('vollzugriff')
+      ? 'an – wirklich alles ohne Rückfrage, auch gesperrte Befehle'
+      : 'wirklich alles – auch gesperrte Befehle und Autostart';
     setSwitch(byId('sw-vorlesen'), val('speak'));
     // "Gesprochenes sofort senden" (nur, wenn die KI den Schalter kennt)
     byId('row-sofort').hidden = typeof s.voice_autosend !== 'boolean';
@@ -1425,6 +1431,7 @@
   // Schalter (Seitenleiste und Reiter "Sicherheit")
   const TOGGLES = {
     erlauben: 'auto_confirm', vorlesen: 'speak', stuetzraeder: 'stuetzraeder', sofort_senden: 'voice_autosend',
+    vollzugriff: 'vollzugriff',
   };
   async function toggleSetting(name) {
     const key = pick(TOGGLES, name);
@@ -1440,6 +1447,15 @@
       else value = true;
       pendingToggle[key] = false;
       if (value === null || ended) return;
+    } else if (key === 'vollzugriff') {
+      // Einschalten erst nach deutlicher Warnung; Ausschalten sofort.
+      if (state.vollzugriff) value = false;
+      else {
+        pendingToggle[key] = true;
+        value = await vollzugriffWarning() ? true : null;
+        pendingToggle[key] = false;
+        if (value === null || ended) return;
+      }
     } else value = !state[key];
     pendingToggle[key] = true;
     pendingVal[key] = value;
@@ -1456,6 +1472,10 @@
     if (r.ok && key === 'stuetzraeder') {
       toast(value ? 'Stützräder sind dran – ich frage vor Änderungen.' : 'Stützräder sind ab – ich darf jetzt alles ohne Rückfrage.',
         value ? 'ok' : 'info', 4200);
+    }
+    if (r.ok && key === 'vollzugriff') {
+      toast(value ? 'Vollzugriff ist an – ich darf jetzt wirklich alles ohne Rückfrage.'
+        : 'Vollzugriff ist aus.', value ? 'info' : 'ok', 4200);
     }
     if (r.ok && key === 'voice_autosend') {
       toast(value ? 'Gesprochenes schicke ich jetzt sofort ab – ohne Enter.'
@@ -5675,6 +5695,29 @@
     return confirmDialog({
       cls: 'risk-wheels', icon: 'shieldOff', title: 'Stützräder abnehmen?', risk: 'Voller Zugriff auf deinen PC',
       body, ok: 'Stützräder abnehmen', cancel: 'Abbrechen', kind: 'wheels-off',
+    });
+  }
+
+  function vollzugriffWarning() {
+    const n = kiName();
+    const body = document.createDocumentFragment();
+    const p = h('p');
+    p.append('Vollzugriff ist die stärkste Stufe: ', h('b', null, n + ' darf dann wirklich ALLES'),
+      ' ohne Rückfrage – auch sonst gesperrte Befehle und automatische Starts.');
+    const caps = h('ul', 'cd-caps');
+    for (const [ic, t] of [['trash', 'Ganze Ordner oder Laufwerke löschen'],
+      ['terminal', 'Jeden Befehl ausführen (auch gesperrte)'],
+      ['power', 'Automatische Starts einrichten – ohne zu fragen']]) {
+      const li = h('li');
+      li.append(icon(ic), h('span', null, t));
+      caps.append(li);
+    }
+    const note = h('p', 'cd-note');
+    note.append(icon('shield'), h('span', null, 'Wenn du weg bist (AFK), bleibt ' + n + ' trotzdem vorsichtig.'));
+    body.append(p, caps, note);
+    return confirmDialog({
+      cls: 'risk-wheels', icon: 'shieldOff', title: 'Vollzugriff geben?', risk: 'Wirklich alles, ohne Netz',
+      body, ok: 'Vollzugriff geben', cancel: 'Abbrechen', kind: 'vollzugriff-on',
     });
   }
 

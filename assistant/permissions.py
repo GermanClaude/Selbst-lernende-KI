@@ -12,6 +12,9 @@ Regeln:
   * Pfade werden gegen den Arbeitsordner geprueft (Sandbox), ausser
     allow_full_filesystem=true.
   * Eine Verbotsliste blockiert bestimmte Shell-Muster immer.
+  * vollzugriff=true -> auch das letzte Netz (Shell-Sperrliste und
+    Autostart-Rueckfrage) faellt: die KI darf dann wirklich ALLES ohne
+    Rueckfrage. Der AFK-Schutz bleibt trotzdem bestehen.
 
 So kann die KI "vollen Zugriff" bekommen - aber nur, wenn du es bewusst
 freischaltest, und mit einem Netz darunter.
@@ -152,6 +155,9 @@ class PermissionManager:
         """
         if self.away:
             return Decision(False, _away_denied())
+        # Vollzugriff: auch automatische Starts laufen ohne Rueckfrage (nicht im AFK-Modus - siehe oben).
+        if self.settings.vollzugriff:
+            return Decision(True)
         if self.settings.auto_confirm and not self.settings.autostart_immer_fragen:
             return Decision(True)
         if self.confirm_fn(description, Risk.AUTOSTART):
@@ -240,9 +246,11 @@ class PermissionManager:
         if self.away:
             return Decision(False, _away_denied())
         lowered = command.lower().strip()
-        for pattern in self.settings.shell_denylist:
-            if pattern.lower() in lowered:
-                return Decision(False, f"Befehl enthaelt ein gesperrtes Muster: '{pattern}'")
+        # Vollzugriff hebt auch die Sperrliste auf - dann ist wirklich jeder Befehl erlaubt.
+        if not self.settings.vollzugriff:
+            for pattern in self.settings.shell_denylist:
+                if pattern.lower() in lowered:
+                    return Decision(False, f"Befehl enthaelt ein gesperrtes Muster: '{pattern}'")
         if self.settings.safe_mode:
             return Decision(
                 False,

@@ -381,6 +381,10 @@ class PermissionSettings:
     # Auch bei auto_confirm nachfragen, bevor ein automatischer Start eingerichtet
     # oder die KI erneut gestartet wird (sonst oeffnen sich Fenster "von selbst").
     autostart_immer_fragen: bool = True
+    # Vollzugriff ("Stuetzraeder: alles"): hebt zusaetzlich die letzten Bremsen auf -
+    # die Shell-Sperrliste und die Autostart-Rueckfrage. Dann darf die KI am ganzen PC
+    # wirklich ALLES ohne Rueckfrage. Der AFK-Schutz bleibt trotzdem bestehen.
+    vollzugriff: bool = False
 
 
 @dataclass

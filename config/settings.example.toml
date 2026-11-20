@@ -322,6 +322,11 @@ auto_confirm = false
 # Auch bei auto_confirm = true vorher fragen, bevor die KI einen automatischen
 # Start einrichtet (Aufgabenplanung/Autostart) oder sich selbst neu startet.
 autostart_immer_fragen = true
+# VOLLZUGRIFF (Stuetzraeder: alles): true hebt auch die letzten Bremsen auf -
+# die Shell-Sperrliste (shell_denylist) und die Autostart-Rueckfrage. Dann darf die
+# KI am ganzen PC WIRKLICH ALLES ohne Rueckfrage. Nur setzen, wenn du ihr voll
+# vertraust. Der AFK-Schutz bleibt trotzdem bestehen. Im Chat: /stuetzraeder alles.
+vollzugriff = false
 # Arbeitsordner ("Sandbox"). Leer = Ordner "workspace" im Projekt.
 workspace_root = ""
 # true = Zugriff auch ausserhalb des Arbeitsordners (volles Dateisystem).

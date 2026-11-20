@@ -63,7 +63,7 @@ COMMANDS = [
     ("/erlauben fragen", "wieder nachfragen"),
     ("/neu", "neues Gespraech (Charakter & Profil frisch)"),
     ("/tutorial", "Nova zeigt dir, was sie kann"),
-    ("/stuetzraeder", "Stuetzraeder an/aus"),
+    ("/stuetzraeder", "Stuetzraeder an/aus/alles (Vollzugriff)"),
     ("/aussehen vorlage hacker", "Design-Vorlage (hacker, mitternacht, dracula, retro, pastell, sonne)"),
     ("/aussehen zuruecksetzen", "App wieder im Original-Aussehen"),
     ("/charakter", "Charakter anzeigen oder waehlen"),
@@ -216,6 +216,7 @@ class AppController(CLI):
             "jarvis_live": bool(self._jarvis_active() and self._live.ear.live),
             "stuetzraeder": self.training_wheels_state(),
             "full_access": bool(self.permissions.settings.allow_full_filesystem),
+            "vollzugriff": bool(self.permissions.settings.vollzugriff),
             "tutorial_done": self._tutorial_done(),
             "feedback_due": self._feedback_due(),
             "started_by": self.started_by,
@@ -1813,6 +1814,17 @@ class AppController(CLI):
     def toggle(self, name: str, value: bool) -> None:
         if name == "stuetzraeder":  # die Oberflaeche hat beim Abschalten schon gewarnt
             self.set_training_wheels(bool(value))
+            self._state_changed()
+            return
+        if name == "vollzugriff":  # die Oberflaeche hat beim Einschalten schon gewarnt
+            if value:
+                self.set_training_wheels_stufe("alles")  # Vollzugriff bedingt "alles ab"
+            else:
+                self.permissions.settings.vollzugriff = False  # zurueck auf "aus", Rest bleibt
+                try:
+                    save_setting(self.config.project_root, "permissions", "vollzugriff", "false")
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("Einstellung nicht gespeichert: %s", exc)
             self._state_changed()
             return
         if name == "erlauben":
