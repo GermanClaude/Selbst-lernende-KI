@@ -4,6 +4,15 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.21.1 – 2026-11-21
+
+**AFK-Modus endet nicht mehr aus Versehen**
+- Ein kurzer **Mikrofon-Blip** (ein Geräusch beim Filmschauen, ein Räuspern) oder eine
+  **versehentliche Taste** beendet den AFK-Modus jetzt nicht mehr. Nur eine echte Nachricht
+  mit richtigem Wort (getippt oder gesprochen) oder der Stopp-Knopf holen dich zurück.
+- Fülllaute wie „äh", „hm", „mhm" und einzelne Zeichen werden im AFK als Versehen behandelt
+  und ignoriert; kurze echte Rückmeldungen wie „ok", „stop" oder „bin da" zählen weiterhin.
+
 ## 0.21.0 – 2026-11-21
 
 **AFK-Modus arbeitet jetzt wirklich weiter – ohne Dauerfragen**

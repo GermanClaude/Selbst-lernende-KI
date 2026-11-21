@@ -111,6 +111,26 @@ class _NoticeWriter(io.TextIOBase):
             self._flush_fn(text)
 
 
+_AFK_FUELLWOERTER = {"aeh", "aehm", "aehmm", "aehh", "hm", "hmm", "hmmm", "mhm", "mh", "oeh", "oehm",
+                     "ah", "aha", "oh", "ohh", "na", "so", "tja", "hae", "he", "ne", "aahh", "aah",
+                     "äh", "ähm", "ähmm", "öh", "öhm", "hä"}
+
+
+def _afk_noise(text: str) -> bool:
+    """Klingt eine Nachricht nach einem Versehen (Mikrofon-Blip, einzelne Taste) statt nach 'ich bin
+    zurueck'? Dann beendet sie den AFK-Modus nicht. Echte kurze Rueckmeldungen ('ok', 'hi', 'stop',
+    'bin da') zaehlen weiterhin - sie haben ein richtiges Wort."""
+    import re
+
+    t = (text or "").strip().lower()
+    if not t:
+        return True
+    woerter = re.findall(r"[0-9a-zäöüß]{2,}", t)
+    if not woerter:
+        return True  # nur Satzzeichen oder einzelne Buchstaben
+    return all(w in _AFK_FUELLWOERTER for w in woerter)  # nur Fuelllaute, nichts Inhaltliches
+
+
 class AppController(CLI):
     def __init__(self, config: Config, broadcast: Callable[[dict], None], started_by: str | None = None):
         super().__init__(config, started_by=started_by)
@@ -361,6 +381,14 @@ class AppController(CLI):
             bilder, anzeigen = self._bilder_annehmen(images)
         except BildFehler as exc:
             return {"ok": False, "error": str(exc)}
+        # Im AFK-Modus einen kurzen Blip (Mikrofon-Geraeusch, versehentliche Taste) NICHT als
+        # "ich bin zurueck" werten - sonst endet der AFK-Modus aus Versehen (z.B. beim Filmschauen).
+        afk = self._afk
+        if (afk is not None and not afk.ended and not afk.stop_event.is_set()
+                and not anzeigen and not text.startswith("/") and _afk_noise(text)):
+            self._notice("Das klang nach einem Versehen (zu kurz) - ich bleibe im AFK-Modus. Schreib oder "
+                         "sag ruhig etwas mehr, wenn du wirklich zurueck bist.", "afk")
+            return {"ok": True, "afk_ignored": True}
         self.sehen.nutzer_aktiv(text)  # du schreibst: Live-Sehen haelt sich kurz zurueck
         for _attempt in range(3):
             with self._lock:
@@ -860,9 +888,14 @@ class AppController(CLI):
             task = (f"Auftrag: {session.auftrag}" if session.auftrag
                     else "Ich mache mit dem weiter, woran wir zuletzt gearbeitet haben.")
             cost = f"{session.max_eur:.2f}".replace(".", ",")
+            grenze = (" Ich handle nach eigenem Ermessen; schwer Umkehrbares (viel loeschen, verschicken, "
+                      "Geld ausgeben) nur, wenn dein Auftrag das klar meint, sonst als Vorschlag. Automatische "
+                      "Starts richte ich nicht ein." if session.autonom else
+                      " Ich loesche, ueberschreibe, verschicke und starte dabei nichts \u2013 das schreibe ich "
+                      "dir als Vorschlag auf.")
             self._notice(f"AFK-Modus an \u2013 ich arbeite allein weiter (hoechstens {session.max_minutes} Min., ca. "
-                         f"{cost} EUR). {task} Ich loesche, ueberschreibe, verschicke und starte dabei nichts \u2013 "
-                         "das schreibe ich dir als Vorschlag auf. Zurueck? Einfach eine Nachricht schreiben.", "afk")
+                         f"{cost} EUR). {task}{grenze} Zurueck? Einfach eine Nachricht schreiben "
+                         "(eine kurze reicht nicht \u2013 ein Mikrofon-Geraeusch beendet den AFK-Modus nicht).", "afk")
             self._state_changed()
 
             def one_round(prompt: str) -> None:
