@@ -83,6 +83,19 @@ max_tokens = 16384
 
 
 # ----------------------------------------------------------------------------
+#  ABLITERATION AI - unzensiert, OpenAI-kompatibel. Schluessel aus .env: ABLITERATION_API_KEY
+#  Schluessel holen: https://abliteration.ai (beginnt mit "ak_", kostet Guthaben)
+# ----------------------------------------------------------------------------
+[abliteration]
+# Dieses Modell denkt nicht extra nach. Es antwortet ohne die ueblichen Filter - nutze es
+# verantwortungsvoll und im Rahmen der Gesetze.
+model = "abliterated-model"
+base_url = "https://api.abliteration.ai/v1"
+max_tokens = 16384
+temperature = 0.7
+
+
+# ----------------------------------------------------------------------------
 #  OLLAMA - kostenlos, die Modelle laufen auf deinem PC (kein Schluessel, kein Internet).
 #  Ollama installieren: https://ollama.com/download (oder: winget install Ollama.Ollama)
 #  Modelle herunterladen: in der App unter "Gehirn & Schluessel" oder mit /ollama laden <modell>

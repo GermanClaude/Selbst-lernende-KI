@@ -82,6 +82,14 @@ OPENAI_MODELLE = [
      "preis": (0.1, 0.01, 0.5), "sieht_bilder": True, "denkt": False},
 ]
 
+# Abliteration AI: unzensiert, OpenAI-kompatibel. Veroeffentlicht nur ein Modell; Preis nicht
+# bekannt (Prepaid-Guthaben) - Schaetzung. Stand 21.11.2026, regelmaessig pruefen.
+ABLITERATION_MODELLE = [
+    {"id": "abliterated-model", "name": "Abliterated", "kurz": "ablit",
+     "info": "unzensiertes Modell ueber abliteration.ai - antwortet ohne die ueblichen Filter",
+     "tempo": "mittel", "preis": (1.0, 0.1, 3.0), "sieht_bilder": False, "denkt": False},
+]
+
 # DeepSeek-Modell, das Bilder ansieht: beschreibt sie fuer Modelle ohne Augen (V4 Pro).
 DEEPSEEK_SEHMODELL = "deepseek-flash"
 
@@ -98,7 +106,7 @@ def _ollama_modelle() -> list[dict]:
 OLLAMA_MODELLE = _ollama_modelle()
 
 MODELLE = {"claude": CLAUDE_MODELLE, "deepseek": DEEPSEEK_MODELLE, "gemini": GEMINI_MODELLE,
-           "openai": OPENAI_MODELLE, "ollama": OLLAMA_MODELLE}
+           "openai": OPENAI_MODELLE, "abliteration": ABLITERATION_MODELLE, "ollama": OLLAMA_MODELLE}
 
 # Denk-Tiefen: (Wert in settings.toml, Name fuer Menschen, Erklaerung)
 DENKTIEFEN = {
@@ -129,6 +137,9 @@ DENKTIEFEN = {
     "ollama": [
         ("aus", "schnell", "antwortet sofort, ohne vorher nachzudenken"),
         ("an", "gruendlich", "denkt vorher nach - nur Modelle, die das koennen; dauert auf dem PC laenger"),
+    ],
+    "abliteration": [
+        ("aus", "schnell", "antwortet direkt - dieses Modell denkt nicht extra nach"),
     ],
 }
 
@@ -188,6 +199,8 @@ def aktuelle_denktiefe(config, provider: str | None = None) -> str:
         return config.gemini.denken
     if provider == "openai":
         return config.openai.denken
+    if provider == "abliteration":
+        return config.abliteration.denken
     return config.deepseek.denken if provider == "deepseek" else config.claude.effort
 
 
@@ -201,6 +214,8 @@ def _section(config, provider: str):
         return config.gemini, "denken"
     if provider == "openai":
         return config.openai, "denken"
+    if provider == "abliteration":
+        return config.abliteration, "denken"
     return config.claude, "effort"
 
 
@@ -365,6 +380,26 @@ def openai_kann_denken(model_id: str) -> bool:
     return info.get("denkt", True) if info else True
 
 
+def normalisiere_abliteration(ablit) -> None:
+    """Unsinnige Werte aus [abliteration] nicht abstuerzen lassen."""
+    from .config import ABLITERATION_BASE_URL, DEFAULT_ABLITERATION_MODEL
+
+    if not isinstance(ablit.model, str) or not ablit.model.strip():
+        ablit.model = DEFAULT_ABLITERATION_MODEL
+    ablit.model = ablit.model.strip()
+    ablit.denken = "aus"  # dieses Modell denkt nicht extra nach
+    if not isinstance(ablit.base_url, str) or not ablit.base_url.startswith("https://"):
+        ablit.base_url = ABLITERATION_BASE_URL
+    try:
+        ablit.max_tokens = min(65536, max(512, int(ablit.max_tokens)))
+    except (TypeError, ValueError):
+        ablit.max_tokens = 16384
+    try:
+        ablit.temperature = min(2.0, max(0.0, float(ablit.temperature)))
+    except (TypeError, ValueError):
+        ablit.temperature = 0.7
+
+
 def _deepseek_stufe(wert) -> str | None:
     wert = str(wert or "").strip().lower()
     if wert in ("aus", "low", "high", "max"):
@@ -452,8 +487,8 @@ ALTE_OPENAI_NAMEN = {
 
 
 def fremdes_modell(wanted: str) -> str | None:
-    """Gehoert der Name zu Claude, DeepSeek, Gemini oder OpenAI? -> dieses Gehirn (sonst None)."""
-    for other in ("claude", "deepseek", "gemini", "openai"):
+    """Gehoert der Name zu einem anderen Gehirn (Claude, DeepSeek, Gemini, OpenAI, Abliteration)? -> dieses (sonst None)."""
+    for other in ("claude", "deepseek", "gemini", "openai", "abliteration"):
         if _finde_modell(other, wanted):
             return other
     return None
@@ -546,7 +581,7 @@ def waehle(config, provider: str | None = None, model: str | None = None,
 
 
 _GEHIRN_NAME = {"claude": "Claude", "deepseek": "DeepSeek", "gemini": "Gemini", "openai": "ChatGPT",
-                "ollama": "Ollama"}
+                "abliteration": "Abliteration AI", "ollama": "Ollama"}
 
 
 def _ollama_fehlt(config, modell: str, http=None) -> str:

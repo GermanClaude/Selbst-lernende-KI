@@ -1091,7 +1091,7 @@
   const micBtn = byId('mic-btn');
   const composer = byId('composer');
 
-  const PROVIDERS = { deepseek: 'DeepSeek', anthropic: 'Claude (Anthropic)', claude: 'Claude (Anthropic)', gemini: 'Gemini (Google)', google: 'Gemini (Google)', openai: 'ChatGPT (OpenAI)', chatgpt: 'ChatGPT (OpenAI)', ollama: 'Ollama (kostenlos)' };
+  const PROVIDERS = { deepseek: 'DeepSeek', anthropic: 'Claude (Anthropic)', claude: 'Claude (Anthropic)', gemini: 'Gemini (Google)', google: 'Gemini (Google)', openai: 'ChatGPT (OpenAI)', chatgpt: 'ChatGPT (OpenAI)', abliteration: 'Abliteration AI', ollama: 'Ollama (kostenlos)' };
   const fmtInt = (n) => (Number(n) || 0).toLocaleString('de-DE');
   function fmtEur(v) {
     v = Number(v) || 0;
@@ -6922,11 +6922,12 @@
     { id: 'claude', name: 'Claude (Anthropic)', info: 'sehr stark, teurer', url: 'https://console.anthropic.com/settings/keys' },
     { id: 'gemini', name: 'Gemini (Google)', info: 'stark und schnell, kostenloser Einstieg möglich', url: 'https://aistudio.google.com/apikey' },
     { id: 'openai', name: 'ChatGPT (OpenAI)', info: 'die GPT-Modelle von OpenAI', url: 'https://platform.openai.com/api-keys' },
+    { id: 'abliteration', name: 'Abliteration AI', info: 'unzensiert, OpenAI-kompatibel', url: 'https://abliteration.ai' },
     { id: 'ollama', name: 'Ollama (kostenlos, auf deinem PC)', info: 'kostenlos, läuft auf deinem PC – ohne Schlüssel, ohne Internet',
       url: HL.OLLAMA_DOWNLOAD, needsKey: false },
   ];
-  const SU_TOPUP = { deepseek: 'https://platform.deepseek.com/top_up', claude: 'https://console.anthropic.com/settings/billing', gemini: 'https://aistudio.google.com/apikey', openai: 'https://platform.openai.com/settings/organization/billing' };
-  const SU_ICON = { deepseek: 'zap', claude: 'sparkles', gemini: 'star', openai: 'sparkles', ollama: 'monitor' };
+  const SU_TOPUP = { deepseek: 'https://platform.deepseek.com/top_up', claude: 'https://console.anthropic.com/settings/billing', gemini: 'https://aistudio.google.com/apikey', openai: 'https://platform.openai.com/settings/organization/billing', abliteration: 'https://abliteration.ai' };
+  const SU_ICON = { deepseek: 'zap', claude: 'sparkles', gemini: 'star', openai: 'sparkles', abliteration: 'shieldOff', ollama: 'monitor' };
   const su = {
     where: '',          // '' | 'modal' | 'pane'
     welcome: false, data: null, sel: '', loading: false, gen: 0, reqGen: 0, checking: false, result: null,
@@ -6992,7 +6993,7 @@
   /** Ohne Antwort vom Server: die beiden bekannten Gehirne (aus dem Zustand). */
   function fallbackSetup() {
     const low = String(state.provider || '').toLowerCase();
-    const cur = low === 'deepseek' || low === 'ollama' || low === 'gemini' || low === 'openai' ? low : 'claude';
+    const cur = low === 'deepseek' || low === 'ollama' || low === 'gemini' || low === 'openai' || low === 'abliteration' ? low : 'claude';
     return {
       provider: cur,
       providers: SU_FALLBACK.map((p) => Object.assign({ needsKey: true }, p, {
@@ -7502,6 +7503,7 @@
     if (p.id === 'deepseek') li('Lade unter ', b('„Top up“'), ' etwas Guthaben auf – ohne Guthaben kann ich nicht antworten.');
     else if (p.id === 'gemini') li('Zum Ausprobieren reicht der kostenlose Zugang (mit Grenzen pro Minute und Tag). Mehr geht, wenn du in AI Studio die ', b('Abrechnung'), ' einrichtest.');
     else if (p.id === 'openai') li('Lade bei OpenAI unter ', b('Billing'), ' etwas Guthaben auf – ohne Guthaben antwortet ChatGPT nicht.');
+    else if (p.id === 'abliteration') li('Lade auf ', b('abliteration.ai'), ' etwas Guthaben auf – ohne Guthaben antwortet das Modell nicht. Der Schlüssel beginnt mit „ak_“.');
     else if (p.id === 'claude') li('Guthaben (Credits) lädst du unter ', b('„Billing“'), ' auf.');
   }
 
@@ -7665,7 +7667,7 @@
   function suDetect() {
     const v = suInput.value.trim();
     if (v.length < 20 || !su.data) return;
-    const want = /^sk-ant-/.test(v) ? 'claude' : /^(AQ\.|AIza)/.test(v) ? 'gemini' : /^sk-(proj|svcacct|admin)-/.test(v) ? 'openai' : /^sk-/.test(v) ? 'deepseek' : '';
+    const want = /^sk-ant-/.test(v) ? 'claude' : /^(AQ\.|AIza)/.test(v) ? 'gemini' : /^ak_/.test(v) ? 'abliteration' : /^sk-(proj|svcacct|admin)-/.test(v) ? 'openai' : /^sk-/.test(v) ? 'deepseek' : '';
     const p = want && su.data.providers.find((x) => x.id === want);
     if (!p || want === su.sel) return;
     su.sel = want;

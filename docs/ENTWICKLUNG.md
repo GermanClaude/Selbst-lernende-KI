@@ -18,7 +18,10 @@ PC-Steuerung, Agenten …) und fragt vor riskanten Aktionen nach (`assistant/per
 - Aktuelle Version: siehe `__version__` in `assistant/__init__.py` und oben in `CHANGELOG.md`.
 - Standard-Branch: `ccr-cfa1ff8c-wgsyxb` (so benannt, weil das Projekt in einer Claude-Cloud-Session
   entstand). Nur dieser Branch erzeugt Releases.
-- Zuletzt dazugekommen: **0.21.0 AFK-Vollmacht** (`permissions.afk_autonom`/`afk_handlungsfrei`,
+- Zuletzt dazugekommen: **0.22.0 Gehirn „Abliteration AI"** (unzensiert, OpenAI-kompatibel;
+  `providers/abliteration_provider.py`, Tests `tests/test_provider_abliteration.py`). „RAW AI"
+  (Play-Store-App) hat keine API, daher nicht anbindbar - Abliteration AI als Alternative.
+  Davor: **0.21.1 AFK endet nicht durch Blips**, **0.21.0 AFK-Vollmacht** (`permissions.afk_autonom`/`afk_handlungsfrei`,
   `abwesend._RULES_AUTONOM`, Tests `tests/test_afk_autonom.py`) – im AFK wirklich handeln statt nur
   vorschlagen, wenn volle Freiheit gegeben ist. Davor: **0.20.0 Stimmen-Auswahlliste in der App**,
   **0.19.0 Stimme waehlbar** (`voice.CloudSpeaker`/`build_speaker`,
@@ -51,7 +54,7 @@ verwenden** – darin stehen Gedächtnis, Profil und Dateipfade.
 | Bereich | Dateien |
 |---|---|
 | Start, Konfiguration | `run_ki.py`, `assistant/__main__.py`, `assistant/config.py`, `config/` |
-| Denken, Verlauf, Kosten | `assistant/brain.py`, `assistant/providers/` (anthropic, deepseek, gemini, openai, ollama), `assistant/modelle.py` |
+| Denken, Verlauf, Kosten | `assistant/brain.py`, `assistant/providers/` (anthropic, deepseek, gemini, openai, abliteration, ollama), `assistant/modelle.py`. Neues OpenAI-kompatibles Gehirn = DeepSeekProvider ableiten (siehe `abliteration_provider.py`: eigener Schluessel/base_url, kein Nachdenken) + in config/schluessel/modelle/providers.__init__ sowie den UI-Listen (cli `_split_provider`, controller provider_name, app.js PROVIDERS/SU_*/Key-Regex) eintragen. |
 | OpenAI-Besonderheiten | `providers/openai_provider.py`: Denk-Modelle brauchen `max_completion_tokens` (nicht `max_tokens`), keine `temperature`, Denk-Tiefe per `reasoning_effort`. Flaggschiffe mit Responses-API-Zwang für Tools sind bewusst nicht in der Modell-Liste. Modelle/Preise in `modelle.py` – **Stand 20.11.2026, regelmäßig prüfen** |
 | Gemini-Besonderheiten | `providers/gemini_provider.py`: Denk-Signaturen an Werkzeug-Aufrufen unverändert zurückschicken (sonst 400), Nachdenken nicht abschaltbar, Schema ohne `additionalProperties`. Modelle/Preise (mit Datum der angekündigten Erhöhungen) in `modelle.py` – **Stand 13.11.2026, regelmäßig prüfen** |
 | Werkzeuge | `assistant/tools/` – jedes Werkzeug eine Klasse mit `name`, `description`, `input_schema`, `run()`; Anmeldung in `tools/__init__.py` |

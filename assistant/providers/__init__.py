@@ -30,6 +30,10 @@ def build_provider(
         from .openai_provider import OpenAIProvider
 
         return OpenAIProvider(config, system_prompt, registry, tool_ctx, client=client)
+    if config.active_provider == "abliteration":
+        from .abliteration_provider import AbliterationProvider
+
+        return AbliterationProvider(config, system_prompt, registry, tool_ctx, client=client)
     if config.active_provider == "deepseek":
         from .deepseek_provider import DeepSeekProvider
 

@@ -47,6 +47,13 @@ PROVIDERS = {
         "url": "https://platform.openai.com/api-keys",
         "prefix": "sk-proj-",
     },
+    "abliteration": {
+        "name": "Abliteration AI",
+        "env": "ABLITERATION_API_KEY",
+        "info": "unzensiert, OpenAI-kompatibel",
+        "url": "https://abliteration.ai",
+        "prefix": "ak_",
+    },
     "ollama": {
         "name": "Ollama (kostenlos, auf deinem PC)",
         "env": "",
@@ -57,7 +64,7 @@ PROVIDERS = {
     },
 }
 
-_KEY = re.compile(r"(?<![A-Za-z0-9_\-])(sk-[A-Za-z0-9_\-]{20,}|AIza[A-Za-z0-9_\-]{30,}|AQ\.[A-Za-z0-9_\-]{20,})(?![A-Za-z0-9_\-])")
+_KEY = re.compile(r"(?<![A-Za-z0-9_\-])(sk-[A-Za-z0-9_\-]{20,}|AIza[A-Za-z0-9_\-]{30,}|AQ\.[A-Za-z0-9_\-]{20,}|ak_[A-Za-z0-9_\-]{20,})(?![A-Za-z0-9_\-])")
 
 
 def find_key(text: str) -> str | None:
@@ -93,6 +100,8 @@ def provider_for_key(key: str) -> str:
         return "gemini"
     if key.startswith("sk-ant-"):
         return "claude"
+    if key.startswith("ak_"):
+        return "abliteration"
     # sk-proj-/sk-svcacct-/sk-admin- gibt es nur bei OpenAI. Ein schlichtes "sk-..." ist nicht
     # eindeutig (DeepSeek und alte OpenAI-Schluessel sehen gleich aus) -> DeepSeek als Standard.
     if key.startswith(("sk-proj-", "sk-svcacct-", "sk-admin-")):
@@ -111,6 +120,8 @@ def key_of(config, provider: str) -> str | None:
         return config.gemini_api_key
     if provider == "openai":
         return config.openai_api_key
+    if provider == "abliteration":
+        return config.abliteration_api_key
     return config.deepseek_api_key if provider == "deepseek" else config.anthropic_api_key
 
 
@@ -148,7 +159,8 @@ def classify(exc: Exception, provider: str) -> tuple[str, str]:
     if status == 402 or "insufficient balance" in text or "credit balance" in text:
         where = {"deepseek": "platform.deepseek.com unter \u201eTop up\u201c",
                  "gemini": "aistudio.google.com unter \u201eBilling\u201c",
-                 "openai": "platform.openai.com unter \u201eBilling\u201c"}.get(
+                 "openai": "platform.openai.com unter \u201eBilling\u201c",
+                 "abliteration": "abliteration.ai (Guthaben aufladen)"}.get(
             provider, "console.anthropic.com unter \u201eBilling\u201c")
         return "balance", (f"Der Schluessel stimmt, aber dein {name}-Guthaben ist leer. Lade auf {where} "
                            "etwas auf - dann geht es sofort weiter.")
@@ -214,6 +226,14 @@ def test_key(config, provider: str, key: str) -> tuple[bool, str, str]:
             client.chat.completions.create(model=config.deepseek.model, max_tokens=1,
                                            messages=[{"role": "user", "content": "Hi"}],
                                            extra_body={"thinking": {"type": "disabled"}})
+        elif provider == "abliteration":
+            from openai import OpenAI, Timeout
+
+            client = OpenAI(api_key=key, base_url=config.abliteration.base_url,
+                            timeout=Timeout(25.0, connect=10.0), max_retries=0)
+            # 1 Token: zeigt, ob Schluessel und Guthaben passen (models.list gibt es evtl. nicht)
+            client.chat.completions.create(model=config.abliteration.model, max_tokens=1,
+                                           messages=[{"role": "user", "content": "Hi"}])
         else:
             import anthropic
 
@@ -238,6 +258,8 @@ def save_key(config, provider: str, key: str) -> Path:
         config.gemini_api_key = key
     elif provider == "openai":
         config.openai_api_key = key
+    elif provider == "abliteration":
+        config.abliteration_api_key = key
     else:
         config.anthropic_api_key = key
     return path

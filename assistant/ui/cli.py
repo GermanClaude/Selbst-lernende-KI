@@ -1348,9 +1348,11 @@ class CLI:
 
     def _split_provider(self, args: list[str]) -> tuple[str, list[str]]:
         """'/modell deepseek pro' -> ('deepseek', ['pro']); ohne Gehirn-Name: das aktive."""
-        if args and args[0].lower() in ("claude", "anthropic", "deepseek", "gemini", "google", "openai", "chatgpt", "ollama"):
+        if args and args[0].lower() in ("claude", "anthropic", "deepseek", "gemini", "google", "openai",
+                                        "chatgpt", "abliteration", "ablit", "ollama"):
             low = args[0].lower()
-            return {"anthropic": "claude", "google": "gemini", "chatgpt": "openai"}.get(low, low), args[1:]
+            return {"anthropic": "claude", "google": "gemini", "chatgpt": "openai",
+                    "ablit": "abliteration"}.get(low, low), args[1:]
         return self.config.active_provider, args
 
     def _apply_model_choice(self, provider: str, model: str | None = None, denken: str | None = None) -> None:

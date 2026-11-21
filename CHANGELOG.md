@@ -4,6 +4,20 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.22.0 – 2026-11-21
+
+**Neues Gehirn: Abliteration AI (unzensiert)**
+- Neben Claude, DeepSeek, Gemini, ChatGPT und Ollama kannst du jetzt auch **Abliteration AI**
+  wählen – ein unzensiertes, OpenAI-kompatibles Modell. Schlüssel (beginnt mit `ak_`, von
+  [abliteration.ai](https://abliteration.ai)) einfach in den Chat einfügen oder in der App unter
+  „Gehirn & Schlüssel" eintragen, dann `/gehirn abliteration`.
+- Wie jedes Gehirn kann auch dieses die vorhandenen Werkzeuge nutzen – inklusive der
+  **PC-Steuerung** (Maus/Tastatur, Dateien, Programme), sobald du die Berechtigungen dafür
+  freigibst (Stützräder „aus"/„alles"). Nutze das verantwortungsvoll und im Rahmen der Gesetze.
+- Hinweis zu „RAW AI": die gleichnamige Play-Store-App hat keine öffentliche Schnittstelle (API),
+  darum lässt sie sich nicht direkt anbinden. Abliteration AI ist die anbindbare Alternative mit
+  ähnlicher Ausrichtung.
+
 ## 0.21.1 – 2026-11-21
 
 **AFK-Modus endet nicht mehr aus Versehen**
