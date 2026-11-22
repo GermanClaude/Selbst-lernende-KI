@@ -4,6 +4,15 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.22.1 – 2026-11-22
+
+**Updates gehen jetzt schnell – egal welches Modell**
+- Beim Aktualisieren hat Nova die Neuerungen „in eigenen Worten" erklärt. Mit einem langsamen
+  Modell (z. B. Ollama auf einem schwächeren PC) konnte das ewig dauern. Jetzt wartet das Update
+  höchstens kurz auf diese Erklärung – schafft das Modell es nicht schnell, zeigt Nova sofort die
+  (ohnehin verständlichen) Versionshinweise und macht weiter. So ist ein Update in Sekunden da,
+  unabhängig vom gewählten Gehirn.
+
 ## 0.22.0 – 2026-11-21
 
 **Neues Gehirn: Abliteration AI (unzensiert)**

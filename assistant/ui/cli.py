@@ -105,6 +105,32 @@ def _c(text: str, color: str) -> str:
     return f"{color}{text}{RESET}"
 
 
+# So lange wartet ein Update hoechstens auf die KI-Erklaerung der Neuerungen. Danach zeigt es
+# gleich die (ohnehin verstaendlichen) Versionshinweise - damit ein Update egal mit welchem
+# Modell schnell durchlaeuft und nicht an einem langsamen Modell haengt.
+UPDATE_ERKLAER_TIMEOUT = 12.0
+
+
+def _mit_zeitlimit(fn, sekunden: float):
+    """Fuehrt fn() in einem Hintergrund-Thread aus und gibt sein Ergebnis zurueck - oder None, wenn
+    es laenger als 'sekunden' braucht (fn laeuft als Daemon weiter, blockiert aber nichts mehr)."""
+    import threading
+
+    ergebnis: list = [None]
+    fertig = threading.Event()
+
+    def arbeiten() -> None:
+        try:
+            ergebnis[0] = fn()
+        except Exception as exc:  # noqa: BLE001 - dann eben kein Ergebnis
+            logger.info("Zeitlimit-Aufgabe fehlgeschlagen: %s", exc)
+        finally:
+            fertig.set()
+
+    threading.Thread(target=arbeiten, name="zeitlimit", daemon=True).start()
+    return ergebnis[0] if fertig.wait(sekunden) else None
+
+
 def _confirm(message: str, risk: Risk) -> bool:
     """Fragt den Nutzer interaktiv um Bestaetigung fuer eine Aktion."""
     return _ask_permission(message, risk) in ("einmal", "immer")
@@ -2100,6 +2126,9 @@ class CLI:
             )
 
     def _explain_update(self, info: UpdateInfo) -> str:
+        """Die Neuerungen - moeglichst in eigenen Worten, aber NIE lange warten. Die KI erklaert sie
+        nur, wenn sie schnell genug ist; sonst zeigen wir gleich die (ohnehin verstaendlichen)
+        Versionshinweise. So ist ein Update egal mit welchem Modell in Sekunden da."""
         notes = info.notes.strip() or "(Zu dieser Version gibt es keine Beschreibung.)"
         if not self.config.api_key:
             return notes
@@ -2110,7 +2139,9 @@ class CLI:
             "damit jetzt tun kann. Sprich ihn direkt mit 'du' an. Keine Einleitung, keine Rueckfragen."
         )
         print(_c("(einen Moment, ich schaue mir die Neuerungen an …)", GREY))
-        return self.brain.provider.ask_once(prompt) or notes
+        erklaerung = _mit_zeitlimit(lambda: self.brain.provider.ask_once(prompt, max_tokens=400),
+                                    UPDATE_ERKLAER_TIMEOUT)
+        return (erklaerung or "").strip() or notes
 
     def _offer_update(self, info: UpdateInfo, ask: bool) -> bool:
         """Zeigt die Neuerungen, installiert (ggf. nach Rueckfrage). True = neu starten."""

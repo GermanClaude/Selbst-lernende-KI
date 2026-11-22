@@ -18,7 +18,17 @@ PC-Steuerung, Agenten …) und fragt vor riskanten Aktionen nach (`assistant/per
 - Aktuelle Version: siehe `__version__` in `assistant/__init__.py` und oben in `CHANGELOG.md`.
 - Standard-Branch: `ccr-cfa1ff8c-wgsyxb` (so benannt, weil das Projekt in einer Claude-Cloud-Session
   entstand). Nur dieser Branch erzeugt Releases.
-- Zuletzt dazugekommen: **0.22.0 Gehirn „Abliteration AI"** (unzensiert, OpenAI-kompatibel;
+- **Privates Backup:** Der ganze Verlauf + alle Release-Tags liegen zusaetzlich im PRIVATEN Repo
+  `GermanClaude/Nova-Backup` (das oeffentliche `GermanClaude/Selbst-lernende-KI` bleibt fuer die
+  Releases/den Updater). In diesem Checkout pusht `git push origin <branch>` dank zweiter Push-URL
+  automatisch in BEIDE. Nach einem frischen Clone einmal einrichten:
+  `git remote set-url --add --push origin https://github.com/GermanClaude/Selbst-lernende-KI.git`
+  und `git remote set-url --add --push origin https://github.com/GermanClaude/Nova-Backup.git`
+  (danach `git push origin --tags` fuer die Tags). So geht nie Fortschritt verloren, auch wenn ein Chat verschwindet.
+- Zuletzt dazugekommen: **0.22.1 schnelle Updates** (`cli._explain_update` + `_mit_zeitlimit`/
+  `UPDATE_ERKLAER_TIMEOUT`: Modell-Erklaerung der Neuerungen mit Zeitlimit, sonst sofort die rohen
+  Versionshinweise – Update haengt nie an einem langsamen Modell; Tests `tests/test_update_speed.py`).
+  Davor: **0.22.0 Gehirn „Abliteration AI"** (unzensiert, OpenAI-kompatibel;
   `providers/abliteration_provider.py`, Tests `tests/test_provider_abliteration.py`). „RAW AI"
   (Play-Store-App) hat keine API, daher nicht anbindbar - Abliteration AI als Alternative.
   Davor: **0.21.1 AFK endet nicht durch Blips**, **0.21.0 AFK-Vollmacht** (`permissions.afk_autonom`/`afk_handlungsfrei`,
