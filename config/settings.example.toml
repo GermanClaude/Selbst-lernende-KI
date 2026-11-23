@@ -112,7 +112,7 @@ temperature = 0.7
 
 # ----------------------------------------------------------------------------
 #  NANOGPT - unzensierte Modelle, OpenAI-kompatibel, SIEHT Bilder und nutzt Werkzeuge.
-#  Zahlung auch per KARTE (Stripe) moeglich - kein Krypto-Zwang. Schluessel aus .env:
+#  Zahlung per GOOGLE PAY oder KARTE (Stripe) moeglich - kein Krypto-Zwang. Schluessel aus .env:
 #  NANOGPT_API_KEY (kein festes Praefix - am einfachsten in der App eintragen). https://nano-gpt.com/api
 # ----------------------------------------------------------------------------
 [nanogpt]

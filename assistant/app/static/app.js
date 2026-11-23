@@ -6924,7 +6924,7 @@
     { id: 'openai', name: 'ChatGPT (OpenAI)', info: 'die GPT-Modelle von OpenAI', url: 'https://platform.openai.com/api-keys' },
     { id: 'abliteration', name: 'Abliteration AI', info: 'unzensiert, OpenAI-kompatibel', url: 'https://abliteration.ai' },
     { id: 'venice', name: 'Venice AI', info: 'unzensiert, sieht Bilder, nutzt Werkzeuge', url: 'https://venice.ai/settings/api' },
-    { id: 'nanogpt', name: 'NanoGPT', info: 'unzensiert, sieht Bilder – Zahlung auch per Karte', url: 'https://nano-gpt.com/api' },
+    { id: 'nanogpt', name: 'NanoGPT', info: 'unzensiert, sieht Bilder – Zahlung per Google Pay oder Karte', url: 'https://nano-gpt.com/api' },
     { id: 'ollama', name: 'Ollama (kostenlos, auf deinem PC)', info: 'kostenlos, läuft auf deinem PC – ohne Schlüssel, ohne Internet',
       url: HL.OLLAMA_DOWNLOAD, needsKey: false },
   ];
@@ -7507,7 +7507,7 @@
     else if (p.id === 'openai') li('Lade bei OpenAI unter ', b('Billing'), ' etwas Guthaben auf – ohne Guthaben antwortet ChatGPT nicht.');
     else if (p.id === 'abliteration') li('Lade auf ', b('abliteration.ai'), ' etwas Guthaben auf – ohne Guthaben antwortet das Modell nicht. Der Schlüssel beginnt mit „ak_“.');
     else if (p.id === 'venice') li('Erstelle unter ', b('venice.ai → Settings → API'), ' einen Schlüssel und lade etwas Guthaben auf. Venice-Schlüssel haben kein festes Präfix – füge ihn einfach hier ein, während Venice AI ausgewählt ist.');
-    else if (p.id === 'nanogpt') li('Erstelle unter ', b('nano-gpt.com → API'), ' einen Schlüssel und lade Guthaben auf – das geht ', b('per Karte (Stripe)'), ' oder Krypto, kein Krypto-Zwang. Der Schlüssel hat kein festes Präfix – füge ihn hier ein, während NanoGPT ausgewählt ist.');
+    else if (p.id === 'nanogpt') li('Erstelle unter ', b('nano-gpt.com → API'), ' einen Schlüssel und lade Guthaben auf – das geht ', b('per Google Pay oder Karte (Stripe)'), ' oder Krypto, kein Krypto-Zwang (erste Kartenzahlung ab 1 $, danach ab 5 $). Der Schlüssel hat kein festes Präfix – füge ihn hier ein, während NanoGPT ausgewählt ist.');
     else if (p.id === 'claude') li('Guthaben (Credits) lädst du unter ', b('„Billing“'), ' auf.');
   }
 

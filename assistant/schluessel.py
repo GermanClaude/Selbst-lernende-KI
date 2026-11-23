@@ -64,7 +64,7 @@ PROVIDERS = {
     "nanogpt": {
         "name": "NanoGPT",
         "env": "NANOGPT_API_KEY",
-        "info": "unzensiert, sieht Bilder, Zahlung auch per Karte (kein Krypto-Zwang)",
+        "info": "unzensiert, sieht Bilder, Zahlung per Google Pay oder Karte (kein Krypto-Zwang)",
         "url": "https://nano-gpt.com/api",
         "prefix": "",  # kein festes Praefix -> Anbieter ausdruecklich waehlen
     },

@@ -4,6 +4,13 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.25.1 – 2026-11-23
+
+**NanoGPT: Google Pay bestätigt**
+- Nachgeprüft: Bei NanoGPT kannst du dein Guthaben per **Google Pay** (oder Karte, beides über
+  Stripe) aufladen – kein Bitcoin nötig. Die App zeigt das jetzt klar an. PayPal bietet weiterhin
+  keiner der unzensierten Anbieter an.
+
 ## 0.25.0 – 2026-11-23
 
 **Neues Gehirn NanoGPT – unzensiert und ohne Krypto-Zwang bezahlbar**
