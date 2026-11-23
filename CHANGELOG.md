@@ -4,6 +4,14 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.24.1 – 2026-11-23
+
+**Tippen noch robuster (Umlaute überall)**
+- Ergänzung zu 0.24.0: Beim Tippen in andere Programme werden **Zeilenumbrüche (Enter) und
+  Tabs** jetzt als echte Tasten gesendet, und Sonderzeichen inklusive Emojis zuverlässig als
+  Unicode. Umlaute (ä/ö/ü/ß) kommen damit überall richtig an – in der Suche, in Discord usw.,
+  mit jedem Gehirn.
+
 ## 0.24.0 – 2026-11-23
 
 **Neues Gehirn Venice AI, Umlaute beim Tippen, und „Versionen" zeigt die Neuerungen**

@@ -65,17 +65,36 @@ def _tippe_unicode_windows(text: str) -> None:
 
     user32 = ctypes.windll.user32
 
-    def _einheit(code: int, hoch: bool) -> None:
-        flags = KEYEVENTF_UNICODE | (KEYEVENTF_KEYUP if hoch else 0)
-        inp = _INPUT(type=INPUT_KEYBOARD, u=_UNION(ki=_KEYBDINPUT(0, code, flags, 0, None)))
+    def _senden(code: int, flags: int, hoch: bool) -> None:
+        wVk = 0 if (flags & KEYEVENTF_UNICODE) else code
+        wScan = code if (flags & KEYEVENTF_UNICODE) else 0
+        f = flags | (KEYEVENTF_KEYUP if hoch else 0)
+        inp = _INPUT(type=INPUT_KEYBOARD, u=_UNION(ki=_KEYBDINPUT(wVk, wScan, f, 0, None)))
         user32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(_INPUT))
 
-    einheiten = text.encode("utf-16-le")
-    for i in range(0, len(einheiten), 2):
-        code = einheiten[i] | (einheiten[i + 1] << 8)  # 16-bit-Einheit (Surrogate: zwei Einheiten)
-        _einheit(code, False)
-        _einheit(code, True)
+    def _taste(vk: int) -> None:  # echte Taste (Enter/Tab) statt Unicode-Zeichen
+        _senden(vk, 0, False)
+        _senden(vk, 0, True)
+
+    VK_RETURN, VK_TAB = 0x0D, 0x09
+    for ch in text:
+        if ch == "\r":
+            continue
+        if ch == "\n":
+            _taste(VK_RETURN)  # wie bei pyautogui: Zeilenumbruch = Enter
+        elif ch == "\t":
+            _taste(VK_TAB)
+        else:
+            for einheit in _utf16_einheiten(ch):
+                _senden(einheit, KEYEVENTF_UNICODE, False)
+                _senden(einheit, KEYEVENTF_UNICODE, True)
         time.sleep(0.005)
+
+
+def _utf16_einheiten(ch: str) -> list:
+    """Die 16-bit-Einheiten eines Zeichens (Zeichen ausserhalb der BMP = zwei Surrogate)."""
+    roh = ch.encode("utf-16-le")
+    return [roh[i] | (roh[i + 1] << 8) for i in range(0, len(roh), 2)]
 
 
 class ScreenshotTool(Tool):
