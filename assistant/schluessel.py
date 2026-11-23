@@ -54,6 +54,13 @@ PROVIDERS = {
         "url": "https://abliteration.ai",
         "prefix": "ak_",
     },
+    "venice": {
+        "name": "Venice AI",
+        "env": "VENICE_API_KEY",
+        "info": "unzensiert, sieht Bilder, nutzt Werkzeuge",
+        "url": "https://venice.ai/settings/api",
+        "prefix": "",  # kein festes Praefix -> Anbieter in der App/beim /gehirn ausdruecklich waehlen
+    },
     "ollama": {
         "name": "Ollama (kostenlos, auf deinem PC)",
         "env": "",
@@ -122,6 +129,8 @@ def key_of(config, provider: str) -> str | None:
         return config.openai_api_key
     if provider == "abliteration":
         return config.abliteration_api_key
+    if provider == "venice":
+        return config.venice_api_key
     return config.deepseek_api_key if provider == "deepseek" else config.anthropic_api_key
 
 
@@ -160,7 +169,8 @@ def classify(exc: Exception, provider: str) -> tuple[str, str]:
         where = {"deepseek": "platform.deepseek.com unter \u201eTop up\u201c",
                  "gemini": "aistudio.google.com unter \u201eBilling\u201c",
                  "openai": "platform.openai.com unter \u201eBilling\u201c",
-                 "abliteration": "abliteration.ai (Guthaben aufladen)"}.get(
+                 "abliteration": "abliteration.ai (Guthaben aufladen)",
+                 "venice": "venice.ai (Guthaben/VCU aufladen)"}.get(
             provider, "console.anthropic.com unter \u201eBilling\u201c")
         return "balance", (f"Der Schluessel stimmt, aber dein {name}-Guthaben ist leer. Lade auf {where} "
                            "etwas auf - dann geht es sofort weiter.")
@@ -234,6 +244,14 @@ def test_key(config, provider: str, key: str) -> tuple[bool, str, str]:
             # 1 Token: zeigt, ob Schluessel und Guthaben passen (models.list gibt es evtl. nicht)
             client.chat.completions.create(model=config.abliteration.model, max_tokens=1,
                                            messages=[{"role": "user", "content": "Hi"}])
+        elif provider == "venice":
+            from openai import OpenAI, Timeout
+
+            client = OpenAI(api_key=key, base_url=config.venice.base_url,
+                            timeout=Timeout(25.0, connect=10.0), max_retries=0)
+            client.chat.completions.create(model=config.venice.model, max_tokens=1,
+                                           messages=[{"role": "user", "content": "Hi"}],
+                                           extra_body={"venice_parameters": {"include_venice_system_prompt": False}})
         else:
             import anthropic
 
@@ -260,6 +278,8 @@ def save_key(config, provider: str, key: str) -> Path:
         config.openai_api_key = key
     elif provider == "abliteration":
         config.abliteration_api_key = key
+    elif provider == "venice":
+        config.venice_api_key = key
     else:
         config.anthropic_api_key = key
     return path

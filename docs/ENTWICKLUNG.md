@@ -25,7 +25,12 @@ PC-Steuerung, Agenten …) und fragt vor riskanten Aktionen nach (`assistant/per
   `git remote set-url --add --push origin https://github.com/GermanClaude/Selbst-lernende-KI.git`
   und `git remote set-url --add --push origin https://github.com/GermanClaude/Nova-Backup.git`
   (danach `git push origin --tags` fuer die Tags). So geht nie Fortschritt verloren, auch wenn ein Chat verschwindet.
-- Zuletzt dazugekommen: **0.23.0 Abliteration kann sehen** (`abliteration_provider._seh_quelle` leiht
+- Zuletzt dazugekommen: **0.24.0** Venice AI (zweites unzensiertes Gehirn, sieht selbst Bilder;
+  `providers/venice_provider.py`, `venice_parameters.include_venice_system_prompt=false`), Umlaute
+  beim Tippen (`tools/computer._tippe`/`_tippe_unicode_windows` via SendInput KEYEVENTF_UNICODE -
+  pyautogui.typewrite kann nur ASCII), `/versionen` zeigt pro Version die Neuerung
+  (`updater.changelog_summary`). Tests: `test_provider_venice`, `test_tippen_umlaute`,
+  `test_changelog_summary`. Davor: **0.23.0 Abliteration kann sehen** (`abliteration_provider._seh_quelle` leiht
   ein seh-faehiges Gehirn (DeepSeek Flash/Gemini/OpenAI) zur Bildbeschreibung, da Abliteration selbst
   kein Bild-Modell hat; `_describe_image`/`_describe_images` ueberschrieben; Tests
   `tests/test_abliteration_sehen.py`). Davor: **0.22.1 schnelle Updates** (`cli._explain_update` + `_mit_zeitlimit`/
@@ -67,7 +72,7 @@ verwenden** – darin stehen Gedächtnis, Profil und Dateipfade.
 | Bereich | Dateien |
 |---|---|
 | Start, Konfiguration | `run_ki.py`, `assistant/__main__.py`, `assistant/config.py`, `config/` |
-| Denken, Verlauf, Kosten | `assistant/brain.py`, `assistant/providers/` (anthropic, deepseek, gemini, openai, abliteration, ollama), `assistant/modelle.py`. Neues OpenAI-kompatibles Gehirn = DeepSeekProvider ableiten (siehe `abliteration_provider.py`: eigener Schluessel/base_url, kein Nachdenken) + in config/schluessel/modelle/providers.__init__ sowie den UI-Listen (cli `_split_provider`, controller provider_name, app.js PROVIDERS/SU_*/Key-Regex) eintragen. |
+| Denken, Verlauf, Kosten | `assistant/brain.py`, `assistant/providers/` (anthropic, deepseek, gemini, openai, abliteration, venice, ollama), `assistant/modelle.py`. Neues OpenAI-kompatibles Gehirn = DeepSeekProvider ableiten (siehe `abliteration_provider.py`: eigener Schluessel/base_url, kein Nachdenken) + in config/schluessel/modelle/providers.__init__ sowie den UI-Listen (cli `_split_provider`, controller provider_name, app.js PROVIDERS/SU_*/Key-Regex) eintragen. |
 | OpenAI-Besonderheiten | `providers/openai_provider.py`: Denk-Modelle brauchen `max_completion_tokens` (nicht `max_tokens`), keine `temperature`, Denk-Tiefe per `reasoning_effort`. Flaggschiffe mit Responses-API-Zwang für Tools sind bewusst nicht in der Modell-Liste. Modelle/Preise in `modelle.py` – **Stand 20.11.2026, regelmäßig prüfen** |
 | Gemini-Besonderheiten | `providers/gemini_provider.py`: Denk-Signaturen an Werkzeug-Aufrufen unverändert zurückschicken (sonst 400), Nachdenken nicht abschaltbar, Schema ohne `additionalProperties`. Modelle/Preise (mit Datum der angekündigten Erhöhungen) in `modelle.py` – **Stand 13.11.2026, regelmäßig prüfen** |
 | Werkzeuge | `assistant/tools/` – jedes Werkzeug eine Klasse mit `name`, `description`, `input_schema`, `run()`; Anmeldung in `tools/__init__.py` |

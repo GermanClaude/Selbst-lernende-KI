@@ -90,6 +90,20 @@ ABLITERATION_MODELLE = [
      "tempo": "mittel", "preis": (1.0, 0.1, 3.0), "sieht_bilder": False, "denkt": False},
 ]
 
+# Venice AI: unzensiert, OpenAI-kompatibel, sieht Bilder UND nutzt Werkzeuge. Venice wechselt Modelle
+# oft - die App liest die Faehigkeiten notfalls live von /models. Stand 23.11.2026, regelmaessig pruefen.
+VENICE_MODELLE = [
+    {"id": "venice-uncensored-1-2", "name": "Venice Uncensored 1.2", "kurz": "venice",
+     "info": "am staerksten unzensiert, sieht Bilder, nutzt Werkzeuge - der Standard", "tempo": "mittel",
+     "preis": (0.20, 0.02, 0.90), "sieht_bilder": True, "denkt": False},
+    {"id": "gemma-4-uncensored", "name": "Gemma 4 Uncensored", "kurz": "gemma",
+     "info": "unzensiert und am guenstigsten", "tempo": "schnell",
+     "preis": (0.1625, 0.016, 0.50), "sieht_bilder": True, "denkt": False},
+    {"id": "deepseek-v4-1-flash-uncensored", "name": "DeepSeek V4.1 Flash Uncensored", "kurz": "dsflash",
+     "info": "unzensiert, sehr grosser Kontext (1 Mio.)", "tempo": "mittel",
+     "preis": (0.33, 0.033, 1.32), "sieht_bilder": True, "denkt": False},
+]
+
 # DeepSeek-Modell, das Bilder ansieht: beschreibt sie fuer Modelle ohne Augen (V4 Pro).
 DEEPSEEK_SEHMODELL = "deepseek-flash"
 
@@ -106,7 +120,8 @@ def _ollama_modelle() -> list[dict]:
 OLLAMA_MODELLE = _ollama_modelle()
 
 MODELLE = {"claude": CLAUDE_MODELLE, "deepseek": DEEPSEEK_MODELLE, "gemini": GEMINI_MODELLE,
-           "openai": OPENAI_MODELLE, "abliteration": ABLITERATION_MODELLE, "ollama": OLLAMA_MODELLE}
+           "openai": OPENAI_MODELLE, "abliteration": ABLITERATION_MODELLE, "venice": VENICE_MODELLE,
+           "ollama": OLLAMA_MODELLE}
 
 # Denk-Tiefen: (Wert in settings.toml, Name fuer Menschen, Erklaerung)
 DENKTIEFEN = {
@@ -139,6 +154,9 @@ DENKTIEFEN = {
         ("an", "gruendlich", "denkt vorher nach - nur Modelle, die das koennen; dauert auf dem PC laenger"),
     ],
     "abliteration": [
+        ("aus", "schnell", "antwortet direkt - dieses Modell denkt nicht extra nach"),
+    ],
+    "venice": [
         ("aus", "schnell", "antwortet direkt - dieses Modell denkt nicht extra nach"),
     ],
 }
@@ -178,8 +196,8 @@ def sieht_bilder(provider: str, model_id: str) -> bool:
     info = modell_info(provider, wanted)
     if info is not None:
         return bool(info.get("sieht_bilder", False))
-    # Unbekannte Claude-, Gemini- und OpenAI-Modelle: ja. Ollama: fragt der Provider Ollama selbst.
-    return provider in ("claude", "gemini", "openai")
+    # Unbekannte Claude-, Gemini-, OpenAI- und Venice-Modelle: ja. Ollama: fragt der Provider Ollama selbst.
+    return provider in ("claude", "gemini", "openai", "venice")
 
 
 def modell_name(provider: str, model_id: str) -> str:
@@ -201,6 +219,8 @@ def aktuelle_denktiefe(config, provider: str | None = None) -> str:
         return config.openai.denken
     if provider == "abliteration":
         return config.abliteration.denken
+    if provider == "venice":
+        return config.venice.denken
     return config.deepseek.denken if provider == "deepseek" else config.claude.effort
 
 
@@ -216,6 +236,8 @@ def _section(config, provider: str):
         return config.openai, "denken"
     if provider == "abliteration":
         return config.abliteration, "denken"
+    if provider == "venice":
+        return config.venice, "denken"
     return config.claude, "effort"
 
 
@@ -400,6 +422,26 @@ def normalisiere_abliteration(ablit) -> None:
         ablit.temperature = 0.7
 
 
+def normalisiere_venice(venice) -> None:
+    """Unsinnige Werte aus [venice] nicht abstuerzen lassen."""
+    from .config import DEFAULT_VENICE_MODEL, VENICE_BASE_URL
+
+    if not isinstance(venice.model, str) or not venice.model.strip():
+        venice.model = DEFAULT_VENICE_MODEL
+    venice.model = venice.model.strip()
+    venice.denken = "aus"
+    if not isinstance(venice.base_url, str) or not venice.base_url.startswith("https://"):
+        venice.base_url = VENICE_BASE_URL
+    try:
+        venice.max_tokens = min(65536, max(512, int(venice.max_tokens)))
+    except (TypeError, ValueError):
+        venice.max_tokens = 16384
+    try:
+        venice.temperature = min(2.0, max(0.0, float(venice.temperature)))
+    except (TypeError, ValueError):
+        venice.temperature = 0.7
+
+
 def _deepseek_stufe(wert) -> str | None:
     wert = str(wert or "").strip().lower()
     if wert in ("aus", "low", "high", "max"):
@@ -488,7 +530,7 @@ ALTE_OPENAI_NAMEN = {
 
 def fremdes_modell(wanted: str) -> str | None:
     """Gehoert der Name zu einem anderen Gehirn (Claude, DeepSeek, Gemini, OpenAI, Abliteration)? -> dieses (sonst None)."""
-    for other in ("claude", "deepseek", "gemini", "openai", "abliteration"):
+    for other in ("claude", "deepseek", "gemini", "openai", "abliteration", "venice"):
         if _finde_modell(other, wanted):
             return other
     return None
@@ -581,7 +623,7 @@ def waehle(config, provider: str | None = None, model: str | None = None,
 
 
 _GEHIRN_NAME = {"claude": "Claude", "deepseek": "DeepSeek", "gemini": "Gemini", "openai": "ChatGPT",
-                "abliteration": "Abliteration AI", "ollama": "Ollama"}
+                "abliteration": "Abliteration AI", "venice": "Venice AI", "ollama": "Ollama"}
 
 
 def _ollama_fehlt(config, modell: str, http=None) -> str:

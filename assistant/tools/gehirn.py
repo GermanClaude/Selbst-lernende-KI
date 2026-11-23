@@ -12,12 +12,12 @@ class GehirnEinstellenTool(Tool):
         "Zeigt oder aendert, welches Modell du nutzt und wie gruendlich du nachdenkst - NUR auf "
         "ausdruecklichen Wunsch deines Menschen (z.B. 'denk schneller', 'antworte schneller', 'nimm "
         "Sonnet', 'denk gruendlicher'). aktion: 'anzeigen' oder 'setzen'. modell: bei Claude opus | "
-        "sonnet | haiku | fable, bei DeepSeek flash | pro, bei Gemini flash | lite | hydrogen | argon | carbon, bei OpenAI 5.2 | sol | luna, bei Abliteration das Standardmodell, bei Ollama ein heruntergeladenes Modell (z.B. "
+        "sonnet | haiku | fable, bei DeepSeek flash | pro, bei Gemini flash | lite | hydrogen | argon | carbon, bei OpenAI 5.2 | sol | luna, bei Abliteration das Standardmodell, bei Venice venice | gemma | dsflash, bei Ollama ein heruntergeladenes Modell (z.B. "
         "qwen3.5:4b). denken: schnell | ausgewogen | gruendlich | sehr gruendlich | maximal. Gilt ab deiner "
         "naechsten Antwort, das Gespraech bleibt erhalten. Mehr Denk-Tiefe = bessere Antworten bei schweren "
-        "Aufgaben, aber laengeres Warten und hoehere Kosten. Zwischen Claude, DeepSeek, Gemini, OpenAI, Abliteration AI und Ollama (kostenlos, "
+        "Aufgaben, aber laengeres Warten und hoehere Kosten. Zwischen Claude, DeepSeek, Gemini, OpenAI, Abliteration AI, Venice AI und Ollama (kostenlos, "
         "auf dem PC) wechselt dein Mensch selbst: in der App unter 'Gehirn & Schluessel' oder mit /gehirn "
-        "ollama (bzw. /gehirn claude, /gehirn deepseek, /gehirn gemini, /gehirn openai, /gehirn abliteration) - sag ihm das, wenn er wechseln moechte. Neue "
+        "ollama (bzw. /gehirn claude, /gehirn deepseek, /gehirn gemini, /gehirn openai, /gehirn abliteration, /gehirn venice) - sag ihm das, wenn er wechseln moechte. Neue "
         "Ollama-Modelle laedt er mit /ollama laden <modell>."
     )
     input_schema = {

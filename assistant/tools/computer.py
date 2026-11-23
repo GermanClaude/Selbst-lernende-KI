@@ -27,6 +27,57 @@ def _load_pyautogui():
         )
 
 
+def _tippe(pyautogui, text: str) -> None:
+    """Tippt Text - inkl. Umlaute/Sonderzeichen. pyautogui.typewrite kann nur ASCII (laesst
+    ae/oe/ue/ss und Emojis einfach weg); darum unter Windows alles mit Nicht-ASCII ueber die
+    Windows-Unicode-Eingabe tippen. Sonst (oder im Notfall) der bisherige Weg."""
+    import sys
+
+    if sys.platform == "win32" and not text.isascii():
+        try:
+            _tippe_unicode_windows(text)
+            return
+        except Exception:  # noqa: BLE001 - Notfalls der alte Weg (tippt dann wenigstens das ASCII)
+            pass
+    pyautogui.typewrite(text, interval=0.01)
+
+
+def _tippe_unicode_windows(text: str) -> None:
+    """Jeden Buchstaben als Unicode-Zeichen an das aktive Fenster schicken (SendInput mit
+    KEYEVENTF_UNICODE) - unabhaengig vom Tastaturlayout, also mit Umlauten."""
+    import ctypes
+    import time
+    from ctypes import wintypes
+
+    KEYEVENTF_UNICODE = 0x0004
+    KEYEVENTF_KEYUP = 0x0002
+    INPUT_KEYBOARD = 1
+
+    class _KEYBDINPUT(ctypes.Structure):
+        _fields_ = [("wVk", wintypes.WORD), ("wScan", wintypes.WORD), ("dwFlags", wintypes.DWORD),
+                    ("time", wintypes.DWORD), ("dwExtraInfo", ctypes.POINTER(ctypes.c_ulong))]
+
+    class _UNION(ctypes.Union):
+        _fields_ = [("ki", _KEYBDINPUT)]
+
+    class _INPUT(ctypes.Structure):
+        _fields_ = [("type", wintypes.DWORD), ("u", _UNION)]
+
+    user32 = ctypes.windll.user32
+
+    def _einheit(code: int, hoch: bool) -> None:
+        flags = KEYEVENTF_UNICODE | (KEYEVENTF_KEYUP if hoch else 0)
+        inp = _INPUT(type=INPUT_KEYBOARD, u=_UNION(ki=_KEYBDINPUT(0, code, flags, 0, None)))
+        user32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(_INPUT))
+
+    einheiten = text.encode("utf-16-le")
+    for i in range(0, len(einheiten), 2):
+        code = einheiten[i] | (einheiten[i + 1] << 8)  # 16-bit-Einheit (Surrogate: zwei Einheiten)
+        _einheit(code, False)
+        _einheit(code, True)
+        time.sleep(0.005)
+
+
 class ScreenshotTool(Tool):
     name = "bildschirmfoto"
     description = (
@@ -126,7 +177,7 @@ class TypeTextTool(Tool):
         pyautogui, err = _load_pyautogui()
         if err:
             return err
-        pyautogui.typewrite(text, interval=0.01)
+        _tippe(pyautogui, text)
         return f"Getippt ({len(text)} Zeichen)."
 
 

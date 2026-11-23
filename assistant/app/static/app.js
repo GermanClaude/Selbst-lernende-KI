@@ -1091,7 +1091,7 @@
   const micBtn = byId('mic-btn');
   const composer = byId('composer');
 
-  const PROVIDERS = { deepseek: 'DeepSeek', anthropic: 'Claude (Anthropic)', claude: 'Claude (Anthropic)', gemini: 'Gemini (Google)', google: 'Gemini (Google)', openai: 'ChatGPT (OpenAI)', chatgpt: 'ChatGPT (OpenAI)', abliteration: 'Abliteration AI', ollama: 'Ollama (kostenlos)' };
+  const PROVIDERS = { deepseek: 'DeepSeek', anthropic: 'Claude (Anthropic)', claude: 'Claude (Anthropic)', gemini: 'Gemini (Google)', google: 'Gemini (Google)', openai: 'ChatGPT (OpenAI)', chatgpt: 'ChatGPT (OpenAI)', abliteration: 'Abliteration AI', venice: 'Venice AI', ollama: 'Ollama (kostenlos)' };
   const fmtInt = (n) => (Number(n) || 0).toLocaleString('de-DE');
   function fmtEur(v) {
     v = Number(v) || 0;
@@ -6923,11 +6923,12 @@
     { id: 'gemini', name: 'Gemini (Google)', info: 'stark und schnell, kostenloser Einstieg möglich', url: 'https://aistudio.google.com/apikey' },
     { id: 'openai', name: 'ChatGPT (OpenAI)', info: 'die GPT-Modelle von OpenAI', url: 'https://platform.openai.com/api-keys' },
     { id: 'abliteration', name: 'Abliteration AI', info: 'unzensiert, OpenAI-kompatibel', url: 'https://abliteration.ai' },
+    { id: 'venice', name: 'Venice AI', info: 'unzensiert, sieht Bilder, nutzt Werkzeuge', url: 'https://venice.ai/settings/api' },
     { id: 'ollama', name: 'Ollama (kostenlos, auf deinem PC)', info: 'kostenlos, läuft auf deinem PC – ohne Schlüssel, ohne Internet',
       url: HL.OLLAMA_DOWNLOAD, needsKey: false },
   ];
-  const SU_TOPUP = { deepseek: 'https://platform.deepseek.com/top_up', claude: 'https://console.anthropic.com/settings/billing', gemini: 'https://aistudio.google.com/apikey', openai: 'https://platform.openai.com/settings/organization/billing', abliteration: 'https://abliteration.ai' };
-  const SU_ICON = { deepseek: 'zap', claude: 'sparkles', gemini: 'star', openai: 'sparkles', abliteration: 'shieldOff', ollama: 'monitor' };
+  const SU_TOPUP = { deepseek: 'https://platform.deepseek.com/top_up', claude: 'https://console.anthropic.com/settings/billing', gemini: 'https://aistudio.google.com/apikey', openai: 'https://platform.openai.com/settings/organization/billing', abliteration: 'https://abliteration.ai', venice: 'https://venice.ai/settings/billing' };
+  const SU_ICON = { deepseek: 'zap', claude: 'sparkles', gemini: 'star', openai: 'sparkles', abliteration: 'shieldOff', venice: 'shieldOff', ollama: 'monitor' };
   const su = {
     where: '',          // '' | 'modal' | 'pane'
     welcome: false, data: null, sel: '', loading: false, gen: 0, reqGen: 0, checking: false, result: null,
@@ -6993,7 +6994,7 @@
   /** Ohne Antwort vom Server: die beiden bekannten Gehirne (aus dem Zustand). */
   function fallbackSetup() {
     const low = String(state.provider || '').toLowerCase();
-    const cur = low === 'deepseek' || low === 'ollama' || low === 'gemini' || low === 'openai' || low === 'abliteration' ? low : 'claude';
+    const cur = low === 'deepseek' || low === 'ollama' || low === 'gemini' || low === 'openai' || low === 'abliteration' || low === 'venice' ? low : 'claude';
     return {
       provider: cur,
       providers: SU_FALLBACK.map((p) => Object.assign({ needsKey: true }, p, {
@@ -7504,6 +7505,7 @@
     else if (p.id === 'gemini') li('Zum Ausprobieren reicht der kostenlose Zugang (mit Grenzen pro Minute und Tag). Mehr geht, wenn du in AI Studio die ', b('Abrechnung'), ' einrichtest.');
     else if (p.id === 'openai') li('Lade bei OpenAI unter ', b('Billing'), ' etwas Guthaben auf – ohne Guthaben antwortet ChatGPT nicht.');
     else if (p.id === 'abliteration') li('Lade auf ', b('abliteration.ai'), ' etwas Guthaben auf – ohne Guthaben antwortet das Modell nicht. Der Schlüssel beginnt mit „ak_“.');
+    else if (p.id === 'venice') li('Erstelle unter ', b('venice.ai → Settings → API'), ' einen Schlüssel und lade etwas Guthaben auf. Venice-Schlüssel haben kein festes Präfix – füge ihn einfach hier ein, während Venice AI ausgewählt ist.');
     else if (p.id === 'claude') li('Guthaben (Credits) lädst du unter ', b('„Billing“'), ' auf.');
   }
 

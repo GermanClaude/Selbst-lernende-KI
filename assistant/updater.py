@@ -125,6 +125,29 @@ def changelog_between(changelog: str, old: str, new: str) -> str:
     return "\n\n".join(parts)
 
 
+def changelog_summary(changelog: str, version: str) -> str:
+    """Kurz, was eine bestimmte Version gebracht hat: die fett gedruckte Titelzeile unter
+    '## <version>' (sonst der erste Stichpunkt). "" wenn nichts gefunden."""
+    for section in re.split(r"(?m)^##\s+", changelog or "")[1:]:
+        lines = [ln for ln in section.strip().splitlines()]
+        if not lines:
+            continue
+        head = re.match(r"v?(\d+(?:\.\d+)*)", lines[0].strip())
+        if not head or parse_version(head.group(1)) != parse_version(version):
+            continue
+        for line in lines[1:]:
+            s = line.strip()
+            if not s:
+                continue
+            fett = re.match(r"\*\*(.+?)\*\*", s)  # fette Titelzeile des Abschnitts
+            if fett:
+                return fett.group(1).strip()
+            if s[:2] in ("- ", "* "):
+                return s[2:].strip().strip("*").strip()
+            return s.strip("*").strip()
+    return ""
+
+
 def _http_get(url: str, timeout: float = 15) -> bytes:
     import requests
 

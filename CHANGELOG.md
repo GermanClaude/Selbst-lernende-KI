@@ -4,6 +4,20 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.24.0 – 2026-11-23
+
+**Neues Gehirn Venice AI, Umlaute beim Tippen, und „Versionen" zeigt die Neuerungen**
+- **Venice AI** als weiteres unzensiertes Gehirn (neben Abliteration AI): OpenAI-kompatibel,
+  **sieht Bilder selbst** und nutzt Werkzeuge. Schlüssel von [venice.ai](https://venice.ai/settings/api)
+  in der App unter „Gehirn & Schlüssel" eintragen (Venice-Schlüssel haben kein festes Präfix), dann
+  `/gehirn venice`. Modelle: `venice-uncensored-1-2` (Standard), `gemma-4-uncensored` (günstig),
+  `deepseek-v4-1-flash-uncensored`. Novas eigene Persönlichkeit bleibt dabei maßgeblich.
+- **Umlaute beim Tippen gehen jetzt** – vorher ließ die PC-Steuerung ä/ö/ü/ß einfach weg (z. B. in
+  der Suche oder in Discord-Nachrichten). Jetzt werden Umlaute und Sonderzeichen korrekt getippt.
+  Das galt für alle Gehirne und ist nun behoben.
+- **„Versionen" zeigt, was jede Version gebracht hat:** `/versionen` (bzw. der Knopf in der App)
+  listet jetzt zu jeder gesicherten Version eine kurze Zeile, was neu war.
+
 ## 0.23.0 – 2026-11-23
 
 **Abliteration AI kann jetzt Bilder „sehen"**

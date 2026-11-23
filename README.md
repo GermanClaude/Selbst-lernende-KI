@@ -23,7 +23,7 @@ arbeitet weiter, während du weg bist – und läuft auf Wunsch komplett kostenl
 | | |
 |---|---|
 | 🆓 **Kostenlos möglich** | Mit **Ollama** läuft Nova komplett auf deinem PC – ohne Konto, ohne Schlüssel, ohne Kosten. Deine Gespräche verlassen den Rechner nicht. |
-| 🔀 **Du wählst das Gehirn** | **Claude** (am stärksten), **DeepSeek** (Bruchteile eines Cents pro Nachricht), **Gemini** von Google (mit Gratis-Einstieg), **ChatGPT** von OpenAI, **Abliteration AI** (unzensiert) oder **jedes Ollama-Modell** (Qwen, Llama, Gemma, Mistral …) – auch LM Studio. Umschalten mit einem Klick, das Gedächtnis bleibt. |
+| 🔀 **Du wählst das Gehirn** | **Claude** (am stärksten), **DeepSeek** (Bruchteile eines Cents pro Nachricht), **Gemini** von Google (mit Gratis-Einstieg), **ChatGPT** von OpenAI, **Abliteration AI** und **Venice AI** (unzensiert) oder **jedes Ollama-Modell** (Qwen, Llama, Gemma, Mistral …) – auch LM Studio. Umschalten mit einem Klick, das Gedächtnis bleibt. |
 | 🧠 **Sie lernt dich kennen** | Nova merkt sich dauerhaft, was du ihr erzählst – Vorlieben, Projekte, Korrekturen. Du kannst ihr Gedächtnis jederzeit ansehen, ergänzen und löschen. |
 | 🎭 **Du erziehst sie** | Charakter, Tonfall, Name, Werte und Grenzen legst du selbst fest – per Klick oder in Textdateien. |
 | 🖥️ **Sie kann wirklich etwas tun** | Dateien, Internet, Programme, Maus und Tastatur, Bildschirm und Kamera – aber nur, was **du** erlaubst. |
@@ -75,7 +75,7 @@ arbeitet weiter, während du weg bist – und läuft auf Wunsch komplett kostenl
 <td><img src="docs/bilder/charakter.png" alt="Charakter und Profil"><br>
 <b>🎭 Charakter nach Wahl</b> – freundlich, sachlich, Butler im Jarvis-Stil, Mentor, bester Kumpel, kreativ oder Motivations-Coach – und danach frei anpassbar.</td>
 <td><img src="docs/bilder/gehirn.png" alt="Gehirn und Schlüssel"><br>
-<b>🔀 Sechs Gehirne</b> – Claude, DeepSeek, Gemini, ChatGPT, Abliteration AI oder Ollama. Modell und Denk-Tiefe frei wählbar, die Kosten immer im Blick.</td>
+<b>🔀 Sieben Gehirne</b> – Claude, DeepSeek, Gemini, ChatGPT, Abliteration AI, Venice AI oder Ollama. Modell und Denk-Tiefe frei wählbar, die Kosten immer im Blick.</td>
 </tr>
 <tr>
 <td><img src="docs/bilder/afk.png" alt="AFK-Modus"><br>
@@ -150,7 +150,7 @@ python -m assistant              # --app für das Fenster
 
 ---
 
-## Die Gehirne: Claude, DeepSeek, Gemini, ChatGPT, Abliteration AI, Ollama – und andere Modelle
+## Die Gehirne: Claude, DeepSeek, Gemini, ChatGPT, Abliteration AI, Venice AI, Ollama – und andere Modelle
 
 | Gehirn | Stärke | Kosten | Datenschutz | Einstellung |
 |---|---|---|---|---|
@@ -159,10 +159,12 @@ python -m assistant              # --app für das Fenster
 | **Gemini** (Google) | stark: 3.8 Flash, 3.5 Flash-Lite, Gemini 4 Hydrogen/Argon/Carbon | günstig, **Gratis-Einstieg** | Cloud | `aktiv = "gemini"` |
 | **ChatGPT** (OpenAI) | GPT-5.2, GPT-6 Sol, GPT-6 Luna | mittel | Cloud | `aktiv = "openai"` |
 | **Abliteration AI** | unzensiert, OpenAI-kompatibel (Schlüssel `ak_…`) | je nach Guthaben | Cloud | `aktiv = "abliteration"` |
+| **Venice AI** | unzensiert, sieht Bilder, nutzt Werkzeuge | je nach Guthaben | Cloud | `aktiv = "venice"` |
 | **Ollama** | je nach Modell und PC | **kostenlos** | **bleibt auf deinem PC** | `aktiv = "ollama"` |
 
-**Wechseln:** in der App auf **„Gehirn“** klicken, im Chat `/gehirn ollama|deepseek|gemini|openai|abliteration|claude`,
-oder in `config/settings.toml` unter `[provider]`.
+**Wechseln:** in der App auf **„Gehirn“** klicken, im Chat `/gehirn ollama|deepseek|gemini|openai|abliteration|venice|claude`,
+oder in `config/settings.toml` unter `[provider]`. (Venice-Schlüssel haben kein festes Präfix –
+in der App unter „Gehirn & Schlüssel" Venice auswählen und den Schlüssel dort einfügen.)
 
 **Andere Modelle:** Über Ollama läuft **jedes** lokale Modell – z. B. `qwen3.5:4b` (Standard,
 3–4 GB, sieht Bilder), `qwen3.5:9b`, `gemma4:e4b`, `llama`, `mistral`, `deepseek-r1` … (am

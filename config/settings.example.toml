@@ -96,6 +96,21 @@ temperature = 0.7
 
 
 # ----------------------------------------------------------------------------
+#  VENICE AI - unzensiert, OpenAI-kompatibel, SIEHT Bilder und nutzt Werkzeuge.
+#  Schluessel aus .env: VENICE_API_KEY (kein festes Praefix - am einfachsten in der App unter
+#  "Gehirn & Schluessel" eintragen). Schluessel/Guthaben: https://venice.ai/settings/api
+# ----------------------------------------------------------------------------
+[venice]
+# Modell (auch mit /modell): "venice-uncensored-1-2" (Standard), "gemma-4-uncensored" (guenstig),
+# "deepseek-v4-1-flash-uncensored" (riesiger Kontext). Venice aendert Modelle oft - zur Not auf
+# venice.ai/models nachsehen. Unzensiert - verantwortungsvoll und im Rahmen der Gesetze nutzen.
+model = "venice-uncensored-1-2"
+base_url = "https://api.venice.ai/api/v1"
+max_tokens = 16384
+temperature = 0.7
+
+
+# ----------------------------------------------------------------------------
 #  OLLAMA - kostenlos, die Modelle laufen auf deinem PC (kein Schluessel, kein Internet).
 #  Ollama installieren: https://ollama.com/download (oder: winget install Ollama.Ollama)
 #  Modelle herunterladen: in der App unter "Gehirn & Schluessel" oder mit /ollama laden <modell>

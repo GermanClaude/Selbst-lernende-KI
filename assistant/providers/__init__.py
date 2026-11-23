@@ -34,6 +34,10 @@ def build_provider(
         from .abliteration_provider import AbliterationProvider
 
         return AbliterationProvider(config, system_prompt, registry, tool_ctx, client=client)
+    if config.active_provider == "venice":
+        from .venice_provider import VeniceProvider
+
+        return VeniceProvider(config, system_prompt, registry, tool_ctx, client=client)
     if config.active_provider == "deepseek":
         from .deepseek_provider import DeepSeekProvider
 

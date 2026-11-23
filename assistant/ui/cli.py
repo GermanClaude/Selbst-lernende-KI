@@ -1185,6 +1185,14 @@ class CLI:
                 print(_c(f"Moeglich: {', '.join(PROVIDERS)} - z.B. /gehirn deepseek", YELLOW))
                 return
             if braucht_schluessel(wanted) and not key_of(self.config, wanted):
+                if not PROVIDERS[wanted].get("prefix"):
+                    # Kein festes Praefix (z.B. Venice): nicht in den Chat einfuegen (wuerde nicht
+                    # erkannt), sondern in der App unter "Gehirn & Schluessel" oder per .env setzen.
+                    env = PROVIDERS[wanted].get("env", "")
+                    print(_c(f"Fuer {PROVIDERS[wanted]['name']} fehlt der Schluessel. Trag ihn in der App unter "
+                             f"„Gehirn & Schluessel“ ein (dort {PROVIDERS[wanted]['name']} waehlen) oder "
+                             f"als {env} in die .env-Datei (zu bekommen unter {PROVIDERS[wanted]['url']}).", YELLOW))
+                    return
                 print(_c(f"Fuer {PROVIDERS[wanted]['name']} fehlt noch der Schluessel - fuege ihn einfach hier "
                          f"ein (zu bekommen unter {PROVIDERS[wanted]['url']}).", YELLOW))
                 return
@@ -1375,7 +1383,7 @@ class CLI:
     def _split_provider(self, args: list[str]) -> tuple[str, list[str]]:
         """'/modell deepseek pro' -> ('deepseek', ['pro']); ohne Gehirn-Name: das aktive."""
         if args and args[0].lower() in ("claude", "anthropic", "deepseek", "gemini", "google", "openai",
-                                        "chatgpt", "abliteration", "ablit", "ollama"):
+                                        "chatgpt", "abliteration", "ablit", "venice", "ollama"):
             low = args[0].lower()
             return {"anthropic": "claude", "google": "gemini", "chatgpt": "openai",
                     "ablit": "abliteration"}.get(low, low), args[1:]
@@ -2198,16 +2206,36 @@ class CLI:
             return False
         return self._offer_update(info, ask=True)
 
+    def _changelog_text(self) -> str:
+        """Der Text von CHANGELOG.md (aus dem Programmordner, sonst aus der .exe)."""
+        from ..config import bundle_dir
+
+        for p in (self.config.project_root / "CHANGELOG.md", bundle_dir() / "CHANGELOG.md"):
+            try:
+                return p.read_text(encoding="utf-8")
+            except OSError:
+                continue
+        return ""
+
     def _print_versions(self) -> None:
+        from ..updater import changelog_summary
+
+        text = self._changelog_text()
         print(_c(f"\nAktuelle Version: {__version__}", BOLD))
+        jetzt = changelog_summary(text, __version__)
+        if jetzt:
+            print(_c(f"  Neu in dieser Version: {jetzt}", GREY))
         backups = self.updater.backups()
         if not backups:
             print(_c("Noch keine alten Versionen gesichert (das passiert bei jedem Update).", GREY))
             return
-        print("Gesicherte Versionen (neueste zuerst):")
+        print("Gesicherte Versionen (neueste zuerst) - und was sie jeweils gebracht haben:")
         for i, b in enumerate(backups, start=1):
             stamp = b.name.split("_", 1)[-1].replace("_", " ")
             print(f"  {i}) Version {b.version}  - gesichert {stamp}")
+            was = changelog_summary(text, b.version)
+            if was:
+                print(_c(f"      Neu in {b.version}: {was}", GREY))
         print(_c("Zurueck zu einer davon: /zurueck <Nr>", GREY))
 
     def _restore_command(self, args: list[str]) -> bool:
