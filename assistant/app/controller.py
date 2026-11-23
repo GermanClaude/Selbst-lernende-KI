@@ -65,6 +65,8 @@ COMMANDS = [
     ("/tutorial", "Nova zeigt dir, was sie kann"),
     ("/stuetzraeder", "Stuetzraeder an/aus/alles (Vollzugriff)"),
     ("/stimme", "Stimme waehlen: gratis oder realistisch"),
+    ("/transkript start system", "Ton lokal mitschreiben (Spiele/Calls) - bis /transkript stop"),
+    ("/protokoll an", "Aktivitaets-Protokoll: welche Apps/Fenster (kein Keylogger)"),
     ("/aussehen vorlage hacker", "Design-Vorlage (hacker, mitternacht, dracula, retro, pastell, sonne)"),
     ("/aussehen zuruecksetzen", "App wieder im Original-Aussehen"),
     ("/charakter", "Charakter anzeigen oder waehlen"),

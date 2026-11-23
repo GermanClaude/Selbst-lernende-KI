@@ -591,6 +591,8 @@ stoppt die Steuerung sofort.
 | `/sprache einrichten` | Spracheingabe installieren |
 | `/sprache vorlesen` | Antworten vorlesen an/aus |
 | `/stimme [frei\|openai\|elevenlabs]` | Vorlese-Stimme wählen: gratis oder realistisch (kostet Geld) |
+| `/transkript [start system\|start mikrofon\|stop\|name N Name\|zusammenfassung]` | Ton **lokal** mitschreiben/transkribieren (keine Tokens), bis Stopp |
+| `/protokoll [an\|aus\|zeigen]` | Aktivitäts-Protokoll: welche Apps/Fenster du nutzt (kein Keylogger) |
 | `/jarvis` | Jarvis-Modus: einfach reden, live (zurück: „Chat-Modus“ sagen) |
 | `/afk [Betrag] [Auftrag]` | AFK-Modus: Nova arbeitet allein weiter, z. B. `/afk 0,30€ …` (zurück: Nachricht bzw. Strg+C) |
 | `/modell [name]` | Modell zeigen bzw. wählen (z.B. `/modell sonnet`, `/modell deepseek pro`) |

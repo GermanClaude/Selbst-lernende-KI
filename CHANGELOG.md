@@ -4,6 +4,28 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.26.0 – 2026-11-23
+
+**Mitschnitt/Transkription und ein Aktivitäts-Protokoll**
+- **Transkription auf Knopfdruck:** Nova schreibt Ton mit und transkribiert ihn **lokal** (mit
+  Whisper) – das **kostet keine Tokens**. Quelle wählbar: dein **Mikrofon** oder das **System-Audio**
+  (alles, was der PC ausgibt – Spiele, Discord/Calls, Videos, Aufnahmen). Läuft beliebig lange, bis du
+  stoppst, und schreibt laufend in eine Transkript-Datei (im Arbeitsordner unter `mitschnitte/`).
+  Starten: `/transkript start system` (oder `… mikrofon`), stoppen: `/transkript stop`. Auf Wunsch
+  fasst Nova das Gespräch zusammen (`/transkript zusammenfassung`). Du kannst auch einfach sagen
+  „transkribier das" – Nova macht es dann.
+- **Mehrere Sprecher & Namen (ehrlich: „so gut es geht"):** Sprecher auseinanderzuhalten klappt
+  zuverlässig nur mit einem Zusatzmodell (`pip install resemblyzer`); ist es nicht da, transkribiert
+  Nova ohne Sprecher-Aufteilung und sagt dir das. Erkannten Sprechern kannst du Namen geben
+  (`/transkript name 1 Aria`). Das **Geschlecht** wird – wenn möglich – nur **grob aus der Tonhöhe
+  geschätzt** (mit „?" markiert), nie als sicher behauptet.
+- **Aktivitäts-Protokoll (optional):** `/protokoll an` hält fest, **welche Programme/Fenster** du
+  gerade nutzt – wie ein Taskmanager-Verlauf (`protokolle/`). `/protokoll zeigen` gibt eine Übersicht.
+- **Bewusst NICHT gebaut: ein Keylogger.** Das Mitschreiben, *was* getippt oder in Chats (z. B.
+  Discord) geschrieben wird, baue ich nicht – das würde auch fremde private Nachrichten und
+  Passwörter abgreifen. Gesprochene Gespräche kannst du mit dem Mitschnitt (und Zustimmung der
+  Beteiligten) transkribieren.
+
 ## 0.25.1 – 2026-11-23
 
 **NanoGPT: Google Pay bestätigt**

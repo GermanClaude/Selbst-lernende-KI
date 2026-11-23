@@ -25,7 +25,10 @@ PC-Steuerung, Agenten …) und fragt vor riskanten Aktionen nach (`assistant/per
   `git remote set-url --add --push origin https://github.com/GermanClaude/Selbst-lernende-KI.git`
   und `git remote set-url --add --push origin https://github.com/GermanClaude/Nova-Backup.git`
   (danach `git push origin --tags` fuer die Tags). So geht nie Fortschritt verloren, auch wenn ein Chat verschwindet.
-- Zuletzt dazugekommen: **0.25.0** NanoGPT (unzensiert, OpenAI-kompatibel, sieht Bilder, Zahlung
+- Zuletzt dazugekommen: **0.26.0** Mitschnitt/Transkription (`mitschnitt.py`, lokal/token-frei,
+  System-Audio, Sprecher best effort) + Aktivitaets-Protokoll (`protokoll.py`, kein Keylogger);
+  Befehle `/transkript` und `/protokoll`, Werkzeug `transkription`. Tests `test_mitschnitt`,
+  `test_protokoll`. Davor: **0.25.1 / 0.25.0** NanoGPT (unzensiert, OpenAI-kompatibel, sieht Bilder, Zahlung
   auch per Karte - `providers/nanogpt_provider.py`, Modell-IDs mit "/"; Tests
   `test_provider_nanogpt`). Hinweis: kein Anbieter bietet PayPal; Google Pay nur evtl. im
   Stripe-Checkout. Davor: **0.24.0** Venice AI (zweites unzensiertes Gehirn, sieht selbst Bilder;
@@ -86,6 +89,8 @@ verwenden** – darin stehen Gedächtnis, Profil und Dateipfade.
 | Gedächtnis, Persönlichkeit | `memory.py`, `personality.py`, `profil.py`, `config/werte.md`, `persona.md` |
 | Aussehen / Design | `aussehen.py` (Design-Vorlagen `THEMES`, Hintergrundbild, eigenes CSS – alles über `/custom.css` = `generated_css()` + eigenes CSS), `tools/aussehen.py`. Die Design-Dateien (`config/app-anpassung.*`, `config/app-hintergrund.*`) stehen in `updater._is_protected` → Updates fassen sie nie an. |
 | Sprache / Stimme | `voice.py` (Zuhören: VoiceCapture/Whisper/Google; Vorlesen: `Speaker` = pyttsx3 gratis, `CloudSpeaker` = OpenAI/ElevenLabs realistisch; `build_speaker()` waehlt + faellt auf frei zurueck), `live.py` (Jarvis-Loop, LocalVoice/WindowVoice), `tools/stimme.py` (Werkzeug `stimme_waehlen`), Befehl `/stimme` (`cli.set_stimme`). **OpenAI-TTS `/v1/audio/speech` ist zum 6.1.2027 abgekuendigt** (Nachfolger: Realtime-API) – Modell-Konstanten in `voice.py`, Stand 20.11.2026, regelmaessig pruefen. |
+| Mitschnitt / Transkription | `mitschnitt.py` (lokal mit faster-whisper, Mikrofon ODER System-Audio via sounddevice WASAPI-Loopback; laeuft bis stop, schreibt `workspace/mitschnitte/*.md`; Sprecher-Trennung best effort via `resemblyzer` (sonst 1 Sprecher), Geschlecht grob aus Tonhoehe `geschlecht_aus_tonhoehe`/`_f0_schaetzen`; Zusammenfassung on demand). `tools/mitschnitt.py` (Werkzeug `transkription`), Befehl `/transkript`, CLI-Callbacks in `tool_ctx.extra["mitschnitt_*"]`. Reine Logik ist getestet; Audio/Whisper lazy. |
+| Aktivitaets-Protokoll | `protokoll.py` (welche Apps/Fenster aktiv sind, via ctypes `GetForegroundWindow`; schreibt bei Wechsel nach `workspace/protokolle/*.log`), Befehl `/protokoll`. **BEWUSST kein Keylogger** - keine Tastatur-/Nachrichten-Mitschrift. |
 | AFK-Modus | `abwesend.py` (Schleife, Rundenprompt – vorsichtig `_RULES_VORSICHTIG` oder autonom `_RULES_AUTONOM` je `AfkSession.autonom`), `tools/abwesenheit.py`. **AFK-Vollmacht:** `permissions.afk_autonomie_moeglich()` (Setting `afk_autonom` + Stützräder „aus"/„alles") und `afk_handlungsfrei()` (= im laufenden AFK) steuern, ob `check/check_shell/resolve_path/check_path_write` im AFK handeln lassen statt nur Vorschlag. Autostart bleibt im AFK immer gesperrt (`confirm_always` lehnt bei `away` ab). AFK endet nur durch echte Nachricht/Stopp – **nicht** durch Maus/Tastatur (kein Aktivitäts-Wächter im Code). |
 | Live-Sehen | `assistant/sehen/` (Auge, Dienst, OCR, Fenster), `tools/sehen.py` |
 | Handy als Kamera | `assistant/kamera/` (WebRTC, Signal-Server, QR, Firewall) |

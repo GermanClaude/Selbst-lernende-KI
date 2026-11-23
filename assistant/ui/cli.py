@@ -10,6 +10,8 @@ Sonderbefehle (mit '/' beginnen):
   /sprache einrichten - Spracheingabe installieren
   /sprache vorlesen   - Antworten vorlesen an/aus
   /stimme [frei|openai|elevenlabs] - Stimme waehlen: gratis oder realistisch (kostet Geld)
+  /transkript [start system|start mikrofon|stop|name N Name|zusammenfassung] - Ton lokal mitschreiben
+  /protokoll [an|aus|zeigen] - Aktivitaets-Protokoll: welche Apps/Fenster (kein Keylogger)
   /status             - aktuelle Einstellungen & Sicherheitslage zeigen
   /gedaechtnis        - zeigen, was die KI gelernt hat
   /kosten             - Token-Verbrauch & geschaetzte Kosten dieser Sitzung
@@ -240,6 +242,11 @@ class CLI:
         self.tool_ctx.extra["spiel_vorschlag"] = self.spiel.vorschlagen
         self.tool_ctx.extra["set_stimme"] = self.set_stimme  # Werkzeug stimme_waehlen nutzt das
         self.voice_out = VoiceOutput(config.voice.speak_responses, config.voice, config.stimme_keys)
+        self.mitschnitt = None   # Transkription/Mitschnitt (lazy)
+        self.protokoll = None    # Aktivitaets-Protokoll (lazy)
+        self.tool_ctx.extra["mitschnitt_start"] = self._mitschnitt_start
+        self.tool_ctx.extra["mitschnitt_stop"] = lambda: self._mitschnitt_obj().stop() if self.mitschnitt else {"ok": False, "error": "Es laeuft kein Mitschnitt."}
+        self.tool_ctx.extra["mitschnitt_status"] = self._mitschnitt_status
         self.voice_in = VoiceInput(config.voice.enabled)
         self.voice_mode = config.voice.enabled and self.voice_in.available()
         self.voice_capture = VoiceCapture(config.voice)
@@ -1846,6 +1853,10 @@ class CLI:
             self._voice_command(cmd.split()[1:])
         elif base in ("/stimme", "/voice"):
             self._stimme_command(cmd.split()[1:])
+        elif base in ("/transkript", "/mitschnitt", "/transkription"):
+            self._mitschnitt_command(cmd.split()[1:])
+        elif base in ("/protokoll", "/aktivitaet"):
+            self._protokoll_command(cmd.split()[1:])
         elif base == "/update":
             return self._update_command()
         elif base in ("/versionen", "/version"):
@@ -2053,6 +2064,101 @@ class CLI:
                          "(kostenlos: https://elevenlabs.io).", YELLOW))
         else:
             print(_c(f"Stimme umgestellt auf: {e['name']}. Zum Anhoeren: /stimme test", GREEN))
+
+    # -- Mitschnitt / Transkription -------------------------------------------
+    def _mitschnitt_obj(self):
+        from ..mitschnitt import Mitschnitt
+
+        if self.mitschnitt is None:
+            ordner = self.config.workspace_path / "mitschnitte"
+            self.mitschnitt = Mitschnitt(ordner, sprache=self.config.voice.sprache or "de")
+        return self.mitschnitt
+
+    def _mitschnitt_start(self, quelle: str = "system") -> dict:
+        return self._mitschnitt_obj().start(quelle)
+
+    def _mitschnitt_status(self) -> dict:
+        if self.mitschnitt is None:
+            return {"laeuft": False}
+        st = self.mitschnitt.status
+        return {"laeuft": st.laeuft, "quelle": st.quelle, "minuten": st.minuten(),
+                "segmente": st.segmente, "datei": st.datei, "letzte": st.letzte, "fehler": st.fehler}
+
+    def _mitschnitt_command(self, args: list[str]) -> None:
+        from ..mitschnitt import RECHTS_HINWEIS, diarisierung_moeglich
+
+        sub = (args[0].lower() if args else "")
+        m = self._mitschnitt_obj()
+        if sub in ("start", "an", "system", "mikrofon", "mik"):
+            quelle = "mikrofon" if sub in ("mikrofon", "mik") else ("system" if sub != "start" else
+                     (args[1].lower() if args[1:] else "system"))
+            r = m.start("mikrofon" if quelle.startswith("mik") else "system")
+            if not r.get("ok"):
+                print(_c(r.get("error", "Mitschnitt nicht gestartet."), YELLOW))
+                return
+            print(_c(f"Mitschnitt laeuft ({r['quelle']}) - lokal transkribiert, bis /transkript stop. "
+                     f"Datei: {r['datei']}", GREEN))
+            print(_c(RECHTS_HINWEIS, GREY))
+            if not diarisierung_moeglich():
+                print(_c("Mehrere Sprecher auseinanderhalten geht hier noch nicht "
+                         "(pip install resemblyzer). Ich transkribiere ohne Sprecher-Aufteilung.", GREY))
+            return
+        if sub in ("stop", "aus", "ende"):
+            r = m.stop()
+            print(_c(f"Mitschnitt gestoppt: {r['segmente']} Abschnitte, {r['minuten']} Min. "
+                     f"Datei: {r['datei']}", GREEN))
+            return
+        if sub in ("name", "benennen") and args[2:]:
+            m.benenne(args[1], " ".join(args[2:]))
+            print(_c(f"Sprecher '{args[1]}' heisst jetzt '{' '.join(args[2:])}'.", GREEN))
+            return
+        if sub in ("zusammenfassung", "fassung", "summary"):
+            print(_c("(fasse das Transkript zusammen - kostet kurz Token …)", GREY))
+            print(_c(m.zusammenfassen(self.brain.provider.ask_once), CYAN))
+            return
+        st = self._mitschnitt_status()
+        if st.get("laeuft"):
+            print(_c(f"Mitschnitt laeuft ({st['quelle']}, {st['minuten']} Min., {st['segmente']} Abschnitte). "
+                     f"Letztes: {st.get('letzte','')[:120]}", CYAN))
+            print(_c("Stoppen: /transkript stop | Sprecher benennen: /transkript name 1 Aria | "
+                     "Zusammenfassung: /transkript zusammenfassung", GREY))
+        else:
+            print(_c("Kein Mitschnitt aktiv. Start: /transkript start system (System-Ton: Spiele/Calls) "
+                     "oder /transkript start mikrofon. Transkribiert lokal (keine Token).", CYAN))
+
+    # -- Aktivitaets-Protokoll (welche Apps/Fenster - KEIN Keylogger) --------
+    def _protokoll_obj(self):
+        from ..protokoll import Protokoll
+
+        if self.protokoll is None:
+            self.protokoll = Protokoll(self.config.workspace_path / "protokolle")
+        return self.protokoll
+
+    def _protokoll_command(self, args: list[str]) -> None:
+        from ..protokoll import KEIN_KEYLOGGER, protokoll_text, zusammengefasst
+
+        sub = (args[0].lower() if args else "")
+        p = self._protokoll_obj()
+        if sub in ("an", "start"):
+            r = p.start()
+            print(_c(r.get("error") if not r.get("ok") else
+                     f"Aktivitaets-Protokoll laeuft. Datei: {r['datei']}", GREEN if r.get("ok") else YELLOW))
+            if r.get("ok"):
+                print(_c(KEIN_KEYLOGGER, GREY))
+            return
+        if sub in ("aus", "stop"):
+            r = p.stop()
+            print(_c(f"Protokoll gestoppt: {r['eintraege']} Eintraege. Datei: {r['datei']}", GREEN))
+            return
+        if sub in ("zeigen", "status"):
+            top = zusammengefasst(p.schnappschuesse)[:8]
+            print(_c(f"Protokoll {'laeuft' if p.status.laeuft else 'aus'}, {p.status.eintraege} Eintraege.", CYAN))
+            for name, n in top:
+                print(_c(f"  {n:>4}x  {name}", GREY))
+            return
+        print(_c("Aktivitaets-Protokoll (welche Programme/Fenster du nutzt - KEIN Mitschreiben von "
+                 "Tastatur/Nachrichten). An: /protokoll an | Aus: /protokoll aus | Uebersicht: /protokoll zeigen",
+                 CYAN))
 
     # -- Automatische Starts ------------------------------------------------
     def _autostart_command(self, args: list[str]) -> None:

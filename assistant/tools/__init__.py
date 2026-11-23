@@ -7,8 +7,8 @@ nutzen kann.
 """
 from __future__ import annotations
 
-from . import (abwesenheit, agents, aussehen, bild_tools, computer, filesystem, gehirn, memory_tools, sehen,
-               shell, sicherheit, spiel, stimme, system_info, web)
+from . import (abwesenheit, agents, aussehen, bild_tools, computer, filesystem, gehirn, memory_tools,
+               mitschnitt, sehen, shell, sicherheit, spiel, stimme, system_info, web)
 from .base import Tool, ToolContext, ToolRegistry
 
 __all__ = ["READ_ONLY_TOOLS", "Tool", "ToolContext", "ToolRegistry", "build_registry", "subset"]
@@ -33,6 +33,7 @@ def build_registry(include_computer: bool = True, include_agents: bool = True) -
     spiel.register(registry)
     sicherheit.register(registry)
     stimme.register(registry)
+    mitschnitt.register(registry)
     return registry
 
 
