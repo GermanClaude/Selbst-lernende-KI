@@ -118,6 +118,7 @@ class SpielSteuerung:
     def warnung(self) -> str:
         gehirn = {"claude": "Claude von Anthropic", "deepseek": "DeepSeek", "gemini": "Gemini von Google",
                   "openai": "ChatGPT von OpenAI", "abliteration": "Abliteration AI", "venice": "Venice AI",
+                  "nanogpt": "NanoGPT",
                   "ollama": "Ollama auf deinem PC"}.get(self.config.active_provider, self.config.active_provider)
         kosten = (" Mit Ollama kostet es nichts." if self.config.kostenlos else
                   f" Das kostet Geld \u2013 h\u00f6chstens {_eur(self.einst.max_euro)} \u20ac pro Sitzung, nachts "

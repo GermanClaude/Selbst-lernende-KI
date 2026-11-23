@@ -61,6 +61,13 @@ PROVIDERS = {
         "url": "https://venice.ai/settings/api",
         "prefix": "",  # kein festes Praefix -> Anbieter in der App/beim /gehirn ausdruecklich waehlen
     },
+    "nanogpt": {
+        "name": "NanoGPT",
+        "env": "NANOGPT_API_KEY",
+        "info": "unzensiert, sieht Bilder, Zahlung auch per Karte (kein Krypto-Zwang)",
+        "url": "https://nano-gpt.com/api",
+        "prefix": "",  # kein festes Praefix -> Anbieter ausdruecklich waehlen
+    },
     "ollama": {
         "name": "Ollama (kostenlos, auf deinem PC)",
         "env": "",
@@ -131,6 +138,8 @@ def key_of(config, provider: str) -> str | None:
         return config.abliteration_api_key
     if provider == "venice":
         return config.venice_api_key
+    if provider == "nanogpt":
+        return config.nanogpt_api_key
     return config.deepseek_api_key if provider == "deepseek" else config.anthropic_api_key
 
 
@@ -170,7 +179,8 @@ def classify(exc: Exception, provider: str) -> tuple[str, str]:
                  "gemini": "aistudio.google.com unter \u201eBilling\u201c",
                  "openai": "platform.openai.com unter \u201eBilling\u201c",
                  "abliteration": "abliteration.ai (Guthaben aufladen)",
-                 "venice": "venice.ai (Guthaben/VCU aufladen)"}.get(
+                 "venice": "venice.ai (Guthaben/VCU aufladen)",
+                 "nanogpt": "nano-gpt.com (Guthaben per Karte oder Krypto aufladen)"}.get(
             provider, "console.anthropic.com unter \u201eBilling\u201c")
         return "balance", (f"Der Schluessel stimmt, aber dein {name}-Guthaben ist leer. Lade auf {where} "
                            "etwas auf - dann geht es sofort weiter.")
@@ -252,6 +262,13 @@ def test_key(config, provider: str, key: str) -> tuple[bool, str, str]:
             client.chat.completions.create(model=config.venice.model, max_tokens=1,
                                            messages=[{"role": "user", "content": "Hi"}],
                                            extra_body={"venice_parameters": {"include_venice_system_prompt": False}})
+        elif provider == "nanogpt":
+            from openai import OpenAI, Timeout
+
+            client = OpenAI(api_key=key, base_url=config.nanogpt.base_url,
+                            timeout=Timeout(25.0, connect=10.0), max_retries=0)
+            client.chat.completions.create(model=config.nanogpt.model, max_tokens=1,
+                                           messages=[{"role": "user", "content": "Hi"}])
         else:
             import anthropic
 
@@ -280,6 +297,8 @@ def save_key(config, provider: str, key: str) -> Path:
         config.abliteration_api_key = key
     elif provider == "venice":
         config.venice_api_key = key
+    elif provider == "nanogpt":
+        config.nanogpt_api_key = key
     else:
         config.anthropic_api_key = key
     return path

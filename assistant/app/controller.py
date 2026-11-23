@@ -228,6 +228,7 @@ class AppController(CLI):
             "provider_name": schoen({"deepseek": "DeepSeek", "claude": "Claude (Anthropic)",
                                      "gemini": "Gemini (Google)", "openai": "ChatGPT (OpenAI)",
                                      "abliteration": "Abliteration AI", "venice": "Venice AI",
+                                     "nanogpt": "NanoGPT",
                                      "ollama": "Ollama (kostenlos)"}.get(
                 self.config.active_provider, self.config.active_provider)),
             "update": {"new": self._pending_update.new} if self._pending_update else None,

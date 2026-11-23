@@ -104,6 +104,21 @@ VENICE_MODELLE = [
      "preis": (0.33, 0.033, 1.32), "sieht_bilder": True, "denkt": False},
 ]
 
+# NanoGPT: unzensierte Modelle, OpenAI-kompatibel, sieht Bilder, nutzt Werkzeuge. Zahlung auch per
+# Karte (Stripe) - kein Krypto-Zwang. Modell-IDs enthalten "/". Preis je Modell unterschiedlich
+# (siehe nano-gpt.com/models) - Schaetzung. Stand 23.11.2026, regelmaessig pruefen.
+NANOGPT_MODELLE = [
+    {"id": "z-ai/glm-5.3-uncensored", "name": "GLM 5.3 Uncensored", "kurz": "glm",
+     "info": "unzensiert, sieht Bilder, nutzt Werkzeuge - der Standard", "tempo": "mittel",
+     "preis": (0.5, 0.05, 1.5), "sieht_bilder": True, "denkt": False},
+    {"id": "z-ai/glm-5.3-flash-uncensored", "name": "GLM 5.3 Flash Uncensored", "kurz": "glmflash",
+     "info": "unzensiert und schneller/guenstiger", "tempo": "schnell",
+     "preis": (0.3, 0.03, 0.9), "sieht_bilder": True, "denkt": False},
+    {"id": "abliteration-ai/abliterated-model-large-v2", "name": "Abliterated Large v2", "kurz": "ablit2",
+     "info": "grosses unzensiertes Modell (ueber NanoGPT)", "tempo": "mittel",
+     "preis": (1.0, 0.1, 3.0), "sieht_bilder": True, "denkt": False},
+]
+
 # DeepSeek-Modell, das Bilder ansieht: beschreibt sie fuer Modelle ohne Augen (V4 Pro).
 DEEPSEEK_SEHMODELL = "deepseek-flash"
 
@@ -121,7 +136,7 @@ OLLAMA_MODELLE = _ollama_modelle()
 
 MODELLE = {"claude": CLAUDE_MODELLE, "deepseek": DEEPSEEK_MODELLE, "gemini": GEMINI_MODELLE,
            "openai": OPENAI_MODELLE, "abliteration": ABLITERATION_MODELLE, "venice": VENICE_MODELLE,
-           "ollama": OLLAMA_MODELLE}
+           "nanogpt": NANOGPT_MODELLE, "ollama": OLLAMA_MODELLE}
 
 # Denk-Tiefen: (Wert in settings.toml, Name fuer Menschen, Erklaerung)
 DENKTIEFEN = {
@@ -157,6 +172,9 @@ DENKTIEFEN = {
         ("aus", "schnell", "antwortet direkt - dieses Modell denkt nicht extra nach"),
     ],
     "venice": [
+        ("aus", "schnell", "antwortet direkt - dieses Modell denkt nicht extra nach"),
+    ],
+    "nanogpt": [
         ("aus", "schnell", "antwortet direkt - dieses Modell denkt nicht extra nach"),
     ],
 }
@@ -196,8 +214,8 @@ def sieht_bilder(provider: str, model_id: str) -> bool:
     info = modell_info(provider, wanted)
     if info is not None:
         return bool(info.get("sieht_bilder", False))
-    # Unbekannte Claude-, Gemini-, OpenAI- und Venice-Modelle: ja. Ollama: fragt der Provider Ollama selbst.
-    return provider in ("claude", "gemini", "openai", "venice")
+    # Unbekannte Claude-, Gemini-, OpenAI-, Venice- und NanoGPT-Modelle: ja. Ollama: fragt der Provider selbst.
+    return provider in ("claude", "gemini", "openai", "venice", "nanogpt")
 
 
 def modell_name(provider: str, model_id: str) -> str:
@@ -221,6 +239,8 @@ def aktuelle_denktiefe(config, provider: str | None = None) -> str:
         return config.abliteration.denken
     if provider == "venice":
         return config.venice.denken
+    if provider == "nanogpt":
+        return config.nanogpt.denken
     return config.deepseek.denken if provider == "deepseek" else config.claude.effort
 
 
@@ -238,6 +258,8 @@ def _section(config, provider: str):
         return config.abliteration, "denken"
     if provider == "venice":
         return config.venice, "denken"
+    if provider == "nanogpt":
+        return config.nanogpt, "denken"
     return config.claude, "effort"
 
 
@@ -442,6 +464,26 @@ def normalisiere_venice(venice) -> None:
         venice.temperature = 0.7
 
 
+def normalisiere_nanogpt(ng) -> None:
+    """Unsinnige Werte aus [nanogpt] nicht abstuerzen lassen (Modell-IDs duerfen '/' enthalten)."""
+    from .config import DEFAULT_NANOGPT_MODEL, NANOGPT_BASE_URL
+
+    if not isinstance(ng.model, str) or not ng.model.strip():
+        ng.model = DEFAULT_NANOGPT_MODEL
+    ng.model = ng.model.strip()
+    ng.denken = "aus"
+    if not isinstance(ng.base_url, str) or not ng.base_url.startswith("https://"):
+        ng.base_url = NANOGPT_BASE_URL
+    try:
+        ng.max_tokens = min(65536, max(512, int(ng.max_tokens)))
+    except (TypeError, ValueError):
+        ng.max_tokens = 16384
+    try:
+        ng.temperature = min(2.0, max(0.0, float(ng.temperature)))
+    except (TypeError, ValueError):
+        ng.temperature = 0.7
+
+
 def _deepseek_stufe(wert) -> str | None:
     wert = str(wert or "").strip().lower()
     if wert in ("aus", "low", "high", "max"):
@@ -530,7 +572,7 @@ ALTE_OPENAI_NAMEN = {
 
 def fremdes_modell(wanted: str) -> str | None:
     """Gehoert der Name zu einem anderen Gehirn (Claude, DeepSeek, Gemini, OpenAI, Abliteration)? -> dieses (sonst None)."""
-    for other in ("claude", "deepseek", "gemini", "openai", "abliteration", "venice"):
+    for other in ("claude", "deepseek", "gemini", "openai", "abliteration", "venice", "nanogpt"):
         if _finde_modell(other, wanted):
             return other
     return None
@@ -623,7 +665,8 @@ def waehle(config, provider: str | None = None, model: str | None = None,
 
 
 _GEHIRN_NAME = {"claude": "Claude", "deepseek": "DeepSeek", "gemini": "Gemini", "openai": "ChatGPT",
-                "abliteration": "Abliteration AI", "venice": "Venice AI", "ollama": "Ollama"}
+                "abliteration": "Abliteration AI", "venice": "Venice AI", "nanogpt": "NanoGPT",
+                "ollama": "Ollama"}
 
 
 def _ollama_fehlt(config, modell: str, http=None) -> str:

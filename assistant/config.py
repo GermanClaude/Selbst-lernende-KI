@@ -33,6 +33,8 @@ DEFAULT_ABLITERATION_MODEL = "abliterated-model"
 ABLITERATION_BASE_URL = "https://api.abliteration.ai/v1"
 DEFAULT_VENICE_MODEL = "venice-uncensored-1-2"
 VENICE_BASE_URL = "https://api.venice.ai/api/v1"
+DEFAULT_NANOGPT_MODEL = "z-ai/glm-5.3-uncensored"
+NANOGPT_BASE_URL = "https://api.nano-gpt.com/api/v1"
 DEFAULT_OLLAMA_MODEL = "qwen3.5:4b"
 DEFAULT_OLLAMA_ADRESSE = "http://localhost:11434"
 
@@ -172,6 +174,18 @@ class VeniceSettings:
 
 
 @dataclass
+class NanogptSettings:
+    # NanoGPT (unzensierte Modelle, OpenAI-kompatibel, sieht Bilder, nutzt Werkzeuge). Zahlung per
+    # Karte (Stripe, USD/EUR/GBP) ODER Krypto - KEIN Krypto-Zwang. Schluessel von https://nano-gpt.com
+    # (kein festes Praefix - in der App unter "Gehirn & Schluessel" eintragen). Eigene Adresse.
+    model: str = DEFAULT_NANOGPT_MODEL
+    base_url: str = NANOGPT_BASE_URL
+    max_tokens: int = 16384
+    temperature: float = 0.7
+    denken: str = "aus"
+
+
+@dataclass
 class OllamaSettings:
     # Ollama: kostenlose Modelle auf deinem PC (https://ollama.com). Kein Schluessel noetig.
     # Adresse des Ollama-Servers (nur http/https). ".../v1" = OpenAI-kompatibler Server (z.B. LM Studio).
@@ -246,6 +260,10 @@ class PriceSettings:
     venice_input: float = 0.20
     venice_cache_hit: float = 0.02
     venice_output: float = 0.90
+    # NanoGPT: Preis je Modell unterschiedlich (siehe nano-gpt.com/models) - grobe Schaetzung.
+    nanogpt_input: float = 0.50
+    nanogpt_cache_hit: float = 0.05
+    nanogpt_output: float = 1.50
     usd_zu_eur: float = 0.92
 
     def for_provider(self, provider: str) -> tuple[float, float, float]:
@@ -262,6 +280,8 @@ class PriceSettings:
             return (self.abliteration_input, self.abliteration_cache_hit, self.abliteration_output)
         if provider == "venice":
             return (self.venice_input, self.venice_cache_hit, self.venice_output)
+        if provider == "nanogpt":
+            return (self.nanogpt_input, self.nanogpt_cache_hit, self.nanogpt_output)
         return (self.claude_input, self.claude_cache_hit, self.claude_output)
 
 
@@ -478,6 +498,8 @@ class Config:
     abliteration_api_key: str | None = None
     venice: VeniceSettings = field(default_factory=VeniceSettings)
     venice_api_key: str | None = None
+    nanogpt: NanogptSettings = field(default_factory=NanogptSettings)
+    nanogpt_api_key: str | None = None
     elevenlabs_api_key: str | None = None  # nur fuer die realistische ElevenLabs-Stimme
 
     # -- Komfort-Eigenschaften ---------------------------------------------
@@ -503,6 +525,8 @@ class Config:
             return self.abliteration.model
         if provider == "venice":
             return self.venice.model
+        if provider == "nanogpt":
+            return self.nanogpt.model
         return self.claude.model
 
     @property
@@ -518,6 +542,8 @@ class Config:
             return self.abliteration_api_key
         if self.active_provider == "venice":
             return self.venice_api_key
+        if self.active_provider == "nanogpt":
+            return self.nanogpt_api_key
         return self.deepseek_api_key if self.active_provider == "deepseek" else self.anthropic_api_key
 
     @property
@@ -718,6 +744,7 @@ def load_config(project_root: Path | None = None) -> Config:
     openai = _merge(OpenAISettings(), raw.get("openai", {}))
     abliteration = _merge(AbliterationSettings(), raw.get("abliteration", {}))
     venice = _merge(VeniceSettings(), raw.get("venice", {}))
+    nanogpt = _merge(NanogptSettings(), raw.get("nanogpt", {}))
     if os.environ.get("KI_MODEL"):
         wanted = (provider.aktiv or "claude").strip().lower() if isinstance(provider.aktiv, str) else "claude"
         if wanted == "deepseek":
@@ -732,11 +759,14 @@ def load_config(project_root: Path | None = None) -> Config:
             abliteration.model = os.environ["KI_MODEL"]
         elif wanted == "venice":
             venice.model = os.environ["KI_MODEL"]
+        elif wanted == "nanogpt":
+            nanogpt.model = os.environ["KI_MODEL"]
         else:
             claude.model = os.environ["KI_MODEL"]
     # Abgeschaltete DeepSeek-Namen (deepseek-chat/-reasoner) auf die aktuellen umstellen.
     from .modelle import (normalisiere_abliteration, normalisiere_claude, normalisiere_deepseek,
-                          normalisiere_gemini, normalisiere_openai, normalisiere_ollama, normalisiere_venice)
+                          normalisiere_gemini, normalisiere_nanogpt, normalisiere_openai, normalisiere_ollama,
+                          normalisiere_venice)
 
     normalisiere_deepseek(deepseek, denken_gesetzt="denken" in raw.get("deepseek", {}))
     normalisiere_claude(claude)
@@ -745,6 +775,7 @@ def load_config(project_root: Path | None = None) -> Config:
     normalisiere_openai(openai)
     normalisiere_abliteration(abliteration)
     normalisiere_venice(venice)
+    normalisiere_nanogpt(nanogpt)
 
     cfg = Config(
         provider=provider,
@@ -782,6 +813,8 @@ def load_config(project_root: Path | None = None) -> Config:
         abliteration_api_key=os.environ.get("ABLITERATION_API_KEY") or None,
         venice=venice,
         venice_api_key=os.environ.get("VENICE_API_KEY") or None,
+        nanogpt=nanogpt,
+        nanogpt_api_key=os.environ.get("NANOGPT_API_KEY") or None,
         elevenlabs_api_key=os.environ.get("ELEVENLABS_API_KEY") or None,
     )
     # Eingestelltes Gehirn ohne Schluessel, das andere hat einen (z.B. nur DEEPSEEK_API_KEY in
@@ -789,7 +822,7 @@ def load_config(project_root: Path | None = None) -> Config:
     # Ollama braucht keinen Schluessel - es wird nur genommen, wenn du es selbst gewaehlt hast.
     keys = {"claude": cfg.anthropic_api_key, "deepseek": cfg.deepseek_api_key, "gemini": cfg.gemini_api_key,
             "openai": cfg.openai_api_key, "abliteration": cfg.abliteration_api_key,
-            "venice": cfg.venice_api_key}
+            "venice": cfg.venice_api_key, "nanogpt": cfg.nanogpt_api_key}
     active = cfg.active_provider
     if active != "ollama" and not keys.get(active):
         other = next((name for name, key in keys.items() if key and name != active), None)

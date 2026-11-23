@@ -1383,7 +1383,7 @@ class CLI:
     def _split_provider(self, args: list[str]) -> tuple[str, list[str]]:
         """'/modell deepseek pro' -> ('deepseek', ['pro']); ohne Gehirn-Name: das aktive."""
         if args and args[0].lower() in ("claude", "anthropic", "deepseek", "gemini", "google", "openai",
-                                        "chatgpt", "abliteration", "ablit", "venice", "ollama"):
+                                        "chatgpt", "abliteration", "ablit", "venice", "nanogpt", "ollama"):
             low = args[0].lower()
             return {"anthropic": "claude", "google": "gemini", "chatgpt": "openai",
                     "ablit": "abliteration"}.get(low, low), args[1:]

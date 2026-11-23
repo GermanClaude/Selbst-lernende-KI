@@ -111,6 +111,21 @@ temperature = 0.7
 
 
 # ----------------------------------------------------------------------------
+#  NANOGPT - unzensierte Modelle, OpenAI-kompatibel, SIEHT Bilder und nutzt Werkzeuge.
+#  Zahlung auch per KARTE (Stripe) moeglich - kein Krypto-Zwang. Schluessel aus .env:
+#  NANOGPT_API_KEY (kein festes Praefix - am einfachsten in der App eintragen). https://nano-gpt.com/api
+# ----------------------------------------------------------------------------
+[nanogpt]
+# Modell (auch mit /modell): "z-ai/glm-5.3-uncensored" (Standard), "z-ai/glm-5.3-flash-uncensored"
+# (guenstiger), "abliteration-ai/abliterated-model-large-v2". Weitere auf nano-gpt.com/models.
+# Unzensiert - verantwortungsvoll und im Rahmen der Gesetze nutzen.
+model = "z-ai/glm-5.3-uncensored"
+base_url = "https://api.nano-gpt.com/api/v1"
+max_tokens = 16384
+temperature = 0.7
+
+
+# ----------------------------------------------------------------------------
 #  OLLAMA - kostenlos, die Modelle laufen auf deinem PC (kein Schluessel, kein Internet).
 #  Ollama installieren: https://ollama.com/download (oder: winget install Ollama.Ollama)
 #  Modelle herunterladen: in der App unter "Gehirn & Schluessel" oder mit /ollama laden <modell>

@@ -38,6 +38,10 @@ def build_provider(
         from .venice_provider import VeniceProvider
 
         return VeniceProvider(config, system_prompt, registry, tool_ctx, client=client)
+    if config.active_provider == "nanogpt":
+        from .nanogpt_provider import NanogptProvider
+
+        return NanogptProvider(config, system_prompt, registry, tool_ctx, client=client)
     if config.active_provider == "deepseek":
         from .deepseek_provider import DeepSeekProvider
 

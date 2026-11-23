@@ -4,6 +4,19 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.25.0 – 2026-11-23
+
+**Neues Gehirn NanoGPT – unzensiert und ohne Krypto-Zwang bezahlbar**
+- Venice und Abliteration lassen sich praktisch nur mit Krypto/Guthaben bezahlen. **NanoGPT** ist
+  eine Alternative: unzensierte Modelle, OpenAI-kompatibel, **sieht Bilder** und nutzt Werkzeuge –
+  und das Guthaben kannst du **ganz normal per Karte (Stripe)** aufladen (oder Krypto, wenn du willst).
+- Ehrlich dazu: **PayPal** bietet aktuell keiner dieser unzensierten Anbieter an. **Google Pay** ist
+  nirgends ausdrücklich genannt, erscheint aber im Karten-Bezahlfenster (Stripe) auf unterstützten
+  Geräten oft automatisch. Wenn das für dich reicht, ist NanoGPT der bequemste Weg.
+- Einrichten: in der App unter „Gehirn & Schlüssel" **NanoGPT** wählen und den Schlüssel von
+  [nano-gpt.com](https://nano-gpt.com/api) einfügen, dann `/gehirn nanogpt`. Modelle:
+  `z-ai/glm-5.3-uncensored` (Standard), `z-ai/glm-5.3-flash-uncensored`, `abliteration-ai/abliterated-model-large-v2`.
+
 ## 0.24.1 – 2026-11-23
 
 **Tippen noch robuster (Umlaute überall)**

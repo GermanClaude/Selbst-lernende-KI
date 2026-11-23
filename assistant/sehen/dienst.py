@@ -178,6 +178,7 @@ class SehDienst:
         r = regeln_aus(self.config.sehen)
         gehirn = {"claude": "Claude von Anthropic", "deepseek": "DeepSeek", "gemini": "Gemini von Google",
                   "openai": "ChatGPT von OpenAI", "abliteration": "Abliteration AI", "venice": "Venice AI",
+                  "nanogpt": "NanoGPT",
                   "ollama": "Ollama auf deinem PC"}.get(self.config.active_provider, self.config.active_provider)
         lokal = self.config.active_provider == "ollama"
         wohin = (" Mit Ollama bleibt alles auf deinem PC." if lokal
