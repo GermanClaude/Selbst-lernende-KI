@@ -23,6 +23,42 @@ _INSTALL_HINT = (
     "und trage deinen ABLITERATION_API_KEY in die .env-Datei ein (Schluessel: https://abliteration.ai)."
 )
 
+_DESCRIBE_PROMPT = (
+    "Beschreibe dieses Bild ausfuehrlich auf Deutsch, inklusive allem lesbaren Text (woertlich), "
+    "Zahlen, Tabellen, Diagrammen, Bedienelementen und Fehlermeldungen. Antworte nur mit der "
+    "Beschreibung, ohne Einleitung."
+)
+_DESCRIBE_MAX_CHARS = 6000
+_KEIN_SEHER = (
+    "Bild konnte nicht angesehen werden: Abliteration AI hat kein eigenes Bild-Modell, und es ist "
+    "kein seh-faehiges Gehirn mit Schluessel da. Sag das deinem Menschen freundlich und schlag vor, "
+    "einen DeepSeek-, Gemini- oder OpenAI-Schluessel zu hinterlegen (dann beschreibe ich Bilder darueber)."
+)
+
+
+def _seh_quelle(config):
+    """Ein OpenAI-kompatibles, SEH-faehiges Gehirn, fuer das ein Schluessel da ist - damit Abliteration
+    (selbst ohne Bild-Modell) trotzdem 'sehen' kann (wie DeepSeek Bilder ueber DeepSeek Flash beschreibt).
+    Reihenfolge: DeepSeek (guenstig) -> Gemini -> OpenAI. None, wenn kein passender Schluessel da ist."""
+    try:
+        from openai import OpenAI, Timeout
+    except ImportError:
+        return None
+    from ..modelle import DEEPSEEK_SEHMODELL
+
+    kandidaten = [
+        (config.deepseek_api_key, config.deepseek.base_url, DEEPSEEK_SEHMODELL,
+         {"max_tokens": 1500, "extra_body": {"thinking": {"type": "disabled"}}}),
+        (config.gemini_api_key, config.gemini.base_url, config.gemini.model, {"max_tokens": 1500}),
+        (config.openai_api_key, config.openai.base_url, config.openai.model, {"max_completion_tokens": 1500}),
+    ]
+    for key, base, model, extra in kandidaten:
+        if key:
+            client = OpenAI(api_key=key, base_url=base,
+                            timeout=Timeout(READ_TIMEOUT, connect=CONNECT_TIMEOUT), max_retries=1)
+            return {"client": client, "model": model, "extra": extra}
+    return None
+
 
 class AbliterationProvider(DeepSeekProvider):
     name = "abliteration"
@@ -46,11 +82,54 @@ class AbliterationProvider(DeepSeekProvider):
     def _install_hint(self) -> str:
         return _INSTALL_HINT
 
-    # -- Bilder ---------------------------------------------------------------
+    # -- Bilder / "Sehen" -----------------------------------------------------
     def _sees_images(self) -> bool:
+        # Abliteration hat selbst kein Bild-Modell -> Bilder werden beschrieben (siehe _describe_image).
         from ..modelle import sieht_bilder
 
         return sieht_bilder("abliteration", self.config.abliteration.model)
+
+    def _seh(self):
+        """Das seh-faehige Gehirn (einmal ermitteln, dann merken). None = keins verfuegbar."""
+        if not getattr(self, "_seh_geprueft", False):
+            self._seh_quelle = _seh_quelle(self.config)
+            self._seh_geprueft = True
+        return self._seh_quelle
+
+    def _describe_images(self, bilder: list) -> str:
+        lines = []
+        for i, bild in enumerate(bilder, 1):
+            self._waiting()
+            beschreibung = self._describe_image(bild)
+            if beschreibung:
+                lines.append(f"[Bild {i} – Beschreibung: {beschreibung}]")
+            else:
+                lines.append(f"[Bild {i}: {bild.platzhalter()} – {_KEIN_SEHER}]")
+        return "\n".join(lines)
+
+    def _describe_image(self, bild) -> str:
+        """Bild von einem seh-faehigen Gehirn beschreiben lassen (Abliteration sieht selbst nicht).
+        Gibt "" zurueck, wenn es keins gibt oder es nicht klappt."""
+        seh = self._seh()
+        if not seh:
+            return ""
+        try:
+            resp = seh["client"].chat.completions.create(
+                model=seh["model"],
+                messages=[{"role": "user", "content": [
+                    {"type": "text", "text": _DESCRIBE_PROMPT},
+                    {"type": "image_url", "image_url": {"url": bild.data_url()}},
+                ]}],
+                stream=False,
+                **seh["extra"],
+            )
+            text = (resp.choices[0].message.content or "").strip()
+        except Exception as exc:  # noqa: BLE001 - dann eben ohne Beschreibung
+            self._check_cancel()
+            logger.warning("Bildbeschreibung (Abliteration, ueber Seh-Gehirn) fehlgeschlagen: %s",
+                           type(exc).__name__)
+            return ""
+        return text[:_DESCRIBE_MAX_CHARS].strip()
 
     # -- kein Nachdenken ------------------------------------------------------
     def _think_level(self) -> str:

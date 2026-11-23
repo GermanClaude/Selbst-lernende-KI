@@ -25,7 +25,10 @@ PC-Steuerung, Agenten …) und fragt vor riskanten Aktionen nach (`assistant/per
   `git remote set-url --add --push origin https://github.com/GermanClaude/Selbst-lernende-KI.git`
   und `git remote set-url --add --push origin https://github.com/GermanClaude/Nova-Backup.git`
   (danach `git push origin --tags` fuer die Tags). So geht nie Fortschritt verloren, auch wenn ein Chat verschwindet.
-- Zuletzt dazugekommen: **0.22.1 schnelle Updates** (`cli._explain_update` + `_mit_zeitlimit`/
+- Zuletzt dazugekommen: **0.23.0 Abliteration kann sehen** (`abliteration_provider._seh_quelle` leiht
+  ein seh-faehiges Gehirn (DeepSeek Flash/Gemini/OpenAI) zur Bildbeschreibung, da Abliteration selbst
+  kein Bild-Modell hat; `_describe_image`/`_describe_images` ueberschrieben; Tests
+  `tests/test_abliteration_sehen.py`). Davor: **0.22.1 schnelle Updates** (`cli._explain_update` + `_mit_zeitlimit`/
   `UPDATE_ERKLAER_TIMEOUT`: Modell-Erklaerung der Neuerungen mit Zeitlimit, sonst sofort die rohen
   Versionshinweise – Update haengt nie an einem langsamen Modell; Tests `tests/test_update_speed.py`).
   Davor: **0.22.0 Gehirn „Abliteration AI"** (unzensiert, OpenAI-kompatibel;

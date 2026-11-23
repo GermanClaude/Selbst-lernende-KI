@@ -4,6 +4,16 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.23.0 – 2026-11-23
+
+**Abliteration AI kann jetzt Bilder „sehen"**
+- Das Abliteration-Modell hat selbst keine Augen. Damit es trotzdem sehen kann – genau wie
+  DeepSeek das macht – lässt Nova Bilder jetzt von einem anderen, seh-fähigen Gehirn beschreiben,
+  für das du einen Schlüssel hast: **DeepSeek** (am günstigsten), sonst **Gemini**, sonst **OpenAI**.
+  Die Beschreibung bekommt Abliteration dann als Text.
+- Das gilt für Bilder, die du schickst, genauso wie fürs Live-Sehen. Hast du kein seh-fähiges
+  Gehirn hinterlegt, sagt Nova dir freundlich Bescheid, statt einfach nichts zu sehen.
+
 ## 0.22.1 – 2026-11-22
 
 **Updates gehen jetzt schnell – egal welches Modell**
