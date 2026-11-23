@@ -4,6 +4,18 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.26.1 – 2026-11-23
+
+**Passwort-/Geheimnis-Schutz beim Mitschreiben**
+- Alles, was Nova mitschreibt (Transkripte, Aktivitäts-Protokoll), läuft jetzt vor dem Speichern
+  durch einen **Geheimnis-Filter**: Passwörter, API-Schlüssel, Tokens, 2FA-Codes und Kartennummern
+  werden erkannt und **unkenntlich gemacht** (`[…entfernt: Geheimnis…]`). So landen Passwörter nie
+  in Novas Dateien – sie gehören in den Passwortmanager deines Browsers.
+- Zur Klarstellung: Nova schneidet weiterhin **nicht** mit, *was* du oder andere tippen (kein
+  Keylogger). Ein Hintergrund-Tastaturmitschnitt könnte Passwörter gar nicht zuverlässig aussparen –
+  deshalb gibt es ihn bewusst nicht. Gesprochenes transkribierst du mit dem Mitschnitt (mit
+  Zustimmung der Beteiligten), und auch dort werden laut vorgelesene Passwörter herausgefiltert.
+
 ## 0.26.0 – 2026-11-23
 
 **Mitschnitt/Transkription und ein Aktivitäts-Protokoll**

@@ -155,8 +155,11 @@ class Protokoll:
         return {"ok": True, "datei": self.status.datei, "eintraege": len(self.schnappschuesse)}
 
     def _laufen(self) -> None:
+        from .geheimnisse import verschleiere
+
         while not self._stop.is_set():
             titel, app = aktives_fenster()
+            titel = verschleiere(titel)  # falls im Fenstertitel mal ein Token/Schluessel steht
             schluessel = f"{app}|{titel}"
             if schluessel != self._letzter_schluessel:  # nur bei Wechsel protokollieren (spart Platz)
                 self._letzter_schluessel = schluessel

@@ -321,12 +321,15 @@ class Mitschnitt:
                 with wave.open(str(pfad), "wb") as w:
                     w.setnchannels(1); w.setsampwidth(2); w.setframerate(_SAMPLE_RATE)
                     w.writeframes(pcm)
+                from .geheimnisse import verschleiere
+
                 segs, _info = self._whisper.transcribe(str(pfad), language=self.sprache, vad_filter=True)
                 basis = time.time() - self.status.start - self.chunk_sekunden
                 f0 = _f0_schaetzen(pcm)
                 neu = []
                 for s in segs:
-                    t = (s.text or "").strip()
+                    # Passwoerter/Schluessel, die jemand laut vorliest, NICHT ins Transkript schreiben.
+                    t = verschleiere((s.text or "").strip())
                     if t:
                         neu.append(Segment(start=max(0.0, basis + s.start), ende=basis + s.end,
                                            text=t, sprecher="Sprecher 1",
