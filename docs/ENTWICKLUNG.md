@@ -25,7 +25,13 @@ PC-Steuerung, Agenten …) und fragt vor riskanten Aktionen nach (`assistant/per
   `git remote set-url --add --push origin https://github.com/GermanClaude/Selbst-lernende-KI.git`
   und `git remote set-url --add --push origin https://github.com/GermanClaude/Nova-Backup.git`
   (danach `git push origin --tags` fuer die Tags). So geht nie Fortschritt verloren, auch wenn ein Chat verschwindet.
-- Zuletzt dazugekommen: **0.31.0** Offline-Handy-Nachrichten: `handy.rueckstand_holen` (holt mit
+- Zuletzt dazugekommen: **0.32.0** Anrufe ueber Bland AI (`anruf.py`: POST
+  https://api.bland.ai/v1/calls mit phone_number E.164, task, first_sentence, language "de",
+  max_duration, wait_for_greeting, voicemail leave_message; Status per GET /v1/calls/{id}; Header
+  `authorization: <key>`; laut Doku 24.11.2026 - Anrufe ausserhalb USA/Kanada brauchen >= 5 $ Guthaben,
+  sonst HTTP 402). Werkzeug `anrufen` (tools/anruf.py) OHNE Nummernfeld - nur `ANRUF_NUMMER` aus der
+  .env; am PC Risk.MODERATE-Nachfrage, im AFK ohne; Kostenbremse 5/Tag (`data/anrufe.json`), max. 3 Min.
+  Befehl `/anruf` (schluessel/nummer/minuten/test). Tests `test_anruf`. Davor: **0.31.0** Offline-Handy-Nachrichten: `handy.rueckstand_holen` (holt mit
   timeout=0 bis leer, der leere Abruf bestaetigt bei Telegram), Ablage `data/handy_offen.json`
   (`offen_*`, `offen_entfernen` loescht nur die gefragten Eintraege). `cli._handy_beim_start` (Terminal:
   vor `_loop`, App: Thread in `startup()`), `_handy_offen_fragen` mit Sperre gegen Doppel-Nachfrage; die

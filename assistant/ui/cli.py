@@ -27,6 +27,7 @@ Sonderbefehle (mit '/' beginnen):
   /werte bearbeiten   - deine Regeln fuer die KI im Editor oeffnen
   /neu                - neues Gespraech (Charakter & Profil frisch geladen)
   /sprachmodus        - einfach reden, live (frueher „Jarvis-Modus"; Strg+C = zurueck)
+  /anruf [schluessel <KEY>|nummer <Nr>|minuten <n>|test] - Nova ruft dich an (Bland AI), nur deine Nummer
   /handy [token <T>|neu|aus] - Fernzugriff per Telegram: Nova vom Handy steuern (ohne Server;
                        einmalig Bot bei @BotFather anlegen, Token mit "/handy token <T>" setzen)
   /tutorial           - Nova stellt sich vor und zeigt, was sie kann
@@ -219,6 +220,7 @@ class CLI:
         self.registry = build_registry(include_computer=True)
         self.tool_ctx = ToolContext(permissions=self.permissions, memory=self.memory)
         self.tool_ctx.extra["app_root"] = config.project_root
+        self.tool_ctx.extra["ki_name"] = lambda: self.config.ki.name  # z.B. fuer Anrufe ("Hallo, hier ist ...")
         self._afk_pending: dict | None = None        # AFK-Modus vorgemerkt (Werkzeug abwesenheit)
         self._afk_return: tuple[float, str] | None = None  # (Beginn, Bericht) fuer die naechste Nachricht
         self.tool_ctx.extra["afk_start"] = self._afk_request
@@ -1090,6 +1092,70 @@ class CLI:
         finally:
             self.permissions.confirm_fn = alt
         print(_c("\n[Zurueck am PC.]", GREY))
+
+    # -- Anrufe ueber Bland AI (assistant/anruf.py, Werkzeug "anrufen") ------------
+    def _anruf_befehl(self, args: list[str]) -> None:
+        import os
+        from .. import anruf as anruf_mod
+        from ..config import save_env_value
+        from ..tools.anruf import einstellungen
+
+        root = self.config.project_root
+        sub = args[0].lower() if args else ""
+
+        def speichern(name: str, wert: str) -> None:
+            try:
+                save_env_value(root, name, wert)
+            except OSError as exc:
+                print(_c(f"Nicht gespeichert ({exc}) - gilt nur fuer diese Sitzung.", YELLOW))
+            os.environ[name] = wert
+
+        if sub in ("schluessel", "schlüssel", "key") and len(args) > 1:
+            speichern("BLAND_API_KEY", args[1].strip())
+            print(_c("Bland-Schluessel gespeichert (nur lokal in der .env).", GREEN))
+            return
+        if sub == "nummer" and len(args) > 1:
+            nummer = anruf_mod.normalisiere_nummer(" ".join(args[1:]))
+            if not nummer:
+                print(_c("Das sieht nicht nach einer Telefonnummer aus. Beispiel: /anruf nummer 0171 1234567", YELLOW))
+                return
+            speichern("ANRUF_NUMMER", nummer)
+            print(_c(f"Nummer gespeichert: {anruf_mod.maskiere(nummer)} - nur diese Nummer kann ich anrufen.", GREEN))
+            return
+        if sub in ("minuten", "dauer") and len(args) > 1:
+            try:
+                minuten = max(1, min(int(args[1]), 15))
+            except ValueError:
+                print(_c("Bitte eine Zahl von 1 bis 15, z.B. /anruf minuten 3", YELLOW))
+                return
+            speichern("ANRUF_MAX_MINUTEN", str(minuten))
+            print(_c(f"Ein Anruf dauert jetzt hoechstens {minuten} Min.", GREEN))
+            return
+        e = einstellungen()
+        if sub == "test":
+            if not e["key"] or not e["nummer"]:
+                print(_c("Erst einrichten: /anruf schluessel <KEY> und /anruf nummer <Nummer>.", YELLOW))
+                return
+            if anruf_mod.heute_anzahl(root) >= anruf_mod.MAX_PRO_TAG:
+                print(_c(f"Heute schon {anruf_mod.MAX_PRO_TAG} Anrufe - Kostenbremse, morgen wieder.", YELLOW))
+                return
+            try:
+                call_id = anruf_mod.Bland(e["key"]).anrufen(
+                    e["nummer"], "Das ist nur ein Testanruf, um zu pruefen, ob Anrufe funktionieren. Frag kurz, "
+                    "ob man dich gut versteht, und verabschiede dich dann.", self.config.ki.name, 2, e["stimme"])
+            except anruf_mod.AnrufFehler as exc:
+                print(_c(f"Testanruf ging nicht: {exc}", YELLOW))
+                return
+            anruf_mod.heute_zaehlen(root)
+            print(_c(f"Testanruf gestartet an {anruf_mod.maskiere(e['nummer'])} (ID {call_id}). Dein Handy sollte "
+                     "gleich klingeln - angezeigt wird meist eine US-Nummer von Bland.", GREEN))
+            return
+        print(_c("\nAnrufe (Bland AI): Ich rufe dich an, wenn es wichtig ist - nur deine eigene Nummer.", BOLD))
+        print(f"  Schluessel: {'gesetzt' if e['key'] else 'fehlt'}   Nummer: "
+              f"{anruf_mod.maskiere(e['nummer']) if e['nummer'] else 'fehlt'}   Hoechstdauer: {e['minuten']} Min.   "
+              f"heute: {anruf_mod.heute_anzahl(root)}/{anruf_mod.MAX_PRO_TAG}")
+        print(_c("  Einrichten: /anruf schluessel <KEY>  |  /anruf nummer 0171 1234567  |  /anruf test\n"
+                 "  Danach einfach sagen, z.B. 'ruf mich an, wenn der Download fertig ist'.", GREY))
 
     # -- Arbeitsordner / Workspace ------------------------------------------------
     def _arbeitsordner_setzen(self, pfad_str: str) -> tuple[bool, str]:
@@ -2199,6 +2265,8 @@ class CLI:
             self._handy_befehl(cmd.split()[1:])
         elif base in ("/arbeitsordner", "/workspace", "/ordner"):
             self._arbeitsordner_command(cmd.split()[1:])
+        elif base in ("/anruf", "/anrufen", "/telefon", "/bland"):
+            self._anruf_befehl(cmd.split()[1:])
         elif base in ("/schluessel", "/schlüssel", "/key", "/api", "/apikey"):
             from ..schluessel import find_key
 

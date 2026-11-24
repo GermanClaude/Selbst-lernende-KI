@@ -553,6 +553,18 @@ sich auf diesen Ordner. Im **sicheren Modus** arbeitet Nova nur hier – wähl i
 `/arbeitsordner oeffnen` zeigt ihn im Explorer, `/arbeitsordner zuruecksetzen` setzt auf den Standard
 (`workspace\` im Programmordner) zurück.
 
+## Anrufe: Nova ruft dich an (Bland AI)
+
+Wenn es wichtig ist, ruft Nova dich auf dem Handy an – eine KI-Stimme spricht Deutsch, sagt worum es
+geht und hört sich deine Antwort an; Nova bekommt danach die Mitschrift. Sag z. B. *„ruf mich an, wenn
+der Download fertig ist“*. Sie kann **nur deine eigene, hinterlegte Nummer** anrufen. Am PC fragt sie
+vorher nach, im AFK-Modus ruft sie direkt an. Kostenbremse: höchstens 5 Anrufe pro Tag à 3 Minuten.
+
+**Einrichten:** Konto bei [bland.ai](https://www.bland.ai) anlegen → im Dashboard einen API-Schlüssel
+holen → unter *Billing* Guthaben aufladen (Anrufe nach Deutschland brauchen mindestens 5 $; Bland
+rechnet pro Minute ab). Dann im Chat: `/anruf schluessel <KEY>`, `/anruf nummer 0171 1234567`,
+`/anruf test`. Angezeigt wird meist eine US-Nummer von Bland.
+
 ## Fernzugriff: Nova vom Handy steuern (Telegram)
 
 Du bist unterwegs und willst Nova am PC etwas auftragen? Mit `/handy` (oder dem Knopf
@@ -630,6 +642,7 @@ stoppt die Steuerung sofort.
 | `/protokoll [an\|aus\|zeigen]` | Aktivitäts-Protokoll: welche Apps/Fenster du nutzt (kein Keylogger) |
 | `/skill [add <Name> <Anweisung>\|addfuer <gehirn> …\|an\|aus\|weg]` | Eigene Regeln/Skills (für alle Gehirne oder eins) – in der App auch per Klick im Reiter **Skills** |
 | `/sprachmodus` | Sprachmodus: einfach reden, live (zurück: „Chat-Modus“ sagen) |
+| `/anruf [schluessel <KEY>\|nummer <Nr>\|minuten <n>\|test]` | Nova ruft dich an (Bland AI) – nur deine Nummer |
 | `/handy [token <T>\|neu\|aus]` | Fernzugriff per Telegram: Nova vom Handy steuern (ohne Server) |
 | `/arbeitsordner [Pfad\|oeffnen\|zuruecksetzen]` | Arbeitsordner zeigen/wählen – dort legst du Dateien für Nova ab |
 | `/afk [Betrag] [Auftrag]` | AFK-Modus: Nova arbeitet allein weiter, z. B. `/afk 0,30€ …` (zurück: Nachricht bzw. Strg+C) |

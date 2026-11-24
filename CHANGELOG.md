@@ -4,6 +4,21 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.32.0 – 2026-11-24
+
+**Nova kann dich anrufen (Bland AI)**
+- Neu: Nova ruft dich auf dem Handy an, wenn es wichtig ist – z. B. „ruf mich an, wenn der Download
+  fertig ist“ oder wenn sie im AFK-Modus dringend eine Entscheidung braucht. Eine KI-Stimme spricht
+  Deutsch, sagt worum es geht und hört sich deine Antwort an. Nova bekommt danach die Mitschrift und
+  weiß, was du gesagt hast. Gehst du nicht ran, hinterlässt sie eine kurze Mailbox-Nachricht.
+- **Nur deine Nummer:** Nova kann ausschließlich die Nummer anrufen, die du selbst hinterlegst –
+  niemand anderen. Am PC fragt sie vorher nach; wenn du weg bist (AFK), ruft sie ohne Nachfrage an.
+- **Kostenbremse:** höchstens 5 Anrufe pro Tag, jeder höchstens 3 Minuten (änderbar mit
+  `/anruf minuten 5`).
+- Einrichten: Konto bei bland.ai, dort einen API-Schlüssel holen und Guthaben aufladen (für Anrufe nach
+  Deutschland mindestens 5 $). Dann im Chat `/anruf schluessel <KEY>`, `/anruf nummer 0171 …` und
+  `/anruf test`.
+
 ## 0.31.0 – 2026-11-24
 
 **Handy-Nachrichten gehen nicht mehr verloren, wenn der PC aus ist**

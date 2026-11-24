@@ -82,6 +82,8 @@ COMMANDS = [
     ("/ollama", "Ollama: kostenlose KI auf deinem PC (Stand, Modelle laden)"),
     ("/sprachmodus", "einfach reden, live (frueher Jarvis-Modus)"),
     ("/afk", "ich bin weg - die KI arbeitet allein weiter (mit Bericht)"),
+    ("/anruf", "Nova ruft dich an (Bland AI) - Einrichtung und Stand"),
+    ("/anruf test", "Testanruf auf dein Handy"),
     ("/handy", "Fernzugriff per Telegram: Nova vom Handy steuern (ohne Server)"),
     ("/handy token", "Bot-Token von @BotFather setzen (einmalig)"),
     ("/handy aus", "Handy-Fernzugriff beenden"),
