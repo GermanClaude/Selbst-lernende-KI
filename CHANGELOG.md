@@ -4,6 +4,23 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.28.0 – 2026-11-24
+
+**Nova per Handy fernsteuern – über Telegram, ohne eigenen Server**
+- Neu: Du kannst Nova jetzt vom Smartphone aus bedienen. Du schreibst einem eigenen Telegram-Bot,
+  Nova antwortet dir zurück – in beide Richtungen, auch wenn du nicht am PC bist.
+- **Kein Server, keine Portfreigabe nötig:** Dein PC verbindet sich nur nach außen zu Telegram und
+  wartet auf Nachrichten. Das läuft ganz normal hinter deinem Router.
+- **Einrichtung (einmalig):** In Telegram den Bot „@BotFather" anschreiben, `/newbot`, Namen
+  vergeben – du bekommst einen Token. Den gibst du Nova mit `/handy token <DEIN_TOKEN>` (oder über
+  den neuen Knopf **Fernzugriff (Handy)** in der App). Dann `/handy`, und du schreibst deinem Bot
+  einmal vom Handy.
+- **Sicherheit:** Nova gehorcht nur **einer** Chat-ID – deiner. Die erste Nachricht beim Einrichten
+  legt fest, wer steuern darf; alle anderen Absender werden ignoriert. Der Token bleibt lokal in der
+  `.env` und kommt nie ins Internet-Repo. Vor heiklen Aktionen fragt Nova auch am Handy nach
+  („ja"/„nein").
+- Beenden: `/handy aus` (in der App) bzw. „stop" ans Handy oder Strg+C (im Terminal).
+
 ## 0.27.2 – 2026-11-24
 
 **Rechtliches & ein schnellerer Mitschnitt**

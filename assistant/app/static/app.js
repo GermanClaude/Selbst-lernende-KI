@@ -59,6 +59,7 @@
   // Symbole (feste, eigene SVG-Zeichnungen – kein Fremdtext)
   // =====================================================================
   const ICONS = {
+    smartphone: '<rect x="7" y="2" width="10" height="20" rx="2.5"/><path d="M11 18h2"/>',
     send: '<path d="M12 19V5"/><path d="m5 12 7-7 7 7"/>',
     stop: '<rect x="6" y="6" width="12" height="12" rx="2.5" fill="currentColor" stroke="none"/>',
     queue: '<path d="M4 6h12M4 12h8M4 18h8"/><path d="M18 13v8M14 17h8"/>',

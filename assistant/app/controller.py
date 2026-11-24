@@ -80,6 +80,10 @@ COMMANDS = [
     ("/gehirn", "DeepSeek, Claude, Gemini, ChatGPT oder Ollama - Schluessel einfach in den Chat einfuegen"),
     ("/ollama", "Ollama: kostenlose KI auf deinem PC (Stand, Modelle laden)"),
     ("/afk", "ich bin weg - die KI arbeitet allein weiter (mit Bericht)"),
+    ("/handy", "Fernzugriff per Telegram: Nova vom Handy steuern (ohne Server)"),
+    ("/handy token", "Bot-Token von @BotFather setzen (einmalig)"),
+    ("/handy aus", "Handy-Fernzugriff beenden"),
+    ("/rechtliches", "Nutzungsbedingungen, Haftung & Impressum"),
     ("/sehen", "Live-Sehen: Nova schaut auf Bildschirm/Webcam (an, aus, pause, status)"),
     ("/spiel", "Spielmodus: Nova spielt selbst (z.B. Manor Lords) - start, nacht, stopp, kalibrieren"),
     ("/sehen handy", "Handy als Kamera koppeln (QR-Code)"),
@@ -698,6 +702,124 @@ class AppController(CLI):
         if text.split()[0].lower() == "/name":
             self._state_changed()  # neuer Name gleich in der Seitenleiste
         return self.exit_code if quit_now else None
+
+    # -- Handy-Fernzugriff: in der App im Hintergrund (nicht uebernehmend wie im Terminal) -------
+    def _handy_befehl(self, args: list[str]) -> None:
+        import threading
+        from ..handy import HandyRelay, TelegramFehler, relais_schleife, BEGRUESSUNG, HILFE
+
+        sub = args[0].lower() if args else ""
+        if sub in ("hilfe", "help", "?"):
+            print(HILFE)
+            return
+        if sub in ("aus", "stop", "stopp", "ende", "beenden"):
+            ev = getattr(self, "_handy_stop", None)
+            if ev is not None and not ev.is_set():
+                ev.set()
+                print("Ich beende den Handy-Fernzugriff.")
+            else:
+                print("Der Handy-Fernzugriff laeuft gerade nicht.")
+            return
+        th = getattr(self, "_handy_thread", None)
+        if th is not None and th.is_alive():
+            print("Der Handy-Fernzugriff laeuft schon. Beenden mit /handy aus.")
+            return
+        token = self._handy_token(args)
+        if sub == "token":
+            return
+        if not token:
+            print(HILFE)
+            return
+
+        chat_id = None if sub == "neu" else self._handy_chat_id()
+        relay = HandyRelay(token, chat_id=chat_id)
+        try:
+            name = relay.pruefe()
+        except TelegramFehler as exc:
+            print(str(exc))
+            return
+        stop_event = threading.Event()
+        self._handy_stop = stop_event
+        self._handy_relay = relay
+
+        def lauf() -> None:
+            try:
+                try:
+                    relay.leeren()
+                except TelegramFehler:
+                    pass
+                if relay.chat_id is None:
+                    self._notice(f"Handy-Fernzugriff: Schreib jetzt in Telegram an @{name} (Start oder "
+                                 "irgendeine Nachricht), damit ich weiss, dass du es bist.", "afk")
+                    while not stop_event.is_set() and relay.chat_id is None:
+                        try:
+                            msg = relay.naechste(timeout=20)
+                        except TelegramFehler:
+                            time.sleep(5.0)
+                            continue
+                        if msg is not None:
+                            relay.chat_id = msg.chat_id
+                            self._handy_speichere_chat(relay.chat_id)
+                            self._notice(f"Handy-Fernzugriff aktiv: nur {msg.von or relay.chat_id} darf mich "
+                                         "steuern. Beenden mit /handy aus.", "afk")
+                    if relay.chat_id is None:
+                        return
+                else:
+                    self._notice(f"Handy-Fernzugriff aktiv (Bot @{name}). Beenden mit /handy aus.", "afk")
+                try:
+                    relay.sende(BEGRUESSUNG.format(name=self.config.ki.name))
+                except TelegramFehler:
+                    pass
+                relais_schleife(relay, self._handy_antwort, stop_event)
+            finally:
+                self._notice("Handy-Fernzugriff beendet.", "afk")
+                self._handy_stop = None
+                self._handy_relay = None
+
+        self._handy_thread = threading.Thread(target=lauf, name="handy-fernzugriff", daemon=True)
+        self._handy_thread.start()
+        print(f"Handy-Fernzugriff gestartet (Bot @{name}).")
+
+    def _handy_antwort(self, text: str) -> str:
+        """Beantwortet eine Handy-Nachricht - seriell mit der App (busy-Sperre), damit das Gespraech
+        nicht durcheinander kommt. Rueckfragen vor heiklen Aktionen gehen ans Handy."""
+        relay = getattr(self, "_handy_relay", None)
+        stop_event = getattr(self, "_handy_stop", None)
+        if relay is None:
+            return ""
+        wartezeit = 0
+        while True:  # warten, bis die App frei ist, dann unter der Sperre uebernehmen
+            with self._lock:
+                if not self.busy:
+                    self.busy = True
+                    self._live_turn = None
+                    self._drop_turn = False
+                    self.brain.provider.cancel_event.clear()
+                    break
+            if stop_event is not None and stop_event.is_set():
+                return ""
+            if wartezeit == 0:
+                try:
+                    relay.sende("Ich bin gerade am PC beschaeftigt - sobald ich frei bin, kuemmere ich mich darum.")
+                except Exception:  # noqa: BLE001
+                    pass
+            time.sleep(1.0)
+            wartezeit += 1
+            if wartezeit > 600:
+                return "Ich bin am PC immer noch beschaeftigt. Versuch es gleich nochmal."
+
+        alt = self.permissions.confirm_fn
+        self.permissions.confirm_fn = self._handy_bestaetigung(relay)
+        self._last_answer = ""
+        try:
+            self._answer(f"\U0001F4F1 {text}", model_text=text, as_notice=True, notice_level="afk")
+            return self._last_answer or "(am PC angehalten)"
+        finally:
+            self.permissions.confirm_fn = alt
+            with self._lock:
+                self.busy = False
+            self._afk_dropped_notice()
+            self._state_changed()
 
     def _answer(self, text: str, model_text: str | None = None, as_notice: bool = False,
                 max_tool_rounds: int | None = None, bilder: list | None = None, images: list | None = None,

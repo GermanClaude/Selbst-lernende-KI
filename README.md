@@ -541,6 +541,24 @@ habt – und handelt so, wie du es nach allem, was sie über dich weiß, wollen 
 - **Zurück**: einfach eine Nachricht schreiben (im Terminal: Strg+C). Du bekommst einen
   Bericht mit Ergebnissen, Vorschlägen zum Freigeben und offenen Fragen.
 
+## Fernzugriff: Nova vom Handy steuern (Telegram)
+
+Du bist unterwegs und willst Nova am PC etwas auftragen? Mit `/handy` (oder dem Knopf
+**Fernzugriff (Handy)** in der App) steuerst du Nova über einen **Telegram-Bot** – in beide
+Richtungen. **Du brauchst keinen gemieteten Server und keine Portfreigabe:** dein PC verbindet
+sich nur nach außen zu Telegram und wartet auf deine Nachrichten.
+
+**Einmalig einrichten:**
+1. In Telegram den Bot **„@BotFather"** anschreiben → `/newbot` → einen Namen vergeben.
+2. Du bekommst einen Token wie `123456:ABC-DEF…`. Den gibst du Nova mit `/handy token 123456:ABC-DEF…`
+   (er landet lokal in der `.env` und kommt **nie** ins Repo).
+3. Danach `/handy` erneut und einmal deinem Bot vom Handy schreiben – **die erste Nachricht legt
+   fest, dass nur du Nova steuern darfst.**
+
+**Sicherheit:** Nova gehorcht nur **einer** Chat-ID (deiner); alle anderen Absender werden
+ignoriert. Vor heiklen Aktionen fragt sie auch am Handy nach („ja"/„nein"). Beenden mit `/handy aus`
+(App) bzw. „stop" ans Handy oder Strg+C (Terminal). Neu festlegen, wer steuern darf: `/handy neu`.
+
 ## Automatische Updates
 
 Einmal am Tag schaut die KI im GitHub-Repo nach einer neuen Version. Gibt es eine,
@@ -596,6 +614,7 @@ stoppt die Steuerung sofort.
 | `/protokoll [an\|aus\|zeigen]` | Aktivitäts-Protokoll: welche Apps/Fenster du nutzt (kein Keylogger) |
 | `/skill [add <Name> <Anweisung>\|addfuer <gehirn> …\|an\|aus\|weg]` | Eigene Regeln/Skills (für alle Gehirne oder eins) |
 | `/jarvis` | Jarvis-Modus: einfach reden, live (zurück: „Chat-Modus“ sagen) |
+| `/handy [token <T>\|neu\|aus]` | Fernzugriff per Telegram: Nova vom Handy steuern (ohne Server) |
 | `/afk [Betrag] [Auftrag]` | AFK-Modus: Nova arbeitet allein weiter, z. B. `/afk 0,30€ …` (zurück: Nachricht bzw. Strg+C) |
 | `/modell [name]` | Modell zeigen bzw. wählen (z.B. `/modell sonnet`, `/modell deepseek pro`) |
 | `/sehen [an\|aus\|pause\|status]` | Live-Sehen: Nova schaut auf Bildschirm/Webcam |

@@ -27,6 +27,8 @@ Sonderbefehle (mit '/' beginnen):
   /werte bearbeiten   - deine Regeln fuer die KI im Editor oeffnen
   /neu                - neues Gespraech (Charakter & Profil frisch geladen)
   /jarvis             - reiner Sprachmodus: einfach reden (Strg+C = zurueck)
+  /handy [token <T>|neu|aus] - Fernzugriff per Telegram: Nova vom Handy steuern (ohne Server;
+                       einmalig Bot bei @BotFather anlegen, Token mit "/handy token <T>" setzen)
   /tutorial           - Nova stellt sich vor und zeigt, was sie kann
   /stuetzraeder an|aus|alles - an: fragt vor allem, nur Arbeitsordner; aus: darf alles; alles: Vollzugriff
   /aussehen [vorlage <name>|hintergrund <pfad>|zuruecksetzen] - Aussehen der App: Vorlage (hacker,
@@ -867,6 +869,134 @@ class CLI:
             self._afk_terminal(**pending)
             return
         print(_c("\n[Zurueck im Chat-Modus]", GREY))
+
+    # -- Handy-Fernzugriff (assistant/handy) --------------------------------------
+    def _handy_token(self, args: list[str]) -> str:
+        """Gemeinsam fuer Terminal und App: '/handy token <T>' speichert den Bot-Token in der .env.
+        Gibt den aktuell bekannten Token zurueck (oder '')."""
+        import os
+        from ..config import save_env_value
+
+        if args and args[0].lower() == "token" and len(args) > 1:
+            token = args[1].strip()
+            try:
+                save_env_value(self.config.project_root, "TELEGRAM_BOT_TOKEN", token)
+            except OSError as exc:
+                print(_c(f"Konnte den Token nicht speichern: {exc}", YELLOW))
+            os.environ["TELEGRAM_BOT_TOKEN"] = token
+            print(_c("Telegram-Bot-Token gespeichert (in der .env). Jetzt nochmal /handy.", GREEN))
+        return os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+
+    def _handy_chat_id(self) -> int | None:
+        import os
+
+        roh = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+        try:
+            return int(roh)
+        except (TypeError, ValueError):
+            return None
+
+    def _handy_speichere_chat(self, chat_id: int) -> None:
+        import os
+        from ..config import save_env_value
+
+        try:
+            save_env_value(self.config.project_root, "TELEGRAM_CHAT_ID", str(chat_id))
+        except OSError:
+            pass
+        os.environ["TELEGRAM_CHAT_ID"] = str(chat_id)
+
+    def _handy_bestaetigung(self, relay):
+        """confirm_fn, das Rueckfragen ans Handy schickt und auf ja/nein wartet."""
+        from ..handy import TelegramFehler, ist_ja
+
+        def bestaetige(message, risk) -> bool:
+            try:
+                relay.sende(f"Darf ich das tun?\n\n{message}\n\nAntworte mit ja oder nein.")
+                antwort = relay.naechste(timeout=300)
+            except TelegramFehler:
+                return False
+            if antwort is None:
+                try:
+                    relay.sende("Keine Antwort - ich lasse es sicherheitshalber.")
+                except TelegramFehler:
+                    pass
+                return False
+            return ist_ja(antwort.text)
+
+        return bestaetige
+
+    def _handy_befehl(self, args: list[str]) -> None:
+        """Terminal: Fernzugriff als uebernehmender Modus (wie /jarvis). Strg+C = zurueck zum PC."""
+        import threading
+        from ..handy import HandyRelay, TelegramFehler, relais_schleife, BEGRUESSUNG, HILFE
+
+        sub = args[0].lower() if args else ""
+        if sub in ("hilfe", "help", "?"):
+            print(HILFE)
+            return
+        if sub in ("aus", "stop", "stopp", "ende", "beenden"):
+            print(_c("Im Terminal beendest du den Fernzugriff mit Strg+C, solange er laeuft.", GREY))
+            return
+        token = self._handy_token(args)
+        if sub == "token":
+            return  # nur speichern; der Nutzer startet dann neu mit /handy
+        if not token:
+            print(_c(HILFE, CYAN))
+            return
+
+        chat_id = None if sub == "neu" else self._handy_chat_id()
+        relay = HandyRelay(token, chat_id=chat_id)
+        try:
+            name = relay.pruefe()
+        except TelegramFehler as exc:
+            print(_c(str(exc), YELLOW))
+            return
+        print(_c(f"\n[Handy-Fernzugriff] Mit Bot @{name} verbunden.", BOLD))
+        try:
+            relay.leeren()
+        except TelegramFehler:
+            pass
+        if relay.chat_id is None:
+            print(_c(f"Schreib jetzt in Telegram an @{name} (Knopf 'Start' oder irgendeine Nachricht) - "
+                     "die erste Nachricht legt fest, dass nur du mich steuern darfst. (Strg+C bricht ab.)", CYAN))
+            try:
+                while relay.chat_id is None:
+                    msg = relay.naechste(timeout=30)
+                    if msg is None:
+                        continue
+                    relay.chat_id = msg.chat_id
+                    self._handy_speichere_chat(relay.chat_id)
+                    print(_c(f"Festgelegt: nur {msg.von or relay.chat_id} darf mich steuern.", GREEN))
+            except KeyboardInterrupt:
+                print(_c("\n[Abgebrochen - niemand festgelegt.]", GREY))
+                return
+        try:
+            relay.sende(BEGRUESSUNG.format(name=self.config.ki.name))
+        except TelegramFehler as exc:
+            print(_c(str(exc), YELLOW))
+            return
+
+        def beantworte(text: str) -> str:
+            self.brain.provider.cancel_event.clear()
+            return self.brain.respond(text)
+
+        def melde(richtung: str, text: str) -> None:
+            if richtung == "rein":
+                print(_c(f"\n[Handy] {text}", BOLD))
+            else:
+                print(_c(f"[{self.config.ki.name} -> Handy] {text}\n", CYAN))
+
+        alt = self.permissions.confirm_fn
+        self.permissions.confirm_fn = self._handy_bestaetigung(relay)
+        print(_c("[Fernzugriff aktiv - ich hoere auf dein Handy. Strg+C = zurueck zum PC.]\n", BOLD))
+        try:
+            relais_schleife(relay, beantworte, threading.Event(), melde=melde)
+        except KeyboardInterrupt:
+            pass
+        finally:
+            self.permissions.confirm_fn = alt
+        print(_c("\n[Zurueck am PC.]", GREY))
 
     # -- Live-Sehen (assistant/sehen) ---------------------------------------------
     def _sieht_bilder(self) -> bool:
@@ -1889,6 +2019,8 @@ class CLI:
             self._training_wheels_command(cmd.split()[1:])
         elif base == "/jarvis":
             self._jarvis_terminal()
+        elif base in ("/handy", "/telegram", "/fern", "/fernzugriff"):
+            self._handy_befehl(cmd.split()[1:])
         elif base in ("/schluessel", "/schlüssel", "/key", "/api", "/apikey"):
             from ..schluessel import find_key
 

@@ -25,7 +25,14 @@ PC-Steuerung, Agenten …) und fragt vor riskanten Aktionen nach (`assistant/per
   `git remote set-url --add --push origin https://github.com/GermanClaude/Selbst-lernende-KI.git`
   und `git remote set-url --add --push origin https://github.com/GermanClaude/Nova-Backup.git`
   (danach `git push origin --tags` fuer die Tags). So geht nie Fortschritt verloren, auch wenn ein Chat verschwindet.
-- Zuletzt dazugekommen: **0.27.0** Skills (`skills.py`, global/pro-Gehirn), eigene Modell-IDs
+- Zuletzt dazugekommen: **0.28.0** Handy-Fernzugriff per Telegram ohne eigenen Server (`handy.py`:
+  `HandyRelay` Long-Poll/urllib, Whitelist auf EINE Chat-ID, `relais_schleife`; Befehl `/handy`
+  mit Terminal-Variante in `cli.py` und Hintergrund-Variante in `app/controller.py` -
+  `_handy_antwort` serialisiert über die busy-Sperre, Rückfragen gehen ans Handy; Token in `.env`
+  als `TELEGRAM_BOT_TOKEN`, Chat-ID als `TELEGRAM_CHAT_ID`; App-Knopf „Fernzugriff (Handy)"; Tests
+  `test_handy`). Davor: **0.27.2** Rechtliches (`NUTZUNGSBEDINGUNGEN.md`, `IMPRESSUM.md`, Befehl
+  `/rechtliches`, in die .exe gebündelt) + Mitschnitt-DSP optimiert (`_mische` numpy-Pfad,
+  `_f0_schaetzen` begrenzte Korrelation). Davor: **0.27.0** Skills (`skills.py`, global/pro-Gehirn), eigene Modell-IDs
   (`modelle._EIGENE_MODELLE_OK`), Mitschnitt mischt System-Audio + Mikrofon (`mitschnitt._mische`,
   Quelle "beides"), klarere .exe-Meldung. Tests `test_skills`, `test_eigene_modelle`. Davor:
   **0.26.1 / 0.26.0** Mitschnitt/Transkription (`mitschnitt.py`, lokal/token-frei,
