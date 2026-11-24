@@ -91,6 +91,32 @@ for _modul in ("segno", "cryptography.hazmat.primitives.ciphers.aead"):
         pass
 extra_binaries += handy_binaries
 
+# Transkription / Mitschnitt (sounddevice + faster-whisper): nur, wenn beim Bauen installiert.
+# faster-whisper zieht ctranslate2/tokenizers/onnxruntime/huggingface_hub (teils grosse Binaries) nach -
+# darum collect_all. Jedes Paket einzeln abgesichert; fehlt eins, fehlt nur dieser Teil.
+trans_imports, trans_binaries, trans_datas = [], [], []
+try:
+    from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_dynamic_libs, collect_submodules
+
+    import sounddevice  # noqa: F401
+    trans_binaries += collect_dynamic_libs("sounddevice")
+    trans_datas += collect_data_files("sounddevice")
+    trans_imports += ["sounddevice", "_sounddevice", "cffi", "_cffi_backend"]
+
+    import faster_whisper  # noqa: F401
+    for _pkg in ("faster_whisper", "ctranslate2", "tokenizers", "onnxruntime", "av", "huggingface_hub"):
+        try:
+            _d, _b, _h = collect_all(_pkg)
+            trans_datas += _d
+            trans_binaries += _b
+            trans_imports += _h
+        except Exception:  # noqa: BLE001 - ein Teilpaket fehlt/haengt -> ohne es weiter
+            pass
+except Exception:  # noqa: BLE001 - ohne diese Pakete: Mitschnitt nur in der Quellcode-Version
+    trans_imports, trans_binaries, trans_datas = [], [], []
+extra_binaries += trans_binaries
+added_files += trans_datas
+
 a = Analysis(
     [str(project_root / "run_ki.py")],
     pathex=[str(project_root)],
@@ -100,7 +126,7 @@ a = Analysis(
     # PIL: Bilder verkleinern/pruefen (nur bei Bedarf importiert, deshalb hier ausdruecklich).
     hiddenimports=["anthropic", "openai", "requests", "bs4", "webview", "PIL", "PIL.Image", "PIL.ImageOps",
                    "PIL.ImageGrab", "PIL.ImageDraw",
-                   "assistant.spiel.profile.manor_lords"] + sehen_imports + handy_imports,
+                   "assistant.spiel.profile.manor_lords"] + sehen_imports + handy_imports + trans_imports,
     hookspath=[],
     runtime_hooks=[],
     excludes=["cv2"],  # OpenCV nie mitnehmen (dxcam braucht es mit processor_backend="numpy" nicht)

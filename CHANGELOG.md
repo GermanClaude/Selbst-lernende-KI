@@ -4,6 +4,15 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.27.1 – 2026-11-24
+
+**Transkription jetzt direkt in der App (ohne Zusatz-Installation)**
+- Die Pakete für den Mitschnitt (`sounddevice` + `faster-whisper`) sind jetzt **fest in die KI.exe /
+  KI-App.exe eingebaut**. Damit läuft `/transkript` auch in der fertigen App – ohne dass du selbst
+  etwas installieren musst. (Die .exe ist dadurch spürbar größer.)
+- Beim allerersten Transkribieren lädt Whisper einmalig sein Sprachmodell herunter (einige 100 MB);
+  danach läuft alles lokal und ohne Tokens.
+
 ## 0.27.0 – 2026-11-24
 
 **Skills, eigene Modelle und Mitschnitt von System-Audio + Mikrofon zusammen**
