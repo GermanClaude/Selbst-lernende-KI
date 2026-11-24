@@ -571,6 +571,10 @@ sich nur nach außen zu Telegram und wartet auf deine Nachrichten.
 ignoriert. Vor heiklen Aktionen fragt sie auch am Handy nach („ja"/„nein"). Beenden mit `/handy aus`
 (App) bzw. „stop" ans Handy oder Strg+C (Terminal). Neu festlegen, wer steuern darf: `/handy neu`.
 
+**PC aus? Kein Problem:** Schreibst du dem Bot, während Nova nicht läuft, holt sie die Nachrichten beim
+nächsten Start ab und fragt: *„Soll ich das jetzt umsetzen?“* (Ja / Später / Verwerfen). Telegram hebt
+solche Nachrichten etwa 24 Stunden auf.
+
 ## Automatische Updates
 
 Einmal am Tag schaut die KI im GitHub-Repo nach einer neuen Version. Gibt es eine,

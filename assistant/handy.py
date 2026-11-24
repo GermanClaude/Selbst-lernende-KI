@@ -25,6 +25,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable
 
 logger = logging.getLogger(__name__)
@@ -52,6 +53,7 @@ class Nachricht:
     chat_id: int
     text: str
     von: str = ""        # Vorname des Absenders (nur fuer die Begruessung)
+    zeit: int = 0        # wann geschrieben (Unix-Zeit von Telegram)
 
 
 def ist_ja(text: str) -> bool:
@@ -155,8 +157,12 @@ class HandyRelay:
             if self.chat_id is not None and int(cid) != int(self.chat_id):
                 logger.info("Handy: Nachricht von fremder Chat-ID %s ignoriert", cid)
                 continue
+            try:
+                zeit = int(msg.get("date") or 0)
+            except (TypeError, ValueError):
+                zeit = 0
             nachrichten.append(Nachricht(update_id=uid, chat_id=int(cid), text=text,
-                                         von=chat.get("first_name") or chat.get("username") or ""))
+                                         von=chat.get("first_name") or chat.get("username") or "", zeit=zeit))
         return nachrichten
 
     def naechste(self, timeout: float = 30.0) -> Nachricht | None:
@@ -171,6 +177,117 @@ class HandyRelay:
             uid = int(update.get("update_id", 0))
             if uid >= self.offset:
                 self.offset = uid + 1
+
+
+# -- Nachrichten, die ankamen, waehrend der PC/Nova aus war --------------------------------------
+# Telegram hebt Nachrichten an den Bot rund 24 Stunden auf. Beim naechsten Start holt Nova sie ab,
+# legt sie hier lokal ab (bleiben auch, wenn du "spaeter" sagst oder das Fenster schliesst) und fragt
+# nach, ob sie sie umsetzen soll. Nur Nachrichten der festgelegten Chat-ID (siehe HandyRelay.hole).
+MAX_OFFEN = 50
+MAX_OFFEN_TEXT = 2000
+
+
+def rueckstand_holen(relay: HandyRelay, max_runden: int = 20) -> list[Nachricht]:
+    """Holt alle liegengebliebenen Nachrichten (ohne zu warten). Der letzte, leere Abruf bestaetigt sie
+    bei Telegram - sie kommen also nicht noch einmal. Ohne festgelegte Chat-ID: nichts (sonst kaemen
+    auch Fremde durch)."""
+    if relay.chat_id is None:
+        return []
+    alle: list[Nachricht] = []
+    for _ in range(max_runden):
+        neu = relay.hole(timeout=0)
+        if not neu:
+            break
+        alle.extend(neu)
+    return alle
+
+
+def _offen_pfad(root) -> Path:
+    return Path(root) / "data" / "handy_offen.json"
+
+
+def offen_laden(root) -> list[dict]:
+    try:
+        roh = json.loads(_offen_pfad(root).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    out = []
+    for e in roh if isinstance(roh, list) else []:
+        if isinstance(e, dict) and str(e.get("text", "")).strip():
+            try:
+                zeit = int(e.get("zeit") or 0)
+            except (TypeError, ValueError):
+                zeit = 0
+            out.append({"text": str(e["text"])[:MAX_OFFEN_TEXT], "zeit": zeit})
+    return out[-MAX_OFFEN:]
+
+
+def offen_hinzufuegen(root, nachrichten: list[Nachricht]) -> int:
+    """Haengt neue Nachrichten an die gespeicherte Liste (Stopwoerter nicht). Gibt die Anzahl neuer zurueck."""
+    neu = [{"text": n.text.strip()[:MAX_OFFEN_TEXT], "zeit": int(n.zeit or 0)}
+           for n in nachrichten if n.text and n.text.strip() and not ist_stopp(n.text)]
+    if not neu:
+        return 0
+    liste = (offen_laden(root) + neu)[-MAX_OFFEN:]
+    pfad = _offen_pfad(root)
+    pfad.parent.mkdir(parents=True, exist_ok=True)
+    pfad.write_text(json.dumps(liste, ensure_ascii=False, indent=2), encoding="utf-8")
+    return len(neu)
+
+
+def offen_leeren(root) -> None:
+    try:
+        _offen_pfad(root).unlink()
+    except OSError:
+        pass
+
+
+def offen_entfernen(root, erledigt: list[dict]) -> None:
+    """Entfernt genau diese Eintraege (was waehrend der Nachfrage neu dazukam, bleibt)."""
+    rest = offen_laden(root)
+    for e in erledigt:
+        for i, r in enumerate(rest):
+            if r["text"] == e.get("text") and r["zeit"] == e.get("zeit", 0):
+                del rest[i]
+                break
+    if not rest:
+        offen_leeren(root)
+        return
+    _offen_pfad(root).write_text(json.dumps(rest, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _wann(zeit: int) -> str:
+    if not zeit:
+        return ""
+    try:
+        return time.strftime("%d.%m. %H:%M", time.localtime(zeit))
+    except (OverflowError, OSError, ValueError):
+        return ""
+
+
+def offen_frage(liste: list[dict]) -> str:
+    """Text fuer die Nachfrage beim Start (kurz gefasst)."""
+    zeilen = []
+    for e in liste[:10]:
+        wann = _wann(e.get("zeit", 0))
+        text = e["text"] if len(e["text"]) <= 300 else e["text"][:300] + " ..."
+        zeilen.append(f"- {wann + ': ' if wann else ''}{text}")
+    if len(liste) > 10:
+        zeilen.append(f"- ... und {len(liste) - 10} weitere")
+    eins = len(liste) == 1
+    return ("Waehrend ich aus war, hast du mir vom Handy " + ("eine Nachricht" if eins else f"{len(liste)} Nachrichten")
+            + " geschickt:\n\n" + "\n".join(zeilen) + "\n\nSoll ich " + ("das" if eins else "das alles")
+            + " jetzt umsetzen?")
+
+
+def offen_auftrag(liste: list[dict]) -> str:
+    """Der Auftrag an die KI, wenn du "ja" sagst (alle Nachrichten in einer Runde, in Reihenfolge)."""
+    zeilen = []
+    for i, e in enumerate(liste, 1):
+        wann = _wann(e.get("zeit", 0))
+        zeilen.append(f"{i}) {'[' + wann + '] ' if wann else ''}{e['text']}")
+    return ("\U0001F4F1 Vom Handy, waehrend du (der PC) aus warst:\n" + "\n".join(zeilen)
+            + "\n\nSetz das jetzt bitte um. Ist etwas unklar oder inzwischen ueberholt, frag kurz nach.")
 
 
 def _stuecke(text: str, grenze: int) -> list[str]:

@@ -25,7 +25,14 @@ PC-Steuerung, Agenten …) und fragt vor riskanten Aktionen nach (`assistant/per
   `git remote set-url --add --push origin https://github.com/GermanClaude/Selbst-lernende-KI.git`
   und `git remote set-url --add --push origin https://github.com/GermanClaude/Nova-Backup.git`
   (danach `git push origin --tags` fuer die Tags). So geht nie Fortschritt verloren, auch wenn ein Chat verschwindet.
-- Zuletzt dazugekommen: **0.30.0** Skills-Reiter in der App (Profil-Fenster, `TABS` in app.js um
+- Zuletzt dazugekommen: **0.31.0** Offline-Handy-Nachrichten: `handy.rueckstand_holen` (holt mit
+  timeout=0 bis leer, der leere Abruf bestaetigt bei Telegram), Ablage `data/handy_offen.json`
+  (`offen_*`, `offen_entfernen` loescht nur die gefragten Eintraege). `cli._handy_beim_start` (Terminal:
+  vor `_loop`, App: Thread in `startup()`), `_handy_offen_fragen` mit Sperre gegen Doppel-Nachfrage; die
+  App ueberschreibt `_handy_offen_entscheidung` (Dialog "question": ja/spaeter/verwerfen - Stopp =
+  spaeter) und `_handy_offen_umsetzen` (`submit`, ein gebuendelter Auftrag). `/handy`-Start wirft den
+  Rueckstand nicht mehr weg (nur wenn noch keine Chat-ID gebunden ist). Tests `test_handy_offline`.
+  Davor: **0.30.0** Skills-Reiter in der App (Profil-Fenster, `TABS` in app.js um
   `skills` erweitert, Seitenleisten-Knopf `sb-skills` → `openProfile('skills')`; GET/POST
   `/api/skills` → `controller.skills_info`/`skills_action` über `skills.py`; Zeilen nutzen die
   `.fact`-Klassen des Gedächtnis-Reiters; Liste lädt bei jedem Öffnen neu, weil Nova Skills auch selbst

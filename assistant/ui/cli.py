@@ -928,6 +928,93 @@ class CLI:
 
         return bestaetige
 
+    # -- Handy-Nachrichten, die ankamen, waehrend Nova aus war ----------------------
+    def _handy_rueckstand_sichern(self, relay=None) -> int:
+        """Holt Nachrichten ab, die noch bei Telegram liegen (geschickt, waehrend Nova aus war), und
+        speichert sie lokal. Gibt die Zahl neuer zurueck (0 ohne Einrichtung oder ohne Verbindung)."""
+        import os
+        from ..handy import HandyRelay, TelegramFehler, offen_hinzufuegen, rueckstand_holen
+
+        if relay is None:
+            token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+            chat_id = self._handy_chat_id()
+            if not token or chat_id is None:
+                return 0
+            relay = HandyRelay(token, chat_id=chat_id)
+        try:
+            return offen_hinzufuegen(self.config.project_root, rueckstand_holen(relay))
+        except (TelegramFehler, OSError) as exc:
+            logger.info("Handy-Nachrichten nicht abgeholt: %s", exc)
+            return 0
+
+    def _handy_info(self, text: str) -> None:
+        print(_c(text, GREY))
+
+    def _handy_offen_entscheidung(self, frage: str) -> str:
+        """'ja' | 'spaeter' | 'verwerfen'. Terminal: Eingabe; die App zeigt einen Dialog."""
+        print(_c("\n" + frage, BOLD))
+        try:
+            antwort = input(_c("[j] umsetzen   [s] spaeter   [v] verwerfen: ", CYAN)).strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            return "spaeter"
+        if antwort in ("j", "ja", "y", "yes"):
+            return "ja"
+        if antwort in ("v", "verwerfen", "n", "nein", "loeschen"):
+            return "verwerfen"
+        return "spaeter"
+
+    def _handy_offen_umsetzen(self, auftrag: str) -> bool:
+        """Terminal: gleich beantworten, wie eine getippte Nachricht. True = uebergeben."""
+        print(_c(f"\n{self.config.ki.name}: ", CYAN), end="", flush=True)
+        snapshot = self.brain.provider.history_snapshot()
+        self.brain.provider.cancel_event.clear()
+        try:
+            self.brain.respond(auftrag, on_text=self._emit)
+        except KeyboardInterrupt:
+            self.brain.provider.abort_turn(snapshot, auftrag)
+            print(_c("\n[Angehalten.]", YELLOW))
+        except Exception as exc:  # noqa: BLE001 - ein Fehler darf den Start nicht verhindern
+            self.brain.provider.abort_turn(snapshot, auftrag)
+            print(_c(f"\n[Das ging nicht: {exc}]", YELLOW))
+        finally:
+            self.thinking.stop()
+        print()
+        return True  # auch nach Stopp: du warst ja dabei und hast es gesehen
+
+    def _handy_offen_fragen(self) -> None:
+        """Liegen gespeicherte Handy-Nachrichten vor: nachfragen, ob sie umgesetzt werden sollen."""
+        import threading
+        from ..handy import offen_auftrag, offen_entfernen, offen_frage, offen_laden
+
+        lock = self.__dict__.setdefault("_handy_offen_lock", threading.Lock())
+        if not lock.acquire(blocking=False):
+            return  # es wird gerade schon gefragt (Start-Pruefung und /handy gleichzeitig)
+        try:
+            root = self.config.project_root
+            liste = offen_laden(root)
+            if not liste or not self.config.api_key:
+                return  # ohne Gehirn-Schluessel nicht fragen - die Nachrichten bleiben gespeichert
+            wahl = self._handy_offen_entscheidung(offen_frage(liste))
+            if wahl == "ja":
+                if self._handy_offen_umsetzen(offen_auftrag(liste)):
+                    offen_entfernen(root, liste)
+            elif wahl == "verwerfen":
+                offen_entfernen(root, liste)
+                self._handy_info("Okay, die Handy-Nachrichten sind verworfen.")
+            else:
+                self._handy_info("Okay, die Handy-Nachrichten bleiben gespeichert - ich frage beim naechsten "
+                                 "Start nochmal.")
+        finally:
+            lock.release()
+
+    def _handy_beim_start(self) -> None:
+        """Beim Start: liegengebliebene Handy-Nachrichten abholen und nachfragen."""
+        try:
+            self._handy_rueckstand_sichern()
+            self._handy_offen_fragen()
+        except Exception as exc:  # noqa: BLE001 - der Start darf daran nie scheitern
+            logger.info("Handy-Nachrichten beim Start: %s", exc)
+
     def _handy_befehl(self, args: list[str]) -> None:
         """Terminal: Fernzugriff als uebernehmender Modus (wie /jarvis). Strg+C = zurueck zum PC."""
         import threading
@@ -955,10 +1042,14 @@ class CLI:
             print(_c(str(exc), YELLOW))
             return
         print(_c(f"\n[Handy-Fernzugriff] Mit Bot @{name} verbunden.", BOLD))
-        try:
-            relay.leeren()
-        except TelegramFehler:
-            pass
+        if relay.chat_id is None:
+            try:
+                relay.leeren()  # noch niemand festgelegt: Altes nicht abarbeiten (koennte von Fremden sein)
+            except TelegramFehler:
+                pass
+        else:
+            self._handy_rueckstand_sichern(relay)  # was liegen geblieben ist, nicht wegwerfen ...
+            self._handy_offen_fragen()             # ... sondern erst nachfragen
         if relay.chat_id is None:
             print(_c(f"Schreib jetzt in Telegram an @{name} (Knopf 'Start' oder irgendeine Nachricht) - "
                      "die erste Nachricht legt fest, dass nur du mich steuern darfst. (Strg+C bricht ab.)", CYAN))
@@ -1910,6 +2001,7 @@ class CLI:
             self._start_update_watch()
             self._start_feedback_watch()
             self._sehen_beim_start()
+            self._handy_beim_start()  # Nachrichten vom Handy, waehrend Nova aus war -> nachfragen
             self._loop()
         except (KeyboardInterrupt, EOFError):
             print()

@@ -4,6 +4,20 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.31.0 – 2026-11-24
+
+**Handy-Nachrichten gehen nicht mehr verloren, wenn der PC aus ist**
+- Schreibst du deinem Telegram-Bot, während der PC oder Nova aus ist, merkt sich Nova das. Beim
+  nächsten Start fragt sie dich: **„Während ich aus war, hast du mir vom Handy geschrieben: … Soll ich
+  das jetzt umsetzen?“** – mit **Ja, jetzt umsetzen**, **Später fragen** oder **Verwerfen**.
+- Bei „Ja“ bekommt Nova alle Nachrichten zusammen und in der richtigen Reihenfolge als einen Auftrag.
+  „Später“ behält sie (auch wenn du das Fenster schließt). Ein versehentlicher Stopp zählt als „Später“,
+  nie als „Verwerfen“.
+- Das klappt auch, wenn du `/handy` startest: Was liegen geblieben ist, wird nicht mehr übersprungen,
+  sondern erst nachgefragt.
+- Wichtig: Telegram hebt Nachrichten an den Bot etwa **24 Stunden** auf. Was älter ist, kann Nova nicht
+  mehr abholen. Und wie immer gilt: nur Nachrichten von **deinem** Handy (deine Chat-ID) zählen.
+
 ## 0.30.0 – 2026-11-24
 
 **Skills jetzt per Klick verwalten**

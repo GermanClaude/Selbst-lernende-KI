@@ -746,10 +746,14 @@ class AppController(CLI):
 
         def lauf() -> None:
             try:
-                try:
-                    relay.leeren()
-                except TelegramFehler:
-                    pass
+                if relay.chat_id is None:
+                    try:
+                        relay.leeren()  # noch niemand festgelegt: Altes nicht abarbeiten (koennte Fremdes sein)
+                    except TelegramFehler:
+                        pass
+                else:
+                    self._handy_rueckstand_sichern(relay)  # Liegengebliebenes nicht wegwerfen ...
+                    self._handy_offen_fragen()             # ... sondern erst nachfragen
                 if relay.chat_id is None:
                     self._notice(f"Handy-Fernzugriff: Schreib jetzt in Telegram an @{name} (Start oder "
                                  "irgendeine Nachricht), damit ich weiss, dass du es bist.", "afk")
@@ -781,6 +785,24 @@ class AppController(CLI):
         self._handy_thread = threading.Thread(target=lauf, name="handy-fernzugriff", daemon=True)
         self._handy_thread.start()
         print(f"Handy-Fernzugriff gestartet (Bot @{name}).")
+
+    # Handy-Nachrichten von "waehrend Nova aus war": im Fenster als Dialog, Umsetzen ueber die Warteschlange
+    def _handy_info(self, text: str) -> None:
+        self._notice(schoen(text), "afk")
+
+    def _handy_offen_entscheidung(self, frage: str) -> str:
+        wahl = self._ask("question", schoen(frage),
+                         [("ja", "Ja, jetzt umsetzen"), ("spaeter", schoen("Spaeter fragen")),
+                          ("verwerfen", "Verwerfen")], default="spaeter")
+        return wahl if wahl in ("ja", "verwerfen") else "spaeter"  # Stopp/Schliessen = spaeter
+
+    def _handy_offen_umsetzen(self, auftrag: str) -> bool:
+        r = self.submit(auftrag)  # wie getippt: in die Warteschlange, falls Nova gerade arbeitet
+        if not r.get("ok"):
+            self._notice(schoen("Die Handy-Nachrichten konnte ich gerade nicht abschicken - sie bleiben "
+                                f"gespeichert. ({r.get('error', '')})"), "warn")
+            return False
+        return True
 
     def _handy_antwort(self, text: str) -> str:
         """Beantwortet eine Handy-Nachricht - seriell mit der App (busy-Sperre), damit das Gespraech
@@ -2232,6 +2254,8 @@ class AppController(CLI):
             threading.Thread(target=ollama_check, name="ollama-pruefen", daemon=True).start()
         self._start_update_watch()
         self._start_feedback_watch()  # Nutzungszeit zaehlen, Feedback-Ausgang nachsenden
+        # Nachrichten vom Handy, waehrend Nova aus war: abholen und nachfragen (im Hintergrund - Netz)
+        threading.Thread(target=self._handy_beim_start, name="handy-rueckstand", daemon=True).start()
         try:
             self._sehen_beim_start()
         except Exception as exc:  # noqa: BLE001
