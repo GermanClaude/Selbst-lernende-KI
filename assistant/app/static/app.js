@@ -4649,9 +4649,13 @@
   const memCat = byId('mem-cat');
   const memSearch = byId('mem-search');
   const memAddBtn = byId('mem-add-btn');
+  const skName = byId('skill-name');
+  const skText = byId('skill-text');
+  const skProv = byId('skill-prov');
+  const skAddBtn = byId('skill-add-btn');
   const pconfirm = byId('pn-confirm');
-  const TABS = ['charakter', 'stil', 'ueber', 'werte', 'gedaechtnis', 'sicherheit', 'gehirn'];
-  const NO_PROFILE_TABS = new Set(['gedaechtnis', 'sicherheit', 'gehirn']); // brauchen das geladene Profil nicht
+  const TABS = ['charakter', 'stil', 'ueber', 'werte', 'gedaechtnis', 'skills', 'sicherheit', 'gehirn'];
+  const NO_PROFILE_TABS = new Set(['gedaechtnis', 'skills', 'sicherheit', 'gehirn']); // brauchen das geladene Profil nicht
   const LONG_ABOUT = new Set(['interessen', 'projekte', 'wichtig', 'nicht', 'sonstiges']);
   const CHAR_ICONS = {
     freundlich: 'smile', sachlich: 'briefcase', butler: 'bowtie', mentor: 'cap',
@@ -4684,6 +4688,8 @@
   let memConfirm = null;
   let memFlash = '';
   let memAdding = false;
+  const sk = { skills: [], gehirne: [], aktiv: '', loaded: false, loading: false, error: false, gen: 0, adding: false };
+  let skConfirm = null;
 
   function normProfile(p) {
     p = p && typeof p === 'object' ? p : {};
@@ -4821,6 +4827,7 @@
     tabBtn.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     updateTabFade();
     if (t === 'gedaechtnis' && !mem.loaded && !mem.loading) loadMemory();
+    if (t === 'skills' && !sk.loading) loadSkills(); // jedes Mal frisch: Nova legt Skills auch selbst an
     if (t === 'gehirn') { mountSetup('pane'); loadSetup(); }
     else if (su.where === 'pane') { su.where = ''; clearKey(); }
   }
@@ -5514,6 +5521,173 @@
     updateAddBtn();
     memNew.focus();
   });
+
+  // ---------- Skills (eigene Regeln, fuer alle Gehirne oder nur eins) ----------
+  async function loadSkills() {
+    const gen = ++sk.gen;
+    sk.loading = true;
+    sk.error = false;
+    if (!sk.loaded) renderSkills(); // beim Neuladen die alte Liste stehen lassen (kein Flackern)
+    const d = await getJson('/api/skills');
+    if (gen !== sk.gen) return;
+    sk.loading = false;
+    if (!d || !Array.isArray(d.skills)) { sk.error = !sk.loaded; renderSkills(); return; }
+    setSkills(d);
+  }
+
+  function setSkills(d) {
+    sk.skills = d.skills.filter((s) => s && typeof s === 'object' && str(s.name).trim()).map((s) => ({
+      name: str(s.name), anweisung: str(s.anweisung), an: s.an !== false, provider: str(s.provider).toLowerCase(),
+    }));
+    if (Array.isArray(d.gehirne)) {
+      sk.gehirne = d.gehirne.filter((g) => g && typeof g === 'object' && str(g.id))
+        .map((g) => ({ id: str(g.id), name: str(g.name) || str(g.id) }));
+    }
+    sk.aktiv = str(d.aktiv);
+    sk.loaded = true;
+    sk.error = false;
+    fillSkillProv();
+    renderSkills();
+  }
+
+  function skillGehirn(id) {
+    const g = sk.gehirne.find((x) => x.id === id);
+    return g ? g.name : id;
+  }
+
+  function fillSkillProv() {
+    const cur = skProv.value;
+    skProv.replaceChildren();
+    const alle = h('option', null, 'Für alle Gehirne');
+    alle.value = '';
+    skProv.append(alle);
+    for (const g of sk.gehirne) {
+      const o = h('option', null, 'Nur ' + g.name + (g.id === sk.aktiv ? ' (gerade aktiv)' : ''));
+      o.value = g.id;
+      skProv.append(o);
+    }
+    skProv.value = [...skProv.options].some((o) => o.value === cur) ? cur : '';
+  }
+  fillSkillProv();
+
+  function renderSkills() {
+    const list = byId('skill-list');
+    list.replaceChildren();
+    byId('tab-skill-count').textContent = sk.loaded && sk.skills.length ? String(sk.skills.length) : '';
+    if (!sk.loaded) {
+      if (sk.error) {
+        const b = h('button', 'btn small secondary', 'Nochmal versuchen');
+        b.type = 'button';
+        b.addEventListener('click', loadSkills);
+        list.append(memStateBox('error', 'Die Skills konnten nicht geladen werden.', '', b));
+      } else {
+        list.append(memStateBox('loading', 'Lade die Skills …'));
+      }
+      return;
+    }
+    if (!sk.skills.length) {
+      list.append(memStateBox('empty', 'Noch keine Skills',
+        'Leg oben einen an – z.B. „Kurz antworten“. ' + kiName() + ' kann sich auch selbst welche anlegen.'));
+      return;
+    }
+    for (const s of sk.skills) list.append(skillRow(s));
+  }
+
+  function skillRow(s) {
+    const row = h('div', 'fact skill' + (s.an ? '' : ' off'));
+    const chip = h('span', 'fact-cat c' + (s.provider ? catHue(s.provider) : 0));
+    chip.title = s.provider ? 'Gilt nur für ' + skillGehirn(s.provider) : 'Gilt für alle Gehirne';
+    chip.append(icon(s.provider ? 'sparkles' : 'globe'), h('span', null, s.provider ? skillGehirn(s.provider) : 'Alle'));
+    const text = h('div', 'fact-text');
+    text.append(h('b', 'skill-name', s.name), h('span', 'skill-anw', s.anweisung));
+    const tog = h('button', 'btn small ' + (s.an ? 'secondary' : 'ghost'), s.an ? 'An' : 'Aus');
+    tog.type = 'button';
+    tog.setAttribute('aria-pressed', s.an ? 'true' : 'false');
+    tog.title = s.an ? 'Ausschalten' : 'Einschalten';
+    tog.setAttribute('aria-label', (s.an ? 'Ausschalten: ' : 'Einschalten: ') + s.name);
+    tog.addEventListener('click', () => toggleSkill(s, tog));
+    const del = h('button', 'fact-del');
+    del.type = 'button';
+    del.title = 'Löschen';
+    del.setAttribute('aria-label', 'Löschen: ' + s.name);
+    del.append(icon('trash'), h('span', 'fact-del-text', 'Wirklich?'));
+    del.addEventListener('click', () => onDelSkill(s, row, del));
+    row.append(chip, text, tog, del);
+    return row;
+  }
+
+  async function toggleSkill(s, tog) {
+    skConfirmReset();
+    tog.disabled = true;
+    const r = await post('/api/skills', { action: 'toggle', name: s.name, an: !s.an });
+    if (Array.isArray(r.skills)) setSkills(r); else tog.disabled = false;
+    if (!r.ok) { toast(r.message || r.error || 'Das hat nicht geklappt.', 'error'); return; }
+    toast(s.an ? 'Skill ausgeschaltet' : 'Skill eingeschaltet', 'ok', 1600);
+    const again = [...byId('skill-list').querySelectorAll('.fact.skill')].find((x) => {
+      const n = x.querySelector('.skill-name');
+      return n && n.textContent === s.name;
+    });
+    const btn = again && again.querySelector('button[aria-pressed]');
+    if (btn) btn.focus();
+  }
+
+  function skConfirmReset() {
+    if (!skConfirm) return;
+    clearTimeout(skConfirm.timer);
+    const d = skConfirm.del;
+    d.classList.remove('confirm');
+    d.title = 'Löschen';
+    d.setAttribute('aria-label', skConfirm.label);
+    skConfirm = null;
+  }
+
+  function onDelSkill(s, row, del) {
+    if (skConfirm && skConfirm.del === del) { delSkill(s, row); return; }
+    skConfirmReset();
+    skConfirm = { del, label: del.getAttribute('aria-label'), timer: setTimeout(skConfirmReset, 4000) };
+    del.classList.add('confirm');
+    del.title = 'Nochmal klicken zum Löschen';
+    del.setAttribute('aria-label', 'Wirklich löschen? Nochmal drücken');
+  }
+
+  async function delSkill(s, row) {
+    skConfirmReset();
+    row.classList.add('removing');
+    const r = await post('/api/skills', { action: 'remove', name: s.name });
+    if (Array.isArray(r.skills)) setSkills(r); else row.classList.remove('removing');
+    if (!r.ok) { toast(r.message || r.error || 'Das hat nicht geklappt.', 'error'); return; }
+    toast('Skill gelöscht', 'ok', 1600);
+    skName.focus();
+  }
+
+  function updateSkillAdd() {
+    skAddBtn.disabled = sk.adding || !skName.value.trim() || !skText.value.trim();
+  }
+  skName.addEventListener('input', updateSkillAdd);
+  skText.addEventListener('input', updateSkillAdd);
+  byId('skill-add').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const name = skName.value.trim();
+    const anweisung = skText.value.trim();
+    if (!name || !anweisung || sk.adding) return;
+    const ersetzt = sk.skills.some((x) => x.name.toLowerCase() === name.toLowerCase());
+    sk.adding = true;
+    updateSkillAdd();
+    const r = await post('/api/skills', { action: 'add', name, anweisung, provider: skProv.value || '' });
+    sk.adding = false;
+    if (r.ok) {
+      skName.value = '';
+      skText.value = '';
+      toast((ersetzt ? 'Skill „' + name + '“ aktualisiert' : 'Skill gespeichert') + ' – gilt ab dem nächsten Gespräch',
+        'ok', 2800);
+    } else {
+      toast(r.message || r.error || 'Speichern hat nicht geklappt.', 'error');
+    }
+    if (Array.isArray(r.skills)) setSkills(r);
+    updateSkillAdd();
+    skName.focus();
+  });
+  byId('sb-skills').addEventListener('click', () => openProfile('skills'));
 
   // =====================================================================
   // Aussehen, das Nova anpasst (/api/appearance, /custom.css)

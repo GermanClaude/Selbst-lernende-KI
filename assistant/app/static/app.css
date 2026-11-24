@@ -1751,6 +1751,23 @@ kbd {
 .fact-del-text { display: none; }
 .fact-del.confirm { background: #dc2626; color: #fff; padding: 0 10px 0 9px; }
 .fact-del.confirm .fact-del-text { display: inline; }
+
+/* Skills (Reiter im Profil) - Aenderungen gelten sofort, darum ohne Speichern-Leiste */
+.panel[data-tab="skills"] .pn-foot { display: none; }
+.skill-add { display: grid; gap: 8px; }
+.skill-add textarea { resize: vertical; min-height: 64px; line-height: 1.45; }
+.skill-row { display: flex; gap: 8px; align-items: center; }
+.skill-row .select { flex: 1; min-width: 0; }
+.skill-row .btn { flex: none; }
+.skill-row .btn .ic { width: 16px; height: 16px; }
+.fact.skill .fact-text { display: flex; flex-direction: column; gap: 2px; }
+.fact.skill .skill-name { font-weight: 650; }
+.fact.skill .skill-anw { color: var(--text-2); }
+.fact.skill > .btn.small { min-width: 52px; }
+.fact.skill.off .fact-cat, .fact.skill.off .fact-text { opacity: .45; }
+@media (max-width: 680px) {
+  .fact.skill > .btn { grid-area: imp; justify-self: end; }
+}
 .mem-empty {
   display: flex; flex-direction: column; align-items: center; gap: 6px;
   padding: 36px 16px;

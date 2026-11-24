@@ -1465,6 +1465,42 @@ class AppController(CLI):
             return {"ok": False, "error": f"Unbekannt: {action}"}
         return {"ok": bool(ok), **self.memory_facts()}
 
+    # -- Skills-Reiter (GET/POST /api/skills) --------------------------------------
+    def skills_info(self) -> dict:
+        """Alle Skills + die Gehirne fuer die Auswahl "gilt fuer" (leer = alle Gehirne)."""
+        from .. import skills as skills_mod
+        from ..modelle import _GEHIRN_NAME
+
+        liste = [s.to_dict() for s in skills_mod.laden(self.config.project_root)]
+        gehirne = [{"id": k, "name": v} for k, v in _GEHIRN_NAME.items()]
+        return {"skills": liste, "gehirne": gehirne, "aktiv": self.config.active_provider,
+                "max": skills_mod.MAX_SKILLS}
+
+    def skills_action(self, data: dict) -> dict:
+        """{"action": "add", name, anweisung, provider} | {"action": "toggle", name, an} |
+        {"action": "remove", name}. Antwortet immer mit der neuen Liste."""
+        from .. import skills as skills_mod
+        from ..modelle import _GEHIRN_NAME
+
+        root = self.config.project_root
+        action = str(data.get("action", ""))
+        name = str(data.get("name", ""))
+        message = ""
+        if action == "add":
+            provider = str(data.get("provider", "") or "").strip().lower()
+            if provider and provider not in _GEHIRN_NAME:
+                return {"ok": False, "error": f"Unbekanntes Gehirn: {provider}", **self.skills_info()}
+            ok, message = skills_mod.hinzufuegen(root, name, str(data.get("anweisung", "")), provider)
+        elif action == "toggle":
+            ok = skills_mod.umschalten(root, name, bool(data.get("an")))
+            message = "" if ok else "Diesen Skill gibt es nicht (mehr)."
+        elif action == "remove":
+            ok = skills_mod.entfernen(root, name)
+            message = "" if ok else "Diesen Skill gibt es nicht (mehr)."
+        else:
+            return {"ok": False, "error": f"Unbekannt: {action}", **self.skills_info()}
+        return {"ok": bool(ok), "message": message, **self.skills_info()}
+
     def _new_conversation(self) -> None:
         super()._new_conversation()
         self.history.clear()

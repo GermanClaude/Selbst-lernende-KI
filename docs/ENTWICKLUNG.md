@@ -25,7 +25,12 @@ PC-Steuerung, Agenten …) und fragt vor riskanten Aktionen nach (`assistant/per
   `git remote set-url --add --push origin https://github.com/GermanClaude/Selbst-lernende-KI.git`
   und `git remote set-url --add --push origin https://github.com/GermanClaude/Nova-Backup.git`
   (danach `git push origin --tags` fuer die Tags). So geht nie Fortschritt verloren, auch wenn ein Chat verschwindet.
-- Zuletzt dazugekommen: **0.29.1** DeepSeek-Flash-Eintrag umbenannt in „DeepSeek V4.1 Flash"
+- Zuletzt dazugekommen: **0.30.0** Skills-Reiter in der App (Profil-Fenster, `TABS` in app.js um
+  `skills` erweitert, Seitenleisten-Knopf `sb-skills` → `openProfile('skills')`; GET/POST
+  `/api/skills` → `controller.skills_info`/`skills_action` über `skills.py`; Zeilen nutzen die
+  `.fact`-Klassen des Gedächtnis-Reiters; Liste lädt bei jedem Öffnen neu, weil Nova Skills auch selbst
+  anlegt). Tests `test_skills_panel`; im echten Browser gegen einen Wegwerf-Server geprüft (keine
+  Konsolenfehler, Anlegen/An-Aus/Löschen, schmales Layout). Davor: **0.29.1** DeepSeek-Flash-Eintrag umbenannt in „DeepSeek V4.1 Flash"
   (gleiche API-ID `deepseek-flash`, laut Recherche = V4.1-Flash mit Vision + Thinking); neues
   optionales `"aliase"`-Feld je Modell in `modelle._finde_modell` (für `/modell v4.1 flash` usw.).
   Tools/Skills pro Modell gab es schon (`skill`-Werkzeug, `skills.prompt_block(provider)`). Davor:

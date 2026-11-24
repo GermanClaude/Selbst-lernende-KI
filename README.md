@@ -624,7 +624,7 @@ stoppt die Steuerung sofort.
 | `/stimme [frei\|openai\|elevenlabs]` | Vorlese-Stimme wählen: gratis oder realistisch (kostet Geld) |
 | `/transkript [start system\|start mikrofon\|stop\|name N Name\|zusammenfassung]` | Ton **lokal** mitschreiben/transkribieren (keine Tokens), bis Stopp |
 | `/protokoll [an\|aus\|zeigen]` | Aktivitäts-Protokoll: welche Apps/Fenster du nutzt (kein Keylogger) |
-| `/skill [add <Name> <Anweisung>\|addfuer <gehirn> …\|an\|aus\|weg]` | Eigene Regeln/Skills (für alle Gehirne oder eins) |
+| `/skill [add <Name> <Anweisung>\|addfuer <gehirn> …\|an\|aus\|weg]` | Eigene Regeln/Skills (für alle Gehirne oder eins) – in der App auch per Klick im Reiter **Skills** |
 | `/sprachmodus` | Sprachmodus: einfach reden, live (zurück: „Chat-Modus“ sagen) |
 | `/handy [token <T>\|neu\|aus]` | Fernzugriff per Telegram: Nova vom Handy steuern (ohne Server) |
 | `/arbeitsordner [Pfad\|oeffnen\|zuruecksetzen]` | Arbeitsordner zeigen/wählen – dort legst du Dateien für Nova ab |

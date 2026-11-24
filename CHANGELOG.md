@@ -4,6 +4,17 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.30.0 – 2026-11-24
+
+**Skills jetzt per Klick verwalten**
+- Neu in der App: ein eigener Reiter **Skills** (im Fenster „Charakter & Profil“, oder direkt über den
+  neuen Knopf **Skills** in der Seitenleiste).
+- Dort legst du Skills an (Name + Anweisung) und wählst, ob sie **für alle Gehirne** oder **nur für
+  eins** gelten (z. B. nur DeepSeek). Jeden Skill kannst du mit einem Klick **an- und ausschalten**
+  oder **löschen** (zur Sicherheit mit zweitem Klick).
+- Skills, die sich Nova selbst angelegt hat, siehst du dort ebenfalls. Änderungen gelten ab dem
+  nächsten Gespräch. Der Befehl `/skill` funktioniert weiterhin.
+
 ## 0.29.1 – 2026-11-24
 
 **DeepSeek V4.1 Flash klar als Modell wählbar**

@@ -6,13 +6,13 @@ fremde Webseiten im Browser nicht ueber Umwege (DNS-Rebinding) Befehle schicken
 koennen. Der Server spricht nur mit der eigenen Oberflaeche:
   GET  /, /static/*      Oberflaeche
   GET  /api/events       Ereignisstrom (Server-Sent Events)
-  GET  /api/state, /api/history, /api/profile, /api/memory, /api/tutorial, /api/appearance, /custom.css,
+  GET  /api/state, /api/history, /api/profile, /api/memory, /api/skills, /api/tutorial, /api/appearance, /custom.css,
        /api/setup, /api/feedback, /api/bewertungen, /api/ollama
   GET  /api/bild/<h|e|s>/<name>?t=   Bild anzeigen: h = hochgeladen (data/bilder/hochgeladen),
                                    e = erstellt (<Arbeitsordner>/bilder), s = Spielbericht
                                    (<Arbeitsordner>/spiele/<Datum>) - nur PNG/JPEG/GIF/WebP
   POST /api/send (Text + Bilder, Warteschlange, interrupt), /api/queue, /api/afk, /api/stop,
-       /api/answer, /api/voice, /api/toggle, /api/profile, /api/memory, /api/jarvis, /api/tutorial,
+       /api/answer, /api/voice, /api/toggle, /api/profile, /api/memory, /api/skills, /api/jarvis, /api/tutorial,
        /api/setup, /api/modell, /api/stimme, /api/update, /api/feedback, /api/feedback/spaeter,
        /api/feedback/gezeigt, /api/bilder/einstellen,
        /api/ollama/laden, /api/ollama/abbrechen, /api/ollama/adresse, /api/ollama/starten,
@@ -181,6 +181,8 @@ class AppServer:
                     return self._json(ctl.profile())
                 if url.path == "/api/memory":
                     return self._json(ctl.memory_facts())
+                if url.path == "/api/skills":
+                    return self._json(ctl.skills_info())
                 if url.path == "/api/tutorial":
                     return self._json(ctl.tutorial())
                 if url.path == "/api/appearance":
@@ -336,6 +338,8 @@ class AppServer:
                         return self._json({"ok": False, "error": str(exc)})
                 if url.path == "/api/memory":
                     return self._json(ctl.memory_action(body))
+                if url.path == "/api/skills":
+                    return self._json(ctl.skills_action(body))
                 if url.path == "/api/jarvis":
                     return self._json(ctl.jarvis(str(body.get("action", "")), str(body.get("tts", "client")),
                                                  body.get("turn"), body.get("seq"), bool(body.get("progress"))))

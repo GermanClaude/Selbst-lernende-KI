@@ -140,6 +140,7 @@
       <button class="sb-btn" type="button" id="sb-tour"><span data-icon="compass"></span>Tour starten</button>
       <button class="sb-btn" type="button" data-cmd="/status"><span data-icon="activity"></span>Status</button>
       <button class="sb-btn" type="button" data-cmd="/gedaechtnis"><span data-icon="book"></span>Gedächtnis</button>
+      <button class="sb-btn" type="button" id="sb-skills" aria-haspopup="dialog"><span data-icon="zap"></span>Skills</button>
       <button class="sb-btn" type="button" data-cmd="/kosten"><span data-icon="coins"></span>Kosten</button>
       <button class="sb-btn" type="button" data-cmd="/update"><span data-icon="refresh"></span>Nach Updates suchen</button>
       <button class="sb-btn" type="button" data-cmd="/versionen"><span data-icon="history"></span>Versionen</button>
@@ -403,6 +404,7 @@
       <button class="pn-tab" type="button" role="tab" id="tab-ueber" data-tab="ueber" aria-controls="pane-ueber" aria-selected="false" tabindex="-1"><span data-icon="idCard"></span><span>Über mich</span><i class="tab-dot" aria-hidden="true"></i></button>
       <button class="pn-tab" type="button" role="tab" id="tab-werte" data-tab="werte" aria-controls="pane-werte" aria-selected="false" tabindex="-1"><span data-icon="scale"></span><span>Werte</span><i class="tab-dot" aria-hidden="true"></i></button>
       <button class="pn-tab" type="button" role="tab" id="tab-gedaechtnis" data-tab="gedaechtnis" aria-controls="pane-gedaechtnis" aria-selected="false" tabindex="-1"><span data-icon="brain"></span><span>Gedächtnis</span><span class="tab-count" id="tab-mem-count"></span></button>
+      <button class="pn-tab" type="button" role="tab" id="tab-skills" data-tab="skills" aria-controls="pane-skills" aria-selected="false" tabindex="-1"><span data-icon="zap"></span><span>Skills</span><span class="tab-count" id="tab-skill-count"></span></button>
       <button class="pn-tab" type="button" role="tab" id="tab-sicherheit" data-tab="sicherheit" aria-controls="pane-sicherheit" aria-selected="false" tabindex="-1"><span data-icon="shield"></span><span>Sicherheit</span></button>
       <button class="pn-tab" type="button" role="tab" id="tab-gehirn" data-tab="gehirn" aria-controls="pane-gehirn" aria-selected="false" tabindex="-1"><span data-icon="sparkles"></span><span>Gehirn</span><i class="tab-dot warn" aria-hidden="true"></i></button>
     </div>
@@ -531,6 +533,28 @@
             <span class="mem-count" id="mem-count"></span>
           </div>
           <div class="mem-list" id="mem-list" aria-live="polite"></div>
+        </div>
+      </section>
+
+      <!-- 5b. Skills -->
+      <section class="pane" id="pane-skills" role="tabpanel" aria-labelledby="tab-skills" hidden>
+        <div class="pn-section">
+          <div class="pn-sec-head">
+            <h3 class="pn-h" id="skill-title">Skills – eigene Regeln für die KI</h3>
+            <p class="pn-desc">Ein Skill ist eine Anweisung, an die sie sich hält – für alle Gehirne oder nur für eins. Sie legt sich auch selbst Skills an, wenn ihr etwas fehlt. Änderungen gelten ab dem nächsten Gespräch.</p>
+          </div>
+          <form class="skill-add" id="skill-add" autocomplete="off">
+            <label class="sr-only" for="skill-name">Name des Skills</label>
+            <input class="input" id="skill-name" type="text" maxlength="80" placeholder="Name, z.B. „Kurz antworten“">
+            <label class="sr-only" for="skill-text">Anweisung</label>
+            <textarea class="input" id="skill-text" maxlength="1000" rows="3" placeholder="Anweisung, z.B. „Antworte so knapp wie möglich, ohne Einleitung.“"></textarea>
+            <div class="skill-row">
+              <label class="sr-only" for="skill-prov">Gilt für</label>
+              <select class="input select" id="skill-prov"></select>
+              <button class="btn primary" id="skill-add-btn" type="submit" disabled><span data-icon="plus"></span>Hinzufügen</button>
+            </div>
+          </form>
+          <div class="mem-list" id="skill-list" aria-live="polite"></div>
         </div>
       </section>
 
