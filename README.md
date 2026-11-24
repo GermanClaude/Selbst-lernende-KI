@@ -488,7 +488,7 @@ Nova sucht auf Wunsch nach Spuren von Schadsoftware – nur lesend, sie löscht 
 - **Bilder zeigen:** In der App mit **Strg+V** einfügen, ins Fenster ziehen oder über die
   **Büroklammer** auswählen (bis zu 10 pro Nachricht). Im Terminal: `/bild <Pfad> [Frage]`
   oder einfach den Bildpfad hineinziehen; `/bild` allein nimmt das Bild aus der
-  Zwischenablage. Claude und DeepSeek Flash sehen Bilder direkt; bei DeepSeek V4 Pro
+  Zwischenablage. Claude und DeepSeek V4.1 Flash sehen Bilder direkt; bei DeepSeek V4 Pro
   beschreibt Flash das Bild kurz vorher (kostet nur Bruchteile eines Cents). Bilder werden
   vorher verkleinert, das spart Kosten.
 - **Bilder erstellen:** Sag z.B. „Mal mir einen Fuchs im Weltraum“. Weder Claude noch

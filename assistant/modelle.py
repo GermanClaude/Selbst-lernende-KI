@@ -38,9 +38,11 @@ CLAUDE_MODELLE = [
 
 # DeepSeek: tagsueber (Spitzenzeit) doppelt so teuer wie sonst.
 DEEPSEEK_MODELLE = [
-    {"id": "deepseek-flash", "name": "DeepSeek Flash", "kurz": "flash",
-     "info": "schnell und extrem guenstig - der Standard", "tempo": "schnell",
-     "preis": (0.15, 0.003, 0.6), "preis_spitze": (0.3, 0.006, 1.2), "sieht_bilder": True},
+    {"id": "deepseek-flash", "name": "DeepSeek V4.1 Flash", "kurz": "flash",
+     "info": "V4.1 - schnell und extrem guenstig, sieht Bilder und kann nachdenken - der Standard",
+     "tempo": "schnell", "preis": (0.15, 0.003, 0.6), "preis_spitze": (0.3, 0.006, 1.2), "sieht_bilder": True,
+     "aliase": ["v4.1 flash", "4.1 flash", "deepseek 4.1 flash", "deepseek-v4.1-flash", "deepseek-v4-1-flash",
+                "v4.1-flash", "4.1-flash"]},
     {"id": "deepseek-v4-pro", "name": "DeepSeek V4 Pro", "kurz": "pro",
      "info": "staerker bei schweren Aufgaben, etwas langsamer und teurer", "tempo": "mittel",
      "preis": (0.66, 0.022, 1.98), "preis_spitze": (1.32, 0.044, 3.96), "sieht_bilder": False},
@@ -556,6 +558,7 @@ def _finde_modell(provider: str, wanted: str) -> str | None:
         names = {m["id"], m["kurz"], m["name"].lower(),
                  m["name"].lower().replace("claude ", "").replace("deepseek ", "").replace("gemini ", "")
                  .replace("gpt-6 ", "").replace("gpt ", "")}
+        names |= {str(a).lower() for a in m.get("aliase", ())}
         if wanted in names or wanted.replace(" ", "-") in names:
             return m["id"]
     return None

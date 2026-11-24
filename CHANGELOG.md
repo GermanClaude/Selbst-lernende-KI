@@ -4,6 +4,17 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.29.1 – 2026-11-24
+
+**DeepSeek V4.1 Flash klar als Modell wählbar**
+- Das schnelle DeepSeek-Standardmodell heißt jetzt überall **„DeepSeek V4.1 Flash"** (vorher nur
+  „DeepSeek Flash") – es ist dasselbe Modell, mit korrektem Namen. Es sieht Bilder und kann
+  nachdenken. Wählen in der App unter *Gehirn & Schlüssel* oder im Chat mit `/modell flash` bzw.
+  `/modell v4.1 flash` (auch „deepseek-v4.1-flash" wird erkannt).
+- Wie bei **jedem** Gehirn kann Nova sich dafür eigene Skills/Werkzeuge bauen: `/skill addfuer
+  deepseek …` (nur für DeepSeek) oder `/skill add …` (für alle). Nova kann Skills auch selbst
+  anlegen, wenn ihr ein Werkzeug fehlt.
+
 ## 0.29.0 – 2026-11-24
 
 **Arbeitsordner frei wählbar – leg Nova Dateien hin**

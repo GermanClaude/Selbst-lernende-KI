@@ -330,7 +330,7 @@ beim passenden Namen eintragen, speichern, neu starten.
 falsch kopiert. Guthaben prüfen, Schlüssel neu kopieren.
 
 **DeepSeek-Modell wird nicht gefunden** → Im Chat `/modell flash` eingeben (oder in
-der App unter Gehirn & Schlüssel „DeepSeek Flash“ wählen). Die alten Namen
+der App unter Gehirn & Schlüssel „DeepSeek V4.1 Flash“ wählen). Die alten Namen
 `deepseek-chat`/`deepseek-reasoner` stellt Nova seit Version 0.6.0 selbst um.
 
 **Nach einem Update öffnet sich das Desktop-Symbol nicht mehr (oder zeigt eine alte

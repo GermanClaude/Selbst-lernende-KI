@@ -25,7 +25,11 @@ PC-Steuerung, Agenten …) und fragt vor riskanten Aktionen nach (`assistant/per
   `git remote set-url --add --push origin https://github.com/GermanClaude/Selbst-lernende-KI.git`
   und `git remote set-url --add --push origin https://github.com/GermanClaude/Nova-Backup.git`
   (danach `git push origin --tags` fuer die Tags). So geht nie Fortschritt verloren, auch wenn ein Chat verschwindet.
-- Zuletzt dazugekommen: **0.29.0** Arbeitsordner frei wählbar (`/arbeitsordner`, App-Knopf mit
+- Zuletzt dazugekommen: **0.29.1** DeepSeek-Flash-Eintrag umbenannt in „DeepSeek V4.1 Flash"
+  (gleiche API-ID `deepseek-flash`, laut Recherche = V4.1-Flash mit Vision + Thinking); neues
+  optionales `"aliase"`-Feld je Modell in `modelle._finde_modell` (für `/modell v4.1 flash` usw.).
+  Tools/Skills pro Modell gab es schon (`skill`-Werkzeug, `skills.prompt_block(provider)`). Davor:
+  **0.29.0** Arbeitsordner frei wählbar (`/arbeitsordner`, App-Knopf mit
   pywebview-FOLDER_DIALOG über `controller._arbeitsordner_picker`/`launcher` `ctl._window`;
   `cli._arbeitsordner_setzen` legt an + speichert `[permissions] workspace_root` + wirkt sofort auf
   `PermissionManager.workspace_root`). Shell ohne Ordnerangabe läuft jetzt im Arbeitsordner
