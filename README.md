@@ -626,7 +626,7 @@ stoppt die Steuerung sofort.
 | `/gehirn [deepseek\|claude\|gemini\|openai\|ollama]` | Gehirn zeigen bzw. wechseln |
 | `/ollama [laden <modell>]` | Ollama-Status zeigen bzw. ein Modell herunterladen |
 | `/update` | jetzt nach einer neuen Version schauen |
-| `/rechtliches` | Nutzungsbedingungen, Haftungsausschluss & Impressum anzeigen |
+| `/rechtliches` | Nutzungsbedingungen & Haftungsausschluss anzeigen |
 | `/versionen` | gesicherte alte Versionen anzeigen |
 | `/zurueck <Nr>` | zu einer alten Version zurückkehren |
 | `/autostart` | zeigen (und abstellen), was die KI automatisch startet |
@@ -714,7 +714,7 @@ verantwortlich, die du der KI erlaubst. Starte mit den sicheren Standardwerten u
 erweitere die Rechte erst, wenn du dich damit wohlfühlst.
 
 Die vollständigen **[Nutzungsbedingungen & den Haftungsausschluss](NUTZUNGSBEDINGUNGEN.md)**
-sowie die **[Impressum-Vorlage](IMPRESSUM.md)** findest du in eigenen Dateien – in der App und
-im Terminal auch über den Befehl `/rechtliches`. Beide sind **Vorlagen** mit Platzhaltern in
-eckigen Klammern, die du selbst ausfüllst; sie sind **kein Rechtsrat**. In Deutschland/der EU
-lässt sich die Haftung nicht vollständig ausschließen (siehe Hinweis in der Datei).
+findest du in einer eigenen Datei – in der App und im Terminal auch über den Befehl
+`/rechtliches`. Es ist eine **Vorlage** mit Platzhaltern in eckigen Klammern, die du selbst
+ausfüllst; sie ist **kein Rechtsrat**. In Deutschland/der EU lässt sich die Haftung nicht
+vollständig ausschließen (siehe Hinweis in der Datei).

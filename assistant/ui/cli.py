@@ -17,7 +17,7 @@ Sonderbefehle (mit '/' beginnen):
   /gedaechtnis        - zeigen, was die KI gelernt hat
   /kosten             - Token-Verbrauch & geschaetzte Kosten dieser Sitzung
   /update             - jetzt nach einer neuen Version schauen
-  /rechtliches        - Nutzungsbedingungen, Haftungsausschluss & Impressum anzeigen
+  /rechtliches        - Nutzungsbedingungen & Haftungsausschluss anzeigen
   /versionen          - gesicherte alte Versionen anzeigen
   /zurueck <Nr>       - zu einer gesicherten alten Version zurueckkehren
   /autostart          - zeigen, was die KI automatisch startet (und es abstellen)
@@ -1993,7 +1993,7 @@ class CLI:
             self._skills_command(cmd.split()[1:])
         elif base == "/update":
             return self._update_command()
-        elif base in ("/rechtliches", "/recht", "/impressum", "/nutzungsbedingungen", "/agb"):
+        elif base in ("/rechtliches", "/recht", "/nutzungsbedingungen", "/agb"):
             self._print_rechtliches()
         elif base in ("/versionen", "/version"):
             self._print_versions()
@@ -2508,23 +2508,12 @@ class CLI:
 
     def _print_rechtliches(self) -> None:
         nutzung, pfad_n = self._rechts_text("NUTZUNGSBEDINGUNGEN.md")
-        impressum, pfad_i = self._rechts_text("IMPRESSUM.md")
-        if not nutzung and not impressum:
-            print(_c("Keine rechtlichen Dokumente gefunden "
-                     "(NUTZUNGSBEDINGUNGEN.md / IMPRESSUM.md).", YELLOW))
+        if not nutzung:
+            print(_c("Keine Nutzungsbedingungen gefunden (NUTZUNGSBEDINGUNGEN.md).", YELLOW))
             return
         print(_c("\n=== Nutzungsbedingungen & Haftungsausschluss ===", BOLD))
-        if nutzung:
-            print(nutzung.rstrip())
-            print(_c(f"\n(Datei: {pfad_n})", GREY))
-        else:
-            print(_c("NUTZUNGSBEDINGUNGEN.md nicht gefunden.", GREY))
-        print(_c("\n=== Impressum ===", BOLD))
-        if impressum:
-            print(impressum.rstrip())
-            print(_c(f"\n(Datei: {pfad_i})", GREY))
-        else:
-            print(_c("IMPRESSUM.md nicht gefunden.", GREY))
+        print(nutzung.rstrip())
+        print(_c(f"\n(Datei: {pfad_n})", GREY))
         print(_c("\nTipp: Platzhalter in eckigen Klammern selbst ausfuellen. "
                  "Das ist eine Vorlage, kein Rechtsrat.", GREY))
 

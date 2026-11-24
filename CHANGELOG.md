@@ -4,6 +4,13 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.28.1 – 2026-11-24
+
+**Impressum wieder entfernt**
+- Die Impressum-Vorlage ist raus. `/rechtliches` zeigt jetzt nur noch die Nutzungsbedingungen und
+  den Haftungsausschluss – die bleiben erhalten. (Ein Impressum ist für die rein private Nutzung in
+  der Regel ohnehin nicht nötig.)
+
 ## 0.28.0 – 2026-11-24
 
 **Nova per Handy fernsteuern – über Telegram, ohne eigenen Server**

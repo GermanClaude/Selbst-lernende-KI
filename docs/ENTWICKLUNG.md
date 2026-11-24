@@ -25,7 +25,9 @@ PC-Steuerung, Agenten …) und fragt vor riskanten Aktionen nach (`assistant/per
   `git remote set-url --add --push origin https://github.com/GermanClaude/Selbst-lernende-KI.git`
   und `git remote set-url --add --push origin https://github.com/GermanClaude/Nova-Backup.git`
   (danach `git push origin --tags` fuer die Tags). So geht nie Fortschritt verloren, auch wenn ein Chat verschwindet.
-- Zuletzt dazugekommen: **0.28.0** Handy-Fernzugriff per Telegram ohne eigenen Server (`handy.py`:
+- Zuletzt dazugekommen: **0.28.1** Impressum wieder entfernt (`IMPRESSUM.md` geloescht, Verweise in
+  `cli.py` `_print_rechtliches`, `ki.spec`, README, `NUTZUNGSBEDINGUNGEN.md`, COMMANDS raus);
+  `/rechtliches` zeigt nur noch die Nutzungsbedingungen. Davor: **0.28.0** Handy-Fernzugriff per Telegram ohne eigenen Server (`handy.py`:
   `HandyRelay` Long-Poll/urllib, Whitelist auf EINE Chat-ID, `relais_schleife`; Befehl `/handy`
   mit Terminal-Variante in `cli.py` und Hintergrund-Variante in `app/controller.py` -
   `_handy_antwort` serialisiert über die busy-Sperre, Rückfragen gehen ans Handy; Token in `.env`

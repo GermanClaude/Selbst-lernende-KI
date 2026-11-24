@@ -83,7 +83,7 @@ COMMANDS = [
     ("/handy", "Fernzugriff per Telegram: Nova vom Handy steuern (ohne Server)"),
     ("/handy token", "Bot-Token von @BotFather setzen (einmalig)"),
     ("/handy aus", "Handy-Fernzugriff beenden"),
-    ("/rechtliches", "Nutzungsbedingungen, Haftung & Impressum"),
+    ("/rechtliches", "Nutzungsbedingungen & Haftungsausschluss"),
     ("/sehen", "Live-Sehen: Nova schaut auf Bildschirm/Webcam (an, aus, pause, status)"),
     ("/spiel", "Spielmodus: Nova spielt selbst (z.B. Manor Lords) - start, nacht, stopp, kalibrieren"),
     ("/sehen handy", "Handy als Kamera koppeln (QR-Code)"),

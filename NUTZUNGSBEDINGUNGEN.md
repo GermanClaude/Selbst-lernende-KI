@@ -7,8 +7,8 @@
 > Für eine ernsthafte oder kommerzielle Nutzung lass diese Bedingungen von einer Anwältin/einem
 > Anwalt prüfen und an dein Land anpassen. Passe die Platzhalter in eckigen Klammern an.
 
-Betreiber/Herausgeber dieser Software („Nova", „die KI", „die App"): **[DEIN NAME / FIRMA]**
-(Kontakt siehe `IMPRESSUM.md`). Stand: **[DATUM]**.
+Betreiber/Herausgeber dieser Software („Nova", „die KI", „die App"): **[DEIN NAME / FIRMA]**.
+Stand: **[DATUM]**.
 
 Mit der Installation oder Nutzung der Software erklärst du dich mit diesen Bedingungen einverstanden.
 Wenn du nicht einverstanden bist, nutze die Software nicht.
