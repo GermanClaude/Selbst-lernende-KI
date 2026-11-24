@@ -368,6 +368,10 @@ def run_native_window(server, ctl, title: str, storage: Path, on_quit_holder: di
             window.events.loaded += lambda *a: _kamera_erlaubnis_einrichten(window, ctl, server.port, on_quit_holder)
         except Exception:  # noqa: BLE001 - aeltere pywebview
             pass
+        try:
+            ctl._window = window  # fuer den nativen Ordner-Auswahldialog (/arbeitsordner waehlen)
+        except Exception:  # noqa: BLE001
+            pass
         on_quit_holder["close"] = window.destroy  # /beenden oder Neustart schliesst das Fenster
         if not on_quit_holder.get("started"):
             on_quit_holder["started"] = True

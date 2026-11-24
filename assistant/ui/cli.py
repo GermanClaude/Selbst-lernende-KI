@@ -31,6 +31,8 @@ Sonderbefehle (mit '/' beginnen):
                        einmalig Bot bei @BotFather anlegen, Token mit "/handy token <T>" setzen)
   /tutorial           - Nova stellt sich vor und zeigt, was sie kann
   /stuetzraeder an|aus|alles - an: fragt vor allem, nur Arbeitsordner; aus: darf alles; alles: Vollzugriff
+  /arbeitsordner [Pfad|oeffnen|zuruecksetzen] - Arbeitsordner zeigen/waehlen; dort legst du Dateien
+                       fuer Nova ab (relative Pfade & Befehle beziehen sich darauf)
   /aussehen [vorlage <name>|hintergrund <pfad>|zuruecksetzen] - Aussehen der App: Vorlage (hacker,
                        mitternacht, dracula, retro, pastell, sonne), Hintergrundbild, anzeigen oder
                        zuruecksetzen. Dein Design bleibt bei Updates erhalten.
@@ -997,6 +999,88 @@ class CLI:
         finally:
             self.permissions.confirm_fn = alt
         print(_c("\n[Zurueck am PC.]", GREY))
+
+    # -- Arbeitsordner / Workspace ------------------------------------------------
+    def _arbeitsordner_setzen(self, pfad_str: str) -> tuple[bool, str]:
+        """Setzt den Arbeitsordner: anlegen falls noetig, dauerhaft speichern, sofort anwenden.
+        Gibt (ok, Pfad-oder-Fehlertext) zurueck."""
+        from pathlib import Path
+
+        roh = (pfad_str or "").strip().strip('"').strip("'")
+        if not roh:
+            return (False, "Kein Pfad angegeben.")
+        pfad = Path(roh).expanduser()
+        try:
+            pfad = pfad.resolve()
+        except OSError:
+            pass
+        if not pfad.exists():
+            try:
+                pfad.mkdir(parents=True, exist_ok=True)
+            except OSError as exc:
+                return (False, f"Ordner liess sich nicht anlegen: {exc}")
+        if not pfad.is_dir():
+            return (False, f"Das ist kein Ordner: {pfad}")
+        try:
+            save_setting(self.config.project_root, "permissions", "workspace_root", toml_string(str(pfad)))
+        except Exception as exc:  # noqa: BLE001 - trotzdem fuer diese Sitzung setzen
+            logger.warning("Arbeitsordner nicht gespeichert: %s", exc)
+        self.config.permissions.workspace_root = str(pfad)
+        self.permissions.workspace_root = pfad           # sofort wirksam (Sandbox, relative Pfade, Shell)
+        return (True, str(pfad))
+
+    def _arbeitsordner_zeigen(self) -> None:
+        import os
+
+        cur = self.permissions.workspace_root
+        print(_c(f"\nArbeitsordner: {cur}", BOLD))
+        try:
+            eintraege = sorted(os.listdir(cur))
+        except OSError:
+            eintraege = []
+        if eintraege:
+            zeige = ", ".join(eintraege[:30]) + (" …" if len(eintraege) > 30 else "")
+            print(_c(f"Darin liegen: {zeige}", GREY))
+        else:
+            print(_c("Der Ordner ist leer - leg hier Dateien fuer mich ab.", GREY))
+        print(_c("Aendern: /arbeitsordner <Pfad>   |   oeffnen: /arbeitsordner oeffnen   |   "
+                 "Standard: /arbeitsordner zuruecksetzen", GREY))
+
+    def _arbeitsordner_oeffnen(self) -> None:
+        import os
+        import subprocess
+
+        cur = str(self.permissions.workspace_root)
+        try:
+            if sys.platform == "win32":
+                os.startfile(cur)  # noqa: S606 - Ordner des Nutzers im Explorer zeigen
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", cur])
+            else:
+                subprocess.Popen(["xdg-open", cur])
+            print(_c(f"Ordner geoeffnet: {cur}", GREEN))
+        except Exception as exc:  # noqa: BLE001
+            print(_c(f"Konnte den Ordner nicht oeffnen ({exc}). Pfad: {cur}", YELLOW))
+
+    def _arbeitsordner_command(self, args: list[str]) -> None:
+        sub = args[0].lower() if args else ""
+        if sub in ("oeffnen", "öffnen", "open"):
+            self._arbeitsordner_oeffnen()
+            return
+        if sub in ("zuruecksetzen", "zurücksetzen", "reset", "standard"):
+            ok, msg = self._arbeitsordner_setzen(str(self.config.project_root / "workspace"))
+            print(_c(f"Arbeitsordner wieder auf Standard: {msg}" if ok else msg, GREEN if ok else YELLOW))
+            return
+        if sub in ("waehlen", "wählen", "auswaehlen", "auswählen", "pick"):
+            print(_c("Im Terminal gibst du den Pfad direkt an: /arbeitsordner <Pfad>. "
+                     "(Den Ordner-Auswahldialog gibt es im App-Fenster.)", GREY))
+            return
+        if args:  # alles andere ist der Pfad (darf Leerzeichen enthalten)
+            ok, msg = self._arbeitsordner_setzen(" ".join(args))
+            print(_c(f"Arbeitsordner gesetzt: {msg}\nLeg hier Dateien fuer mich ab." if ok else msg,
+                     GREEN if ok else YELLOW))
+            return
+        self._arbeitsordner_zeigen()
 
     # -- Live-Sehen (assistant/sehen) ---------------------------------------------
     def _sieht_bilder(self) -> bool:
@@ -2021,6 +2105,8 @@ class CLI:
             self._jarvis_terminal()
         elif base in ("/handy", "/telegram", "/fern", "/fernzugriff"):
             self._handy_befehl(cmd.split()[1:])
+        elif base in ("/arbeitsordner", "/workspace", "/ordner"):
+            self._arbeitsordner_command(cmd.split()[1:])
         elif base in ("/schluessel", "/schlüssel", "/key", "/api", "/apikey"):
             from ..schluessel import find_key
 

@@ -20,6 +20,30 @@ def _py(code):
     return f'"{sys.executable}" -c "{code}"'
 
 
+def test_shell_laeuft_standardmaessig_im_arbeitsordner(tmp_path):
+    # Ohne Ordnerangabe laufen Befehle im Arbeitsordner (workspace_root), nicht im Start-Ordner.
+    import os
+
+    out, err = build_registry().execute(_ctx(tmp_path), "shell_befehl",
+                                        {"befehl": _py("import os;print('CWD='+os.getcwd())")})
+    assert not err
+    zeile = [l for l in out.splitlines() if l.startswith("CWD=")][-1][4:].strip()
+    assert os.path.samefile(zeile, tmp_path)
+
+
+def test_shell_explizites_verzeichnis_geht_weiter(tmp_path):
+    import os
+
+    unter = tmp_path / "unterordner"
+    unter.mkdir()
+    out, err = build_registry().execute(_ctx(tmp_path), "shell_befehl",
+                                        {"befehl": _py("import os;print('CWD='+os.getcwd())"),
+                                         "arbeitsverzeichnis": "unterordner"})
+    assert not err
+    zeile = [l for l in out.splitlines() if l.startswith("CWD=")][-1][4:].strip()
+    assert os.path.samefile(zeile, unter)
+
+
 def test_decode_oem_codepage(monkeypatch):
     # "Verzeichnis für" in cp850, wie es cmd.exe auf deutschem Windows ausgibt.
     monkeypatch.setattr(shell, "_windows_codepages", lambda: GERMAN_WINDOWS)

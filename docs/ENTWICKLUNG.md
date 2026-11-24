@@ -25,7 +25,12 @@ PC-Steuerung, Agenten …) und fragt vor riskanten Aktionen nach (`assistant/per
   `git remote set-url --add --push origin https://github.com/GermanClaude/Selbst-lernende-KI.git`
   und `git remote set-url --add --push origin https://github.com/GermanClaude/Nova-Backup.git`
   (danach `git push origin --tags` fuer die Tags). So geht nie Fortschritt verloren, auch wenn ein Chat verschwindet.
-- Zuletzt dazugekommen: **0.28.2** Begriff „Jarvis-Modus" → „Sprachmodus" (nur sichtbare Texte +
+- Zuletzt dazugekommen: **0.29.0** Arbeitsordner frei wählbar (`/arbeitsordner`, App-Knopf mit
+  pywebview-FOLDER_DIALOG über `controller._arbeitsordner_picker`/`launcher` `ctl._window`;
+  `cli._arbeitsordner_setzen` legt an + speichert `[permissions] workspace_root` + wirkt sofort auf
+  `PermissionManager.workspace_root`). Shell ohne Ordnerangabe läuft jetzt im Arbeitsordner
+  (`tools/shell.py`), System-Prompt nennt den Ordner (`personality.py`). Tests `test_arbeitsordner`,
+  `test_tools_shell`. Davor: **0.28.2** Begriff „Jarvis-Modus" → „Sprachmodus" (nur sichtbare Texte +
   Befehl `/sprachmodus`/`/sprechen`; interne Bezeichner, `/api/jarvis`, DOM-IDs, `/jarvis`-Alias und
   die Tagline „im Stil von Jarvis" bleiben). Davor: **0.28.1** Impressum wieder entfernt (`IMPRESSUM.md` geloescht, Verweise in
   `cli.py` `_print_rechtliches`, `ki.spec`, README, `NUTZUNGSBEDINGUNGEN.md`, COMMANDS raus);

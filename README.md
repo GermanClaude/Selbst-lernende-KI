@@ -541,6 +541,18 @@ habt – und handelt so, wie du es nach allem, was sie über dich weiß, wollen 
 - **Zurück**: einfach eine Nachricht schreiben (im Terminal: Strg+C). Du bekommst einen
   Bericht mit Ergebnissen, Vorschlägen zum Freigeben und offenen Fragen.
 
+## Arbeitsordner: Novas Projektordner
+
+Gib Nova einen **Arbeitsordner** – so wie einen Projektordner. In der App über den Knopf
+**Arbeitsordner** (öffnet einen Ordner-Auswahldialog), im Chat mit `/arbeitsordner <Pfad>`
+(ohne Pfad zeigt Nova den aktuellen Ordner und was drin liegt).
+
+Dort **legst du Dateien für Nova ab** – Notizen, Daten oder z. B. eine Datei mit Befehlen. Nova
+weiß, wo ihr Arbeitsordner ist: relative Dateipfade und Shell-Befehle (ohne Ordnerangabe) beziehen
+sich auf diesen Ordner. Im **sicheren Modus** arbeitet Nova nur hier – wähl ihn also mit Bedacht.
+`/arbeitsordner oeffnen` zeigt ihn im Explorer, `/arbeitsordner zuruecksetzen` setzt auf den Standard
+(`workspace\` im Programmordner) zurück.
+
 ## Fernzugriff: Nova vom Handy steuern (Telegram)
 
 Du bist unterwegs und willst Nova am PC etwas auftragen? Mit `/handy` (oder dem Knopf
@@ -615,6 +627,7 @@ stoppt die Steuerung sofort.
 | `/skill [add <Name> <Anweisung>\|addfuer <gehirn> …\|an\|aus\|weg]` | Eigene Regeln/Skills (für alle Gehirne oder eins) |
 | `/sprachmodus` | Sprachmodus: einfach reden, live (zurück: „Chat-Modus“ sagen) |
 | `/handy [token <T>\|neu\|aus]` | Fernzugriff per Telegram: Nova vom Handy steuern (ohne Server) |
+| `/arbeitsordner [Pfad\|oeffnen\|zuruecksetzen]` | Arbeitsordner zeigen/wählen – dort legst du Dateien für Nova ab |
 | `/afk [Betrag] [Auftrag]` | AFK-Modus: Nova arbeitet allein weiter, z. B. `/afk 0,30€ …` (zurück: Nachricht bzw. Strg+C) |
 | `/modell [name]` | Modell zeigen bzw. wählen (z.B. `/modell sonnet`, `/modell deepseek pro`) |
 | `/sehen [an\|aus\|pause\|status]` | Live-Sehen: Nova schaut auf Bildschirm/Webcam |

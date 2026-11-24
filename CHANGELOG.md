@@ -4,6 +4,19 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.29.0 – 2026-11-24
+
+**Arbeitsordner frei wählbar – leg Nova Dateien hin**
+- Neu: Du kannst Nova einen **Arbeitsordner** geben – so wie ein Projektordner. In der App über den
+  Knopf **Arbeitsordner** (öffnet einen Ordner-Auswahldialog), im Chat mit `/arbeitsordner <Pfad>`
+  (ohne Pfad zeigt er den aktuellen Ordner und was drin liegt).
+- **Du legst dort Dateien für Nova ab** – z. B. Notizen, Daten oder eine Datei mit Befehlen. Nova
+  weiß, wo ihr Arbeitsordner ist: relative Pfade und Shell-Befehle (ohne Ordnerangabe) beziehen sich
+  jetzt auf diesen Ordner, statt irgendwo.
+- Im **sicheren Modus** arbeitet Nova nur in diesem Ordner – such ihn also mit Bedacht aus.
+- `/arbeitsordner oeffnen` zeigt ihn im Explorer, `/arbeitsordner zuruecksetzen` geht zurück auf den
+  Standard.
+
 ## 0.28.2 – 2026-11-24
 
 **„Jarvis-Modus" heißt jetzt „Sprachmodus"**

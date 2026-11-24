@@ -64,6 +64,7 @@ COMMANDS = [
     ("/neu", "neues Gespraech (Charakter & Profil frisch)"),
     ("/tutorial", "Nova zeigt dir, was sie kann"),
     ("/stuetzraeder", "Stuetzraeder an/aus/alles (Vollzugriff)"),
+    ("/arbeitsordner waehlen", "Arbeitsordner waehlen - dort legst du Dateien fuer Nova ab"),
     ("/stimme", "Stimme waehlen: gratis oder realistisch"),
     ("/transkript start", "Ton lokal mitschreiben: System + Mikrofon zusammen - bis /transkript stop"),
     ("/protokoll an", "Aktivitaets-Protokoll: welche Apps/Fenster (kein Keylogger)"),
@@ -821,6 +822,37 @@ class AppController(CLI):
                 self.busy = False
             self._afk_dropped_notice()
             self._state_changed()
+
+    # -- Arbeitsordner im Fenster: nativer Ordner-Auswahldialog -------------------
+    def _arbeitsordner_picker(self) -> str:
+        win = getattr(self, "_window", None)
+        if win is None:
+            print("Der Ordner-Auswahldialog ist nur im App-Fenster da. Nutze /arbeitsordner <Pfad>.")
+            return ""
+        try:
+            import webview
+            res = win.create_file_dialog(webview.FOLDER_DIALOG)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Ordner-Dialog ging nicht: %s", exc)
+            print(f"Die Ordner-Auswahl ging nicht ({exc}). Nutze /arbeitsordner <Pfad>.")
+            return ""
+        if not res:
+            return ""
+        return res[0] if isinstance(res, (list, tuple)) else str(res)
+
+    def _arbeitsordner_command(self, args: list[str]) -> None:
+        sub = args[0].lower() if args else ""
+        if sub in ("waehlen", "wählen", "auswaehlen", "auswählen", "pick"):
+            pfad = self._arbeitsordner_picker()
+            if not pfad:
+                print("Kein Ordner gewaehlt.")
+                return
+            ok, msg = self._arbeitsordner_setzen(pfad)
+            print(f"Arbeitsordner gesetzt: {msg}\nLeg hier Dateien fuer mich ab." if ok else msg)
+            self._state_changed()
+            return
+        super()._arbeitsordner_command(args)
+        self._state_changed()
 
     def _answer(self, text: str, model_text: str | None = None, as_notice: bool = False,
                 max_tool_rounds: int | None = None, bilder: list | None = None, images: list | None = None,

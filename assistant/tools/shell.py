@@ -158,6 +158,12 @@ class ShellTool(Tool):
         cwd = None
         if arbeitsverzeichnis:
             cwd = str(ctx.permissions.resolve_path(arbeitsverzeichnis, must_exist=True))
+        else:
+            # Ohne Angabe laufen Befehle im Arbeitsordner (wie bei einem Projektordner), nicht
+            # dort, wo die KI.exe zufaellig gestartet wurde.
+            basis = getattr(ctx.permissions, "workspace_root", None)
+            if basis and os.path.isdir(str(basis)):
+                cwd = str(basis)
         decision = ctx.permissions.check_shell(befehl, cwd=cwd)
         if not decision.allowed:
             return f"Nicht ausgefuehrt: {decision.reason}"

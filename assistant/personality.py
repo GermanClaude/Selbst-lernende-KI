@@ -143,12 +143,20 @@ def build_system_prompt(config: Config, memory: Memory) -> str:
 
     skills_block = skills_mod.prompt_block(config.project_root, config.active_provider)
 
+    workspace_block = (
+        f"=== DEIN ARBEITSORDNER ===\nDein Arbeitsordner ist: {config.workspace_path}\n"
+        "Relative Dateipfade und Shell-Befehle ohne Ordnerangabe beziehen sich auf diesen Ordner. "
+        "Dein Mensch kann dort Dateien fuer dich ablegen (z.B. Notizen, Daten oder eine Datei mit "
+        "Befehlen). Im sicheren Modus arbeitest du nur hier. Aendern kann er ihn mit /arbeitsordner.\n\n"
+    )
+
     return (
         f"{frame}{economy}\n"
         f"=== DEINE PERSOENLICHKEIT ===\n{persona}\n\n"
         f"=== DEIN STIL ===\n{style_block(config)}\n\n"
         + (f"=== UEBER DEINEN MENSCHEN (hat er selbst eingetragen) ===\n{about}\n\n" if about else "")
         + skills_block
+        + workspace_block
         + f"=== DEINE WERTE & GRENZEN ===\n{values}\n\n"
         f"=== WAS DU BEREITS GELERNT HAST ===\n{memory_block}\n"
     )
