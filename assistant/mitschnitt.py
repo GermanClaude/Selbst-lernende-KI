@@ -33,6 +33,18 @@ INSTALL_HINWEIS = (
     "(pip install sounddevice faster-whisper). Fuer System-Audio (Spiele/Calls) hilft zusaetzlich "
     "numpy. Mehrere Sprecher auseinanderhalten: pip install resemblyzer (optional)."
 )
+# Gleiche Pakete fehlen, aber in der fertigen KI.exe kann man nichts nachinstallieren.
+INSTALL_HINWEIS_EXE = (
+    "Der Mitschnitt braucht die Pakete sounddevice + faster-whisper. In der fertigen KI.exe sind "
+    "sie (noch) nicht enthalten und lassen sich dort nicht nachinstallieren. So geht es trotzdem: "
+    "nutze die Terminal-/Quellcode-Version (dort installiert '/sprache einrichten' alles Noetige), "
+    "oder sag deinem Entwickler, die Pakete in den .exe-Build aufzunehmen."
+)
+
+
+def _eingefroren() -> bool:
+    import sys
+    return bool(getattr(sys, "frozen", False))
 
 
 # ---------------------------------------------------------------------------
@@ -108,6 +120,26 @@ def zusammenfassung_prompt(transkript: str, grenze: int = 40_000) -> str:
 # ---------------------------------------------------------------------------
 #  Sprecher-Trennung (best effort) - braucht optionale Pakete
 # ---------------------------------------------------------------------------
+def _mische(a: bytes, b: bytes) -> bytes:
+    """Mischt zwei Mono-16bit-Spuren (z.B. System-Audio + Mikrofon) zu einer. Gleich lange Stuecke
+    werden Sample fuer Sample addiert (auf int16 begrenzt); der ueberstehende Rest wird angehaengt."""
+    from array import array
+
+    n = min(len(a), len(b))
+    n -= n % 2
+    if n == 0:
+        return a or b
+    xa, xb = array("h"), array("h")
+    xa.frombytes(a[:n])
+    xb.frombytes(b[:n])
+    out = array("h", bytes(n))
+    for i in range(len(xa)):
+        s = xa[i] + xb[i]
+        out[i] = 32767 if s > 32767 else -32768 if s < -32768 else s
+    rest = a[n:] if len(a) >= len(b) else b[n:]
+    return out.tobytes() + rest
+
+
 def _importierbar(name: str) -> bool:
     import importlib.util
     try:
@@ -178,32 +210,32 @@ class Mitschnitt:
     # -- Verfuegbarkeit -----------------------------------------------------
     def problem(self) -> str | None:
         if not (_importierbar("sounddevice") and _importierbar("faster_whisper")):
-            return INSTALL_HINWEIS
+            return INSTALL_HINWEIS_EXE if _eingefroren() else INSTALL_HINWEIS
         return None
 
     @staticmethod
     def quellen() -> list[str]:
-        """Welche Aufnahmequellen gehen? 'mikrofon' immer (wenn sounddevice da), 'system' nur mit
-        WASAPI-Loopback (Windows)."""
+        """Welche Aufnahmequellen gehen? 'mikrofon' immer (wenn sounddevice da), 'system' und 'beides'
+        (System+Mikrofon zusammen, wie bei Medal) nur mit WASAPI-Loopback (Windows)."""
         q = []
         if _importierbar("sounddevice"):
             q.append("mikrofon")
             try:
                 import sounddevice as sd
                 if any("wasapi" in (a.get("name", "").lower()) for a in sd.query_hostapis()):
-                    q.append("system")
+                    q += ["system", "beides"]
             except Exception:  # noqa: BLE001
                 pass
         return q
 
     # -- Start / Stop -------------------------------------------------------
-    def start(self, quelle: str = "system") -> dict:
+    def start(self, quelle: str = "beides") -> dict:
         if self.status.laeuft:
             return {"ok": False, "error": "Es laeuft schon ein Mitschnitt."}
         problem = self.problem()
         if problem:
-            return {"ok": False, "error": problem, "setup": True}
-        quelle = quelle if quelle in ("mikrofon", "system") else "system"
+            return {"ok": False, "error": problem, "setup": not _eingefroren()}
+        quelle = quelle if quelle in ("mikrofon", "system", "beides") else "beides"
         self.ordner.mkdir(parents=True, exist_ok=True)
         stempel = time.strftime("%Y-%m-%d_%H-%M-%S")
         datei = self.ordner / f"mitschnitt_{stempel}.md"
@@ -268,28 +300,61 @@ class Mitschnitt:
             self.status.fehler = f"Whisper-Modell nicht ladbar: {exc}"
             self.status.laeuft = False
             return
-        if self.status.quelle == "system" and diarisierung_moeglich():
+        if self.status.quelle in ("system", "beides") and diarisierung_moeglich():
             try:
                 from resemblyzer import VoiceEncoder  # type: ignore
                 self._diar = VoiceEncoder()
             except Exception:  # noqa: BLE001
                 self._diar = None
+        # "beides" = System-Audio UND Mikrofon zusammen (wie bei Medal): beide Spuren mischen.
+        quellen = ["system", "mikrofon"] if self.status.quelle == "beides" else [self.status.quelle]
+        puffer = [bytearray() for _ in quellen]
+        schloss = [threading.Lock() for _ in quellen]
+
+        def mach_callback(i):
+            def cb(indata, frames, time_info, status):  # noqa: ARG001
+                with schloss[i]:
+                    puffer[i].extend(bytes(indata))
+            return cb
+
+        streams = []
         try:
-            stream = self._stream_oeffnen(sd)
+            for i, q in enumerate(quellen):
+                streams.append(self._stream_oeffnen(sd, q, mach_callback(i)))
         except Exception as exc:  # noqa: BLE001
+            for st in streams:
+                try:
+                    st.close()
+                except Exception:  # noqa: BLE001
+                    pass
             self.status.fehler = f"Aufnahmequelle nicht verfuegbar ({self.status.quelle}): {exc}"
             self.status.laeuft = False
             return
-        with stream:
+        try:
+            for st in streams:
+                st.start()
             while not self._stop.is_set():
-                pcm = self._chunk_lesen(stream)
+                self._stop.wait(self.chunk_sekunden)   # ein Haeppchen sammeln
+                spuren = []
+                for i in range(len(quellen)):
+                    with schloss[i]:
+                        spuren.append(bytes(puffer[i]))
+                        puffer[i].clear()
+                pcm = spuren[0] if len(spuren) == 1 else _mische(spuren[0], spuren[1])
                 if pcm:
                     self._chunk_verarbeiten(pcm)
+        finally:
+            for st in streams:
+                try:
+                    st.stop()
+                    st.close()
+                except Exception:  # noqa: BLE001
+                    pass
         self.status.laeuft = False
 
-    def _stream_oeffnen(self, sd):
-        """Mikrofon ODER System-Audio (WASAPI-Loopback des Standard-Ausgabegeraets)."""
-        if self.status.quelle == "system":
+    def _stream_oeffnen(self, sd, quelle, callback):
+        """Ein Eingabestrom (mit Callback): Mikrofon ODER System-Audio (WASAPI-Loopback)."""
+        if quelle == "system":
             try:
                 wasapi = sd.WasapiSettings(loopback=True)
             except Exception as exc:  # noqa: BLE001
@@ -297,20 +362,8 @@ class Mitschnitt:
                                    "nimm 'mikrofon'.") from exc
             geraet = sd.default.device[1]  # Standard-Ausgabegeraet
             return sd.RawInputStream(samplerate=_SAMPLE_RATE, channels=1, dtype="int16",
-                                     device=geraet, extra_settings=wasapi)
-        return sd.RawInputStream(samplerate=_SAMPLE_RATE, channels=1, dtype="int16")
-
-    def _chunk_lesen(self, stream) -> bytes:
-        """Liest ~chunk_sekunden Audio (oder bis Stopp). Startet den Stream beim ersten Mal."""
-        if not getattr(stream, "active", False):
-            stream.start()
-        frames, gelesen, ziel = [], 0, int(_SAMPLE_RATE * self.chunk_sekunden)
-        while gelesen < ziel and not self._stop.is_set():
-            daten, _ = stream.read(min(_SAMPLE_RATE // 4, ziel - gelesen))
-            roh = bytes(daten)
-            frames.append(roh)
-            gelesen += len(roh) // 2
-        return b"".join(frames)
+                                     device=geraet, extra_settings=wasapi, callback=callback)
+        return sd.RawInputStream(samplerate=_SAMPLE_RATE, channels=1, dtype="int16", callback=callback)
 
     def _chunk_verarbeiten(self, pcm: bytes) -> None:
         import tempfile

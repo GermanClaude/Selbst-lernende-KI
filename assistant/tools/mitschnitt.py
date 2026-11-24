@@ -9,8 +9,9 @@ class TranskriptTool(Tool):
     name = "transkription"
     description = (
         "Schneidet Ton mit und transkribiert ihn LOKAL (kostet keine Token), bis dein Mensch stoppt. "
-        "Nur auf ausdruecklichen Wunsch starten. aktion: 'start' (quelle: 'system' = alles, was der PC "
-        "ausgibt - Spiele, Calls, Videos; oder 'mikrofon'), 'stop', 'status'. Hinweis dem Menschen, "
+        "Nur auf ausdruecklichen Wunsch starten. aktion: 'start' (quelle: 'beides' = System-Audio UND "
+        "Mikrofon zusammen (Standard, wie bei Medal), 'system' = nur was der PC ausgibt (Spiele/Calls/"
+        "Videos), 'mikrofon' = nur dein Mikrofon), 'stop', 'status'. Hinweis dem Menschen, "
         "dass das Mitschneiden von Gespraechen mit anderen deren Zustimmung brauchen kann. Mehrere "
         "Sprecher auseinanderzuhalten geht nur mit Zusatzmodell; sonst wird ohne Sprecher-Aufteilung "
         "transkribiert. Das fertige Transkript liegt als Datei im Arbeitsordner (mitschnitte/)."
@@ -19,12 +20,12 @@ class TranskriptTool(Tool):
         "type": "object",
         "properties": {
             "aktion": {"type": "string", "enum": ["start", "stop", "status"]},
-            "quelle": {"type": "string", "enum": ["system", "mikrofon"]},
+            "quelle": {"type": "string", "enum": ["beides", "system", "mikrofon"]},
         },
         "required": ["aktion"],
     }
 
-    def run(self, ctx: ToolContext, aktion: str, quelle: str = "system") -> str:
+    def run(self, ctx: ToolContext, aktion: str, quelle: str = "beides") -> str:
         start = ctx.extra.get("mitschnitt_start")
         stop = ctx.extra.get("mitschnitt_stop")
         status = ctx.extra.get("mitschnitt_status")
@@ -44,7 +45,7 @@ class TranskriptTool(Tool):
                     f"Transkript: {r.get('datei','')}")
         # start
         ctx.permissions.require(Risk.MODERATE, "Ton mitschneiden und transkribieren")
-        r = start("mikrofon" if quelle == "mikrofon" else "system")
+        r = start(quelle if quelle in ("beides", "system", "mikrofon") else "beides")
         if not r.get("ok"):
             return r.get("error", "Mitschnitt nicht gestartet.")
         return (f"Mitschnitt laeuft ({r.get('quelle')}), ich transkribiere lokal mit bis du 'stopp' sagst. "

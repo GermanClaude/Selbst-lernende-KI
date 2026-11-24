@@ -4,6 +4,24 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.27.0 – 2026-11-24
+
+**Skills, eigene Modelle und Mitschnitt von System-Audio + Mikrofon zusammen**
+- **Skills (gespeicherte Regeln):** Du oder Nova selbst könnt dauerhafte Verhaltensregeln anlegen –
+  z. B. „Antworte extrem knapp, um Tokens zu sparen". `/skill add <Name> <Anweisung>`, oder nur für
+  ein Gehirn: `/skill addfuer claude …`. Nova kann sich auf Wunsch selbst einen Skill merken. Skills
+  gelten ab dem nächsten Gespräch und bleiben bei Updates erhalten. (Ein Skill ist eine Anweisung in
+  Worten – **kein** automatisch ausgeführter Code; das bleibt aus Sicherheitsgründen so.)
+- **Eigene/neue Modelle:** Bei DeepSeek, Gemini, ChatGPT, Abliteration, Venice und NanoGPT kannst du
+  jetzt **jede Modell-ID eintragen**, die dein API-Schlüssel erreicht – auch eine, die Nova noch nicht
+  kennt (`/modell deepseek <genaue-id>`). Claude nimmt seine vollen IDs ohnehin an, Ollama deine
+  heruntergeladenen (auch selbst trainierte) Modelle.
+- **Mitschnitt: System-Audio UND Mikrofon zusammen** (wie bei Medal). `/transkript start` nimmt jetzt
+  standardmäßig **beides gemischt** auf – du hörst dich und den PC-Ton in einem Transkript. Weiterhin
+  wählbar: nur `system` oder nur `mikrofon`.
+- Klarere Meldung in der fertigen App: Dort fehlen die Transkriptions-Pakete noch und lassen sich
+  nicht nachinstallieren – Nova sagt das jetzt richtig (statt nach einem Python-Pfad zu suchen).
+
 ## 0.26.1 – 2026-11-23
 
 **Passwort-/Geheimnis-Schutz beim Mitschreiben**

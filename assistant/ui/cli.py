@@ -12,6 +12,7 @@ Sonderbefehle (mit '/' beginnen):
   /stimme [frei|openai|elevenlabs] - Stimme waehlen: gratis oder realistisch (kostet Geld)
   /transkript [start system|start mikrofon|stop|name N Name|zusammenfassung] - Ton lokal mitschreiben
   /protokoll [an|aus|zeigen] - Aktivitaets-Protokoll: welche Apps/Fenster (kein Keylogger)
+  /skill [add <Name> <Anweisung>|addfuer <gehirn> …|an|aus|weg <Name>] - eigene Regeln/Skills
   /status             - aktuelle Einstellungen & Sicherheitslage zeigen
   /gedaechtnis        - zeigen, was die KI gelernt hat
   /kosten             - Token-Verbrauch & geschaetzte Kosten dieser Sitzung
@@ -1857,6 +1858,8 @@ class CLI:
             self._mitschnitt_command(cmd.split()[1:])
         elif base in ("/protokoll", "/aktivitaet"):
             self._protokoll_command(cmd.split()[1:])
+        elif base in ("/skill", "/skills"):
+            self._skills_command(cmd.split()[1:])
         elif base == "/update":
             return self._update_command()
         elif base in ("/versionen", "/version"):
@@ -2074,7 +2077,7 @@ class CLI:
             self.mitschnitt = Mitschnitt(ordner, sprache=self.config.voice.sprache or "de")
         return self.mitschnitt
 
-    def _mitschnitt_start(self, quelle: str = "system") -> dict:
+    def _mitschnitt_start(self, quelle: str = "beides") -> dict:
         return self._mitschnitt_obj().start(quelle)
 
     def _mitschnitt_status(self) -> dict:
@@ -2089,10 +2092,17 @@ class CLI:
 
         sub = (args[0].lower() if args else "")
         m = self._mitschnitt_obj()
-        if sub in ("start", "an", "system", "mikrofon", "mik"):
-            quelle = "mikrofon" if sub in ("mikrofon", "mik") else ("system" if sub != "start" else
-                     (args[1].lower() if args[1:] else "system"))
-            r = m.start("mikrofon" if quelle.startswith("mik") else "system")
+        if sub in ("start", "an", "system", "mikrofon", "mik", "beides", "beide", "both"):
+            if sub in ("mikrofon", "mik"):
+                quelle = "mikrofon"
+            elif sub == "system":
+                quelle = "system"
+            elif sub in ("beides", "beide", "both"):
+                quelle = "beides"
+            else:  # "start"/"an": optionale Quelle als 2. Wort, Standard "beides" (System + Mikrofon)
+                q = (args[1].lower() if args[1:] else "beides")
+                quelle = "mikrofon" if q.startswith("mik") else ("system" if q == "system" else "beides")
+            r = m.start(quelle)
             if not r.get("ok"):
                 print(_c(r.get("error", "Mitschnitt nicht gestartet."), YELLOW))
                 return
@@ -2123,8 +2133,9 @@ class CLI:
             print(_c("Stoppen: /transkript stop | Sprecher benennen: /transkript name 1 Aria | "
                      "Zusammenfassung: /transkript zusammenfassung", GREY))
         else:
-            print(_c("Kein Mitschnitt aktiv. Start: /transkript start system (System-Ton: Spiele/Calls) "
-                     "oder /transkript start mikrofon. Transkribiert lokal (keine Token).", CYAN))
+            print(_c("Kein Mitschnitt aktiv. Start: /transkript start (Standard: System-Ton + Mikrofon "
+                     "zusammen, wie bei Medal) - oder /transkript start system / mikrofon. "
+                     "Transkribiert lokal (keine Token).", CYAN))
 
     # -- Aktivitaets-Protokoll (welche Apps/Fenster - KEIN Keylogger) --------
     def _protokoll_obj(self):
@@ -2159,6 +2170,42 @@ class CLI:
         print(_c("Aktivitaets-Protokoll (welche Programme/Fenster du nutzt - KEIN Mitschreiben von "
                  "Tastatur/Nachrichten). An: /protokoll an | Aus: /protokoll aus | Uebersicht: /protokoll zeigen",
                  CYAN))
+
+    # -- Skills (gespeicherte Anweisungen) -----------------------------------
+    def _skills_command(self, args: list[str]) -> None:
+        from .. import skills as sk
+
+        root = self.config.project_root
+        sub = (args[0].lower() if args else "")
+        if sub in ("add", "neu", "hinzufuegen", "addfuer", "fuer") and args[1:]:
+            rest = args[1:]
+            provider = ""
+            if sub in ("addfuer", "fuer"):
+                provider = rest[0].lower().replace("anthropic", "claude").replace("chatgpt", "openai")
+                rest = rest[1:]
+            if len(rest) < 2:
+                print(_c("So: /skill add <Name> <Anweisung …>  (oder /skill addfuer <gehirn> <Name> <Anweisung>)", YELLOW))
+                return
+            ok, msg = sk.hinzufuegen(root, rest[0], " ".join(rest[1:]), provider)
+            print(_c(msg, GREEN if ok else YELLOW))
+            return
+        if sub in ("weg", "loeschen", "entfernen", "remove") and args[1:]:
+            print(_c("Skill geloescht." if sk.entfernen(root, args[1]) else "Keinen Skill mit dem Namen gefunden.",
+                     GREEN))
+            return
+        if sub in ("an", "aus") and args[1:]:
+            print(_c("Umgeschaltet." if sk.umschalten(root, args[1], sub == "an") else "Nicht gefunden.", GREEN))
+            return
+        skills = sk.laden(root)
+        if not skills:
+            print(_c("Noch keine Skills. Anlegen: /skill add Knapp 'Antworte extrem kurz, spare Tokens.' "
+                     "Nur fuer ein Gehirn: /skill addfuer claude … - gilt ab dem naechsten Gespraech (/neu).", CYAN))
+            return
+        print(_c("Skills (gelten ab dem naechsten Gespraech):", CYAN))
+        for s in skills:
+            wo = "alle" if not s.provider else s.provider
+            zustand = "" if s.an else " [aus]"
+            print(_c(f"  - {s.name} ({wo}){zustand}: {s.anweisung[:100]}", GREY))
 
     # -- Automatische Starts ------------------------------------------------
     def _autostart_command(self, args: list[str]) -> None:

@@ -38,6 +38,24 @@ def test_f0_ohne_numpy_oder_leer():
     assert mit._f0_schaetzen(b"") == 0.0  # zu kurz/kein numpy -> 0
 
 
+def test_mische_system_und_mikrofon():
+    from array import array
+    a = array("h", [100, -100, 32767, 0]).tobytes()
+    b = array("h", [50, -50, 100, -32768]).tobytes()
+    out = array("h")
+    out.frombytes(mit._mische(a, b))
+    assert list(out) == [150, -150, 32767, -32768]  # addiert, auf int16 begrenzt
+
+
+def test_mische_ungleiche_laenge_haengt_rest_an():
+    from array import array
+    a = array("h", [10, 20, 30]).tobytes()
+    b = array("h", [1, 2]).tobytes()
+    out = array("h")
+    out.frombytes(mit._mische(a, b))
+    assert list(out) == [11, 22, 30]  # erste zwei gemischt, Rest (30) angehaengt
+
+
 def test_mitschnitt_ohne_pakete_meldet_setup(tmp_path):
     m = Mitschnitt(tmp_path / "mit")
     # In der Testumgebung sind sounddevice/faster-whisper nicht da -> freundlicher Hinweis.

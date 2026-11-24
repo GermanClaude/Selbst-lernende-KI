@@ -25,7 +25,10 @@ PC-Steuerung, Agenten …) und fragt vor riskanten Aktionen nach (`assistant/per
   `git remote set-url --add --push origin https://github.com/GermanClaude/Selbst-lernende-KI.git`
   und `git remote set-url --add --push origin https://github.com/GermanClaude/Nova-Backup.git`
   (danach `git push origin --tags` fuer die Tags). So geht nie Fortschritt verloren, auch wenn ein Chat verschwindet.
-- Zuletzt dazugekommen: **0.26.0** Mitschnitt/Transkription (`mitschnitt.py`, lokal/token-frei,
+- Zuletzt dazugekommen: **0.27.0** Skills (`skills.py`, global/pro-Gehirn), eigene Modell-IDs
+  (`modelle._EIGENE_MODELLE_OK`), Mitschnitt mischt System-Audio + Mikrofon (`mitschnitt._mische`,
+  Quelle "beides"), klarere .exe-Meldung. Tests `test_skills`, `test_eigene_modelle`. Davor:
+  **0.26.1 / 0.26.0** Mitschnitt/Transkription (`mitschnitt.py`, lokal/token-frei,
   System-Audio, Sprecher best effort) + Aktivitaets-Protokoll (`protokoll.py`, kein Keylogger);
   Befehle `/transkript` und `/protokoll`, Werkzeug `transkription`. Tests `test_mitschnitt`,
   `test_protokoll`. Davor: **0.25.1 / 0.25.0** NanoGPT (unzensiert, OpenAI-kompatibel, sieht Bilder, Zahlung
@@ -86,7 +89,8 @@ verwenden** – darin stehen Gedächtnis, Profil und Dateipfade.
 | Berechtigungen | `assistant/permissions.py` (`Risk.SAFE/MODERATE/DANGEROUS/AUTOSTART`, Stützräder, AFK strenger). Drei Stufen: `an` / `aus` / `alles` (= `vollzugriff`, hebt zusätzlich Shell-Sperrliste **und** Autostart-Rückfrage auf; AFK bleibt trotzdem sicher). Gesetzt in `cli.py` `set_training_wheels_stufe`, App-Schalter über `controller.toggle("vollzugriff", …)`. |
 | Terminal-Oberfläche | `assistant/ui/cli.py` (alle `/befehle` in `_handle_command`) |
 | App-Oberfläche | `assistant/app/` (controller.py = Logik + Befehlsliste `COMMANDS`, server.py = HTTP-API, static/ = HTML/JS) |
-| Gedächtnis, Persönlichkeit | `memory.py`, `personality.py`, `profil.py`, `config/werte.md`, `persona.md` |
+| Gedächtnis, Persönlichkeit, Skills | `memory.py`, `personality.py` (Skills via `skills.prompt_block` in den System-Prompt), `profil.py`, `config/werte.md`, `persona.md`. Skills: `skills.py` (gespeicherte Anweisungen in `config/skills.json`, global oder pro Gehirn `provider`), `tools/skill.py` (Werkzeug `skill`), Befehl `/skill`. Kein Code-Nachladen - ein Skill ist Text. |
+| Eigene Modelle | `modelle.waehle` akzeptiert fuer `_EIGENE_MODELLE_OK` (deepseek/gemini/openai/abliteration/venice/nanogpt) jede gueltige Modell-ID (`_gueltige_modell_id`), sofern sie nicht klar zu einem anderen Gehirn gehoert (`fremdes_modell`). Claude/Ollama ueber ihre eigenen Wege. |
 | Aussehen / Design | `aussehen.py` (Design-Vorlagen `THEMES`, Hintergrundbild, eigenes CSS – alles über `/custom.css` = `generated_css()` + eigenes CSS), `tools/aussehen.py`. Die Design-Dateien (`config/app-anpassung.*`, `config/app-hintergrund.*`) stehen in `updater._is_protected` → Updates fassen sie nie an. |
 | Sprache / Stimme | `voice.py` (Zuhören: VoiceCapture/Whisper/Google; Vorlesen: `Speaker` = pyttsx3 gratis, `CloudSpeaker` = OpenAI/ElevenLabs realistisch; `build_speaker()` waehlt + faellt auf frei zurueck), `live.py` (Jarvis-Loop, LocalVoice/WindowVoice), `tools/stimme.py` (Werkzeug `stimme_waehlen`), Befehl `/stimme` (`cli.set_stimme`). **OpenAI-TTS `/v1/audio/speech` ist zum 6.1.2027 abgekuendigt** (Nachfolger: Realtime-API) – Modell-Konstanten in `voice.py`, Stand 20.11.2026, regelmaessig pruefen. |
 | Geheimnis-Filter | `geheimnisse.py` `verschleiere()` - macht Passwoerter/Schluessel/Tokens/2FA/Kartennummern unkenntlich; wird in `mitschnitt.py` (Transkript) und `protokoll.py` (Fenstertitel) vor dem Speichern angewandt. Kein Keylogger - ein Tastatur-Hook koennte Passwortfelder nicht zuverlaessig aussparen. |

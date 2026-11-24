@@ -44,7 +44,7 @@ _PROTECTED_DIRS = {
     "dist", "build", "__pycache__",
 }
 _PROTECTED_FILES = {"config/settings.toml", "config/permissions.toml", "config/ueber_mich.json",
-                    "config/app-anpassung.json", "config/app-anpassung.css"}
+                    "config/app-anpassung.json", "config/app-anpassung.css", "config/skills.json"}
 # Nur anlegen, wenn sie fehlen - hier "erziehst" du deine KI.
 _CREATE_ONLY = {"config/persona.md", "config/werte.md"}
 # Hier duerfen veraltete Dateien entfernt werden (sie liegen ja in der Sicherung).

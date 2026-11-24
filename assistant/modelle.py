@@ -570,6 +570,17 @@ ALTE_OPENAI_NAMEN = {
 }
 
 
+# Diese (OpenAI-kompatiblen) Cloud-Gehirne akzeptieren jede Modell-ID, die der Schluessel erreicht.
+# Claude nimmt seine vollen IDs ohnehin ueber die Liste an; Ollama hat eigene (heruntergeladene) Modelle.
+_EIGENE_MODELLE_OK = {"deepseek", "gemini", "openai", "abliteration", "venice", "nanogpt"}
+
+
+def _gueltige_modell_id(model: str) -> bool:
+    """Sieht der Text wie eine Modell-ID aus? (Buchstaben/Ziffern . _ - : / , 2-80 Zeichen) -
+    erlaubt eigene/zusaetzliche Modelle wie 'deepseek-chat' oder 'z-ai/glm-5.3-uncensored'."""
+    return bool(re.match(r"^[A-Za-z0-9][A-Za-z0-9._:\-/]{1,80}$", (model or "").strip()))
+
+
 def fremdes_modell(wanted: str) -> str | None:
     """Gehoert der Name zu einem anderen Gehirn (Claude, DeepSeek, Gemini, OpenAI, Abliteration)? -> dieses (sonst None)."""
     for other in ("claude", "deepseek", "gemini", "openai", "abliteration", "venice", "nanogpt"):
@@ -625,10 +636,18 @@ def waehle(config, provider: str | None = None, model: str | None = None,
                     f"eigene Modelle (z.B. qwen3.5:4b). Zu {other} wechseln: /gehirn {other}") if other \
                 else f"'{model}' ist kein gueltiger Modellname fuer Ollama (z.B. qwen3.5:4b)."
             return {"ok": False, "changed": False, "provider": provider, "message": hint}
+        if (not found and provider in _EIGENE_MODELLE_OK and _gueltige_modell_id(model)
+                and not fremdes_modell(model)):
+            # Eigenes/zusaetzliches Modell: jedes Modell, das dein API-Schluessel beim Anbieter
+            # erreicht, ist erlaubt (auch wenn Nova es nicht in der Liste hat). Ein Name, der klar zu
+            # einem ANDEREN Gehirn gehoert (z.B. "opus"), wird weiter abgelehnt. Claude nimmt seine
+            # vollen Modell-IDs ohnehin an; Ollama nutzt heruntergeladene Modelle.
+            found = model.strip()
         if not found:
             names = ", ".join(m["kurz"] for m in MODELLE[provider])
             return {"ok": False, "changed": False, "provider": provider,
-                    "message": f"Das Modell '{model}' kenne ich nicht. Moeglich: {names}."}
+                    "message": f"'{model}' ist kein gueltiger Modellname. Bekannt: {names} - oder gib die "
+                               f"genaue Modell-ID deines Anbieters ein (jedes per Schluessel erreichbare Modell geht)."}
         if provider == "ollama" and found != section.model:
             fehlt = _ollama_fehlt(config, found, http)
             if fehlt:
