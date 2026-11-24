@@ -1,4 +1,6 @@
 """Mitschnitt/Transkription - die reine Logik (ohne echtes Audio/Whisper)."""
+import pytest
+
 from assistant import mitschnitt as mit
 from assistant.mitschnitt import Mitschnitt, Segment
 from assistant.tools import ToolContext, build_registry
@@ -36,6 +38,19 @@ def test_zusammenfassung_prompt_kuerzt():
 
 def test_f0_ohne_numpy_oder_leer():
     assert mit._f0_schaetzen(b"") == 0.0  # zu kurz/kein numpy -> 0
+
+
+def test_f0_erkennt_tonhoehe_wenn_numpy_da():
+    np = pytest.importorskip("numpy")
+    # Sinuston mit 150 Hz -> die Schaetzung sollte nah dran sein (und 'maennlich' grenzwertig).
+    t = np.arange(int(1.0 * mit._SAMPLE_RATE)) / mit._SAMPLE_RATE
+    ton = (np.sin(2 * np.pi * 150 * t) * 8000).astype(np.int16).tobytes()
+    f0 = mit._f0_schaetzen(ton)
+    assert 140 <= f0 <= 160   # grob 150 Hz
+    # Die Korrelation laeuft NUR ueber den Lag-Bereich (schnell), nicht O(n^2) -> grosse Eingabe ok
+    gross = (np.sin(2 * np.pi * 200 * (np.arange(30 * mit._SAMPLE_RATE) / mit._SAMPLE_RATE)) * 8000
+             ).astype(np.int16).tobytes()
+    assert 180 <= mit._f0_schaetzen(gross) <= 220
 
 
 def test_mische_system_und_mikrofon():

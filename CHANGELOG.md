@@ -4,6 +4,19 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.27.2 – 2026-11-24
+
+**Rechtliches & ein schnellerer Mitschnitt**
+- Neu: **Nutzungsbedingungen, Haftungsausschluss und eine Impressum-Vorlage** liegen Nova jetzt bei.
+  Du rufst sie mit dem Befehl `/rechtliches` auf (oder über den neuen Knopf **Rechtliches** in der App).
+  So ist klar geregelt, dass **du** entscheidest, was die KI darf, und dass der Entwickler nicht
+  haftet, wenn die KI auf deine Anweisung hin z. B. Dateien löscht oder Kosten verursacht.
+  ⚠️ Es sind **Vorlagen** mit Platzhaltern (z. B. `[DEIN NAME]`), die du selbst ausfüllst – und sie
+  ersetzen keinen Rechtsrat. In Deutschland/der EU lässt sich Haftung nicht komplett ausschließen.
+- Der Ton-Mitschnitt (`/transkript`) arbeitet im Hintergrund **spürbar schneller und sparsamer**:
+  das Zusammenmischen von System-Ton und Mikrofon sowie das Erkennen der Stimmlage (für „männlich/
+  weiblich?") wurden optimiert. Für dich ändert sich nichts an der Bedienung.
+
 ## 0.27.1 – 2026-11-24
 
 **Transkription jetzt direkt in der App (ohne Zusatz-Installation)**

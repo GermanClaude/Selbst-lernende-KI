@@ -17,6 +17,7 @@ Sonderbefehle (mit '/' beginnen):
   /gedaechtnis        - zeigen, was die KI gelernt hat
   /kosten             - Token-Verbrauch & geschaetzte Kosten dieser Sitzung
   /update             - jetzt nach einer neuen Version schauen
+  /rechtliches        - Nutzungsbedingungen, Haftungsausschluss & Impressum anzeigen
   /versionen          - gesicherte alte Versionen anzeigen
   /zurueck <Nr>       - zu einer gesicherten alten Version zurueckkehren
   /autostart          - zeigen, was die KI automatisch startet (und es abstellen)
@@ -1862,6 +1863,8 @@ class CLI:
             self._skills_command(cmd.split()[1:])
         elif base == "/update":
             return self._update_command()
+        elif base in ("/rechtliches", "/recht", "/impressum", "/nutzungsbedingungen", "/agb"):
+            self._print_rechtliches()
         elif base in ("/versionen", "/version"):
             self._print_versions()
         elif base in ("/zurueck", "/zurück"):
@@ -2358,6 +2361,40 @@ class CLI:
                 print(_c(f"Du hast die neueste Version ({__version__}).", CYAN))
             return False
         return self._offer_update(info, ask=True)
+
+    def _rechts_text(self, name: str) -> tuple[str, str]:
+        """Text einer Rechts-Datei (Programmordner, sonst .exe-Bundle) und ihr Pfad."""
+        from ..config import bundle_dir
+
+        for basis in (self.config.project_root, bundle_dir()):
+            p = basis / name
+            try:
+                return p.read_text(encoding="utf-8"), str(p)
+            except OSError:
+                continue
+        return "", ""
+
+    def _print_rechtliches(self) -> None:
+        nutzung, pfad_n = self._rechts_text("NUTZUNGSBEDINGUNGEN.md")
+        impressum, pfad_i = self._rechts_text("IMPRESSUM.md")
+        if not nutzung and not impressum:
+            print(_c("Keine rechtlichen Dokumente gefunden "
+                     "(NUTZUNGSBEDINGUNGEN.md / IMPRESSUM.md).", YELLOW))
+            return
+        print(_c("\n=== Nutzungsbedingungen & Haftungsausschluss ===", BOLD))
+        if nutzung:
+            print(nutzung.rstrip())
+            print(_c(f"\n(Datei: {pfad_n})", GREY))
+        else:
+            print(_c("NUTZUNGSBEDINGUNGEN.md nicht gefunden.", GREY))
+        print(_c("\n=== Impressum ===", BOLD))
+        if impressum:
+            print(impressum.rstrip())
+            print(_c(f"\n(Datei: {pfad_i})", GREY))
+        else:
+            print(_c("IMPRESSUM.md nicht gefunden.", GREY))
+        print(_c("\nTipp: Platzhalter in eckigen Klammern selbst ausfuellen. "
+                 "Das ist eine Vorlage, kein Rechtsrat.", GREY))
 
     def _changelog_text(self) -> str:
         """Der Text von CHANGELOG.md (aus dem Programmordner, sonst aus der .exe)."""

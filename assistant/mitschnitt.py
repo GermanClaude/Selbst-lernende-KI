@@ -122,22 +122,31 @@ def zusammenfassung_prompt(transkript: str, grenze: int = 40_000) -> str:
 # ---------------------------------------------------------------------------
 def _mische(a: bytes, b: bytes) -> bytes:
     """Mischt zwei Mono-16bit-Spuren (z.B. System-Audio + Mikrofon) zu einer. Gleich lange Stuecke
-    werden Sample fuer Sample addiert (auf int16 begrenzt); der ueberstehende Rest wird angehaengt."""
-    from array import array
-
+    werden Sample fuer Sample addiert (auf int16 begrenzt); der ueberstehende Rest wird angehaengt.
+    Mit numpy (in der App vorhanden) blitzschnell, sonst ueber das array-Modul (ohne Zusatzpaket)."""
     n = min(len(a), len(b))
     n -= n % 2
     if n == 0:
         return a or b
-    xa, xb = array("h"), array("h")
-    xa.frombytes(a[:n])
-    xb.frombytes(b[:n])
-    out = array("h", bytes(n))
-    for i in range(len(xa)):
-        s = xa[i] + xb[i]
-        out[i] = 32767 if s > 32767 else -32768 if s < -32768 else s
     rest = a[n:] if len(a) >= len(b) else b[n:]
-    return out.tobytes() + rest
+    try:
+        import numpy as np
+
+        xa = np.frombuffer(a[:n], dtype=np.int16).astype(np.int32)
+        xb = np.frombuffer(b[:n], dtype=np.int16).astype(np.int32)
+        gemischt = np.clip(xa + xb, -32768, 32767).astype(np.int16).tobytes()
+        return gemischt + rest
+    except Exception:  # noqa: BLE001 - ohne numpy: reiner Python-Weg
+        from array import array
+
+        xa, xb = array("h"), array("h")
+        xa.frombytes(a[:n])
+        xb.frombytes(b[:n])
+        out = array("h", bytes(n))
+        for i in range(len(xa)):
+            s = xa[i] + xb[i]
+            out[i] = 32767 if s > 32767 else -32768 if s < -32768 else s
+        return out.tobytes() + rest
 
 
 def _importierbar(name: str) -> bool:
@@ -155,22 +164,29 @@ def diarisierung_moeglich() -> bool:
 
 def _f0_schaetzen(pcm16: bytes) -> float:
     """Mittlere Grundfrequenz (Tonhoehe) einer Mono-16bit-Aufnahme per Autokorrelation. 0.0,
-    wenn numpy fehlt oder nichts Stimmhaftes da ist. Nur fuer die grobe Geschlechts-Schaetzung."""
+    wenn numpy fehlt oder nichts Stimmhaftes da ist. Nur fuer die grobe Geschlechts-Schaetzung.
+
+    Schnell: analysiert nur ~1 s (die Tonhoehe ist stabil) und berechnet die Korrelation NUR fuer
+    den noetigen Lag-Bereich (70..300 Hz) - nicht die volle, teure O(n^2)-Autokorrelation ueber das
+    ganze 30-s-Haeppchen."""
     try:
         import numpy as np
     except Exception:  # noqa: BLE001
         return 0.0
     x = np.frombuffer(pcm16, dtype=np.int16).astype(np.float32)
+    x = x[:_SAMPLE_RATE]  # hoechstens 1 Sekunde
     if x.size < _SAMPLE_RATE // 4:
         return 0.0
-    x -= x.mean()
+    x = x - x.mean()
     if np.sqrt((x * x).mean()) < 200:  # zu leise -> keine verlaessliche Tonhoehe
         return 0.0
-    korr = np.correlate(x, x, mode="full")[x.size - 1:]
     lo, hi = _SAMPLE_RATE // 300, _SAMPLE_RATE // 70  # 70..300 Hz (menschliche Stimme)
-    if hi >= korr.size:
+    if hi >= x.size:
         return 0.0
-    versatz = int(np.argmax(korr[lo:hi])) + lo
+    korr = np.array([float(np.dot(x[:-lag], x[lag:])) for lag in range(lo, hi)])
+    if korr.size == 0:
+        return 0.0
+    versatz = int(np.argmax(korr)) + lo
     return _SAMPLE_RATE / versatz if versatz else 0.0
 
 

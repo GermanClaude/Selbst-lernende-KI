@@ -28,6 +28,9 @@ added_files = [
     (str(project_root / "assistant" / "app" / "static"), "assistant/app/static"),  # App-Oberflaeche
     (str(project_root / "assistant" / "umlaute.json"), "assistant"),  # schoene Texte in der App
     (str(project_root / "assistant" / "spiel" / "profile"), "assistant/spiel/profile"),  # Spielwissen (.md)
+    (str(project_root / "CHANGELOG.md"), "."),  # fuer /versionen in der .exe
+    (str(project_root / "NUTZUNGSBEDINGUNGEN.md"), "."),  # fuer /rechtliches
+    (str(project_root / "IMPRESSUM.md"), "."),  # fuer /rechtliches
 ]
 
 # Live-Mitschrift im Jarvis-Modus (Vosk): die DLL liegt im Paketordner.
