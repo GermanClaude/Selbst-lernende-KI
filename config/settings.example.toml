@@ -252,7 +252,7 @@ bilder_an_ki = true              # Modelle mit Augen bekommen einen verkleinerte
 max_kante = 1280                 # so gross hoechstens (laengste Seite in Pixeln, kleiner = guenstiger)
 ocr = true                       # Text in geaenderten Bereichen lesen (Windows-Texterkennung)
 ocr_sprache = "de-DE"
-sprechen = true                  # Wortmeldungen vorlesen (wenn Vorlesen oder Jarvis an ist)
+sprechen = true                  # Wortmeldungen vorlesen (wenn Vorlesen oder Sprachmodus an ist)
 bei_abwesenheit = false          # auch im AFK-Modus zusehen (dann nur Text, nie Bilder)
 hotkey_pause = "Strg+Alt+Umschalt+S"   # sofort wegschauen / wieder hinschauen (ueberall in Windows)
 # Hier schaut Nova nie hin (zusaetzlich zu Passwort-Managern, Anmeldefenstern und privaten
@@ -320,7 +320,7 @@ erkennung = "auto"
 # Whisper-Modell: tiny | base | small | medium (groesser = genauer, langsamer)
 whisper_modell = "small"
 sprache = "de"
-# Live-Sprachmodus (Jarvis, /jarvis): Nova schreibt mit, WAEHREND du sprichst
+# Live-Sprachmodus (/sprachmodus): Nova schreibt mit, WAEHREND du sprichst
 # (Vosk, offline - das deutsche Modell, ~45 MB, kommt mit /sprache einrichten).
 live_mitschrift = true
 # So viele Sekunden Sprechpause, dann antwortet sie (kleiner = schneller).

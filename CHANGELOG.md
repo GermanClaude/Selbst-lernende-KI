@@ -4,6 +4,13 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.28.2 – 2026-11-24
+
+**„Jarvis-Modus" heißt jetzt „Sprachmodus"**
+- Der Modus zum freien Reden heißt überall „Sprachmodus" statt „Jarvis-Modus" (Knopf in der App,
+  Hilfe, Tutorial, Anleitung). Du startest ihn mit `/sprachmodus` (auch `/sprechen`); der alte
+  Befehl `/jarvis` funktioniert weiter.
+
 ## 0.28.1 – 2026-11-24
 
 **Impressum wieder entfernt**

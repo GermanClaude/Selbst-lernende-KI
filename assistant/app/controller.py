@@ -79,6 +79,7 @@ COMMANDS = [
     ("/sprache einrichten", "Spracheingabe installieren"),
     ("/gehirn", "DeepSeek, Claude, Gemini, ChatGPT oder Ollama - Schluessel einfach in den Chat einfuegen"),
     ("/ollama", "Ollama: kostenlose KI auf deinem PC (Stand, Modelle laden)"),
+    ("/sprachmodus", "einfach reden, live (frueher Jarvis-Modus)"),
     ("/afk", "ich bin weg - die KI arbeitet allein weiter (mit Bericht)"),
     ("/handy", "Fernzugriff per Telegram: Nova vom Handy steuern (ohne Server)"),
     ("/handy token", "Bot-Token von @BotFather setzen (einmalig)"),
@@ -1698,7 +1699,7 @@ class AppController(CLI):
         if result.get("ok"):
             self._event({"type": "open", "what": "jarvis"})
         else:
-            print(result.get("error") or "Der Jarvis-Modus ging nicht.")
+            print(result.get("error") or "Der Sprachmodus ging nicht.")
 
     def _bildpfad_hinweis(self, pfad: str) -> None:
         print("Bilder bitte \u00fcber die B\u00fcroklammer, mit Strg+V oder durch Hineinziehen anh\u00e4ngen.")

@@ -22,8 +22,8 @@ STEPS = [
     {"id": "sprache", "titel": "Sprechen statt tippen", "ziel": "mikrofon", "zeigen": None,
      "text": "Halte F2 (oder den Mikrofon-Knopf) gedrueckt und sprich - loslassen, fertig. Kurz druecken = "
              "Mikrofon an, nochmal druecken = fertig. Der Text landet im Eingabefeld."},
-    {"id": "jarvis", "titel": "Jarvis-Modus: nur reden", "ziel": "jarvis", "zeigen": None,
-     "text": "Im Jarvis-Modus redest du einfach mit mir - ohne Tastatur. Ich hoere zu, merke selbst, wann du "
+    {"id": "jarvis", "titel": "Sprachmodus: nur reden", "ziel": "jarvis", "zeigen": None,
+     "text": "Im Sprachmodus redest du einfach mit mir - ohne Tastatur. Ich hoere zu, merke selbst, wann du"
              "fertig bist, antworte laut und hoere dann wieder zu. 'Chat-Modus' sagen oder klicken bringt dich zurueck."},
     {"id": "internet", "titel": "Ich kenne das Internet", "ziel": None,
      "text": "Ich kann im Internet suchen und Webseiten lesen - fuer aktuelle Infos.",

@@ -26,7 +26,7 @@ Sonderbefehle (mit '/' beginnen):
   /ueber-mich [feld = wert] - was die KI ueber dich wissen soll
   /werte bearbeiten   - deine Regeln fuer die KI im Editor oeffnen
   /neu                - neues Gespraech (Charakter & Profil frisch geladen)
-  /jarvis             - reiner Sprachmodus: einfach reden (Strg+C = zurueck)
+  /sprachmodus        - einfach reden, live (frueher „Jarvis-Modus"; Strg+C = zurueck)
   /handy [token <T>|neu|aus] - Fernzugriff per Telegram: Nova vom Handy steuern (ohne Server;
                        einmalig Bot bei @BotFather anlegen, Token mit "/handy token <T>" setzen)
   /tutorial           - Nova stellt sich vor und zeigt, was sie kann
@@ -56,7 +56,7 @@ Sonderbefehle (mit '/' beginnen):
                        wenn etwas Wichtiges passiert.
                        Nur mit deiner Zustimmung; Pause ueberall: Strg+Alt+Umschalt+S.
                        Im Terminal bezieht Nova das Gesehene in ihre naechste Antwort ein - von
-                       selbst meldet sie sich hier nur im Jarvis-Modus. PC-Webcam: nur in der App.
+                       selbst meldet sie sich hier nur im Sprachmodus. PC-Webcam: nur in der App.
   /sehen handy        - dein Handy als Kamera: QR-Code scannen (Handy und PC im selben WLAN);
                        /sehen handy aus beendet es
   /sehen einrichten   - die Pakete fuer Live-Sehen installieren (numpy, dxcam, mss, Handy-Kamera ...)
@@ -843,7 +843,7 @@ class CLI:
         self._jarvis_host = host
         provider = self.brain.provider
         provider.effort_override = (settings.live_denktiefe or "").strip() or None
-        print(_c("\n[Jarvis-Modus] Sprich einfach - ich hoere die ganze Zeit zu und du kannst mich jederzeit "
+        print(_c("\n[Sprachmodus] Sprich einfach - ich hoere die ganze Zeit zu und du kannst mich jederzeit "
                  "unterbrechen. 'Chat-Modus' sagen oder Strg+C = zurueck.", BOLD))
         self._afk_pending = None
         try:
@@ -865,7 +865,7 @@ class CLI:
             print(_c("\n[AFK-Modus nicht gestartet - du bist ja noch da.]", GREY))
         if self._afk_pending is not None:  # "Ich bin jetzt weg" im Sprachmodus
             pending, self._afk_pending = self._afk_pending, None
-            print(_c("\n[Jarvis-Modus beendet - der AFK-Modus beginnt]", GREY))
+            print(_c("\n[Sprachmodus beendet - der AFK-Modus beginnt]", GREY))
             self._afk_terminal(**pending)
             return
         print(_c("\n[Zurueck im Chat-Modus]", GREY))
@@ -2017,7 +2017,7 @@ class CLI:
             self._new_conversation()
         elif base in ("/stuetzraeder", "/stützräder", "/stuetzrad", "/stützrad"):
             self._training_wheels_command(cmd.split()[1:])
-        elif base == "/jarvis":
+        elif base in ("/sprachmodus", "/sprechen", "/jarvis"):
             self._jarvis_terminal()
         elif base in ("/handy", "/telegram", "/fern", "/fernzugriff"):
             self._handy_befehl(cmd.split()[1:])
@@ -2088,7 +2088,7 @@ class CLI:
                     if self.config.voice.live_mitschrift:
                         from ..live import setup_live
 
-                        print(_c("Lade die Live-Mitschrift fuer den Jarvis-Modus (Vosk, ~50 MB) …", GREY))
+                        print(_c("Lade die Live-Mitschrift fuer den Sprachmodus (Vosk, ~50 MB) …", GREY))
                         ok, message = setup_live(self.config.project_root, self.config.voice,
                                                  progress=_progress_line)
                         print(_c("\r" + message + " " * 10, CYAN if ok else YELLOW))

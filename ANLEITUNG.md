@@ -226,8 +226,8 @@ Schlüssel wird dabei nie an die KI geschickt.
 drücken**, sprechen, **nochmal F2**. Der Text erscheint in der Eingabezeile,
 dann Enter.
 
-**Einfach reden wie mit Jarvis:** `/jarvis` eingeben (in der App: Knopf
-**Jarvis-Modus**). Jetzt einfach sprechen – Nova schreibt mit, während du redest,
+**Einfach reden (Sprachmodus):** `/sprachmodus` eingeben (in der App: Knopf
+**Sprachmodus**). Jetzt einfach sprechen – Nova schreibt mit, während du redest,
 antwortet laut und hört dann wieder zu. Du kannst sie jederzeit unterbrechen.
 Zurück zum Tippen: „Chat-Modus“ sagen. Beim ersten Mal lädt sie einmalig ein
 deutsches Sprachmodell (~50 MB) – das dauert kurz.
@@ -260,7 +260,7 @@ allow_full_filesystem = true # Zugriff auf den ganzen PC statt nur Arbeitsordner
 Die KI **fragt trotzdem vor jeder heiklen Aktion nach** – du antwortest mit `j`
 (ja) oder `n` (nein).
 
-Für **Maus-/Tastatursteuerung** („Jarvis“) einmalig im schwarzen Fenster:
+Für **Maus-/Tastatursteuerung** einmalig im schwarzen Fenster:
 ```
 .venv\Scripts\activate
 pip install pyautogui pillow

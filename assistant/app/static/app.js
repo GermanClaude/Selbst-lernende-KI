@@ -2679,9 +2679,9 @@
     }
     const imgs = tray ? tray.items.slice() : [];
     if (!text && !imgs.length) return false;
-    // /jarvis, /tutorial und /feedback oeffnen die Ansichten direkt im Fenster (nicht senden)
+    // /sprachmodus (/jarvis), /tutorial und /feedback oeffnen die Ansichten direkt im Fenster (nicht senden)
     const low = text.toLowerCase();
-    if (low === '/jarvis' || low === '/tutorial' || low === '/tour' || low === '/feedback' || low === '/bewertung') {
+    if (low === '/sprachmodus' || low === '/sprechen' || low === '/jarvis' || low === '/tutorial' || low === '/tour' || low === '/feedback' || low === '/bewertung') {
       if (fromInput) {
         input.value = '';
         autosize();
@@ -2689,7 +2689,7 @@
       }
       rememberOwn(text);
       recallIdx = -1;
-      if (low === '/jarvis') startJarvis();
+      if (low === '/sprachmodus' || low === '/sprechen' || low === '/jarvis') startJarvis();
       else if (low === '/feedback' || low === '/bewertung') openFeedback({ trigger: 'menue' });
       else startTour();
       return true;
@@ -6502,7 +6502,7 @@
     if (!r.ok) {
       closeJarvisView();
       if (r.setup) voiceFailed(r);
-      else toast(r.error || 'Der Jarvis-Modus konnte nicht starten.', 'error', 5000);
+      else toast(r.error || 'Der Sprachmodus konnte nicht starten.', 'error', 5000);
       return;
     }
     if (jv.live === null) jv.live = !!r.live;
@@ -6521,7 +6521,7 @@
       // Jarvis laeuft weiter: seine Ereignisse wieder zeigen (die Ansicht oeffnet sich dann erneut)
       jv.left = false;
       endClosing();
-      toast(r.error || 'Der Jarvis-Modus ließ sich nicht beenden.', 'error');
+      toast(r.error || 'Der Sprachmodus ließ sich nicht beenden.', 'error');
     });
   }
 

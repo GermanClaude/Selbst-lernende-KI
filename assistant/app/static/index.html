@@ -173,8 +173,8 @@
         <button class="pill-btn" id="tb-update" type="button" hidden><span data-icon="download"></span><span id="tb-update-text">Update verfügbar</span></button>
         <button class="model-chip" id="tb-model" type="button" aria-haspopup="dialog" hidden><span data-icon="sparkles"></span><span class="mc-text" id="tb-model-text"></span></button>
         <button class="jv-launch" id="tb-jarvis" type="button" data-tour="jarvis" aria-haspopup="dialog"
-                title="Jarvis-Modus: einfach mit mir reden (/jarvis)">
-          <span class="jl-orb" aria-hidden="true"><i></i></span><span class="jl-text">Jarvis-Modus</span>
+                title="Sprachmodus: einfach mit mir reden (/sprachmodus)">
+          <span class="jl-orb" aria-hidden="true"><i></i></span><span class="jl-text">Sprachmodus</span>
         </button>
         <button class="icon-btn" id="tb-new" type="button" aria-label="Neues Gespräch" title="Neues Gespräch (/neu)" data-icon="plusSquare" hidden></button>
         <button class="icon-btn" id="theme-btn" type="button" aria-label="Design wechseln" data-icon="contrast"></button>
@@ -250,7 +250,7 @@
       <div class="chat-inner">
         <!-- Leerer Zustand -->
         <div class="empty" id="empty" hidden>
-          <button class="hero" id="hero" type="button" aria-label="Jarvis-Modus starten" title="Tippe mich an, um mit mir zu reden">
+          <button class="hero" id="hero" type="button" aria-label="Sprachmodus starten" title="Tippe mich an, um mit mir zu reden">
             <span class="avatar ai-avatar hero-av" data-orb="live" aria-hidden="true"><span class="av-l">K</span></span>
           </button>
           <span class="hero-cap" id="hero-cap" aria-hidden="true"><span data-icon="mic"></span>Tippe mich an, um mit mir zu reden</span>
@@ -616,13 +616,13 @@
   </div>
 </div>
 
-<!-- Jarvis-Modus (reiner Sprachmodus) -->
+<!-- Sprachmodus (reines Reden, live) -->
 <div class="jv" id="jarvis" data-state="listening" role="dialog" aria-modal="true" aria-labelledby="jv-title" aria-describedby="jv-hint" tabindex="-1" hidden>
   <div class="jv-aurora" aria-hidden="true"><i class="a1"></i><i class="a2"></i><i class="a3"></i></div>
   <header class="jv-top">
     <div class="jv-brand">
       <div class="avatar ai-avatar" aria-hidden="true"><span class="av-l">K</span></div>
-      <h2 class="jv-title" id="jv-title"><span id="jv-name">KI</span><span class="sr-only"> – Jarvis-Modus</span></h2>
+      <h2 class="jv-title" id="jv-title"><span id="jv-name">KI</span><span class="sr-only"> – Sprachmodus</span></h2>
       <span class="jv-live" id="jv-live" hidden><i aria-hidden="true"></i>LIVE</span>
     </div>
     <div class="jv-setup" id="jv-setup" role="status" hidden><span class="spinner" aria-hidden="true"></span><span id="jv-setup-text">Live-Mitschrift wird eingerichtet …</span></div>

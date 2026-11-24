@@ -68,7 +68,7 @@ arbeitet weiter, während du weg bist – und läuft auf Wunsch komplett kostenl
 <table>
 <tr>
 <td width="50%"><img src="docs/bilder/chat.png" alt="Chat mit Nova"><br>
-<b>💬 Reden wie mit einem Menschen</b> – per Tastatur, Sprache (F2) oder im Jarvis-Modus ganz ohne Tippen. Sie erinnert sich auch im nächsten Gespräch an dich.</td>
+<b>💬 Reden wie mit einem Menschen</b> – per Tastatur, Sprache (F2) oder im Sprachmodus ganz ohne Tippen. Sie erinnert sich auch im nächsten Gespräch an dich.</td>
 <td width="50%"><img src="docs/bilder/gedaechtnis.png" alt="Novas Gedächtnis"><br>
 <b>🧠 Ein Gedächtnis, das du siehst</b> – alles, was Nova über dich gelernt hat, durchsuchbar, ergänzbar, löschbar.</td>
 </tr>
@@ -88,7 +88,7 @@ arbeitet weiter, während du weg bist – und läuft auf Wunsch komplett kostenl
 
 ### Alle Fähigkeiten auf einen Blick
 
-- 💬 **Natürliches Gespräch** auf Deutsch – getippt, gesprochen (F2) oder live im **Jarvis-Modus**
+- 💬 **Natürliches Gespräch** auf Deutsch – getippt, gesprochen (F2) oder live im **Sprachmodus**
   (sie spricht ab dem ersten fertigen Satz, du kannst sie jederzeit unterbrechen).
 - 🧠 **Lernen & Gedächtnis**: dauerhaft, durchsuchbar, von dir korrigierbar.
 - 🌐 **Internet**: Websuche und Webseiten lesen.
@@ -339,9 +339,9 @@ Stimme") entscheidest du, womit Nova vorliest:
 Anhören mit `/stimme test`. Die realistischen Stimmen kosten je nach Textlänge etwas Geld –
 fehlt ein Schlüssel, bleibt Nova bei der kostenlosen Stimme.
 
-## Jarvis-Modus: einfach reden (live)
+## Sprachmodus: einfach reden (live)
 
-`/jarvis` (oder in der App der Knopf **Jarvis-Modus**) – und du redest einfach mit
+`/sprachmodus` (oder in der App der Knopf **Sprachmodus**) – und du redest einfach mit
 Nova, ganz ohne Tastatur. Zurück: „Chat-Modus“ sagen, Esc oder Strg+C.
 
 So schnell wie möglich:
@@ -368,7 +368,7 @@ sprechen, vergehen meist 1–2 Sekunden. Einstellungen unter `[voice]`
 
 In der App hat Nova eine leuchtende **Sphäre** als Gesicht – sie zeigt, was Nova gerade
 tut (nachdenken, arbeiten, schreiben, vorlesen, zuhören). Antippen startet den
-Jarvis-Modus. Aussehen ändern: einfach Nova fragen („mach deine Sphäre grün“).
+Sprachmodus. Aussehen ändern: einfach Nova fragen („mach deine Sphäre grün“).
 
 Beim ersten Start öffnet sich **„Gehirn & Schlüssel“**: Ollama, DeepSeek, Gemini oder Claude wählen,
 (bei Bedarf) Schlüssel einfügen, fertig. Den Schlüssel kannst du auch einfach in den Chat einfügen
@@ -613,7 +613,7 @@ stoppt die Steuerung sofort.
 | `/transkript [start system\|start mikrofon\|stop\|name N Name\|zusammenfassung]` | Ton **lokal** mitschreiben/transkribieren (keine Tokens), bis Stopp |
 | `/protokoll [an\|aus\|zeigen]` | Aktivitäts-Protokoll: welche Apps/Fenster du nutzt (kein Keylogger) |
 | `/skill [add <Name> <Anweisung>\|addfuer <gehirn> …\|an\|aus\|weg]` | Eigene Regeln/Skills (für alle Gehirne oder eins) |
-| `/jarvis` | Jarvis-Modus: einfach reden, live (zurück: „Chat-Modus“ sagen) |
+| `/sprachmodus` | Sprachmodus: einfach reden, live (zurück: „Chat-Modus“ sagen) |
 | `/handy [token <T>\|neu\|aus]` | Fernzugriff per Telegram: Nova vom Handy steuern (ohne Server) |
 | `/afk [Betrag] [Auftrag]` | AFK-Modus: Nova arbeitet allein weiter, z. B. `/afk 0,30€ …` (zurück: Nachricht bzw. Strg+C) |
 | `/modell [name]` | Modell zeigen bzw. wählen (z.B. `/modell sonnet`, `/modell deepseek pro`) |
@@ -663,7 +663,7 @@ assistant/
   sicherheit.py    Sicherheits-Check (/scan)
   bildgenerator.py Bilder erstellen (AI Horde / Cloudflare)
   voice.py         Sprachein-/-ausgabe (F2-Sprechtaste)
-  live.py          Jarvis-Modus: durchgehend zuhoeren, live mitschreiben, unterbrechen
+  live.py          Sprachmodus: durchgehend zuhoeren, live mitschreiben, unterbrechen
   updater.py       automatische Updates + gesicherte alte Versionen
   app/             die KI als App: Server, Fenster, Oberflaeche (static/)
   tools/           Werkzeuge: Dateien, Shell, Web, System, Gedächtnis, PC
