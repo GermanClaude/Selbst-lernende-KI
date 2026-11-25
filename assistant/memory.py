@@ -111,6 +111,8 @@ class Memory:
                 );
                 """
             )
+        # Vergessene Fakten (fuer den Abgleich PC <-> Cloud: sonst kaemen sie von der anderen Seite zurueck)
+        self._conn.execute("CREATE TABLE IF NOT EXISTS vergessen (content TEXT PRIMARY KEY, zeit REAL NOT NULL)")
         self._conn.commit()
 
     # -- Schreiben ----------------------------------------------------------
@@ -149,9 +151,78 @@ class Memory:
     @_locked
     def forget(self, fact_id: int) -> bool:
         """Loescht einen Fakt anhand seiner ID."""
+        row = self._conn.execute("SELECT content FROM facts WHERE id = ?", (fact_id,)).fetchone()
         cur = self._conn.execute("DELETE FROM facts WHERE id = ?", (fact_id,))
+        if row is not None:
+            self._conn.execute("INSERT OR REPLACE INTO vergessen (content, zeit) VALUES (?, ?)",
+                               (row["content"], time.time()))
         self._conn.commit()
         return cur.rowcount > 0
+
+    # -- Abgleich (assistant/abgleich.py) -----------------------------------
+    @_locked
+    def exportieren(self, max_episoden: int = 1000) -> dict:
+        """Alles Gelernte als einfache Daten (ohne IDs - die sind auf jedem Geraet anders)."""
+        fakten = [{"content": r["content"], "category": r["category"], "importance": r["importance"],
+                   "created_at": r["created_at"], "updated_at": r["updated_at"], "source": r["source"]}
+                  for r in self._conn.execute("SELECT * FROM facts ORDER BY id")]
+        episoden = [{"summary": r["summary"], "created_at": r["created_at"]} for r in self._conn.execute(
+            "SELECT * FROM episodes ORDER BY created_at DESC LIMIT ?", (max_episoden,))][::-1]
+        vergessen = [{"content": r["content"], "zeit": r["zeit"]}
+                     for r in self._conn.execute("SELECT * FROM vergessen ORDER BY zeit")]
+        return {"fakten": fakten, "episoden": episoden, "vergessen": vergessen}
+
+    @_locked
+    def importieren(self, daten: dict) -> dict:
+        """Fuehrt Gelerntes von einem anderen Geraet hier ein. Neueres gewinnt; Vergessenes bleibt vergessen.
+        Gibt zurueck, wie viel sich geaendert hat."""
+        neu = geaendert = geloescht = episoden = 0
+        for v in daten.get("vergessen") or []:
+            inhalt, zeit = str(v.get("content") or ""), float(v.get("zeit") or 0)
+            if not inhalt:
+                continue
+            alt = self._conn.execute("SELECT zeit FROM vergessen WHERE content = ?", (inhalt,)).fetchone()
+            if alt is None or alt["zeit"] < zeit:
+                self._conn.execute("INSERT OR REPLACE INTO vergessen (content, zeit) VALUES (?, ?)", (inhalt, zeit))
+            geloescht += self._conn.execute("DELETE FROM facts WHERE content = ? AND updated_at <= ?",
+                                            (inhalt, zeit)).rowcount
+        for f in daten.get("fakten") or []:
+            inhalt = str(f.get("content") or "").strip()
+            if not inhalt:
+                continue
+            aktuell = float(f.get("updated_at") or 0)
+            weg = self._conn.execute("SELECT zeit FROM vergessen WHERE content = ?", (inhalt,)).fetchone()
+            if weg is not None and weg["zeit"] >= aktuell:
+                continue
+            werte = (str(f.get("category") or "allgemein"), max(1, min(5, int(f.get("importance") or 3))),
+                     aktuell, str(f.get("source") or "abgleich"))
+            alt = self._conn.execute("SELECT id, updated_at FROM facts WHERE content = ?", (inhalt,)).fetchone()
+            if alt is None:
+                self._conn.execute(
+                    "INSERT INTO facts (category, content, importance, created_at, updated_at, source)"
+                    " VALUES (?, ?, ?, ?, ?, ?)",
+                    (werte[0], inhalt, werte[1], float(f.get("created_at") or aktuell), werte[2], werte[3]))
+                neu += 1
+            elif alt["updated_at"] < aktuell:
+                self._conn.execute("UPDATE facts SET category=?, importance=?, updated_at=?, source=? WHERE id=?",
+                                   (*werte, alt["id"]))
+                geaendert += 1
+        for e in daten.get("episoden") or []:
+            text, zeit = str(e.get("summary") or "").strip(), float(e.get("created_at") or 0)
+            if text and self._conn.execute("SELECT 1 FROM episodes WHERE summary = ? AND abs(created_at - ?) < 0.01",
+                                           (text, zeit)).fetchone() is None:
+                self._conn.execute("INSERT INTO episodes (summary, created_at) VALUES (?, ?)", (text, zeit))
+                episoden += 1
+        self._conn.commit()
+        return {"neu": neu, "geaendert": geaendert, "geloescht": geloescht, "episoden": episoden}
+
+    @_locked
+    def fingerabdruck(self) -> tuple:
+        """Billiger Stand: aendert sich, sobald etwas gelernt, geaendert oder vergessen wurde."""
+        f = self._conn.execute("SELECT COUNT(*), COALESCE(MAX(updated_at), 0) FROM facts").fetchone()
+        e = self._conn.execute("SELECT COUNT(*), COALESCE(MAX(created_at), 0) FROM episodes").fetchone()
+        v = self._conn.execute("SELECT COUNT(*), COALESCE(MAX(zeit), 0) FROM vergessen").fetchone()
+        return tuple(f) + tuple(e) + tuple(v)
 
     @_locked
     def add_episode(self, summary: str) -> int:

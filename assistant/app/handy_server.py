@@ -94,6 +94,15 @@ def run_cloud(config) -> int:
         print("Kein NOVA_TOKEN gesetzt - erzeugter Schluessel (data/server_token): " + e["token"])
         print("Besser: NOVA_TOKEN als Geheimnis beim Anbieter eintragen, sonst aendert er sich nach einem Neustart "
               "ohne dauerhaften Speicher.")
+    import signal
+
+    def beenden(*_a):
+        raise KeyboardInterrupt  # -> run_server faehrt sauber herunter (Zusammenfassung, letzter Abgleich)
+
+    try:
+        signal.signal(signal.SIGTERM, beenden)
+    except (ValueError, OSError):  # nicht im Haupt-Thread (Tests)
+        pass
     return run_server(config, port=e["port"], oeffnen=False, host="0.0.0.0", token=e["token"], hosts=e["hosts"],
                       vorbereiten=lambda server: telegram_webhook_einrichten(server, e["token"]))
 

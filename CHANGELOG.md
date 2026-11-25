@@ -4,6 +4,19 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.39.0 – 2026-11-25
+
+**Ein Gedächtnis für alle deine Novas – PC und Cloud wissen dasselbe**
+- Was Nova am PC über dich lernt, weiß jetzt auch die Cloud-Nova (und umgekehrt): Fakten, Vorlieben und
+  worüber ihr gesprochen habt. Was du Nova vergessen lässt, bleibt auf allen Geräten vergessen.
+- Die Ablage liegt in einem **privaten GitHub-Repo** (kostenlos) und ist mit **deinem Passwort
+  verschlüsselt** – GitHub sieht nur Zeichensalat. So bleibt das Gedächtnis auch dann erhalten, wenn die
+  kostenlose Cloud-Nova schläft oder der PC aus ist.
+- Einrichten: `/abgleich` zeigt die drei Schritte (Repo anlegen, Token erstellen,
+  `/abgleich einrichten …`). In der Cloud trägst du dieselben drei Werte ein.
+- Abgeglichen wird beim Start, jede Minute, wenn es etwas Neues gibt, und beim Beenden. Sofort:
+  `/abgleich jetzt`. Ausschalten: `/abgleich aus`.
+
 ## 0.38.0 – 2026-11-25
 
 **Nova in der Cloud – die Handy-App läuft auch, wenn dein PC aus ist**

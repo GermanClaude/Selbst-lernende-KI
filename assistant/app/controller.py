@@ -82,6 +82,7 @@ COMMANDS = [
     ("/ollama", "Ollama: kostenlose KI auf deinem PC (Stand, Modelle laden)"),
     ("/sprachmodus", "einfach reden, live (frueher Jarvis-Modus)"),
     ("/afk", "ich bin weg - die KI arbeitet allein weiter (mit Bericht)"),
+    ("/abgleich", "Gedaechtnis zwischen PC und Cloud-Nova abgleichen"),
     ("/geraete", "Hardware: Smart Home, Arduino/ESP32, Bluetooth, andere Rechner (SSH)"),
     ("/handysteuerung", "Das ganze Handy per ADB steuern - koppeln und verbinden"),
     ("/anruf", "Nova ruft dich an (Bland AI oder Vonage) - Einrichtung und Stand"),
@@ -2315,6 +2316,7 @@ class AppController(CLI):
     # -- Start / Neustart / Ende -----------------------------------------------------
     def startup(self) -> None:
         """Nach dem Oeffnen des Fensters: Hinweise und (hoechstens taeglich) Update-Pruefung."""
+        self._abgleich_starten()  # Gedaechtnis mit Cloud/anderen Novas abgleichen (wenn eingerichtet)
         try:
             failed = self.updater.take_install_failure()
         except OSError:
@@ -2404,7 +2406,7 @@ class AppController(CLI):
 # Befehle, deren Angaben geheim sind - im Verlauf nur verdeckt anzeigen (Code, Passwort, Tokens).
 _GEHEIME_BEFEHLE = re.compile(
     r"^(/telegram\s+konto\s+(?:passwort|code|zugang)|/handy\s+token|/telegram\s+token|/anruf\s+schluessel"
-    r"|/geraete\s+smarthome\s+\S+)\s+\S.*$", re.IGNORECASE | re.DOTALL)
+    r"|/geraete\s+smarthome\s+\S+|/abgleich\s+einrichten\s+\S+)\s+\S.*$", re.IGNORECASE | re.DOTALL)
 
 
 def _mask_key(text: str) -> tuple[str, str | None]:

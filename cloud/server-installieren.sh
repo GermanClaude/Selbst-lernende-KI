@@ -35,6 +35,10 @@ DEEPSEEK_API_KEY=
 # Telegram (aus der .env auf deinem PC kopieren, optional):
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_CHAT_ID=
+# Gedaechtnis-Abgleich mit deinem PC (dieselben Werte wie dort, /abgleich zeigt die Schritte):
+NOVA_ABGLEICH_REPO=
+NOVA_ABGLEICH_TOKEN=
+NOVA_ABGLEICH_PASSWORT=
 EOF
   echo "Angelegt: $ZIEL/cloud/.env - trag dort deine Schluessel ein (nano $ZIEL/cloud/.env)."
 fi

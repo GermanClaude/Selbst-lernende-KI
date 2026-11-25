@@ -588,6 +588,21 @@ In der Handy-App: Zurück-Taste → „Nova in der Cloud“ → `https://…/?t=
 `python -m assistant --cloud` (bzw. `NOVA_CLOUD=1`) – lauscht auf `PORT`, nur mit `NOVA_TOKEN`, Telegram per
 Webhook (`NOVA_PUBLIC_URL`/`RENDER_EXTERNAL_URL`), dauerhafter Speicher unter `/data`.
 
+### Ein Gedächtnis für PC und Cloud (`/abgleich`)
+
+Damit die Cloud-Nova weiß, was die PC-Nova gelernt hat (und umgekehrt), gleichen beide ihr Gedächtnis über
+ein **privates GitHub-Repo** ab – verschlüsselt mit deinem Passwort:
+
+1. [github.com/new](https://github.com/new) → Name z. B. `nova-gedaechtnis` → **Private** → *Create repository*
+2. [Neuen Token](https://github.com/settings/personal-access-tokens/new) → *Repository access: Only select
+   repositories* → `nova-gedaechtnis` → *Permissions: Contents = Read and write* → *Generate token*
+3. Am PC: `/abgleich einrichten <deinname>/nova-gedaechtnis <Token> <Passwort>`
+4. In der Cloud (Render: *Environment*, eigener Server: `cloud/.env`) dieselben Werte als
+   `NOVA_ABGLEICH_REPO`, `NOVA_ABGLEICH_TOKEN`, `NOVA_ABGLEICH_PASSWORT` eintragen.
+
+Abgeglichen wird beim Start, jede Minute bei Neuem und beim Beenden. Neueres gewinnt; Vergessenes bleibt
+vergessen. Status: `/abgleich`, sofort: `/abgleich jetzt`, aus: `/abgleich aus`.
+
 ## Hardware: Smart Home, Arduino/ESP32, Bluetooth, andere Rechner
 
 `/geraete` zeigt, was eingerichtet ist. Dann einfach sagen, was passieren soll.

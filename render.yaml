@@ -19,3 +19,9 @@ services:
         sync: false
       - key: TELEGRAM_CHAT_ID
         sync: false
+      - key: NOVA_ABGLEICH_REPO      # Gedaechtnis-Abgleich mit deinem PC (/abgleich am PC zeigt die Schritte)
+        sync: false
+      - key: NOVA_ABGLEICH_TOKEN
+        sync: false
+      - key: NOVA_ABGLEICH_PASSWORT
+        sync: false

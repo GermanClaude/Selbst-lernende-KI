@@ -270,6 +270,14 @@ class Brain:
         self.provider = new
         return not same
 
+    def gedaechtnis_neu_laden(self) -> None:
+        """Nach einem Abgleich: das neu dazugekommene Wissen in den System-Prompt uebernehmen."""
+        self.system_prompt = build_system_prompt(self.config, self.memory)
+        try:
+            self.provider.system_prompt = self.system_prompt
+        except AttributeError:
+            pass
+
     def end_session_summary(self) -> None:
         if self.provider.user_turns() < 1 or self.provider.history_length() < 2:
             return

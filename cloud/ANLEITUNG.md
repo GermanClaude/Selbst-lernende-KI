@@ -3,9 +3,9 @@
 Die Cloud-Nova ist ein eigenes Programm im Internet. Die **Nova-Handy-App** verbindet sich mit ihr, und auf
 **Telegram** antwortet sie rund um die Uhr. Ob dein PC an oder aus ist, spielt dann keine Rolle.
 
-> **Wichtig zu wissen:** Die Cloud-Nova ist eine *eigene* Nova. Ihr Gedächtnis ist (noch) getrennt von der
-> Nova auf deinem PC. Sie kann deinen PC nicht steuern und keine Dateien auf ihm sehen – sie läuft ja auf
-> einem fremden Rechner.
+> **Wichtig zu wissen:** Die Cloud-Nova läuft auf einem fremden Rechner – sie kann deinen PC nicht steuern
+> und keine Dateien auf ihm sehen. Ihr **Gedächtnis teilt sie mit der PC-Nova**, wenn du den Abgleich
+> einrichtest (siehe unten, „Gedächtnis-Abgleich“).
 
 Es gibt zwei Wege:
 
@@ -14,7 +14,7 @@ Es gibt zwei Wege:
 | Kosten | 0 € | ca. 6–7 €/Monat |
 | Bezahlen | keine Karte nötig (laut Render) | SEPA-Lastschrift oder Überweisung (ggf. Ausweis-Prüfung) |
 | Läuft | schläft nach 15 Min. ohne Besuch, wacht in ca. 1 Min. wieder auf | immer |
-| Gedächtnis | **beginnt nach jedem Aufwachen neu** | bleibt dauerhaft |
+| Gedächtnis | nur mit Abgleich (sonst beginnt es nach jedem Aufwachen neu) | bleibt dauerhaft |
 | Arbeitsspeicher | 512 MB (knapp, reicht) | 2–4 GB |
 
 ## Weg 1: Render (kostenlos)
@@ -46,6 +46,16 @@ Neue Nova-Versionen spielt Render von selbst ein (sobald sie auf GitHub erschein
    Domain dank sslip.io; eigene Domain: `NOVA_DOMAIN=nova.example.de` vor dem Skript setzen).
 
 Update: Skript nochmal ausführen.
+
+## Gedächtnis-Abgleich (PC ↔ Cloud)
+
+Am PC `/abgleich` eingeben – Nova zeigt die drei Schritte (privates GitHub-Repo anlegen, Token mit
+*Contents: Read and write* nur für dieses Repo, `/abgleich einrichten …`). Danach dieselben drei Werte in
+der Cloud eintragen: `NOVA_ABGLEICH_REPO`, `NOVA_ABGLEICH_TOKEN`, `NOVA_ABGLEICH_PASSWORT` (bei Render unter
+*Environment*, beim eigenen Server in `cloud/.env`, danach das Skript nochmal ausführen).
+
+Die Ablage ist mit deinem Passwort verschlüsselt. Bei Render holt sich die Cloud-Nova ihr Gedächtnis nach
+jedem Aufwachen wieder aus dem Repo – so geht trotz fehlendem Speicher nichts verloren.
 
 ## Telegram
 

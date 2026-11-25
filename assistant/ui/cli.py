@@ -29,6 +29,7 @@ Sonderbefehle (mit '/' beginnen):
   /sprachmodus        - einfach reden, live (frueher „Jarvis-Modus"; Strg+C = zurueck)
   /anruf [schluessel <KEY>|vonage <ID> <Datei>|anbieter bland|vonage|nummer <Nr>|minuten <n>|persona|test]
                       - Nova ruft dich an (Bland AI oder Vonage), nur deine Nummer
+  /abgleich [einrichten <besitzer/repo> <Token> <Passwort>|jetzt|aus] - Gedaechtnis PC <-> Cloud abgleichen
   /geraete [smarthome <URL> <Token>|ssh <name> <user@host>|esp <name> <http://...>|weg <name>] - Hardware
   /handysteuerung [koppeln <Port> <Code>|verbinden <Port>] - das ganze Handy per ADB steuern (Termux)
   /telegram konto [zugang|anmelden|code|passwort|abmelden] - dein eigenes Telegram-Konto (Chats lesen)
@@ -1322,6 +1323,113 @@ class CLI:
                  "  Dann: /anruf nummer 0171 1234567  |  /anruf test  |  Wechseln: /anruf anbieter bland|vonage\n"
                  "  Danach einfach sagen, z.B. 'ruf mich an, wenn der Download fertig ist'.", GREY))
 
+    # -- Gedaechtnis-Abgleich PC <-> Cloud (assistant/abgleich.py) ---------------
+    def _abgleich_starten(self) -> None:
+        """Beim Start: einmal abgleichen, danach im Hintergrund weiter (nur wenn eingerichtet)."""
+        from .. import abgleich
+
+        alt = self.__dict__.get("_abgleich_stop")
+        if alt is not None:
+            alt.set()
+        a = abgleich.aus_umgebung(self.memory)
+        self._abgleich = a
+        if a is None:
+            return
+        a.bei_aenderung = self.brain.gedaechtnis_neu_laden
+        stop = threading.Event()
+        self._abgleich_stop = stop
+
+        def lauf() -> None:
+            try:
+                logger.info("Abgleich beim Start: %s", a.jetzt())
+            except abgleich.AbgleichFehler as exc:
+                a.letzte_meldung = f"Fehler: {exc}"
+                logger.warning("Abgleich beim Start: %s", exc)
+            except Exception:  # noqa: BLE001
+                logger.exception("Abgleich beim Start")
+            a.schleife(stop)
+
+        threading.Thread(target=lauf, name="abgleich", daemon=True).start()
+
+    def _abgleich_beenden(self) -> None:
+        """Beim Beenden: zuletzt Gelerntes noch ablegen (sonst kennt es die andere Nova nicht)."""
+        a = self.__dict__.get("_abgleich")
+        stop = self.__dict__.get("_abgleich_stop")
+        if stop is not None:
+            stop.set()
+        if a is None:
+            return
+        try:
+            a.jetzt(nur_wenn_geaendert=True)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Abgleich beim Beenden: %s", exc)
+
+    def _abgleich_befehl(self, args: list[str]) -> None:
+        import os
+
+        from .. import abgleich
+        from ..config import save_env_value
+
+        sub = args[0].lower() if args else ""
+        root = self.config.project_root
+        if sub == "einrichten" and len(args) >= 4:
+            repo, token, passwort = args[1].strip().strip("/"), args[2].strip(), " ".join(args[3:])
+            if repo.startswith("https://github.com/"):
+                repo = repo[len("https://github.com/"):].removesuffix(".git").strip("/")
+            if repo.count("/") != 1:
+                print(_c("Das Repo bitte als besitzer/name, z.B. deinname/nova-gedaechtnis.", YELLOW))
+                return
+            if len(passwort) < 8:
+                print(_c("Das Abgleich-Passwort bitte mindestens 8 Zeichen lang (auf allen Geraeten dasselbe).",
+                         YELLOW))
+                return
+            for name, wert in (("NOVA_ABGLEICH_REPO", repo), ("NOVA_ABGLEICH_TOKEN", token),
+                               ("NOVA_ABGLEICH_PASSWORT", passwort)):
+                try:
+                    save_env_value(root, name, wert)
+                except OSError as exc:
+                    print(_c(f"Nicht gespeichert ({exc}) - gilt nur fuer diese Sitzung.", YELLOW))
+                os.environ[name] = wert
+            sub = "jetzt"
+            print(_c("Gespeichert (nur lokal in der .env). Ich gleiche jetzt ab ...", GREEN))
+            self._abgleich_starten()
+        if sub in ("aus", "trennen"):
+            self._abgleich_beenden()
+            for name in ("NOVA_ABGLEICH_REPO", "NOVA_ABGLEICH_TOKEN", "NOVA_ABGLEICH_PASSWORT"):
+                try:
+                    save_env_value(root, name, "")
+                except OSError:
+                    pass
+                os.environ.pop(name, None)
+            self._abgleich = None
+            print(_c("Abgleich aus. Die Ablage im GitHub-Repo bleibt (dort selbst loeschen, wenn du willst).", GREEN))
+            return
+        a = self.__dict__.get("_abgleich")
+        if sub == "jetzt":
+            if a is None:
+                print(_c("Der Abgleich ist noch nicht eingerichtet - /abgleich zeigt die Schritte.", YELLOW))
+                return
+            try:
+                print(_c("Gedaechtnis " + a.jetzt(), GREEN))
+            except abgleich.AbgleichFehler as exc:
+                print(_c(f"Abgleich ging nicht: {exc}", YELLOW))
+            return
+        print(_c("\nGedaechtnis-Abgleich: dieselbe Nova auf PC, in der Cloud und auf dem Handy.", BOLD))
+        if a is not None:
+            wann = time.strftime("%H:%M", time.localtime(a.zuletzt)) if a.zuletzt else "noch nie"
+            print(f"  Eingerichtet ({a.repo}) - zuletzt {wann}: {a.letzte_meldung}")
+        else:
+            print("  Noch nicht eingerichtet.")
+        print(_c("  Einrichten (einmal, kostenlos):\n"
+                 "    1) github.com/new -> Name z.B. nova-gedaechtnis -> PRIVATE -> Create\n"
+                 "    2) github.com/settings/personal-access-tokens/new -> Repository access: Only select\n"
+                 "       repositories -> nova-gedaechtnis -> Permissions: Contents = Read and write -> Generate\n"
+                 "    3) /abgleich einrichten <deinname>/nova-gedaechtnis <Token> <ein Passwort, das du dir merkst>\n"
+                 "    4) In der Cloud dieselben drei Werte eintragen: NOVA_ABGLEICH_REPO, NOVA_ABGLEICH_TOKEN,\n"
+                 "       NOVA_ABGLEICH_PASSWORT\n"
+                 "  Alles wird mit deinem Passwort verschluesselt abgelegt. Abgleich: beim Start, jede Minute nach\n"
+                 "  Neuem und beim Beenden. Sofort: /abgleich jetzt   Ausschalten: /abgleich aus", GREY))
+
     # -- Hardware-Geraete (assistant/geraete.py) ---------------------------------
     def _geraete_befehl(self, args: list[str]) -> None:
         import importlib.util
@@ -2315,6 +2423,7 @@ class CLI:
             self._start_feedback_watch()
             self._sehen_beim_start()
             self._handy_beim_start()  # Nachrichten vom Handy, waehrend Nova aus war -> nachfragen
+            self._abgleich_starten()  # Gedaechtnis mit Cloud/anderen Novas abgleichen (wenn eingerichtet)
             self._loop()
         except (KeyboardInterrupt, EOFError):
             print()
@@ -2520,6 +2629,8 @@ class CLI:
             self._arbeitsordner_command(cmd.split()[1:])
         elif base in ("/anruf", "/anrufen", "/telefon", "/bland"):
             self._anruf_befehl(cmd.split()[1:])
+        elif base in ("/abgleich", "/sync", "/synchronisieren"):
+            self._abgleich_befehl(cmd.split()[1:])
         elif base in ("/geraete", "/geräte", "/hardware", "/geraet"):
             self._geraete_befehl(cmd.split()[1:])
         elif base in ("/handysteuerung", "/adb"):
@@ -3172,6 +3283,7 @@ class CLI:
             self.brain.end_session_summary()
         except Exception:  # noqa: BLE001
             pass
+        self._abgleich_beenden()  # nach der Zusammenfassung - die soll mit
         self.memory.close()
         print(_c("Bis bald!", CYAN))
 
