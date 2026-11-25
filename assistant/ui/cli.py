@@ -28,6 +28,7 @@ Sonderbefehle (mit '/' beginnen):
   /neu                - neues Gespraech (Charakter & Profil frisch geladen)
   /sprachmodus        - einfach reden, live (frueher „Jarvis-Modus"; Strg+C = zurueck)
   /anruf [schluessel <KEY>|nummer <Nr>|minuten <n>|test] - Nova ruft dich an (Bland AI), nur deine Nummer
+  /geraete [smarthome <URL> <Token>|ssh <name> <user@host>|esp <name> <http://...>|weg <name>] - Hardware
   /handy [token <T>|neu|aus] - Fernzugriff per Telegram: Nova vom Handy steuern (ohne Server;
                        einmalig Bot bei @BotFather anlegen, Token mit "/handy token <T>" setzen)
   /tutorial           - Nova stellt sich vor und zeigt, was sie kann
@@ -1158,6 +1159,63 @@ class CLI:
         print(_c("  Einrichten: /anruf schluessel <KEY>  |  /anruf nummer 0171 1234567  |  /anruf test\n"
                  "  Danach einfach sagen, z.B. 'ruf mich an, wenn der Download fertig ist'.", GREY))
 
+    # -- Hardware-Geraete (assistant/geraete.py) ---------------------------------
+    def _geraete_befehl(self, args: list[str]) -> None:
+        import importlib.util
+        import os
+        from .. import geraete as g
+        from ..config import save_env_value
+
+        root = self.config.project_root
+        sub = args[0].lower() if args else ""
+        try:
+            if sub in ("smarthome", "homeassistant", "ha") and len(args) >= 3:
+                url = args[1].rstrip("/")
+                if not url.startswith(("http://", "https://")):
+                    url = "http://" + url
+                for name, wert in (("HA_URL", url), ("HA_TOKEN", args[2].strip())):
+                    try:
+                        save_env_value(root, name, wert)
+                    except OSError as exc:
+                        print(_c(f"Nicht gespeichert ({exc}) - gilt nur fuer diese Sitzung.", YELLOW))
+                    os.environ[name] = wert
+                try:
+                    anzahl = g.home_assistant().geraete().count("\n- ") + 1
+                    print(_c(f"Home Assistant verbunden ({url}) - etwa {anzahl} Geraete gefunden.", GREEN))
+                except g.GeraetFehler as exc:
+                    print(_c(f"Gespeichert, aber die Verbindung klappt noch nicht: {exc}", YELLOW))
+                return
+            if sub == "ssh" and len(args) >= 3:
+                port = int(args[3]) if len(args) > 3 and args[3].isdigit() else 22
+                name = g.ssh_eintragen(root, args[1], args[2], port)
+                print(_c(f"SSH-Geraet '{name}' eingetragen. Es braucht einen SSH-Schluessel (kein Passwort): "
+                         f"einmal 'ssh-copy-id {args[2]}' bzw. den oeffentlichen Schluessel dort in "
+                         "~/.ssh/authorized_keys.", GREEN))
+                return
+            if sub in ("esp", "http", "arduino") and len(args) >= 3:
+                name = g.http_eintragen(root, args[1], args[2])
+                print(_c(f"Geraet '{name}' eingetragen ({args[2]}).", GREEN))
+                return
+            if sub in ("weg", "entfernen", "loeschen") and len(args) >= 2:
+                weg = g.entfernen(root, "ssh", args[1]) or g.entfernen(root, "http", args[1])
+                print(_c(f"'{args[1]}' entfernt." if weg else f"'{args[1]}' war nicht eingetragen.", GREEN if weg else GREY))
+                return
+        except g.GeraetFehler as exc:
+            print(_c(str(exc), YELLOW))
+            return
+        daten = g.laden(root)
+        def da(m: str) -> str:
+            return "ok" if importlib.util.find_spec(m) else "fehlt"
+        print(_c("\nHardware-Geraete - das kann Nova steuern:", BOLD))
+        print(f"  Smart Home (Home Assistant): {'eingerichtet - ' + os.environ.get('HA_URL', '') if os.environ.get('HA_TOKEN') else 'noch nicht eingerichtet'}")
+        print(f"  Arduino/ESP32 per USB: pyserial {da('serial')}   |   im Netz: {', '.join(daten['http']) or 'keine eingetragen'}")
+        print(f"  Bluetooth (BLE): bleak {da('bleak')}")
+        ssh_liste = ", ".join(f"{n} ({d['ziel']})" for n, d in daten["ssh"].items()) or "keine eingetragen"
+        print(f"  Andere Rechner (SSH): {ssh_liste}")
+        print(_c("  Einrichten: /geraete smarthome <Adresse> <Token>  |  /geraete ssh pi pi@192.168.1.20  |  "
+                 "/geraete esp licht http://192.168.1.50  |  /geraete weg <name>\n"
+                 "  Danach einfach sagen, z.B. 'mach das Licht im Wohnzimmer auf 30 %'.", GREY))
+
     # -- Arbeitsordner / Workspace ------------------------------------------------
     def _arbeitsordner_setzen(self, pfad_str: str) -> tuple[bool, str]:
         """Setzt den Arbeitsordner: anlegen falls noetig, dauerhaft speichern, sofort anwenden.
@@ -2268,6 +2326,8 @@ class CLI:
             self._arbeitsordner_command(cmd.split()[1:])
         elif base in ("/anruf", "/anrufen", "/telefon", "/bland"):
             self._anruf_befehl(cmd.split()[1:])
+        elif base in ("/geraete", "/geräte", "/hardware", "/geraet"):
+            self._geraete_befehl(cmd.split()[1:])
         elif base in ("/schluessel", "/schlüssel", "/key", "/api", "/apikey"):
             from ..schluessel import find_key
 

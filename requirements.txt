@@ -32,6 +32,7 @@ pywebview>=6.2 ; sys_platform == "win32"
 #   Handy als Kamera (/sehen handy):      pip install "aiortc>=1.16,<1.17" "av>=14,<20" "cryptography>=44" "segno>=1.6"
 #                                         (oder im Chat "/sehen einrichten")
 #   Mitschnitt/Transkription (/transkript):  pip install sounddevice faster-whisper
+#   Hardware (/geraete): Arduino/ESP32 per USB  pip install pyserial   |   Bluetooth LE  pip install bleak
 #                                         (System-Audio braucht zusaetzlich numpy; mehrere
 #                                          Sprecher auseinanderhalten: pip install resemblyzer)
 #   Build zur .exe:                       pip install pyinstaller

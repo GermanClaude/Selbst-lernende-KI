@@ -553,6 +553,18 @@ sich auf diesen Ordner. Im **sicheren Modus** arbeitet Nova nur hier – wähl i
 `/arbeitsordner oeffnen` zeigt ihn im Explorer, `/arbeitsordner zuruecksetzen` setzt auf den Standard
 (`workspace\` im Programmordner) zurück.
 
+## Hardware: Smart Home, Arduino/ESP32, Bluetooth, andere Rechner
+
+`/geraete` zeigt, was eingerichtet ist. Dann einfach sagen, was passieren soll.
+
+- **Smart Home** über Home Assistant (Hue, Shelly, Tuya … über HA): `/geraete smarthome http://homeassistant.local:8123 <Token>`
+- **Arduino/ESP32** per USB (Nova findet den Port) oder im WLAN: `/geraete esp licht http://192.168.1.50`
+- **Bluetooth LE**: Geräte suchen, Werte lesen/schreiben
+- **Andere Rechner per SSH** (nur eingetragene, nur mit Schlüssel): `/geraete ssh pi pi@192.168.1.20`
+
+Lesen geht direkt, Schalten/Senden/Schreiben fragt vorher nach; SSH-Befehle sind wie Shell-Befehle
+eingestuft. HTTP nur ins eigene Netz.
+
 ## Anrufe: Nova ruft dich an (Bland AI)
 
 Wenn es wichtig ist, ruft Nova dich auf dem Handy an – eine KI-Stimme spricht Deutsch, sagt worum es
@@ -642,6 +654,7 @@ stoppt die Steuerung sofort.
 | `/protokoll [an\|aus\|zeigen]` | Aktivitäts-Protokoll: welche Apps/Fenster du nutzt (kein Keylogger) |
 | `/skill [add <Name> <Anweisung>\|addfuer <gehirn> …\|an\|aus\|weg]` | Eigene Regeln/Skills (für alle Gehirne oder eins) – in der App auch per Klick im Reiter **Skills** |
 | `/sprachmodus` | Sprachmodus: einfach reden, live (zurück: „Chat-Modus“ sagen) |
+| `/geraete [smarthome <URL> <Token>\|ssh <name> <user@host>\|esp <name> <URL>\|weg <name>]` | Hardware: Smart Home, Arduino/ESP32, Bluetooth, SSH |
 | `/anruf [schluessel <KEY>\|nummer <Nr>\|minuten <n>\|test]` | Nova ruft dich an (Bland AI) – nur deine Nummer |
 | `/handy [token <T>\|neu\|aus]` | Fernzugriff per Telegram: Nova vom Handy steuern (ohne Server) |
 | `/arbeitsordner [Pfad\|oeffnen\|zuruecksetzen]` | Arbeitsordner zeigen/wählen – dort legst du Dateien für Nova ab |

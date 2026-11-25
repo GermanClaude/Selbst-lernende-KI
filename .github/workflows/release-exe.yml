@@ -93,6 +93,15 @@ jobs:
           pip install numpy "faster-whisper>=1.0" || echo "::warning::Transkription: faster-whisper liess sich nicht installieren"
           python -c "from pathlib import Path; from assistant.mitschnitt import Mitschnitt; print('Transkription bereit:', Mitschnitt(Path('.')).problem() or 'ja')" || true
 
+      - name: Hardware (pyserial, bleak) dazu
+        if: steps.version.outputs.neu == 'true'
+        continue-on-error: true
+        shell: bash
+        run: |
+          pip install pyserial || echo "::warning::Hardware: pyserial liess sich nicht installieren"
+          pip install bleak || echo "::warning::Hardware: bleak liess sich nicht installieren"
+          python -c "import serial, bleak; print('Hardware bereit: ja')" || true
+
       - name: KI.exe und KI-App.exe bauen
         if: steps.version.outputs.neu == 'true'
         run: pyinstaller packaging/ki.spec --noconfirm

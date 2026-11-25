@@ -119,6 +119,27 @@ except Exception:  # noqa: BLE001 - ohne diese Pakete: Mitschnitt nur in der Que
 extra_binaries += trans_binaries
 added_files += trans_datas
 
+# Hardware (Arduino/ESP32 per USB: pyserial, Bluetooth LE: bleak) - nur, wenn beim Bauen installiert.
+hw_imports = []
+for _pkg in ("serial", "bleak"):
+    try:
+        from PyInstaller.utils.hooks import collect_all
+
+        __import__(_pkg)
+        _d, _b, _h = collect_all(_pkg)
+        added_files += _d
+        extra_binaries += _b
+        hw_imports += _h
+    except Exception:  # noqa: BLE001 - fehlt das Paket, fehlt nur diese Geraeteart
+        pass
+try:  # bleak nutzt unter Windows die WinRT-Pakete
+    from PyInstaller.utils.hooks import collect_submodules
+
+    import winrt  # noqa: F401
+    hw_imports += collect_submodules("winrt")
+except Exception:  # noqa: BLE001
+    pass
+
 a = Analysis(
     [str(project_root / "run_ki.py")],
     pathex=[str(project_root)],
@@ -128,7 +149,8 @@ a = Analysis(
     # PIL: Bilder verkleinern/pruefen (nur bei Bedarf importiert, deshalb hier ausdruecklich).
     hiddenimports=["anthropic", "openai", "requests", "bs4", "webview", "PIL", "PIL.Image", "PIL.ImageOps",
                    "PIL.ImageGrab", "PIL.ImageDraw",
-                   "assistant.spiel.profile.manor_lords"] + sehen_imports + handy_imports + trans_imports,
+                   "assistant.spiel.profile.manor_lords"] + sehen_imports + handy_imports + trans_imports
+                  + hw_imports,
     hookspath=[],
     runtime_hooks=[],
     excludes=["cv2"],  # OpenCV nie mitnehmen (dxcam braucht es mit processor_backend="numpy" nicht)

@@ -4,6 +4,21 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.34.0 – 2026-11-25
+
+**Nova steuert jetzt auch Hardware**
+- **Smart Home:** Lampen, Steckdosen, Heizung, Rollläden, Szenen über **Home Assistant** (damit auch
+  Philips Hue, Shelly, Tuya & Co.). Einrichten: `/geraete smarthome <Adresse> <Token>` (den Token
+  erstellst du in Home Assistant unter *Profil → Langlebige Zugangs-Token*). Dann z. B. „mach das Licht
+  im Wohnzimmer auf 30 %“.
+- **Arduino / ESP32:** per USB-Kabel (Nova findet den Port selbst und schickt Befehle) oder per WLAN
+  (`/geraete esp licht http://192.168.1.50`) – nur Geräte im eigenen Netz.
+- **Bluetooth (BLE):** Geräte in der Nähe suchen, Werte lesen und schreiben (z. B. Sensoren, LED-Streifen).
+- **Andere Rechner:** Raspberry Pi, Server, zweiter PC per SSH – nur Geräte, die du mit Namen einträgst
+  (`/geraete ssh pi pi@192.168.1.20`), und nur mit SSH-Schlüssel, nie mit Passwort.
+- Sicherheit: Lesen geht einfach so; Schalten, Senden und Schreiben fragt vorher nach. Befehle auf anderen
+  Rechnern sind wie Shell-Befehle eingestuft (im sicheren Modus gesperrt). `/geraete` zeigt den Stand.
+
 ## 0.33.0 – 2026-11-25
 
 **Nova bemerkt Fehler und kümmert sich darum**
