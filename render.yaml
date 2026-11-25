@@ -1,0 +1,21 @@
+# Nova kostenlos bei Render (render.com) - Anleitung: cloud/ANLEITUNG.md
+# Free: schlaeft nach 15 Min. ohne Besuch, wacht bei einem Besuch oder einer Telegram-Nachricht auf (~1 Min.),
+# kein dauerhafter Speicher (Gedaechtnis beginnt nach dem Aufwachen neu).
+services:
+  - type: web
+    name: nova
+    runtime: docker
+    plan: free
+    region: frankfurt
+    healthCheckPath: /gesund
+    envVars:
+      - key: NOVA_TOKEN          # dein Schluessel fuer die Handy-App - Render erzeugt ihn
+        generateValue: true
+      - key: ANTHROPIC_API_KEY   # mindestens EIN KI-Schluessel (oder spaeter in der App eintragen)
+        sync: false
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN  # aus der .env auf deinem PC (optional)
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false

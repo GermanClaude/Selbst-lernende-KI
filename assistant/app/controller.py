@@ -745,7 +745,8 @@ class AppController(CLI):
             return
 
         chat_id = None if sub == "neu" else self._handy_chat_id()
-        relay = HandyRelay(token, chat_id=chat_id)
+        fabrik = self.__dict__.get("_handy_relay_fabrik")   # Cloud: Webhook statt Abholen (handy_server)
+        relay = fabrik(token, chat_id) if fabrik else HandyRelay(token, chat_id=chat_id)
         try:
             name = relay.pruefe()
         except TelegramFehler as exc:
@@ -784,7 +785,8 @@ class AppController(CLI):
                 else:
                     self._notice(f"Handy-Fernzugriff aktiv (Bot @{name}). Beenden mit /handy aus.", "afk")
                 try:
-                    relay.sende(BEGRUESSUNG.format(name=self.config.ki.name))
+                    if not getattr(relay, "still", False):
+                        relay.sende(BEGRUESSUNG.format(name=self.config.ki.name))
                 except TelegramFehler:
                     pass
                 relais_schleife(relay, self._handy_antwort, stop_event)

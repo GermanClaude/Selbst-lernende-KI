@@ -1,0 +1,13 @@
+.git
+.github
+.env
+data
+logs
+versionen
+android
+packaging
+tests
+**/__pycache__
+*.pyc
+*.keystore
+*.jks

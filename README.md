@@ -573,6 +573,21 @@ installieren – ohne Root. Linux-Systeme installiert sie über `proot-distro`, 
 Noch nicht auf dem Handy: Spracheingabe per Mikrofon-Knopf und die PC-Werkzeuge (Maus/Tastatur am PC,
 Live-Sehen, Spielmodus).
 
+## Nova in der Cloud (läuft auch, wenn der PC aus ist)
+
+Nova kann als eigenes Programm im Internet laufen. Die Handy-App verbindet sich dann mit dieser Cloud-Nova,
+und auf Telegram antwortet sie rund um die Uhr – egal, ob dein PC an ist. Zwei Wege, ausführlich in
+[`cloud/ANLEITUNG.md`](cloud/ANLEITUNG.md):
+
+- **Render (kostenlos, ohne Kreditkarte):** über `render.yaml` mit ein paar Klicks. Schläft nach 15 Min.
+  ohne Besuch (Aufwachen ca. 1 Min., auch per Telegram-Nachricht), das Gedächtnis beginnt danach neu.
+- **Eigener Server** (z. B. Hetzner, ca. 6–7 €/Monat): `cloud/server-installieren.sh` richtet Docker, Nova
+  und https (Caddy + sslip.io) ein – läuft immer, Gedächtnis bleibt.
+
+In der Handy-App: Zurück-Taste → „Nova in der Cloud“ → `https://…/?t=<NOVA_TOKEN>`. Technisch:
+`python -m assistant --cloud` (bzw. `NOVA_CLOUD=1`) – lauscht auf `PORT`, nur mit `NOVA_TOKEN`, Telegram per
+Webhook (`NOVA_PUBLIC_URL`/`RENDER_EXTERNAL_URL`), dauerhafter Speicher unter `/data`.
+
 ## Hardware: Smart Home, Arduino/ESP32, Bluetooth, andere Rechner
 
 `/geraete` zeigt, was eingerichtet ist. Dann einfach sagen, was passieren soll.

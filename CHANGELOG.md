@@ -4,6 +4,21 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.38.0 – 2026-11-25
+
+**Nova in der Cloud – die Handy-App läuft auch, wenn dein PC aus ist**
+- Nova kann jetzt als eigenes Programm im Internet laufen. Die **Nova-Handy-App** verbindet sich dann mit
+  dieser Cloud-Nova, und auf **Telegram** antwortet sie rund um die Uhr – ganz egal, ob dein PC an ist.
+- Zwei Wege (Schritt für Schritt in `cloud/ANLEITUNG.md`):
+  - **Render – kostenlos**, ohne Kreditkarte. Schläft nach 15 Minuten ohne Besuch und wacht in etwa einer
+    Minute wieder auf (auch durch eine Telegram-Nachricht). Ihr Gedächtnis beginnt nach dem Aufwachen neu.
+  - **Eigener kleiner Server** (z. B. Hetzner, ca. 6–7 € im Monat): läuft immer, das Gedächtnis bleibt. Ein
+    Befehl richtet alles ein, inklusive https.
+- In der Handy-App: Zurück-Taste → **„Nova in der Cloud“** → Adresse eintragen.
+- Ohne den geheimen Schlüssel in der Adresse kommt niemand an die Cloud-Nova heran.
+- Die Cloud-Nova ist eine eigene Nova: Sie kann deinen PC nicht steuern, und ihr Gedächtnis ist (noch)
+  getrennt von dem auf deinem PC.
+
 ## 0.37.0 – 2026-11-25
 
 **Anrufe jetzt auch ohne Kreditkarte – über Vonage**

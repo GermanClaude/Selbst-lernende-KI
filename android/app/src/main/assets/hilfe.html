@@ -21,16 +21,31 @@
   input { width: 100%; box-sizing: border-box; padding: 12px; border-radius: 10px; border: 1px solid #2a2e38;
           background: #111318; color: #e7e7ee; font-size: 15px; }
   ol { padding-left: 20px; color: #b9b9c6; line-height: 1.6; }
+  .klein { font-size: 13px; }
 </style>
 </head>
 <body>
 <main>
   <div class="kugel" aria-hidden="true"></div>
-  <h1>Nova läuft gerade nicht</h1>
-  <p>Nova selbst läuft in <b>Termux</b> auf deinem Handy. Öffne Termux und tippe <code>nova</code> –
-     diese App öffnet sich dann von selbst.</p>
-  <button onclick="NovaApp.termuxOeffnen()">Termux öffnen</button>
-  <button class="zweit" onclick="NovaApp.nochmal()">Nochmal versuchen</button>
+  <h1>Nova ist gerade nicht erreichbar</h1>
+  <p id="jetzt"></p>
+  <button onclick="NovaApp.nochmal()">Nochmal versuchen</button>
+  <p class="klein">Nova in der Cloud schläft nach einer Weile ohne Besuch – das Aufwachen dauert bis zu
+     einer Minute. Einfach kurz warten und nochmal versuchen.</p>
+
+  <div class="karte">
+    <b>Nova in der Cloud</b> – läuft immer, egal ob dein PC an ist
+    <p>Die Adresse bekommst du beim Einrichten der Cloud-Nova (Anleitung: <code>cloud/ANLEITUNG.md</code>),
+       z. B. <code>https://nova-xyz.onrender.com/?t=…</code></p>
+    <input id="cloud" type="url" inputmode="url" placeholder="https://…/?t=…" autocomplete="off">
+    <button onclick="NovaApp.verbinden(document.getElementById('cloud').value)">Mit der Cloud verbinden</button>
+  </div>
+
+  <div class="karte">
+    <b>Nova auf diesem Handy (Termux)</b>
+    <p>Öffne Termux und tippe <code>nova</code> – diese App öffnet sich dann von selbst.</p>
+    <button class="zweit" onclick="NovaApp.termuxOeffnen()">Termux öffnen</button>
+  </div>
 
   <div class="karte">
     <b>Zum ersten Mal hier?</b>
@@ -48,5 +63,11 @@
     <button class="zweit" onclick="NovaApp.verbinden(document.getElementById('adr').value)">Verbinden</button>
   </div>
 </main>
+<script>
+  try {
+    var a = window.NovaApp && NovaApp.adresse();
+    if (a) document.getElementById('jetzt').textContent = 'Verbunden mit: ' + a;
+  } catch (e) {}
+</script>
 </body>
 </html>

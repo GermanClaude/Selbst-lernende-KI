@@ -66,14 +66,95 @@ def oberflaeche_oeffnen(url: str, ausfuehren=subprocess.run) -> str:
     return "browser" if webbrowser.open(url) else ""
 
 
-def run_server(config, port: int = 8765, oeffnen: bool = True) -> int:
+def cloud_einstellungen(root) -> dict:
+    """Cloud-Server (Docker / VPS / Hugging Face): Port, Schluessel und erlaubte Adressen aus der Umgebung.
+    NOVA_TOKEN (mind. 24 Zeichen) ist der Schluessel - ohne ihn wird einer erzeugt und in data/ gemerkt.
+    NOVA_HOST = deine Adresse (z.B. nova-xyz.hf.space); leer = jede Adresse, dann schuetzt nur der Schluessel."""
+    try:
+        port = int(os.environ.get("PORT", "") or 8765)
+    except ValueError:
+        port = 8765
+    token = os.environ.get("NOVA_TOKEN", "").strip()
+    eigener = len(token) >= 24
+    if not eigener:
+        token = fester_token(root)
+    hosts = [h.strip().lower() for h in os.environ.get("NOVA_HOST", "").replace(";", ",").split(",") if h.strip()]
+    return {"port": port, "token": token, "token_eigen": eigener, "hosts": set(hosts) or "*"}
+
+
+def run_cloud(config) -> int:
+    """Nova als Dienst im Internet: laeuft rund um die Uhr, auch wenn dein PC aus ist. Die Handy-App (oder ein
+    Browser) verbindet sich mit https://<deine-adresse>/?t=<NOVA_TOKEN>. Telegram beantwortet sie von dort."""
+    e = cloud_einstellungen(config.project_root)
+    if os.environ.get("TELEGRAM_BOT_TOKEN"):
+        os.environ.setdefault("TELEGRAM_AUTOSTART", "1")   # Telegram immer beantworten (eigener Bot-Abruf)
+    print(f"Cloud-Modus: Port {e['port']}, erlaubte Adressen: "
+          f"{'alle (Schutz durch den Schluessel)' if e['hosts'] == '*' else ', '.join(sorted(e['hosts']))}")
+    if not e["token_eigen"]:
+        print("Kein NOVA_TOKEN gesetzt - erzeugter Schluessel (data/server_token): " + e["token"])
+        print("Besser: NOVA_TOKEN als Geheimnis beim Anbieter eintragen, sonst aendert er sich nach einem Neustart "
+              "ohne dauerhaften Speicher.")
+    return run_server(config, port=e["port"], oeffnen=False, host="0.0.0.0", token=e["token"], hosts=e["hosts"],
+                      vorbereiten=lambda server: telegram_webhook_einrichten(server, e["token"]))
+
+
+def oeffentliche_adresse() -> str:
+    """Die https-Adresse der Cloud-Nova (NOVA_PUBLIC_URL; Render setzt RENDER_EXTERNAL_URL selbst)."""
+    adr = (os.environ.get("NOVA_PUBLIC_URL") or os.environ.get("RENDER_EXTERNAL_URL") or "").strip().rstrip("/")
+    return adr if adr.startswith("https://") else ""
+
+
+def telegram_webhook_einrichten(server, nova_token: str) -> bool:
+    """Cloud: Telegram schickt Nachrichten an Nova (Webhook) - das weckt auch eine schlafende Cloud-Nova.
+    Braucht TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID und eine https-Adresse. Sonst False (dann Abholen wie am PC)."""
+    import hashlib
+
+    from ..handy import TelegramFehler, WebhookRelay
+
+    bot = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+    adresse = oeffentliche_adresse()
+    if not bot or not adresse or os.environ.get("TELEGRAM_WEBHOOK") == "0":
+        return False
+    ctl = server.controller
+    chat_id = ctl._handy_chat_id()
+    if chat_id is None:
+        print("Telegram: TELEGRAM_CHAT_ID fehlt - trag sie beim Anbieter ein (steht in der .env auf deinem PC, "
+              "sobald du /handy dort einmal benutzt hast).")
+        return False
+    geheim = hashlib.sha256(f"nova-telegram|{bot}|{nova_token}".encode()).hexdigest()[:48]
+    pfad = "/telegram/" + geheim[:24]
+    relay = WebhookRelay(bot, chat_id=chat_id)
+    try:
+        relay.webhook_setzen(adresse + pfad, geheim)
+    except TelegramFehler as exc:
+        print(f"Telegram-Webhook ging nicht ({exc}) - ich hole die Nachrichten stattdessen selbst ab.")
+        return False
+    server.telegram = (pfad, geheim, relay)
+    ctl._handy_relay_fabrik = lambda token, chat: relay
+    sperre = threading.Lock()
+
+    def wecken() -> None:
+        with sperre:
+            if not ctl._handy_aktiv():
+                ctl._handy_befehl([])           # startet den Fernzugriff-Thread und kehrt gleich zurueck
+
+    relay.wecken = wecken
+    # Nicht zusaetzlich beim Start automatisch losgehen (sonst zwei Schleifen) - kurz nach dem Start einmal wecken.
+    os.environ["TELEGRAM_AUTOSTART"] = "0"
+    threading.Timer(5.0, wecken).start()
+    print("Telegram: Nachrichten an deinen Bot kommen direkt hier an (Webhook) - auch wenn der PC aus ist.")
+    return True
+
+
+def run_server(config, port: int = 8765, oeffnen: bool = True, host: str = "127.0.0.1",
+               token: str | None = None, hosts=None, vorbereiten=None) -> int:
     from .controller import AppController
     from .server import AppServer
 
     root = Path(config.project_root)
     try:
-        server = AppServer(lambda broadcast: AppController(config, broadcast), port=int(port),
-                           token=fester_token(root))
+        server = AppServer(lambda broadcast: AppController(config, broadcast), host=host, port=int(port),
+                           token=token or fester_token(root), hosts=hosts)
     except OSError as exc:
         print(f"Port {port} ist belegt ({exc}). Laeuft Nova schon? Sonst: --port 8766")
         return 1
@@ -94,9 +175,17 @@ def run_server(config, port: int = 8765, oeffnen: bool = True) -> int:
         info.write_text(json.dumps({"pid": os.getpid(), "url": server.url, "fenster": "server"}), encoding="utf-8")
     except OSError:
         pass
+    if vorbereiten is not None:
+        try:
+            vorbereiten(server)
+        except Exception:  # noqa: BLE001 - Nova soll trotzdem laufen
+            logger.exception("Cloud: Vorbereitung fehlgeschlagen")
     ctl.startup()
-    print(f"\n{config.ki.name} laeuft. Oberflaeche: {server.url}")
-    print("(Diese Adresse ist dein Schluessel - nicht weitergeben. Beenden: Strg+C)")
+    if host == "127.0.0.1":
+        print(f"\n{config.ki.name} laeuft. Oberflaeche: {server.url}")
+        print("(Diese Adresse ist dein Schluessel - nicht weitergeben. Beenden: Strg+C)")
+    else:  # Cloud: den Schluessel nicht ins (evtl. mitgelesene) Protokoll schreiben
+        print(f"\n{config.ki.name} laeuft in der Cloud. Oberflaeche: https://<deine-adresse>/?t=<NOVA_TOKEN>")
     if oeffnen:
         womit = oberflaeche_oeffnen(server.url)
         if womit == "apk":

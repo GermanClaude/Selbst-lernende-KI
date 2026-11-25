@@ -1,0 +1,26 @@
+# Nova auf einem eigenen Server (VPS) - rund um die Uhr, mit dauerhaftem Gedaechtnis und https.
+# Einrichten: cloud/server-installieren.sh (legt cloud/.env an). Starten: docker compose up -d --build
+services:
+  nova:
+    build: ..
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NOVA_PUBLIC_URL: https://${NOVA_DOMAIN}
+      NOVA_HOST: ${NOVA_DOMAIN}
+    volumes:
+      - nova-daten:/data
+  caddy:                                   # holt das https-Zertifikat automatisch (Let's Encrypt)
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      NOVA_DOMAIN: ${NOVA_DOMAIN}
+    command: caddy reverse-proxy --from ${NOVA_DOMAIN} --to nova:8765
+    volumes:
+      - caddy-daten:/data
+volumes:
+  nova-daten:
+  caddy-daten:

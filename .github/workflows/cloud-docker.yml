@@ -1,0 +1,33 @@
+name: Cloud-Nova pruefen (Docker)
+
+on:
+  push:
+    paths: ["Dockerfile", "cloud/**", "assistant/**", "requirements.txt", ".github/workflows/cloud-docker.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Image bauen
+        run: docker build -t nova-cloud .
+      - name: Starten und pruefen (ohne und mit dauerhaftem Speicher)
+        run: |
+          set -e
+          T="test-schluessel-$(head -c 16 /dev/urandom | base64 | tr -d '+/=')"
+          mkdir -p /tmp/nova-daten && sudo chown 1000 /tmp/nova-daten
+          docker run -d --name nova -p 8765:8765 -e NOVA_TOKEN="$T" -v /tmp/nova-daten:/data nova-cloud
+          for i in $(seq 1 40); do curl -fsS http://127.0.0.1:8765/gesund && break; sleep 1; done
+          echo
+          test "$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: nova.example' http://127.0.0.1:8765/api/state)" = 403
+          curl -fsS -H 'Host: nova.example' "http://127.0.0.1:8765/api/state?t=$T" | head -c 300
+          echo
+          test -f /tmp/nova-daten/config/settings.toml
+          docker logs nova 2>&1 | tail -20
+          if docker logs nova 2>&1 | grep -q "$T"; then echo "Schluessel steht im Protokoll!"; exit 1; fi
+          docker rm -f nova

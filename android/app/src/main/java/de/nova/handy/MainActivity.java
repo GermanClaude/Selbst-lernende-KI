@@ -19,6 +19,8 @@ import android.webkit.WebViewClient;
  * Nova auf dem Handy: zeigt die Oberflaeche von Nova (laeuft in Termux, Befehl "nova").
  * Termux oeffnet diese App mit der Adresse inkl. Schluessel; die App merkt sie sich.
  * Laeuft Nova nicht, erscheint eine Hilfeseite (Termux oeffnen, nochmal versuchen, Adresse eingeben).
+ * Nova kann auch in der Cloud laufen (https://...?t=...) - dann ist es egal, ob PC oder Termux laufen.
+ * Zurueck-Taste auf der Startseite von Nova: Hilfeseite (Adresse wechseln); dort nochmal: App schliessen.
  */
 public class MainActivity extends Activity {
     private static final int DATEI_WAHL = 7;
@@ -124,7 +126,10 @@ public class MainActivity extends Activity {
 
     @Override
     public void onBackPressed() {
-        if (web.canGoBack()) web.goBack();
+        String jetzt = web.getUrl();
+        boolean hilfe = jetzt == null || jetzt.startsWith("file:");
+        if (!hilfe && web.canGoBack()) web.goBack();
+        else if (!hilfe) zeigeHilfe();
         else super.onBackPressed();
     }
 
@@ -142,6 +147,15 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void nochmal() {
             runOnUiThread(() -> oeffne(null));
+        }
+
+        /** Fuer die Hilfeseite: wohin die App gerade verbindet (ohne Schluessel). */
+        @JavascriptInterface
+        public String adresse() {
+            String u = prefs.getString("url", "");
+            if (u.isEmpty()) return "";
+            Uri x = Uri.parse(u);
+            return x.getScheme() + "://" + x.getHost() + (x.getPort() > 0 ? ":" + x.getPort() : "");
         }
 
         @JavascriptInterface

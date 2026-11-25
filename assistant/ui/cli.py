@@ -1105,6 +1105,8 @@ class CLI:
 
     def _handy_beim_start(self) -> None:
         """Beim Start: liegengebliebene Handy-Nachrichten abholen und nachfragen."""
+        if self.__dict__.get("_handy_relay_fabrik"):
+            return  # Cloud mit Webhook: Telegram liefert selbst, Abholen ginge gar nicht (Konflikt)
         try:
             self._handy_rueckstand_sichern()
             self._handy_offen_fragen()

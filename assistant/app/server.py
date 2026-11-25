@@ -91,9 +91,14 @@ class EventHub:
 
 
 class AppServer:
-    def __init__(self, controller_factory, host: str = "127.0.0.1", port: int = 0, token: str | None = None):
+    def __init__(self, controller_factory, host: str = "127.0.0.1", port: int = 0, token: str | None = None,
+                 hosts: str | set | None = None):
         # token: fester Schluessel (Handy-Version: die APK merkt sich die Adresse) - sonst bei jedem Start neu
+        # hosts: zusaetzlich erlaubte Host-Namen (Cloud: deine Adresse) oder "*" = jeder (dann schuetzt der
+        #        Schluessel allein - nur fuer die Cloud hinter https, siehe handy_server.run_server).
         self.token = token if token and len(token) >= 24 else secrets.token_urlsafe(24)
+        self.hosts = hosts if hosts == "*" else {h.strip().lower() for h in (hosts or ()) if h.strip()}
+        self.telegram = None             # Cloud: (geheimer Pfad, Geheimnis, WebhookRelay) - siehe handy_server
         self.hub = EventHub()
         self.controller = None
         self._factory = controller_factory
@@ -132,11 +137,16 @@ class AppServer:
             # Schutz: nur unser Host, nur mit Schluessel
             def _host_ok(self) -> bool:
                 host = (self.headers.get("Host") or "").lower()
-                return host in (f"127.0.0.1:{server.port}", f"localhost:{server.port}")
+                if host in (f"127.0.0.1:{server.port}", f"localhost:{server.port}"):
+                    return True
+                if server.hosts == "*":
+                    return True
+                return host in server.hosts or host.split(":")[0] in server.hosts
 
             def _token_ok(self, query: dict) -> bool:
                 given = self.headers.get("X-KI-Token") or (query.get("t") or [""])[0]
-                return hmac.compare_digest(given.encode(), server.token.encode())
+                # Ein "+" im Schluessel (z.B. von Render erzeugt) wird in Adressen zu einem Leerzeichen.
+                return hmac.compare_digest(given.replace(" ", "+").encode(), server.token.encode())
 
             def _send(self, code: int, body: bytes, ctype: str, extra: dict | None = None) -> None:
                 self.send_response(code)
@@ -159,6 +169,8 @@ class AppServer:
             def do_GET(self):  # noqa: N802
                 url = urlparse(self.path)
                 query = parse_qs(url.query)
+                if url.path == "/gesund":  # fuer den Cloud-Anbieter: laeuft Nova? (verraet sonst nichts)
+                    return self._send(200, b"ok", "text/plain; charset=utf-8")
                 if not self._host_ok():
                     return self._deny()
                 if url.path in ("/", "/index.html"):
@@ -246,8 +258,28 @@ class AppServer:
                 except OSError:
                     pass
 
+            def _telegram_webhook(self) -> None:
+                """Telegram schickt eine Nachricht (Cloud). Geschuetzt durch geheimen Pfad UND Kopfzeile."""
+                _pfad, geheim, relay = server.telegram
+                kopf = self.headers.get("X-Telegram-Bot-Api-Secret-Token") or ""
+                try:
+                    length = int(self.headers.get("Content-Length") or 0)
+                except ValueError:
+                    length = -1
+                if not hmac.compare_digest(kopf.encode(), geheim.encode()) or not 0 < length <= _MAX_BODY:
+                    self.close_connection = True
+                    return self._deny()
+                try:
+                    update = json.loads(self.rfile.read(length) or b"{}")
+                except ValueError:
+                    return self._json({"ok": False}, 400)
+                self._json({"ok": True})             # sofort quittieren, die Antwort kommt per sendMessage
+                relay.einwerfen(update)
+
             def do_POST(self):  # noqa: N802
                 url = urlparse(self.path)
+                if server.telegram is not None and url.path == server.telegram[0]:
+                    return self._telegram_webhook()
                 if not self._host_ok() or not self._token_ok({}):
                     self.close_connection = True  # Inhalt ungelesen -> nicht weiter auf dieser Verbindung
                     return self._deny()

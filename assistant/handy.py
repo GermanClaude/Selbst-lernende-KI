@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import logging
+import queue
 import time
 import urllib.error
 import urllib.parse
@@ -143,11 +144,15 @@ class HandyRelay:
                              {"offset": self.offset, "timeout": int(timeout),
                               "allowed_updates": json.dumps(["message"])},
                              timeout=timeout + 10.0) or []
+        return self._auswerten(result)
+
+    def _auswerten(self, result: list) -> list[Nachricht]:
         nachrichten: list[Nachricht] = []
         for update in result:
             uid = int(update.get("update_id", 0))
-            if uid >= self.offset:
-                self.offset = uid + 1
+            if uid < self.offset:          # schon gesehen (Telegram schickt bei Webhooks auch mal doppelt)
+                continue
+            self.offset = uid + 1
             msg = update.get("message") or {}
             text = msg.get("text")
             chat = msg.get("chat") or {}
@@ -179,6 +184,58 @@ class HandyRelay:
                 self.offset = uid + 1
 
 
+class WebhookRelay(HandyRelay):
+    """Fuer die Cloud: Telegram SCHICKT die Nachrichten (Webhook) statt dass Nova fragt (getUpdates).
+    So weckt eine Nachricht eine schlafende Cloud-Nova auf (z.B. Render: schlaeft nach 15 Min. ohne Besuch).
+    Die Webhook-Route des Servers wirft die Updates mit einwerfen() hier ein; die Fernzugriffs-Schleife
+    holt sie wie gewohnt mit naechste() ab."""
+    kein_rueckstand = True               # nichts "fuer spaeter" ablegen - in der Cloud wird gleich geantwortet
+    still = True                         # keine Begruessung bei jedem Aufwachen
+
+    def __init__(self, token: str, chat_id: int | None = None, transport=_urllib_transport):
+        super().__init__(token, chat_id=chat_id, transport=transport)
+        self._eingang: queue.Queue = queue.Queue(maxsize=200)
+        self.wecken: Callable[[], None] | None = None   # Fernzugriff starten, falls er gerade nicht laeuft
+
+    def webhook_setzen(self, url: str, geheim: str) -> None:
+        self._call("setWebhook", {"url": url, "secret_token": geheim,
+                                  "allowed_updates": json.dumps(["message"])}, timeout=20.0)
+
+    def einwerfen(self, update: dict) -> None:
+        for n in self._auswerten([update] if isinstance(update, dict) else []):
+            try:
+                self._eingang.put_nowait(n)
+            except queue.Full:
+                logger.warning("Handy: zu viele Nachrichten auf einmal - eine verworfen")
+        if self.wecken is not None:
+            try:
+                self.wecken()
+            except Exception:  # noqa: BLE001
+                logger.exception("Handy: Fernzugriff liess sich nicht starten")
+
+    def hole(self, timeout: float = 30.0) -> list[Nachricht]:
+        try:
+            erste = self._eingang.get(timeout=timeout) if timeout > 0 else self._eingang.get_nowait()
+        except queue.Empty:
+            return []
+        alle = [erste]
+        while True:
+            try:
+                alle.append(self._eingang.get_nowait())
+            except queue.Empty:
+                return alle
+
+    def naechste(self, timeout: float = 30.0) -> Nachricht | None:
+        try:
+            return self._eingang.get(timeout=timeout)
+        except queue.Empty:
+            return None
+
+    def leeren(self) -> None:
+        while not self._eingang.empty():
+            self._eingang.get_nowait()
+
+
 # -- Nachrichten, die ankamen, waehrend der PC/Nova aus war --------------------------------------
 # Telegram hebt Nachrichten an den Bot rund 24 Stunden auf. Beim naechsten Start holt Nova sie ab,
 # legt sie hier lokal ab (bleiben auch, wenn du "spaeter" sagst oder das Fenster schliesst) und fragt
@@ -191,7 +248,7 @@ def rueckstand_holen(relay: HandyRelay, max_runden: int = 20) -> list[Nachricht]
     """Holt alle liegengebliebenen Nachrichten (ohne zu warten). Der letzte, leere Abruf bestaetigt sie
     bei Telegram - sie kommen also nicht noch einmal. Ohne festgelegte Chat-ID: nichts (sonst kaemen
     auch Fremde durch)."""
-    if relay.chat_id is None:
+    if relay.chat_id is None or getattr(relay, "kein_rueckstand", False):
         return []
     alle: list[Nachricht] = []
     for _ in range(max_runden):
@@ -349,7 +406,8 @@ def relais_schleife(relay: HandyRelay,
                 msg = relay.naechste(timeout=poll_timeout)
             except TelegramFehler as exc:
                 logger.warning("Handy: %s", exc)
-                time.sleep(5.0)       # kurz warten und erneut versuchen (z.B. WLAN-Aussetzer)
+                # "Conflict": ein zweiter Nova (z.B. in der Cloud) liest denselben Bot - laenger warten.
+                time.sleep(30.0 if "conflict" in str(exc).lower() else 5.0)
                 continue
             if msg is None:
                 continue

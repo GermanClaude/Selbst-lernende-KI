@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import io
+import os
 import sys
 
 from .config import PROJECT_ROOT, ConfigError, load_config
@@ -34,9 +35,12 @@ def main(argv: list[str] | None = None) -> int:
                         help="Nur den App-Server starten (Handy/Termux: Oberflaeche in der Nova-APK oder im Browser)")
     parser.add_argument("--port", type=int, default=8765, help="Port fuer --server (Standard 8765)")
     parser.add_argument("--nicht-oeffnen", action="store_true", help="--server: Oberflaeche nicht selbst oeffnen")
+    parser.add_argument("--cloud", action="store_true",
+                        help="Als Cloud-Server (Docker/VPS): von aussen erreichbar, nur mit Schluessel (NOVA_TOKEN)")
     # Unbekanntes (z.B. eine Datei auf KI-App.exe gezogen) wird ignoriert statt still abzubrechen.
     args, _unknown = parser.parse_known_args(argv)
-    app_mode = args.app and not args.terminal
+    cloud = args.cloud or os.environ.get("NOVA_CLOUD") == "1"
+    app_mode = args.app and not args.terminal and not cloud
 
     if app_mode and getattr(sys, "frozen", False) and sys.platform == "win32":
         # KI.exe --app: das schwarze Konsolenfenster verschwinden lassen
@@ -73,7 +77,7 @@ def main(argv: list[str] | None = None) -> int:
 
     from .selbststart import SILENT_EXIT_CODE, StartGuard
 
-    if not app_mode and not args.terminal and config.ki.oberflaeche.strip().lower() == "app" \
+    if not cloud and not app_mode and not args.terminal and config.ki.oberflaeche.strip().lower() == "app" \
             and not args.einrichten:
         # Eingestellt: als App. Das Terminal startet die App und schliesst sich still.
         from .app.launcher import spawn_app
@@ -83,7 +87,8 @@ def main(argv: list[str] | None = None) -> int:
 
     guard = StartGuard(config.project_root)
     started_by, unexpected = guard.record_start()
-    other = guard.running_pid() if config.ki.nur_ein_fenster else None
+    # Cloud: im Container ist Nova immer Prozess 1 - ein alter Eintrag wuerde sonst "laeuft schon" melden.
+    other = guard.running_pid() if config.ki.nur_ein_fenster and not cloud else None
     if other:
         log.info("Laeuft schon (PID %s) - dieser Start endet", other)
     if other and app_mode:
@@ -126,6 +131,10 @@ def main(argv: list[str] | None = None) -> int:
 
     guard.acquire()
     try:
+        if cloud:
+            from .app.handy_server import run_cloud
+
+            return run_cloud(config)
         if args.server:
             from .app.handy_server import run_server
 
