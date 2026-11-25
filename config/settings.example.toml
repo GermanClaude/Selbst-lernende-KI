@@ -314,7 +314,7 @@ agent_runden = 40
 f2_aufnahme = true
 # true = das Gesprochene nach dem Loslassen gleich abschicken (ohne Enter)
 sofort_senden = false
-# Spracherkennung: "auto" (Whisper, falls installiert, sonst Google),
+# Spracherkennung: "auto" (Google, falls vorhanden, sonst Whisper),
 # "google" (online, kostenlos) oder "whisper" (offline: pip install faster-whisper).
 erkennung = "auto"
 # Whisper-Modell: tiny | base | small | medium (groesser = genauer, langsamer)

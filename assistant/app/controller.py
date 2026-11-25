@@ -855,7 +855,8 @@ class AppController(CLI):
             return ""
         try:
             import webview
-            res = win.create_file_dialog(webview.FOLDER_DIALOG)
+            art = getattr(getattr(webview, "FileDialog", None), "FOLDER", None) or webview.FOLDER_DIALOG
+            res = win.create_file_dialog(art)
         except Exception as exc:  # noqa: BLE001
             logger.warning("Ordner-Dialog ging nicht: %s", exc)
             print(f"Die Ordner-Auswahl ging nicht ({exc}). Nutze /arbeitsordner <Pfad>.")
@@ -2215,6 +2216,7 @@ class AppController(CLI):
                 try:
                     self.voice_capture.start()
                 except Exception as exc:  # noqa: BLE001
+                    logger.warning("Spracheingabe: Aufnahme ging nicht: %s", exc)
                     return {"ok": False, "error": str(exc)}
                 self._event({"type": "voice", "state": "recording"})
                 return {"ok": True}
@@ -2227,6 +2229,8 @@ class AppController(CLI):
                 try:
                     text = self.voice_capture.stop()
                 except Exception as exc:  # noqa: BLE001
+                    logger.warning("Spracheingabe: Erkennung ging nicht (%s): %s",
+                                   self.voice_capture.backend(), exc)
                     self._event({"type": "voice", "state": "idle", "error": str(exc)})
                     return {"ok": False, "error": str(exc)}
                 self._event({"type": "voice", "state": "idle", "text": text})

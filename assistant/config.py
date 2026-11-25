@@ -401,7 +401,7 @@ class VoiceSettings:
     f2_aufnahme: bool = True
     # Nach F2/Mikrofon-Knopf das Gesprochene gleich abschicken (statt erst in die Eingabezeile)
     sofort_senden: bool = False
-    # Spracherkennung: "auto" (Whisper, falls installiert, sonst Google),
+    # Spracherkennung: "auto" (Google, falls vorhanden, sonst Whisper),
     # "whisper" (offline, faster-whisper) oder "google" (online, kostenlos).
     erkennung: str = "auto"
     whisper_modell: str = "small"

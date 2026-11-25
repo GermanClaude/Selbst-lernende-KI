@@ -134,7 +134,10 @@ class VoiceCapture:
             return "whisper" if has_whisper else None
         if wanted == "google":
             return "google" if has_google else None
-        return "whisper" if has_whisper else ("google" if has_google else None)
+        # "auto": Google zuerst - schnell, ohne Modell-Download, so wie es immer lief. Whisper nur, wenn
+        # Google fehlt (seit 0.27.1 steckt faster-whisper fuer den Mitschnitt in der .exe - es soll die
+        # Spracheingabe nicht stillschweigend auf einen 460-MB-Download umstellen).
+        return "google" if has_google else ("whisper" if has_whisper else None)
 
     def problem(self) -> str | None:
         """None, wenn alles bereit ist - sonst eine Erklaerung fuer den Menschen."""

@@ -4,6 +4,17 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.32.1 – 2026-11-25
+
+**Spracheingabe repariert**
+- Die Spracheingabe (F2 / Mikrofon-Knopf) ging seit Version 0.27.1 nicht mehr richtig: Weil für den
+  Mitschnitt die lokale Whisper-Erkennung in die App gepackt wurde, hat die Spracheingabe still auf
+  Whisper umgestellt – und das lädt beim ersten Mal erst ein riesiges Sprachmodell herunter. Jetzt nimmt
+  sie wieder wie früher die schnelle Google-Erkennung. Whisper gibt es nur noch, wenn du es ausdrücklich
+  einstellst (`[voice] erkennung = "whisper"`).
+- Fehler der Spracheingabe werden jetzt im Protokoll vermerkt, damit so etwas nicht mehr unbemerkt bleibt.
+- Kleinigkeit: der Ordner-Auswahldialog nutzt die neue Schnittstelle von pywebview.
+
 ## 0.32.0 – 2026-11-24
 
 **Nova kann dich anrufen (Bland AI)**
