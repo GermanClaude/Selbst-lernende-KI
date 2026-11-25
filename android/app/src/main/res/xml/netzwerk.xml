@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Nova laeuft auf diesem Handy (http://127.0.0.1) oder im eigenen WLAN - dort gibt es kein https. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

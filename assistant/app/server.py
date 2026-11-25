@@ -91,8 +91,9 @@ class EventHub:
 
 
 class AppServer:
-    def __init__(self, controller_factory, host: str = "127.0.0.1", port: int = 0):
-        self.token = secrets.token_urlsafe(24)
+    def __init__(self, controller_factory, host: str = "127.0.0.1", port: int = 0, token: str | None = None):
+        # token: fester Schluessel (Handy-Version: die APK merkt sich die Adresse) - sonst bei jedem Start neu
+        self.token = token if token and len(token) >= 24 else secrets.token_urlsafe(24)
         self.hub = EventHub()
         self.controller = None
         self._factory = controller_factory

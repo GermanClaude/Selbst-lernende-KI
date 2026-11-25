@@ -29,6 +29,7 @@ Sonderbefehle (mit '/' beginnen):
   /sprachmodus        - einfach reden, live (frueher „Jarvis-Modus"; Strg+C = zurueck)
   /anruf [schluessel <KEY>|nummer <Nr>|minuten <n>|test] - Nova ruft dich an (Bland AI), nur deine Nummer
   /geraete [smarthome <URL> <Token>|ssh <name> <user@host>|esp <name> <http://...>|weg <name>] - Hardware
+  /handysteuerung [koppeln <Port> <Code>|verbinden <Port>] - das ganze Handy per ADB steuern (Termux)
   /handy [token <T>|neu|aus] - Fernzugriff per Telegram: Nova vom Handy steuern (ohne Server;
                        einmalig Bot bei @BotFather anlegen, Token mit "/handy token <T>" setzen)
   /tutorial           - Nova stellt sich vor und zeigt, was sie kann
@@ -1216,6 +1217,31 @@ class CLI:
                  "/geraete esp licht http://192.168.1.50  |  /geraete weg <name>\n"
                  "  Danach einfach sagen, z.B. 'mach das Licht im Wohnzimmer auf 30 %'.", GREY))
 
+    def _handysteuerung_befehl(self, args: list[str]) -> None:
+        from .. import handy_steuerung as hs
+
+        sub = args[0].lower() if args else ""
+        try:
+            if sub == "koppeln" and len(args) >= 3:
+                print(_c(hs.koppeln(int(args[1]), args[2]) or "Gekoppelt.", GREEN))
+                print(_c("Jetzt noch: /handysteuerung verbinden <Port> (der Port oben unter 'Kabelloses Debugging').",
+                         GREY))
+                return
+            if sub == "verbinden" and len(args) >= 2:
+                print(_c(hs.verbinden(int(args[1])), GREEN))
+                return
+            print(_c("\nHandy steuern:", BOLD))
+            print(f"  Termux: {'ja' if hs.ist_termux() else 'nein (Nova laeuft nicht auf dem Handy)'}")
+            try:
+                print(f"  ADB verbunden: {hs.adb_geraet()}")
+            except hs.HandyFehler as exc:
+                print(f"  ADB: {exc}")
+            print(_c("  Einmalig: Einstellungen > Entwickleroptionen > Kabelloses Debugging an > 'Mit Kopplungscode "
+                     "koppeln'.\n  Dann: /handysteuerung koppeln <Kopplungsport> <Code>  und  /handysteuerung "
+                     "verbinden <Port>", GREY))
+        except (hs.HandyFehler, ValueError) as exc:
+            print(_c(f"Ging nicht: {exc}", YELLOW))
+
     # -- Arbeitsordner / Workspace ------------------------------------------------
     def _arbeitsordner_setzen(self, pfad_str: str) -> tuple[bool, str]:
         """Setzt den Arbeitsordner: anlegen falls noetig, dauerhaft speichern, sofort anwenden.
@@ -2328,6 +2354,8 @@ class CLI:
             self._anruf_befehl(cmd.split()[1:])
         elif base in ("/geraete", "/geräte", "/hardware", "/geraet"):
             self._geraete_befehl(cmd.split()[1:])
+        elif base in ("/handysteuerung", "/adb"):
+            self._handysteuerung_befehl(cmd.split()[1:])
         elif base in ("/schluessel", "/schlüssel", "/key", "/api", "/apikey"):
             from ..schluessel import find_key
 

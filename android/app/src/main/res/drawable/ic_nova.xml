@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Novas Sphaere als App-Symbol: violette Kugel mit hellem Kern -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:fillColor="#111318" android:pathData="M0,0h108v108h-108z" />
+    <path android:fillColor="#4F46E5" android:pathData="M54,18a36,36 0,1 1,0 72a36,36 0,1 1,0 -72z" />
+    <path android:fillColor="#7C3AED" android:pathData="M54,26a28,28 0,1 1,0 56a28,28 0,1 1,0 -56z" />
+    <path android:fillColor="#A78BFA" android:pathData="M48,36a14,14 0,1 1,0 28a14,14 0,1 1,0 -28z" />
+    <path android:fillColor="#EDE9FE" android:pathData="M46,42a5,5 0,1 1,0 10a5,5 0,1 1,0 -10z" />
+</vector>

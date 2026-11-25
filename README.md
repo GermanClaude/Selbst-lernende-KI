@@ -553,6 +553,26 @@ sich auf diesen Ordner. Im **sicheren Modus** arbeitet Nova nur hier – wähl i
 `/arbeitsordner oeffnen` zeigt ihn im Explorer, `/arbeitsordner zuruecksetzen` setzt auf den Standard
 (`workspace\` im Programmordner) zurück.
 
+## Nova auf dem Handy (Android)
+
+Nova läuft auch auf Android – gleiche Funktionen, gleiche Oberfläche:
+
+1. **Termux** aus [F-Droid](https://f-droid.org/packages/com.termux/) installieren (nicht aus dem Play
+   Store – die Version dort ist veraltet), dazu am besten auch **Termux:API**.
+2. In Termux einfügen (dauert beim ersten Mal 10–20 Minuten):
+   `curl -fsSL https://raw.githubusercontent.com/GermanClaude/Selbst-lernende-KI/ccr-cfa1ff8c-wgsyxb/termux/installieren.sh | bash`
+3. **Nova-Handy.apk** aus dem [neuesten Release](https://github.com/GermanClaude/Selbst-lernende-KI/releases/latest)
+   installieren (Installation aus unbekannten Quellen einmal erlauben).
+4. In Termux `nova` eingeben – die Nova-App öffnet sich.
+
+**Das ganze Handy steuern:** Einstellungen → Entwickleroptionen → *Kabelloses Debugging* an → *Mit
+Kopplungscode koppeln*, dann in Nova `/handysteuerung koppeln <Port> <Code>` und `/handysteuerung
+verbinden <Port>`. Danach kann Nova den Bildschirm lesen, tippen, wischen, schreiben, Apps starten und
+installieren – ohne Root. Linux-Systeme installiert sie über `proot-distro`, Kali über NetHunter Rootless.
+
+Noch nicht auf dem Handy: Spracheingabe per Mikrofon-Knopf und die PC-Werkzeuge (Maus/Tastatur am PC,
+Live-Sehen, Spielmodus).
+
 ## Hardware: Smart Home, Arduino/ESP32, Bluetooth, andere Rechner
 
 `/geraete` zeigt, was eingerichtet ist. Dann einfach sagen, was passieren soll.
@@ -654,6 +674,7 @@ stoppt die Steuerung sofort.
 | `/protokoll [an\|aus\|zeigen]` | Aktivitäts-Protokoll: welche Apps/Fenster du nutzt (kein Keylogger) |
 | `/skill [add <Name> <Anweisung>\|addfuer <gehirn> …\|an\|aus\|weg]` | Eigene Regeln/Skills (für alle Gehirne oder eins) – in der App auch per Klick im Reiter **Skills** |
 | `/sprachmodus` | Sprachmodus: einfach reden, live (zurück: „Chat-Modus“ sagen) |
+| `/handysteuerung [koppeln <Port> <Code>\|verbinden <Port>]` | Das ganze Handy per ADB steuern (Nova in Termux) |
 | `/geraete [smarthome <URL> <Token>\|ssh <name> <user@host>\|esp <name> <URL>\|weg <name>]` | Hardware: Smart Home, Arduino/ESP32, Bluetooth, SSH |
 | `/anruf [schluessel <KEY>\|nummer <Nr>\|minuten <n>\|test]` | Nova ruft dich an (Bland AI) – nur deine Nummer |
 | `/handy [token <T>\|neu\|aus]` | Fernzugriff per Telegram: Nova vom Handy steuern (ohne Server) |

@@ -83,6 +83,7 @@ COMMANDS = [
     ("/sprachmodus", "einfach reden, live (frueher Jarvis-Modus)"),
     ("/afk", "ich bin weg - die KI arbeitet allein weiter (mit Bericht)"),
     ("/geraete", "Hardware: Smart Home, Arduino/ESP32, Bluetooth, andere Rechner (SSH)"),
+    ("/handysteuerung", "Das ganze Handy per ADB steuern - koppeln und verbinden"),
     ("/anruf", "Nova ruft dich an (Bland AI) - Einrichtung und Stand"),
     ("/anruf test", "Testanruf auf dein Handy"),
     ("/handy", "Fernzugriff per Telegram: Nova vom Handy steuern (ohne Server)"),

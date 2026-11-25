@@ -30,6 +30,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--app", action="store_true", help="Als App in einem eigenen Fenster starten")
     parser.add_argument("--terminal", action="store_true", help="Im Terminal starten (Standard)")
     parser.add_argument("--browser", action="store_true", help="App im Browser-Fenster statt Programmfenster")
+    parser.add_argument("--server", action="store_true",
+                        help="Nur den App-Server starten (Handy/Termux: Oberflaeche in der Nova-APK oder im Browser)")
+    parser.add_argument("--port", type=int, default=8765, help="Port fuer --server (Standard 8765)")
+    parser.add_argument("--nicht-oeffnen", action="store_true", help="--server: Oberflaeche nicht selbst oeffnen")
     # Unbekanntes (z.B. eine Datei auf KI-App.exe gezogen) wird ignoriert statt still abzubrechen.
     args, _unknown = parser.parse_known_args(argv)
     app_mode = args.app and not args.terminal
@@ -122,6 +126,10 @@ def main(argv: list[str] | None = None) -> int:
 
     guard.acquire()
     try:
+        if args.server:
+            from .app.handy_server import run_server
+
+            return run_server(config, port=args.port, oeffnen=not args.nicht_oeffnen)
         if app_mode:
             return run_app(config, started_by=started_by if unexpected else None, browser=args.browser)
         return run_cli(config, started_by=started_by if unexpected else None)

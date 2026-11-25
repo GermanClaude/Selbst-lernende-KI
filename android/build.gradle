@@ -1,0 +1,4 @@
+// Nova-Handy: eine kleine Android-App, die die Oberflaeche von Nova zeigt (Nova selbst laeuft in Termux).
+plugins {
+    id 'com.android.application' version '8.7.3' apply false
+}

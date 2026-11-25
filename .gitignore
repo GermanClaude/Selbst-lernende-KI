@@ -24,3 +24,12 @@ versionen/
 
 # PyInstaller
 *.spec.out
+
+# Handy-App (Android)
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/nova.keystore
+*.keystore
+*.jks

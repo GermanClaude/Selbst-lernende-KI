@@ -150,6 +150,17 @@ def build_system_prompt(config: Config, memory: Memory) -> str:
         "Befehlen). Im sicheren Modus arbeitest du nur hier. Aendern kann er ihn mit /arbeitsordner.\n\n"
     )
 
+    from .handy_steuerung import ist_termux
+
+    handy_block = (
+        "=== DU LAEUFST AUF EINEM ANDROID-HANDY (Termux) ===\n"
+        "Werkzeug handy_steuern: Handy-Funktionen (Termux:API) und das ganze Handy per ADB (erst 'bildschirm' "
+        "lesen, dann tippen/wischen/text). Pakete: 'pkg install ...' ueber die Shell. Linux-Systeme: "
+        "'pkg install proot-distro', dann 'proot-distro install debian' (oder ubuntu, archlinux ...). Kali Linux: "
+        "NetHunter Rootless nach der offiziellen Anleitung https://www.kali.org/docs/nethunter/nethunter-rootless/ "
+        "(nur von kali.org laden). PC-Werkzeuge (Maus/Tastatur am PC, Live-Sehen, Spielmodus) gibt es hier nicht.\n\n"
+    ) if ist_termux() else ""
+
     return (
         f"{frame}{economy}\n"
         f"=== DEINE PERSOENLICHKEIT ===\n{persona}\n\n"
@@ -157,6 +168,7 @@ def build_system_prompt(config: Config, memory: Memory) -> str:
         + (f"=== UEBER DEINEN MENSCHEN (hat er selbst eingetragen) ===\n{about}\n\n" if about else "")
         + skills_block
         + workspace_block
+        + handy_block
         + f"=== DEINE WERTE & GRENZEN ===\n{values}\n\n"
         f"=== WAS DU BEREITS GELERNT HAST ===\n{memory_block}\n"
     )

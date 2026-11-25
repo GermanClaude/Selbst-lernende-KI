@@ -1,0 +1,46 @@
+plugins {
+    id 'com.android.application'
+}
+
+// Version kommt aus dem Workflow (aus assistant/__init__.py), lokal "dev".
+def novaVersion = System.getenv("NOVA_VERSION") ?: "dev"
+def novaCode = (System.getenv("NOVA_VERSION_CODE") ?: "1") as Integer
+// Fester Signierschluessel (GitHub-Secret NOVA_KEYSTORE_B64 -> android/nova.keystore). Ohne ihn: Debug-Schluessel.
+def schluessel = rootProject.file("nova.keystore")
+
+android {
+    namespace 'de.nova.handy'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'de.nova.handy'
+        minSdk 24
+        targetSdk 35
+        versionCode novaCode
+        versionName novaVersion
+    }
+
+    signingConfigs {
+        if (schluessel.exists()) {
+            nova {
+                storeFile schluessel
+                storeType "pkcs12"
+                storePassword System.getenv("NOVA_KEYSTORE_PASS")
+                keyAlias "nova"
+                keyPassword System.getenv("NOVA_KEYSTORE_PASS")
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig schluessel.exists() ? signingConfigs.nova : signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}

@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nova</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; font-family: system-ui, sans-serif; background: #111318; color: #e7e7ee; }
+  main { max-width: 520px; margin: 0 auto; padding: 28px 18px 40px; }
+  .kugel { width: 96px; height: 96px; margin: 8px auto 18px; border-radius: 50%;
+           background: radial-gradient(circle at 40% 38%, #ede9fe 0 8%, #a78bfa 22%, #7c3aed 55%, #4f46e5 100%);
+           box-shadow: 0 0 48px #7c3aed88; }
+  h1 { font-size: 22px; text-align: center; margin: 0 0 6px; }
+  p { line-height: 1.5; color: #b9b9c6; }
+  .karte { background: #1a1d24; border: 1px solid #2a2e38; border-radius: 14px; padding: 16px; margin-top: 16px; }
+  button { width: 100%; padding: 13px; margin-top: 10px; border: 0; border-radius: 10px; font-size: 16px;
+           font-weight: 600; background: #7c3aed; color: #fff; }
+  button.zweit { background: #2a2e38; color: #e7e7ee; }
+  code { background: #2a2e38; padding: 2px 6px; border-radius: 6px; color: #ede9fe; }
+  input { width: 100%; box-sizing: border-box; padding: 12px; border-radius: 10px; border: 1px solid #2a2e38;
+          background: #111318; color: #e7e7ee; font-size: 15px; }
+  ol { padding-left: 20px; color: #b9b9c6; line-height: 1.6; }
+</style>
+</head>
+<body>
+<main>
+  <div class="kugel" aria-hidden="true"></div>
+  <h1>Nova läuft gerade nicht</h1>
+  <p>Nova selbst läuft in <b>Termux</b> auf deinem Handy. Öffne Termux und tippe <code>nova</code> –
+     diese App öffnet sich dann von selbst.</p>
+  <button onclick="NovaApp.termuxOeffnen()">Termux öffnen</button>
+  <button class="zweit" onclick="NovaApp.nochmal()">Nochmal versuchen</button>
+
+  <div class="karte">
+    <b>Zum ersten Mal hier?</b>
+    <ol>
+      <li>Termux aus <b>F-Droid</b> installieren (die Version aus dem Play Store ist veraltet).</li>
+      <li>In Termux einfügen:<br><code>curl -fsSL https://raw.githubusercontent.com/GermanClaude/Selbst-lernende-KI/ccr-cfa1ff8c-wgsyxb/termux/installieren.sh | bash</code></li>
+      <li>Danach <code>nova</code> eingeben.</li>
+    </ol>
+  </div>
+
+  <div class="karte">
+    <b>Adresse selbst eingeben</b>
+    <p>Die Adresse zeigt Nova beim Start im Terminal an (mit <code>?t=…</code> am Ende).</p>
+    <input id="adr" type="url" inputmode="url" placeholder="http://127.0.0.1:8765/?t=…" autocomplete="off">
+    <button class="zweit" onclick="NovaApp.verbinden(document.getElementById('adr').value)">Verbinden</button>
+  </div>
+</main>
+</body>
+</html>

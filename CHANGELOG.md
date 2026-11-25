@@ -4,6 +4,26 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.35.0 – 2026-11-25
+
+**Nova auf dem Handy (Android)**
+- Nova läuft jetzt auch auf deinem Android-Handy – mit denselben Funktionen und derselben Oberfläche.
+  Sie läuft in **Termux** (aus F-Droid); eine Zeile richtet alles ein:
+  `curl -fsSL https://raw.githubusercontent.com/GermanClaude/Selbst-lernende-KI/ccr-cfa1ff8c-wgsyxb/termux/installieren.sh | bash`
+  Danach startest du sie mit `nova`.
+- **Nova-App (APK):** Im GitHub-Release liegt jetzt auch **Nova-Handy.apk**. Sie zeigt Nova wie eine
+  echte App; `nova` in Termux öffnet sie von selbst.
+- **Das Handy steuern:** Mit der App *Termux:API* kann Nova Akku, Benachrichtigungen, Taschenlampe,
+  Zwischenablage, Standort, SMS, Kontakte, Kamera und Vorlesen nutzen. Über **Kabelloses Debugging**
+  (einmal koppeln mit `/handysteuerung`, kein Root nötig) steuert sie das **ganze Handy**: Bildschirm
+  lesen, tippen, wischen, Text eingeben, Apps starten und installieren.
+- **Linux und Kali auf dem Handy:** Nova kann über `proot-distro` Linux-Systeme (Debian, Ubuntu …)
+  installieren und Kali über die offizielle NetHunter-Rootless-Anleitung von kali.org.
+- Privates (SMS, Kontakte, Standort) lesen, tippen und Nachrichten senden fragt vorher nach; Apps
+  installieren ist im sicheren Modus gesperrt.
+- Noch nicht auf dem Handy: die Spracheingabe per Mikrofon-Knopf und die PC-Werkzeuge (Maus/Tastatur
+  am PC, Live-Sehen, Spielmodus).
+
 ## 0.34.0 – 2026-11-25
 
 **Nova steuert jetzt auch Hardware**
