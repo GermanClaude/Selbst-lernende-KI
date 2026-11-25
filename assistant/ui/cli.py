@@ -27,7 +27,8 @@ Sonderbefehle (mit '/' beginnen):
   /werte bearbeiten   - deine Regeln fuer die KI im Editor oeffnen
   /neu                - neues Gespraech (Charakter & Profil frisch geladen)
   /sprachmodus        - einfach reden, live (frueher „Jarvis-Modus"; Strg+C = zurueck)
-  /anruf [schluessel <KEY>|nummer <Nr>|minuten <n>|persona|test] - Nova ruft dich an (Bland AI), nur deine Nummer
+  /anruf [schluessel <KEY>|vonage <ID> <Datei>|anbieter bland|vonage|nummer <Nr>|minuten <n>|persona|test]
+                      - Nova ruft dich an (Bland AI oder Vonage), nur deine Nummer
   /geraete [smarthome <URL> <Token>|ssh <name> <user@host>|esp <name> <http://...>|weg <name>] - Hardware
   /handysteuerung [koppeln <Port> <Code>|verbinden <Port>] - das ganze Handy per ADB steuern (Termux)
   /telegram konto [zugang|anmelden|code|passwort|abmelden] - dein eigenes Telegram-Konto (Chats lesen)
@@ -1188,12 +1189,13 @@ class CLI:
             self.permissions.confirm_fn = alt
         print(_c("\n[Zurueck am PC.]", GREY))
 
-    # -- Anrufe ueber Bland AI (assistant/anruf.py, Werkzeug "anrufen") ------------
+    # -- Anrufe ueber Bland AI / Vonage (assistant/anruf.py, anruf_vonage.py, Werkzeug "anrufen") --
     def _anruf_befehl(self, args: list[str]) -> None:
         import os
         from .. import anruf as anruf_mod
+        from .. import anruf_vonage as vonage_mod
         from ..config import save_env_value
-        from ..tools.anruf import einstellungen
+        from ..tools.anruf import einstellungen, vonage_anrufen
 
         root = self.config.project_root
         sub = args[0].lower() if args else ""
@@ -1208,6 +1210,39 @@ class CLI:
         if sub in ("schluessel", "schlüssel", "key") and len(args) > 1:
             speichern("BLAND_API_KEY", args[1].strip())
             print(_c("Bland-Schluessel gespeichert (nur lokal in der .env).", GREEN))
+            return
+        if sub == "vonage" and len(args) > 1 and args[1].lower() in ("nummer", "absender"):
+            nummer = anruf_mod.normalisiere_nummer(" ".join(args[2:]))
+            if not nummer:
+                print(_c("So: /anruf vonage nummer <deine gekaufte Vonage-Nummer>", YELLOW))
+                return
+            speichern("VONAGE_NUMMER", nummer)
+            print(_c(f"Vonage ruft jetzt von {anruf_mod.maskiere(nummer)} aus an.", GREEN))
+            return
+        if sub == "vonage" and len(args) > 2:
+            from pathlib import Path
+
+            datei = Path(" ".join(args[2:]).strip().strip('"')).expanduser()
+            try:
+                vonage_mod.schluessel_speichern(root, datei.read_text(encoding="utf-8", errors="replace"))
+            except OSError as exc:
+                print(_c(f"Die Datei liess sich nicht lesen ({exc}). Ganzen Pfad angeben, z.B. "
+                         "/anruf vonage <ID> C:\\Users\\Du\\Downloads\\private.key", YELLOW))
+                return
+            except anruf_mod.AnrufFehler as exc:
+                print(_c(str(exc), YELLOW))
+                return
+            speichern("VONAGE_APP_ID", args[1].strip())
+            speichern("ANRUF_ANBIETER", "vonage")
+            print(_c("Vonage eingerichtet (Schluessel nur lokal in data/vonage_private.key) - Anrufe laufen jetzt "
+                     "ueber Vonage. Die Datei im Download-Ordner kannst du loeschen.", GREEN))
+            if not vonage_mod.cloudflared_finden(root):
+                print(_c("Tipp: Damit ich am Telefon auch deine Antwort hoere, installiere cloudflared "
+                         "(kostenlos): winget install --id Cloudflare.cloudflared - sonst gibt es nur Ansagen.", GREY))
+            return
+        if sub == "anbieter" and len(args) > 1 and args[1].lower() in ("bland", "vonage"):
+            speichern("ANRUF_ANBIETER", args[1].lower())
+            print(_c(f"Anrufe laufen jetzt ueber {'Vonage' if args[1].lower() == 'vonage' else 'Bland AI'}.", GREEN))
             return
         if sub == "nummer" and len(args) > 1:
             nummer = anruf_mod.normalisiere_nummer(" ".join(args[1:]))
@@ -1237,13 +1272,21 @@ class CLI:
             print(_c("Bearbeite es mit einem Texteditor. {name} = Name der KI, {anliegen} = warum sie anruft. "
                      "Loeschst du die Datei, gilt wieder das Standard-Skript.", GREY))
             return
-        e = einstellungen()
+        e = einstellungen(root)
         if sub == "test":
-            if not e["key"] or not e["nummer"]:
-                print(_c("Erst einrichten: /anruf schluessel <KEY> und /anruf nummer <Nummer>.", YELLOW))
+            if not e["bereit"] or not e["nummer"]:
+                print(_c("Erst einrichten: /anruf schluessel <KEY> (Bland) oder /anruf vonage <ID> <Datei>, "
+                         "und /anruf nummer <Nummer>.", YELLOW))
                 return
             if anruf_mod.heute_anzahl(root) >= anruf_mod.MAX_PRO_TAG:
                 print(_c(f"Heute schon {anruf_mod.MAX_PRO_TAG} Anrufe - Kostenbremse, morgen wieder.", YELLOW))
+                return
+            if e["anbieter"] == "vonage":
+                print(_c(vonage_anrufen(root, e["nummer"], "Das ist nur ein Testanruf. Sag kurz etwas, damit ich "
+                                        "sehe, ob ich dich verstehe.", self.config.ki.name, 2, warten=False,
+                                        gezaehlt=lambda: anruf_mod.heute_zaehlen(root)), GREEN))
+                print(_c("Dein Handy sollte gleich klingeln. Im Vonage-Testzugang geht das nur an die Nummer, mit "
+                         "der du dich bei Vonage angemeldet hast.", GREY))
                 return
             try:
                 call_id = anruf_mod.Bland(e["key"]).anrufen(
@@ -1257,11 +1300,24 @@ class CLI:
             print(_c(f"Testanruf gestartet an {anruf_mod.maskiere(e['nummer'])} (ID {call_id}). Dein Handy sollte "
                      "gleich klingeln - angezeigt wird meist eine US-Nummer von Bland.", GREEN))
             return
-        print(_c("\nAnrufe (Bland AI): Ich rufe dich an, wenn es wichtig ist - nur deine eigene Nummer.", BOLD))
-        print(f"  Schluessel: {'gesetzt' if e['key'] else 'fehlt'}   Nummer: "
+        print(_c("\nAnrufe: Ich rufe dich an, wenn es wichtig ist - nur deine eigene Nummer.", BOLD))
+        print(f"  Anbieter: {'Vonage' if e['anbieter'] == 'vonage' else 'Bland AI'}   "
+              f"Bland-Schluessel: {'gesetzt' if e['key'] else 'fehlt'}   "
+              f"Vonage: {'eingerichtet' if e['vonage'] else 'nicht eingerichtet'}   Nummer: "
               f"{anruf_mod.maskiere(e['nummer']) if e['nummer'] else 'fehlt'}   Hoechstdauer: {e['minuten']} Min.   "
               f"heute: {anruf_mod.heute_anzahl(root)}/{anruf_mod.MAX_PRO_TAG}")
-        print(_c("  Einrichten: /anruf schluessel <KEY>  |  /anruf nummer 0171 1234567  |  /anruf test\n"
+        if e["anbieter"] == "vonage":
+            cf = vonage_mod.cloudflared_finden(root)
+            print(f"  Antwort am Telefon hoeren: "
+                  f"{'ja (eigene Adresse)' if os.environ.get('VONAGE_WEBHOOK_URL') else ('ja (cloudflared)' if cf else 'nein - nur Ansagen (winget install --id Cloudflare.cloudflared)')}")
+        print(_c("  Bland AI (Kreditkarte, echte Gespraechs-KI): /anruf schluessel <KEY>\n"
+                 "  Vonage (PayPal/Ueberweisung, kostenloser Test ohne Karte):\n"
+                 "    1) dashboard.nexmo.com registrieren (deine Handynummer angeben)\n"
+                 "    2) Applications -> Create a new application -> 'Generate public and private key' (laedt\n"
+                 "       private.key herunter) -> Voice einschalten, bei Answer/Event URL z.B. https://example.com\n"
+                 "       eintragen -> speichern, die Application ID kopieren\n"
+                 "    3) /anruf vonage <Application-ID> <Pfad zur private.key>\n"
+                 "  Dann: /anruf nummer 0171 1234567  |  /anruf test  |  Wechseln: /anruf anbieter bland|vonage\n"
                  "  Danach einfach sagen, z.B. 'ruf mich an, wenn der Download fertig ist'.", GREY))
 
     # -- Hardware-Geraete (assistant/geraete.py) ---------------------------------

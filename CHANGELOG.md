@@ -4,6 +4,21 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.37.0 – 2026-11-25
+
+**Anrufe jetzt auch ohne Kreditkarte – über Vonage**
+- Neben Bland AI kann Nova dich jetzt auch über **Vonage** anrufen. Vonage lässt sich per **PayPal oder
+  Überweisung** aufladen, und der kostenlose Testzugang (ohne Karte) ruft schon die Nummer an, mit der du
+  dich bei Vonage angemeldet hast.
+- So geht's: `/anruf` zeigt die Schritte. Kurz: bei Vonage registrieren, eine „Application“ anlegen (dabei
+  lädt sich eine Datei `private.key` herunter), dann `/anruf vonage <Application-ID> <Pfad zur private.key>`,
+  `/anruf nummer <deine Nummer>` und `/anruf test`.
+- Vonage hat keine eigene Gesprächs-KI: Nova sagt dir ihr Anliegen mit deutscher Stimme. Damit sie am
+  Telefon auch **deine Antwort** hört, braucht es das kostenlose Programm *cloudflared*
+  (`winget install --id Cloudflare.cloudflared`) – Nova startet es während des Anrufs selbst und beendet es
+  danach wieder. Ohne cloudflared gibt es eine Ansage, und du antwortest in der App oder auf Telegram.
+- Wechseln zwischen den Anbietern: `/anruf anbieter bland` bzw. `/anruf anbieter vonage`.
+
 ## 0.36.0 – 2026-11-25
 
 **Nova liest Telegram – deinen Bot und auf Wunsch auch deine eigenen Chats**

@@ -600,7 +600,7 @@ eingestuft. HTTP nur ins eigene Netz.
   speichert nichts. In deinem Namen schreibt sie nur mit deiner Bestätigung. Die Anmeldung bleibt nur auf
   deinem PC (`data/telegram_konto.session`); `/telegram konto abmelden` löscht sie.
 
-## Anrufe: Nova ruft dich an (Bland AI)
+## Anrufe: Nova ruft dich an (Bland AI oder Vonage)
 
 Wenn es wichtig ist, ruft Nova dich auf dem Handy an – eine KI-Stimme spricht Deutsch, sagt worum es
 geht und hört sich deine Antwort an; Nova bekommt danach die Mitschrift. Sag z. B. *„ruf mich an, wenn
@@ -611,6 +611,22 @@ vorher nach, im AFK-Modus ruft sie direkt an. Kostenbremse: höchstens 5 Anrufe 
 holen → unter *Billing* Guthaben aufladen (Anrufe nach Deutschland brauchen mindestens 5 $; Bland
 rechnet pro Minute ab). Dann im Chat: `/anruf schluessel <KEY>`, `/anruf nummer 0171 1234567`,
 `/anruf test`. Angezeigt wird meist eine US-Nummer von Bland.
+
+**Ohne Kreditkarte: Vonage** (Aufladen per PayPal oder Überweisung, kostenloser Test ohne Karte – der ruft
+die Nummer an, mit der du dich angemeldet hast):
+1. Bei [Vonage](https://dashboard.nexmo.com/sign-up) registrieren (deine Handynummer angeben).
+2. *Applications → Create a new application* → *Generate public and private key* (lädt `private.key`
+   herunter) → *Voice* einschalten, bei *Answer URL* und *Event URL* z. B. `https://example.com`
+   eintragen → speichern und die **Application ID** kopieren.
+3. Im Chat: `/anruf vonage <Application-ID> <Pfad zur private.key>`, dann `/anruf nummer 0171 1234567`
+   und `/anruf test`. Der Schlüssel landet nur lokal in `data/vonage_private.key`.
+
+Vonage spricht Novas Text mit deutscher Stimme, hat aber keine eigene Gesprächs-KI. Damit Nova deine
+**Antwort am Telefon** hört, installiere das kostenlose *cloudflared* (`winget install --id
+Cloudflare.cloudflared`): Nova öffnet damit nur während des Anrufs einen geheimen Rückkanal und schließt
+ihn danach. Ohne cloudflared gibt es eine Ansage. Wer schon eine eigene öffentliche Adresse hat, trägt
+`VONAGE_WEBHOOK_URL` und `VONAGE_WEBHOOK_PORT` in die `.env` ein. Eine gekaufte Vonage-Nummer als
+Absender: `/anruf vonage nummer <Nummer>`. Wechseln: `/anruf anbieter bland|vonage`.
 
 ## Fernzugriff: Nova vom Handy steuern (Telegram)
 
@@ -693,7 +709,7 @@ stoppt die Steuerung sofort.
 | `/geraete [smarthome <URL> <Token>\|ssh <name> <user@host>\|esp <name> <URL>\|weg <name>]` | Hardware: Smart Home, Arduino/ESP32, Bluetooth, SSH |
 | `/telegram konto [zugang\|anmelden\|code\|passwort\|abmelden]` | Dein eigenes Telegram-Konto verbinden (Chats lesen) |
 | `/handy auto an\|aus` | Fernzugriff automatisch mit der App starten |
-| `/anruf [schluessel <KEY>\|nummer <Nr>\|minuten <n>\|test]` | Nova ruft dich an (Bland AI) – nur deine Nummer |
+| `/anruf [schluessel <KEY>\|vonage <ID> <Datei>\|anbieter bland\|vonage\|nummer <Nr>\|minuten <n>\|test]` | Nova ruft dich an (Bland AI oder Vonage) – nur deine Nummer |
 | `/handy [token <T>\|neu\|aus]` | Fernzugriff per Telegram: Nova vom Handy steuern (ohne Server) |
 | `/arbeitsordner [Pfad\|oeffnen\|zuruecksetzen]` | Arbeitsordner zeigen/wählen – dort legst du Dateien für Nova ab |
 | `/afk [Betrag] [Auftrag]` | AFK-Modus: Nova arbeitet allein weiter, z. B. `/afk 0,30€ …` (zurück: Nachricht bzw. Strg+C) |
