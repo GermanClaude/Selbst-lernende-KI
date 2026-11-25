@@ -58,6 +58,23 @@
   // =====================================================================
   // Symbole (feste, eigene SVG-Zeichnungen – kein Fremdtext)
   // =====================================================================
+  // Fehler im Fenster melden: landen im Protokoll, und Nova bekommt einen Hinweis (gedrosselt, ohne Doppelte)
+  const fehlerGemeldet = new Set();
+  function fehlerMelden(text) {
+    const t = String(text || '').slice(0, 500);
+    if (!t || fehlerGemeldet.has(t) || fehlerGemeldet.size >= 20) return;
+    fehlerGemeldet.add(t);
+    try { post('/api/fehler', { quelle: 'fenster', text: t }); } catch (e) { /* nie selbst Fehler werfen */ }
+  }
+  window.addEventListener('error', (e) => {
+    const wo = e && e.filename ? ' (' + String(e.filename).split('/').pop() + ':' + e.lineno + ')' : '';
+    fehlerMelden(String((e && e.message) || 'Fehler im Fenster') + wo);
+  });
+  window.addEventListener('unhandledrejection', (e) => {
+    const r = e && e.reason;
+    fehlerMelden('Unbehandelt: ' + String((r && r.message) || r || 'unbekannt'));
+  });
+
   const ICONS = {
     smartphone: '<rect x="7" y="2" width="10" height="20" rx="2.5"/><path d="M11 18h2"/>',
     send: '<path d="M12 19V5"/><path d="m5 12 7-7 7 7"/>',
@@ -2211,6 +2228,14 @@
     card.append(icon('alertCircle', 'card-ic'));
     const body = h('div', 'card-body');
     body.append(h('div', 'card-title', 'Fehler'), h('div', 'card-text', text || 'Unbekannter Fehler.'));
+    const frag = h('button', 'btn small secondary card-ask', kiName() + ' fragen');
+    frag.type = 'button';
+    frag.title = 'Die Fehlermeldung an ' + kiName() + ' schicken – sie erklärt, was los ist, und behebt es, wenn sie kann';
+    frag.addEventListener('click', () => {
+      frag.disabled = true;
+      send('Da kam gerade dieser Fehler: „' + String(text || '').slice(0, 600) + '“ – was ist da los, und kannst du es beheben?');
+    });
+    body.append(frag);
     card.append(body);
     msgs.append(card);
     added();

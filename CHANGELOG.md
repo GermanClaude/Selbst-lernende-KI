@@ -4,6 +4,18 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.33.0 – 2026-11-25
+
+**Nova bemerkt Fehler und kümmert sich darum**
+- Geht in der App etwas schief (Fehlermeldung bei einer Antwort, Spracheingabe, Fehler im Fenster),
+  merkt Nova sich das. Kann sie etwas dagegen tun und ist gerade frei, meldet sie sich sofort selbst:
+  Sie erklärt kurz, was los ist, und behebt es, wenn sie kann. (Gedrosselt: jede Meldung nur einmal,
+  höchstens alle 2 Minuten – nie im Kreis.)
+- Hat sie gerade keine Zeit, bekommt sie bei deiner nächsten Nachricht einen Hinweis auf den Fehler.
+- Jede Fehlerkarte hat jetzt den Knopf **„Nova fragen“** – ein Klick schickt ihr die Meldung.
+- Nova kann mit dem neuen Werkzeug **app_fehler** selbst ins Protokoll schauen, wenn du fragst „warum geht
+  X nicht?“ (Passwörter und Schlüssel werden dabei geschwärzt).
+
 ## 0.32.1 – 2026-11-25
 
 **Spracheingabe repariert**

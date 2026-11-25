@@ -667,6 +667,8 @@ class AppController(CLI):
             message = schoen(hint) if hint else f"Da ist etwas schiefgegangen: {exc}"
             self.history.append({"role": "error", "text": message})
             self._event({"type": "error", "text": message})
+            self._fehler_merken("App", message, loggen=False,
+                                reagieren=not hint and not self.__dict__.get("_fehler_reaktion_laeuft"))
         finally:
             writer.flush_notice()
             self._writer = None
@@ -894,6 +896,7 @@ class AppController(CLI):
         else:
             entry = self._user_message(text, images, client_id)
             model_text = self._with_afk_hints(text, model_text)
+            model_text = self._mit_fehler_hinweis(text, model_text)
         self._event({"type": "start"})
         self._answer_parts: list[str] = []
         snapshot = self.brain.provider.history_snapshot()
@@ -1525,6 +1528,67 @@ class AppController(CLI):
         else:
             return {"ok": False, "error": f"Unbekannt: {action}", **self.skills_info()}
         return {"ok": bool(ok), "message": message, **self.skills_info()}
+
+    # -- Fehler bemerken und darauf reagieren --------------------------------------
+    def _fehler_merken(self, quelle: str, text: str, reagieren: bool = False, loggen: bool = True) -> None:
+        """Merkt sich einen Fehler (Protokoll + Liste fuer das Werkzeug app_fehler + Hinweis in der naechsten
+        Nachricht). reagieren=True: ist Nova frei, meldet sie sich gleich selbst dazu (gedrosselt)."""
+        text = str(text or "").strip()[:800]
+        if not text:
+            return
+        if loggen:
+            logger.warning("Fehler (%s): %s", quelle, text)
+        with self._lock:
+            liste = self.__dict__.setdefault("_fehler", [])
+            liste.append({"zeit": time.time(), "quelle": quelle, "text": text, "gesehen": False})
+            del liste[:-20]
+        if reagieren:
+            self._fehler_reaktion(quelle, text)
+
+    def _fehler_reaktion(self, quelle: str, text: str) -> None:
+        if not self.config.api_key:
+            return
+        jetzt = time.time()
+        schon = self.__dict__.setdefault("_fehler_reagiert", set())
+        key = (quelle, text[:200])
+        if key in schon or jetzt - self.__dict__.get("_fehler_zuletzt", 0.0) < 120:
+            return  # dieselbe Meldung nur einmal, hoechstens alle 2 Minuten - nie im Kreis
+        schon.add(key)
+        self._fehler_zuletzt = jetzt
+        prompt = ("[Automatischer Hinweis der App, nicht von deinem Menschen: Gerade ist ein Fehler aufgetreten "
+                  f"({quelle}): {text}\nSag ihm in 1-3 kurzen Saetzen, was das bedeutet und was ihr tun koennt. Kannst "
+                  "du es selbst beheben (z.B. eine Einstellung, ein anderes Gehirn, das Werkzeug app_fehler fuer "
+                  "Details), dann tu es. Erfinde nichts.]")
+
+        def lauf() -> None:
+            for f in self.__dict__.get("_fehler", []):
+                if f["quelle"] == quelle and f["text"] == text:
+                    f["gesehen"] = True
+            self._fehler_reaktion_laeuft = True
+            try:
+                self._answer(schoen("Fehler bemerkt - ich schaue es mir an"), model_text=prompt, as_notice=True,
+                             notice_level="warn")
+            finally:
+                self._fehler_reaktion_laeuft = False
+
+        self.run_background(lauf)  # nur wenn Nova frei ist - sonst kommt der Hinweis mit der naechsten Nachricht
+
+    def _mit_fehler_hinweis(self, text: str, model_text: str | None) -> str | None:
+        with self._lock:
+            offen = [f for f in self.__dict__.get("_fehler", []) if not f["gesehen"]]
+            for f in offen:
+                f["gesehen"] = True
+        if not offen:
+            return model_text
+        zeilen = "\n".join(f"- ({f['quelle']}) {f['text'][:300]}" for f in offen[-5:])
+        return ("[Hinweis der App, nicht von deinem Menschen: seit deiner letzten Antwort gab es diese Fehler:\n"
+                f"{zeilen}\nGeh kurz darauf ein, falls es ihn betrifft oder zu seiner Nachricht passt, und hilf beim "
+                "Beheben.]\n\n" + (model_text or text))
+
+    def fehler_melden(self, data: dict) -> dict:
+        """POST /api/fehler: Fehler aus dem Fenster (JavaScript) - nur merken, keine Auto-Antwort."""
+        self._fehler_merken("Fenster", str(data.get("text", ""))[:500], reagieren=False)
+        return {"ok": True}
 
     def _new_conversation(self) -> None:
         super()._new_conversation()
@@ -2217,6 +2281,7 @@ class AppController(CLI):
                     self.voice_capture.start()
                 except Exception as exc:  # noqa: BLE001
                     logger.warning("Spracheingabe: Aufnahme ging nicht: %s", exc)
+                    self._fehler_merken("Spracheingabe", f"Aufnahme ging nicht: {exc}", reagieren=True, loggen=False)
                     return {"ok": False, "error": str(exc)}
                 self._event({"type": "voice", "state": "recording"})
                 return {"ok": True}
@@ -2231,6 +2296,7 @@ class AppController(CLI):
                 except Exception as exc:  # noqa: BLE001
                     logger.warning("Spracheingabe: Erkennung ging nicht (%s): %s",
                                    self.voice_capture.backend(), exc)
+                    self._fehler_merken("Spracheingabe", f"Erkennung ging nicht: {exc}", reagieren=True, loggen=False)
                     self._event({"type": "voice", "state": "idle", "error": str(exc)})
                     return {"ok": False, "error": str(exc)}
                 self._event({"type": "voice", "state": "idle", "text": text})

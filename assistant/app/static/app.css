@@ -3340,3 +3340,6 @@ button.att-thumb:hover { border-color: var(--accent); box-shadow: var(--shadow-s
 .fb-public { display: grid; gap: 8px; }
 .fb-check { display: flex; gap: 8px; align-items: flex-start; cursor: pointer; }
 .fb-check input { margin-top: 3px; }
+
+/* Fehlerkarte: "Nova fragen" */
+.card.error .card-ask { margin-top: 8px; }

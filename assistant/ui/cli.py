@@ -221,6 +221,7 @@ class CLI:
         self.tool_ctx = ToolContext(permissions=self.permissions, memory=self.memory)
         self.tool_ctx.extra["app_root"] = config.project_root
         self.tool_ctx.extra["ki_name"] = lambda: self.config.ki.name  # z.B. fuer Anrufe ("Hallo, hier ist ...")
+        self.tool_ctx.extra["fehler_liste"] = lambda: list(self.__dict__.get("_fehler", []))  # Werkzeug app_fehler
         self._afk_pending: dict | None = None        # AFK-Modus vorgemerkt (Werkzeug abwesenheit)
         self._afk_return: tuple[float, str] | None = None  # (Beginn, Bericht) fuer die naechste Nachricht
         self.tool_ctx.extra["afk_start"] = self._afk_request

@@ -12,7 +12,7 @@ koennen. Der Server spricht nur mit der eigenen Oberflaeche:
                                    e = erstellt (<Arbeitsordner>/bilder), s = Spielbericht
                                    (<Arbeitsordner>/spiele/<Datum>) - nur PNG/JPEG/GIF/WebP
   POST /api/send (Text + Bilder, Warteschlange, interrupt), /api/queue, /api/afk, /api/stop,
-       /api/answer, /api/voice, /api/toggle, /api/profile, /api/memory, /api/skills, /api/jarvis, /api/tutorial,
+       /api/answer, /api/voice, /api/toggle, /api/profile, /api/memory, /api/skills, /api/fehler, /api/jarvis, /api/tutorial,
        /api/setup, /api/modell, /api/stimme, /api/update, /api/feedback, /api/feedback/spaeter,
        /api/feedback/gezeigt, /api/bilder/einstellen,
        /api/ollama/laden, /api/ollama/abbrechen, /api/ollama/adresse, /api/ollama/starten,
@@ -340,6 +340,8 @@ class AppServer:
                     return self._json(ctl.memory_action(body))
                 if url.path == "/api/skills":
                     return self._json(ctl.skills_action(body))
+                if url.path == "/api/fehler":
+                    return self._json(ctl.fehler_melden(body))
                 if url.path == "/api/jarvis":
                     return self._json(ctl.jarvis(str(body.get("action", "")), str(body.get("tts", "client")),
                                                  body.get("turn"), body.get("seq"), bool(body.get("progress"))))
