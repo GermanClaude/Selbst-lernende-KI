@@ -129,3 +129,26 @@ def test_werkzeug_kostenbremse(tmp_path, eingerichtet):
         A.heute_zaehlen(tmp_path)
     out, _ = build_registry().execute(_ctx(tmp_path, away=True), "anrufen", {"anliegen": "x"})
     assert "Kostenbremse" in out and eingerichtet.aufrufe == []
+
+
+# ------------------------------------------------------------------ Vorstellungs-Skript (Persona)
+def test_standard_skript_stellt_nova_vor_und_ist_ehrlich():
+    task = A.anruf_body("+491711234567", "Download fertig - entpacken?", "Nova")["task"]
+    assert "Du bist Nova" in task and "{name}" not in task and "{anliegen}" not in task
+    assert "nie als Mensch" in task                       # ehrlich: KI gibt sich nicht als Mensch aus
+    assert "Passwoerter" in task                          # keine Geheimnisse am Telefon
+    assert task.rstrip().endswith("Download fertig - entpacken?")
+    assert len(task) < 2000                               # Bland empfiehlt kurze Auftraege
+
+
+def test_eigenes_skript_aus_der_datei(tmp_path):
+    assert A.persona_text(tmp_path) == A.PERSONA_STANDARD
+    A.persona_pfad(tmp_path).parent.mkdir(parents=True)
+    A.persona_pfad(tmp_path).write_text("Du bist {name} vom Schreibtisch. Thema: {anliegen}", encoding="utf-8")
+    task = A.anruf_body("+491711234567", "Pizza bestellt?", "Aria", persona=A.persona_text(tmp_path))["task"]
+    assert task == "Du bist Aria vom Schreibtisch. Thema: Pizza bestellt?"
+
+
+def test_skript_ohne_platzhalter_bekommt_das_anliegen_angehaengt():
+    task = A.persona_fuellen("Sei nett. {nicht ersetzen}", "Nova", "Ruf zurueck")
+    assert "{nicht ersetzen}" in task and task.endswith("Ruf zurueck")

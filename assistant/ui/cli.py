@@ -27,7 +27,7 @@ Sonderbefehle (mit '/' beginnen):
   /werte bearbeiten   - deine Regeln fuer die KI im Editor oeffnen
   /neu                - neues Gespraech (Charakter & Profil frisch geladen)
   /sprachmodus        - einfach reden, live (frueher „Jarvis-Modus"; Strg+C = zurueck)
-  /anruf [schluessel <KEY>|nummer <Nr>|minuten <n>|test] - Nova ruft dich an (Bland AI), nur deine Nummer
+  /anruf [schluessel <KEY>|nummer <Nr>|minuten <n>|persona|test] - Nova ruft dich an (Bland AI), nur deine Nummer
   /geraete [smarthome <URL> <Token>|ssh <name> <user@host>|esp <name> <http://...>|weg <name>] - Hardware
   /handysteuerung [koppeln <Port> <Code>|verbinden <Port>] - das ganze Handy per ADB steuern (Termux)
   /handy [token <T>|neu|aus] - Fernzugriff per Telegram: Nova vom Handy steuern (ohne Server;
@@ -1134,6 +1134,17 @@ class CLI:
             speichern("ANRUF_MAX_MINUTEN", str(minuten))
             print(_c(f"Ein Anruf dauert jetzt hoechstens {minuten} Min.", GREEN))
             return
+        if sub == "persona":
+            pfad = anruf_mod.persona_pfad(root)
+            if not pfad.exists():
+                pfad.parent.mkdir(parents=True, exist_ok=True)
+                pfad.write_text(anruf_mod.PERSONA_STANDARD, encoding="utf-8")
+                print(_c(f"Vorstellungs-Skript angelegt: {pfad}", GREEN))
+            else:
+                print(_c(f"Dein Vorstellungs-Skript: {pfad}", GREEN))
+            print(_c("Bearbeite es mit einem Texteditor. {name} = Name der KI, {anliegen} = warum sie anruft. "
+                     "Loeschst du die Datei, gilt wieder das Standard-Skript.", GREY))
+            return
         e = einstellungen()
         if sub == "test":
             if not e["key"] or not e["nummer"]:
@@ -1145,7 +1156,8 @@ class CLI:
             try:
                 call_id = anruf_mod.Bland(e["key"]).anrufen(
                     e["nummer"], "Das ist nur ein Testanruf, um zu pruefen, ob Anrufe funktionieren. Frag kurz, "
-                    "ob man dich gut versteht, und verabschiede dich dann.", self.config.ki.name, 2, e["stimme"])
+                    "ob man dich gut versteht, und verabschiede dich dann.", self.config.ki.name, 2, e["stimme"],
+                    anruf_mod.persona_text(root))
             except anruf_mod.AnrufFehler as exc:
                 print(_c(f"Testanruf ging nicht: {exc}", YELLOW))
                 return

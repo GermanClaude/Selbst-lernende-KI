@@ -86,6 +86,7 @@ COMMANDS = [
     ("/handysteuerung", "Das ganze Handy per ADB steuern - koppeln und verbinden"),
     ("/anruf", "Nova ruft dich an (Bland AI) - Einrichtung und Stand"),
     ("/anruf test", "Testanruf auf dein Handy"),
+    ("/anruf persona", "Vorstellungs-Skript der Telefon-KI anpassen"),
     ("/handy", "Fernzugriff per Telegram: Nova vom Handy steuern (ohne Server)"),
     ("/handy token", "Bot-Token von @BotFather setzen (einmalig)"),
     ("/handy aus", "Handy-Fernzugriff beenden"),

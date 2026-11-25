@@ -79,17 +79,66 @@ def _urllib_transport(key: str, method: str, pfad: str, body: dict | None, timeo
         raise AnrufFehler("Bland hat etwas Unverstaendliches geschickt.") from exc
 
 
+# Vorstellungs-Skript fuer die Telefon-KI: wer sie ist, wie sie sich vorstellt, wie sie spricht.
+# {name} = Name der KI, {anliegen} = warum sie anruft. Eigene Fassung: config/anruf_persona.txt (/anruf persona).
+PERSONA_STANDARD = """# Wer du bist
+Du bist {name}, die persoenliche KI deines Menschen. Du laeufst auf seinem PC (und seinem Handy), kennst
+ihn aus euren Gespraechen und hilfst ihm im Alltag: Du arbeitest Aufgaben ab, behaeltst Dinge im Blick und
+meldest dich, wenn etwas wichtig ist. Jetzt rufst du ihn an.
+
+# Wie du dich vorstellst
+- Du hast dich schon mit "Hallo, hier ist {name}, deine KI vom PC." gemeldet.
+- Fragt er, wer du bist: "Ich bin {name}, deine KI. Ich laufe auf deinem PC und rufe an, weil ..."
+- Du bist eine KI und sagst das offen, wenn jemand fragt. Du gibst dich nie als Mensch aus.
+
+# Wie du sprichst
+- Deutsch, du-Form, freundlich und natuerlich, kurze Saetze (hoechstens zwei am Stueck).
+- Sag gleich, warum du anrufst. Hoer zu und frag nach, wenn etwas unklar ist.
+- Erfinde nichts. Weisst du etwas nicht, sag: "Das weiss ich gerade nicht, ich schau am PC nach."
+- Nenne am Telefon keine Passwoerter, Codes oder privaten Daten und frag auch nicht danach.
+
+# Wenn jemand anderes rangeht
+Sag freundlich, dass du {name} bist, die KI deines Menschen, und bitte darum, ihm Bescheid zu geben.
+Erzaehl dann nichts vom Anliegen.
+
+# Zum Schluss
+Fass kurz zusammen, was er entschieden hat ("Alles klar, ich kuemmere mich drum."), verabschiede dich mit
+"Bis dann!" und leg auf.
+
+# Darum rufst du an
+{anliegen}
+"""
+
+
+def persona_pfad(root) -> Path:
+    return Path(root) / "config" / "anruf_persona.txt"
+
+
+def persona_text(root=None) -> str:
+    """Das Vorstellungs-Skript: die eigene Fassung (falls angelegt), sonst das Standard-Skript."""
+    if root is not None:
+        try:
+            eigen = persona_pfad(root).read_text(encoding="utf-8").strip()
+            if eigen:
+                return eigen[:2500]
+        except OSError:
+            pass
+    return PERSONA_STANDARD
+
+
+def persona_fuellen(vorlage: str, name: str, anliegen: str) -> str:
+    """Setzt {name} und {anliegen} ein (andere geschweifte Klammern bleiben, wie sie sind)."""
+    text = (vorlage or PERSONA_STANDARD).replace("{name}", name or "Nova")
+    if "{anliegen}" in text:
+        return text.replace("{anliegen}", anliegen)
+    return text.rstrip() + "\n\n# Darum rufst du an\n" + anliegen
+
+
 def anruf_body(nummer: str, anliegen: str, name: str = "Nova", max_minuten: int = STANDARD_MINUTEN,
-               stimme: str = "") -> dict:
+               stimme: str = "", persona: str | None = None) -> dict:
     """Der Auftrag an Bland (nur Felder aus der Bland-Doku - unbekannte lehnt Bland ab)."""
     anliegen = (anliegen or "").strip()[:1500]
-    task = (
-        f"Du bist {name}, der persoenliche KI-Assistent der Person, die du anrufst - du arbeitest auf "
-        "ihrem PC fuer sie. Sprich Deutsch, freundlich und kurz, und duze sie. Sag gleich, worum es geht, "
-        "beantworte Rueckfragen und frag nach, was sie entscheidet oder moechte. Merk dir ihre Antwort "
-        "genau. Erfinde nichts dazu. Wenn alles geklaert ist, verabschiede dich und leg auf.\n\n"
-        f"Darum rufst du an: {anliegen}"
-    )
+    task = persona_fuellen(persona or PERSONA_STANDARD, name, anliegen)[:4000]
     body = {
         "phone_number": nummer,
         "task": task,
@@ -113,9 +162,10 @@ class Bland:
     transport: Callable[..., dict] = _urllib_transport
 
     def anrufen(self, nummer: str, anliegen: str, name: str = "Nova", max_minuten: int = STANDARD_MINUTEN,
-                stimme: str = "") -> str:
+                stimme: str = "", persona: str | None = None) -> str:
         """Startet den Anruf, gibt die call_id zurueck."""
-        r = self.transport(self.key, "POST", "/calls", anruf_body(nummer, anliegen, name, max_minuten, stimme), 30.0)
+        body = anruf_body(nummer, anliegen, name, max_minuten, stimme, persona)
+        r = self.transport(self.key, "POST", "/calls", body, 30.0)
         if r.get("status") != "success" or not r.get("call_id"):
             raise AnrufFehler(f"Bland hat den Anruf nicht angenommen: {str(r.get('message') or r)[:300]}")
         return str(r["call_id"])

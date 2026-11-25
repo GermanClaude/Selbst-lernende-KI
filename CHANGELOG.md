@@ -4,6 +4,17 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.35.1 – 2026-11-25
+
+**Nova stellt sich am Telefon richtig vor**
+- Bei Anrufen (Bland AI) weiß die Telefon-KI jetzt genau, wer sie ist: Sie meldet sich als **Nova, deine
+  KI vom PC**, erklärt auf Nachfrage, was sie ist, und sagt offen, dass sie eine KI ist – sie gibt sich nie
+  als Mensch aus. Am Telefon nennt sie keine Passwörter oder privaten Daten. Geht jemand anderes ran,
+  bittet sie nur darum, dir Bescheid zu geben, ohne Details.
+- Mit `/anruf persona` bekommst du das Vorstellungs-Skript als Datei zum Anpassen
+  (`config/anruf_persona.txt`; `{name}` = Name der KI, `{anliegen}` = warum sie anruft). Updates
+  überschreiben deine Fassung nicht.
+
 ## 0.35.0 – 2026-11-25
 
 **Nova auf dem Handy (Android)**

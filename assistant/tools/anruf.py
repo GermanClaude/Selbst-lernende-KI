@@ -58,7 +58,8 @@ class AnrufTool(Tool):
         name = ctx.extra.get("ki_name", lambda: "Nova")()
         bland = anruf_mod.Bland(e["key"])
         try:
-            call_id = bland.anrufen(e["nummer"], anliegen, name, e["minuten"], e["stimme"])
+            call_id = bland.anrufen(e["nummer"], anliegen, name, e["minuten"], e["stimme"],
+                                    anruf_mod.persona_text(root))
         except anruf_mod.AnrufFehler as exc:
             return f"Anruf ging nicht: {exc}"
         if root is not None:
