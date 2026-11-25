@@ -1,4 +1,5 @@
 """Spracheingabe: welche Erkennung im Modus "auto" genommen wird (Regression 0.27.1 -> 0.32.1)."""
+import pytest
 from types import SimpleNamespace
 
 from assistant import voice
@@ -33,3 +34,23 @@ def test_nichts_da_meldet_problem(monkeypatch):
     _pakete(monkeypatch)
     cap = _cap()
     assert cap.backend() is None and "sounddevice" in cap.problem()
+
+
+def test_whisper_bekommt_die_aufnahme_direkt_ohne_pyav():
+    # Regression: "open() got an unexpected keyword argument 'metadata_errors'" - faster-whisper las eine
+    # WAV-Datei ueber PyAV, und neuere PyAV-Versionen kennen das Argument nicht mehr. Jetzt: Array statt Datei.
+    np = pytest.importorskip("numpy")
+    gesehen = {}
+
+    class FakeWhisper:
+        def transcribe(self, audio, **kw):
+            gesehen["audio"] = audio
+            return [SimpleNamespace(text=" Hallo Nova ")], None
+
+    cap = _cap("whisper")
+    cap._whisper = FakeWhisper()
+    pcm = np.array([0, 16384, -32768, 32767], dtype=np.int16).tobytes()
+    assert cap._transcribe_whisper(pcm) == "Hallo Nova"
+    a = gesehen["audio"]
+    assert isinstance(a, np.ndarray) and a.dtype == np.float32
+    assert a.tolist() == [0.0, 0.5, -1.0, 32767 / 32768]

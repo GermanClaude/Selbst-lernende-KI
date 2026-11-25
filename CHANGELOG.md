@@ -4,6 +4,16 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.35.2 – 2026-11-25
+
+**Fehler „open() got an unexpected keyword argument 'metadata_errors'“ behoben**
+- Diese Meldung kam beim Sprechen (und beim Mitschnitt), wenn die lokale Whisper-Erkennung lief: Sie hat
+  die Aufnahme als Datei über die Bibliothek PyAV eingelesen, und deren neue Version kennt eine alte
+  Einstellung nicht mehr. Jetzt bekommt Whisper die Aufnahme direkt – PyAV wird dafür gar nicht mehr
+  gebraucht.
+- Zusammen mit 0.32.1 (Spracheingabe nimmt wieder die schnelle Google-Erkennung) sollte das Reden wieder
+  ganz normal klappen.
+
 ## 0.35.1 – 2026-11-25
 
 **Nova stellt sich am Telefon richtig vor**

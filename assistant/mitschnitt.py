@@ -382,32 +382,26 @@ class Mitschnitt:
         return sd.RawInputStream(samplerate=_SAMPLE_RATE, channels=1, dtype="int16", callback=callback)
 
     def _chunk_verarbeiten(self, pcm: bytes) -> None:
-        import tempfile
-        import wave
         try:
-            with tempfile.TemporaryDirectory() as tmp:
-                pfad = Path(tmp) / "chunk.wav"
-                with wave.open(str(pfad), "wb") as w:
-                    w.setnchannels(1); w.setsampwidth(2); w.setframerate(_SAMPLE_RATE)
-                    w.writeframes(pcm)
-                from .geheimnisse import verschleiere
+            from .geheimnisse import verschleiere
+            from .voice import pcm_als_float
 
-                segs, _info = self._whisper.transcribe(str(pfad), language=self.sprache, vad_filter=True)
-                basis = time.time() - self.status.start - self.chunk_sekunden
-                f0 = _f0_schaetzen(pcm)
-                neu = []
-                for s in segs:
-                    # Passwoerter/Schluessel, die jemand laut vorliest, NICHT ins Transkript schreiben.
-                    t = verschleiere((s.text or "").strip())
-                    if t:
-                        neu.append(Segment(start=max(0.0, basis + s.start), ende=basis + s.end,
-                                           text=t, sprecher="Sprecher 1",
-                                           geschlecht=geschlecht_aus_tonhoehe(f0)))
-                if neu:
-                    with self._lock:
-                        self.segmente.extend(neu)
-                        self.status.segmente = len(self.segmente)
-                        self.status.letzte = neu[-1].text[:200]
-                        self._datei_schreiben()
+            segs, _info = self._whisper.transcribe(pcm_als_float(pcm), language=self.sprache, vad_filter=True)
+            basis = time.time() - self.status.start - self.chunk_sekunden
+            f0 = _f0_schaetzen(pcm)
+            neu = []
+            for s in segs:
+                # Passwoerter/Schluessel, die jemand laut vorliest, NICHT ins Transkript schreiben.
+                t = verschleiere((s.text or "").strip())
+                if t:
+                    neu.append(Segment(start=max(0.0, basis + s.start), ende=basis + s.end,
+                                       text=t, sprecher="Sprecher 1",
+                                       geschlecht=geschlecht_aus_tonhoehe(f0)))
+            if neu:
+                with self._lock:
+                    self.segmente.extend(neu)
+                    self.status.segmente = len(self.segmente)
+                    self.status.letzte = neu[-1].text[:200]
+                    self._datei_schreiben()
         except Exception as exc:  # noqa: BLE001 - ein kaputtes Haeppchen darf die Aufnahme nicht beenden
-            logger.warning("Chunk nicht transkribiert: %s", type(exc).__name__)
+            logger.warning("Chunk nicht transkribiert: %s: %s", type(exc).__name__, exc)

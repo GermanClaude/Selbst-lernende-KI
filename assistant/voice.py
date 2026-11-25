@@ -98,6 +98,15 @@ class VoiceInput:
 # ---------------------------------------------------------------------------
 VOICE_PACKAGES = ["sounddevice", "SpeechRecognition"]
 _SAMPLE_RATE = 16_000
+
+
+def pcm_als_float(pcm: bytes):
+    """16-Bit-Aufnahme (Mono, 16 kHz) -> float32-Array (-1..1) fuer faster-whisper. So bekommt Whisper die
+    Aufnahme direkt und braucht kein PyAV zum Einlesen einer Datei - neuere PyAV-Versionen kennen das von
+    faster-whisper genutzte 'metadata_errors' nicht mehr ("open() got an unexpected keyword argument")."""
+    import numpy as np
+
+    return np.frombuffer(pcm[: len(pcm) - len(pcm) % 2], dtype=np.int16).astype(np.float32) / 32768.0
 _CHUNK_SECONDS = 30  # Google nimmt nur kurze Stuecke - laengere Aufnahmen werden geteilt
 
 
@@ -233,26 +242,15 @@ class VoiceCapture:
         raise VoiceError(self.problem() or "Keine Spracherkennung verfuegbar.")
 
     def _transcribe_whisper(self, pcm: bytes) -> str:
-        import tempfile
-        import wave
-        from pathlib import Path
-
         if self._whisper is None:
             from faster_whisper import WhisperModel  # type: ignore
 
             # Beim allerersten Mal wird das Modell heruntergeladen (einige 100 MB).
             self._whisper = WhisperModel(self.settings.whisper_modell or "small", device="cpu", compute_type="int8")
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "aufnahme.wav"
-            with wave.open(str(path), "wb") as wav:
-                wav.setnchannels(1)
-                wav.setsampwidth(2)
-                wav.setframerate(_SAMPLE_RATE)
-                wav.writeframes(pcm)
-            segments, _info = self._whisper.transcribe(
-                str(path), language=self.settings.sprache or "de", vad_filter=True
-            )
-            return " ".join(s.text.strip() for s in segments).strip()
+        segments, _info = self._whisper.transcribe(
+            pcm_als_float(pcm), language=self.settings.sprache or "de", vad_filter=True
+        )
+        return " ".join(s.text.strip() for s in segments).strip()
 
     def _transcribe_google(self, pcm: bytes) -> str:
         import speech_recognition as sr
