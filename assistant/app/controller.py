@@ -88,6 +88,8 @@ COMMANDS = [
     ("/anruf test", "Testanruf auf dein Handy"),
     ("/anruf persona", "Vorstellungs-Skript der Telefon-KI anpassen"),
     ("/handy", "Fernzugriff per Telegram: Nova vom Handy steuern (ohne Server)"),
+    ("/handy auto an", "Fernzugriff automatisch mit der App starten"),
+    ("/telegram konto", "Dein eigenes Telegram-Konto verbinden - Nova liest deine Chats auf Wunsch"),
     ("/handy token", "Bot-Token von @BotFather setzen (einmalig)"),
     ("/handy aus", "Handy-Fernzugriff beenden"),
     ("/rechtliches", "Nutzungsbedingungen & Haftungsausschluss"),
@@ -2330,7 +2332,12 @@ class AppController(CLI):
         self._start_update_watch()
         self._start_feedback_watch()  # Nutzungszeit zaehlen, Feedback-Ausgang nachsenden
         # Nachrichten vom Handy, waehrend Nova aus war: abholen und nachfragen (im Hintergrund - Netz)
-        threading.Thread(target=self._handy_beim_start, name="handy-rueckstand", daemon=True).start()
+        # Fernzugriff automatisch (/handy auto an) - der holt Liegengebliebenes selbst ab und fragt nach.
+        if (os.environ.get("TELEGRAM_AUTOSTART") == "1" and os.environ.get("TELEGRAM_BOT_TOKEN")
+                and self._handy_chat_id() is not None):
+            threading.Thread(target=lambda: self._handy_befehl([]), name="handy-autostart", daemon=True).start()
+        else:
+            threading.Thread(target=self._handy_beim_start, name="handy-rueckstand", daemon=True).start()
         try:
             self._sehen_beim_start()
         except Exception as exc:  # noqa: BLE001
@@ -2390,11 +2397,20 @@ class AppController(CLI):
             logger.warning("Beim Beenden: %s", exc)
 
 
+# Befehle, deren Angaben geheim sind - im Verlauf nur verdeckt anzeigen (Code, Passwort, Tokens).
+_GEHEIME_BEFEHLE = re.compile(
+    r"^(/telegram\s+konto\s+(?:passwort|code|zugang)|/handy\s+token|/telegram\s+token|/anruf\s+schluessel"
+    r"|/geraete\s+smarthome\s+\S+)\s+\S.*$", re.IGNORECASE | re.DOTALL)
+
+
 def _mask_key(text: str) -> tuple[str, str | None]:
     """Eingefuegter API-Schluessel: einrichten statt an die KI schicken; angezeigt nur gekuerzt.
     -> (Text fuer die Verarbeitung, Anzeige-Text oder None)."""
     from ..schluessel import find_key, mask
 
+    geheim = _GEHEIME_BEFEHLE.match(text or "")
+    if geheim:
+        return text, geheim.group(1) + " \u2022\u2022\u2022\u2022"
     key = find_key(text)
     if key and not text.startswith("/"):
         return f"/schluessel {key}", f"\U0001F511 Schl\u00fcssel {mask(key)}"

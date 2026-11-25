@@ -4,6 +4,22 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.36.0 – 2026-11-25
+
+**Nova liest Telegram – deinen Bot und auf Wunsch auch deine eigenen Chats**
+- **Nachrichten an deinen Nova-Bot:** Nova kann jetzt jederzeit im normalen Chat nachsehen, was du dem Bot
+  vom Handy geschrieben hast („Was habe ich dir auf Telegram geschrieben?“) – und dir auf Telegram schreiben
+  („Schick mir das aufs Handy“). Sie schreibt dabei nur an dich, an niemanden sonst.
+- **Fernzugriff automatisch:** Mit `/handy auto an` startet der Handy-Fernzugriff ab jetzt immer mit der
+  App – Nova antwortet dann auf Telegram, sobald der PC läuft.
+- **Deine eigenen Chats (mit anderen Leuten):** Ein Bot kann die grundsätzlich nicht lesen – dafür verbindest
+  du einmal dein eigenes Telegram-Konto über die offizielle Telegram-API: `/telegram konto` zeigt die Schritte
+  (auf my.telegram.org eine „App“ anlegen, dann mit dem Code anmelden, den dir Telegram schickt). Danach z. B.
+  „Was hat mir Lisa geschrieben?“. Nova liest nur auf Wunsch, markiert nichts als gelesen und speichert nichts
+  von fremden Chats. **In deinem Namen schreibt sie nur, wenn du es bestätigst.** `/telegram konto abmelden`
+  trennt die Verbindung wieder.
+- Geheime Angaben in Befehlen (Anmelde-Code, Passwort, Tokens) erscheinen im Chatverlauf jetzt nur als „••••“.
+
 ## 0.35.2 – 2026-11-25
 
 **Fehler „open() got an unexpected keyword argument 'metadata_errors'“ behoben**

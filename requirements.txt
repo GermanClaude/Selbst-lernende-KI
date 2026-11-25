@@ -33,6 +33,7 @@ pywebview>=6.2 ; sys_platform == "win32"
 #                                         (oder im Chat "/sehen einrichten")
 #   Mitschnitt/Transkription (/transkript):  pip install sounddevice faster-whisper
 #   Hardware (/geraete): Arduino/ESP32 per USB  pip install pyserial   |   Bluetooth LE  pip install bleak
+#   Eigenes Telegram-Konto (/telegram konto):  pip install telethon
 #                                         (System-Audio braucht zusaetzlich numpy; mehrere
 #                                          Sprecher auseinanderhalten: pip install resemblyzer)
 #   Build zur .exe:                       pip install pyinstaller

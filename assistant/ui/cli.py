@@ -30,6 +30,8 @@ Sonderbefehle (mit '/' beginnen):
   /anruf [schluessel <KEY>|nummer <Nr>|minuten <n>|persona|test] - Nova ruft dich an (Bland AI), nur deine Nummer
   /geraete [smarthome <URL> <Token>|ssh <name> <user@host>|esp <name> <http://...>|weg <name>] - Hardware
   /handysteuerung [koppeln <Port> <Code>|verbinden <Port>] - das ganze Handy per ADB steuern (Termux)
+  /telegram konto [zugang|anmelden|code|passwort|abmelden] - dein eigenes Telegram-Konto (Chats lesen)
+  /handy auto an|aus  - Fernzugriff automatisch mit der App starten
   /handy [token <T>|neu|aus] - Fernzugriff per Telegram: Nova vom Handy steuern (ohne Server;
                        einmalig Bot bei @BotFather anlegen, Token mit "/handy token <T>" setzen)
   /tutorial           - Nova stellt sich vor und zeigt, was sie kann
@@ -224,6 +226,7 @@ class CLI:
         self.tool_ctx.extra["app_root"] = config.project_root
         self.tool_ctx.extra["ki_name"] = lambda: self.config.ki.name  # z.B. fuer Anrufe ("Hallo, hier ist ...")
         self.tool_ctx.extra["fehler_liste"] = lambda: list(self.__dict__.get("_fehler", []))  # Werkzeug app_fehler
+        self.tool_ctx.extra["handy_aktiv"] = self._handy_aktiv  # Werkzeug telegram: nichts wegschnappen
         self._afk_pending: dict | None = None        # AFK-Modus vorgemerkt (Werkzeug abwesenheit)
         self._afk_return: tuple[float, str] | None = None  # (Beginn, Bericht) fuer die naechste Nachricht
         self.tool_ctx.extra["afk_start"] = self._afk_request
@@ -933,6 +936,93 @@ class CLI:
 
         return bestaetige
 
+    def _handy_aktiv(self) -> bool:
+        """Laeuft der Fernzugriff gerade (Terminal-Schleife oder Hintergrund-Thread der App)?"""
+        th = self.__dict__.get("_handy_thread")
+        return bool(self.__dict__.get("_handy_relay_aktiv")) or (th is not None and th.is_alive())
+
+    def _handy_auto(self, args: list[str]) -> None:
+        """/handy auto an|aus: Fernzugriff beim Start der App automatisch einschalten."""
+        import os
+        from ..config import save_env_value
+
+        wert = (args[0].lower() if args else "")
+        if wert not in ("an", "aus", "ein", "on", "off"):
+            stand = "an" if os.environ.get("TELEGRAM_AUTOSTART") == "1" else "aus"
+            print(_c(f"Fernzugriff automatisch mit der App starten: {stand}. Aendern: /handy auto an | /handy auto aus",
+                     GREY))
+            return
+        an = wert in ("an", "ein", "on")
+        try:
+            save_env_value(self.config.project_root, "TELEGRAM_AUTOSTART", "1" if an else "0")
+        except OSError as exc:
+            print(_c(f"Nicht gespeichert ({exc}).", YELLOW))
+        os.environ["TELEGRAM_AUTOSTART"] = "1" if an else "0"
+        print(_c("Ab dem naechsten Start der App laeuft der Handy-Fernzugriff automatisch mit." if an else
+                 "Der Fernzugriff startet nicht mehr automatisch.", GREEN))
+
+    def _telegram_konto_befehl(self, cmd: str) -> None:
+        """/telegram konto [zugang <id> <hash> | anmelden <Nummer> | code <Code> | passwort <PW> | abmelden]"""
+        import os
+        from .. import telegram_konto as tk
+        from ..config import save_env_value
+
+        teile = cmd.split(None, 3)  # ["/telegram", "konto", "<unterbefehl>", "<rest - darf Leerzeichen haben>"]
+        sub = teile[2].lower() if len(teile) > 2 else ""
+        rest = teile[3].strip() if len(teile) > 3 else ""
+        k = tk.konto(self.config.project_root)
+        try:
+            if sub == "zugang" and len(rest.split()) == 2:
+                api_id, api_hash = rest.split()
+                if not api_id.isdigit():
+                    print(_c("api_id ist eine Zahl - so: /telegram konto zugang 1234567 abcdef0123...", YELLOW))
+                    return
+                for name, wert in (("TG_API_ID", api_id), ("TG_API_HASH", api_hash)):
+                    save_env_value(self.config.project_root, name, wert)
+                    os.environ[name] = wert
+                print(_c("Gespeichert (nur lokal in der .env). Jetzt: /telegram konto anmelden <deine Nummer>", GREEN))
+                return
+            if sub == "anmelden" and rest:
+                from ..anruf import normalisiere_nummer
+
+                nummer = normalisiere_nummer(rest)
+                if not nummer:
+                    print(_c("Das sieht nicht nach einer Telefonnummer aus (z.B. 0171 1234567).", YELLOW))
+                    return
+                problem = k.problem()
+                if problem and "nicht angemeldet" not in problem:
+                    print(_c(problem, YELLOW))
+                    return
+                print(_c(k.code_anfordern(nummer), GREEN))
+                print(_c("Wichtig: Den Code nur hier eintippen - NICHT per Telegram weiterschicken, sonst sperrt "
+                         "Telegram ihn.", GREY))
+                return
+            if sub == "code" and rest:
+                print(_c(k.code_eingeben(rest), GREEN))
+                return
+            if sub == "passwort" and rest:
+                print(_c(k.passwort_eingeben(rest), GREEN))
+                return
+            if sub in ("abmelden", "trennen"):
+                print(_c(k.abmelden(), GREEN))
+                return
+        except tk.KontoFehler as exc:
+            print(_c(str(exc), YELLOW))
+            return
+        except Exception as exc:  # noqa: BLE001 - z.B. Telegram-Sperre (FloodWait), kein Netz
+            print(_c(f"Telegram-Konto: {type(exc).__name__}: {exc}", YELLOW))
+            return
+        api_id, api_hash = tk._zugang()
+        print(_c("\nDein eigenes Telegram-Konto (Chats mit anderen) - so verbindest du es einmalig:", BOLD))
+        print(f"  Bibliothek telethon: {'ok' if tk.telethon_da() else 'fehlt (pip install telethon)'}   "
+              f"api_id/api_hash: {'gesetzt' if api_id and api_hash else 'fehlen'}   "
+              f"angemeldet: {'ja' if k.angemeldet() else 'nein'}")
+        print(_c("  1) https://my.telegram.org -> API development tools -> App anlegen (Name egal)\n"
+                 "  2) /telegram konto zugang <api_id> <api_hash>\n"
+                 "  3) /telegram konto anmelden <deine Nummer>   4) /telegram konto code <Code>\n"
+                 "     (ggf. /telegram konto passwort <Passwort>)   Trennen: /telegram konto abmelden\n"
+                 "  Danach z.B.: 'Was hat mir Lisa auf Telegram geschrieben?'", GREY))
+
     # -- Handy-Nachrichten, die ankamen, waehrend Nova aus war ----------------------
     def _handy_rueckstand_sichern(self, relay=None) -> int:
         """Holt Nachrichten ab, die noch bei Telegram liegen (geschickt, waehrend Nova aus war), und
@@ -1088,11 +1178,13 @@ class CLI:
         alt = self.permissions.confirm_fn
         self.permissions.confirm_fn = self._handy_bestaetigung(relay)
         print(_c("[Fernzugriff aktiv - ich hoere auf dein Handy. Strg+C = zurueck zum PC.]\n", BOLD))
+        self._handy_relay_aktiv = True
         try:
             relais_schleife(relay, beantworte, threading.Event(), melde=melde)
         except KeyboardInterrupt:
             pass
         finally:
+            self._handy_relay_aktiv = False
             self.permissions.confirm_fn = alt
         print(_c("\n[Zurueck am PC.]", GREY))
 
@@ -2359,7 +2451,13 @@ class CLI:
         elif base in ("/sprachmodus", "/sprechen", "/jarvis"):
             self._jarvis_terminal()
         elif base in ("/handy", "/telegram", "/fern", "/fernzugriff"):
-            self._handy_befehl(cmd.split()[1:])
+            args = cmd.split()[1:]
+            if args and args[0].lower() == "konto":
+                self._telegram_konto_befehl(cmd)
+            elif args and args[0].lower() == "auto":
+                self._handy_auto(args[1:])
+            else:
+                self._handy_befehl(args)
         elif base in ("/arbeitsordner", "/workspace", "/ordner"):
             self._arbeitsordner_command(cmd.split()[1:])
         elif base in ("/anruf", "/anrufen", "/telefon", "/bland"):

@@ -585,6 +585,21 @@ Live-Sehen, Spielmodus).
 Lesen geht direkt, Schalten/Senden/Schreiben fragt vorher nach; SSH-Befehle sind wie Shell-Befehle
 eingestuft. HTTP nur ins eigene Netz.
 
+## Telegram: dein Bot und deine eigenen Chats
+
+- **Dein Nova-Bot:** Nova liest jederzeit, was du dem Bot vom Handy geschrieben hast, und kann dir dort
+  schreiben (nur an dich). `/handy auto an` startet den Fernzugriff immer mit der App.
+- **Deine eigenen Chats** (mit anderen Leuten) – einmalig verbinden, über die offizielle Telegram-API:
+  1. https://my.telegram.org → *API development tools* → App anlegen → **api_id** und **api_hash**
+  2. `/telegram konto zugang <api_id> <api_hash>`
+  3. `/telegram konto anmelden 0171 1234567` → Telegram schickt dir einen Code
+  4. `/telegram konto code <Code>` (den Code nur hier eintippen, nicht per Telegram weiterleiten)
+     – ggf. `/telegram konto passwort <Passwort>` bei Zweistufiger Bestätigung
+
+  Danach: „Was hat mir Lisa geschrieben?“. Nova liest nur auf Wunsch, markiert nichts als gelesen und
+  speichert nichts. In deinem Namen schreibt sie nur mit deiner Bestätigung. Die Anmeldung bleibt nur auf
+  deinem PC (`data/telegram_konto.session`); `/telegram konto abmelden` löscht sie.
+
 ## Anrufe: Nova ruft dich an (Bland AI)
 
 Wenn es wichtig ist, ruft Nova dich auf dem Handy an – eine KI-Stimme spricht Deutsch, sagt worum es
@@ -676,6 +691,8 @@ stoppt die Steuerung sofort.
 | `/sprachmodus` | Sprachmodus: einfach reden, live (zurück: „Chat-Modus“ sagen) |
 | `/handysteuerung [koppeln <Port> <Code>\|verbinden <Port>]` | Das ganze Handy per ADB steuern (Nova in Termux) |
 | `/geraete [smarthome <URL> <Token>\|ssh <name> <user@host>\|esp <name> <URL>\|weg <name>]` | Hardware: Smart Home, Arduino/ESP32, Bluetooth, SSH |
+| `/telegram konto [zugang\|anmelden\|code\|passwort\|abmelden]` | Dein eigenes Telegram-Konto verbinden (Chats lesen) |
+| `/handy auto an\|aus` | Fernzugriff automatisch mit der App starten |
 | `/anruf [schluessel <KEY>\|nummer <Nr>\|minuten <n>\|test]` | Nova ruft dich an (Bland AI) – nur deine Nummer |
 | `/handy [token <T>\|neu\|aus]` | Fernzugriff per Telegram: Nova vom Handy steuern (ohne Server) |
 | `/arbeitsordner [Pfad\|oeffnen\|zuruecksetzen]` | Arbeitsordner zeigen/wählen – dort legst du Dateien für Nova ab |

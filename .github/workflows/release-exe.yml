@@ -100,6 +100,7 @@ jobs:
         run: |
           pip install pyserial || echo "::warning::Hardware: pyserial liess sich nicht installieren"
           pip install bleak || echo "::warning::Hardware: bleak liess sich nicht installieren"
+          pip install telethon || echo "::warning::Telegram-Konto: telethon liess sich nicht installieren"
           python -c "import serial, bleak; print('Hardware bereit: ja')" || true
 
       - name: KI.exe und KI-App.exe bauen

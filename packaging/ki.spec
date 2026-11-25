@@ -121,7 +121,7 @@ added_files += trans_datas
 
 # Hardware (Arduino/ESP32 per USB: pyserial, Bluetooth LE: bleak) - nur, wenn beim Bauen installiert.
 hw_imports = []
-for _pkg in ("serial", "bleak"):
+for _pkg in ("serial", "bleak", "telethon"):
     try:
         from PyInstaller.utils.hooks import collect_all
 
