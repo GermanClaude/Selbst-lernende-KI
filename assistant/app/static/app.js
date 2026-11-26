@@ -1166,6 +1166,51 @@
     byId('favicon').href = 'data:image/svg+xml,' + encodeURIComponent(svg);
   }
 
+  let feierWeg = null;
+  function feierePremium(ev) {
+    const box = byId('celebrate');
+    if (!box) return;
+    const name = ev && ev.name ? String(ev.name) : 'Premium';
+    byId('cel-title').textContent = name + ' freigeschaltet!';
+    const list = byId('cel-list');
+    list.innerHTML = '';
+    for (const f of (ev && Array.isArray(ev.funktionen) ? ev.funktionen : [])) {
+      const li = document.createElement('li');
+      li.textContent = String(f);
+      list.appendChild(li);
+    }
+    box.hidden = false;
+    box.classList.add('show');
+    const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!reduce) konfetti(byId('cel-confetti'), 140);
+    clearTimeout(feierWeg);
+    feierWeg = setTimeout(schliesseFeier, 9000);
+  }
+  function schliesseFeier() {
+    const box = byId('celebrate');
+    if (!box) return;
+    box.classList.remove('show');
+    setTimeout(() => { box.hidden = true; const c = byId('cel-confetti'); if (c) c.innerHTML = ''; }, 500);
+  }
+  function konfetti(wrap, n) {
+    if (!wrap) return;
+    wrap.innerHTML = '';
+    const farben = ['#7c3aed', '#a855f7', '#f0c000', '#4f46e5', '#22c55e', '#ef4444', '#06b6d4', '#ec4899'];
+    const frag = document.createDocumentFragment();
+    for (let i = 0; i < n; i++) {
+      const s = document.createElement('i');
+      const x = Math.random() * 100;
+      const dur = 2.6 + Math.random() * 2.4;
+      const delay = Math.random() * 1.2;
+      const size = 6 + Math.random() * 8;
+      s.style.cssText = 'left:' + x + '%;width:' + size + 'px;height:' + (size * 0.5) + 'px;background:'
+        + farben[i % farben.length] + ';animation-duration:' + dur + 's;animation-delay:' + delay + 's;'
+        + '--rot:' + (Math.random() * 720 - 360) + 'deg;--sway:' + (Math.random() * 120 - 60) + 'px';
+      frag.appendChild(s);
+    }
+    wrap.appendChild(frag);
+  }
+
   function applyPremium(p) {
     // Premium aktiv -> edlere Optik (goldener Akzent + Abzeichen). Stufen: premium | max | dev.
     const stufe = p && typeof p === 'object' ? String(p.stufe || '') : '';
@@ -9346,6 +9391,9 @@
       case 'aufwachen': // Wachwort gehoert ("Hey Nova"): gleich zuhoeren (abschaltbar: /wachwort sprechen aus)
         if (ev.sprechen) startJarvis();
         break;
+      case 'premium_unlock': // Premium freigeschaltet: Vollbild-Feier mit Konfetti
+        feierePremium(ev);
+        break;
       case 'user':
         onUserEcho(ev);
         break;
@@ -9526,6 +9574,8 @@
   autosize();
   setBusy(false);
   setConnected(false);
+  { const b = byId('cel-ok'); if (b) b.addEventListener('click', schliesseFeier);
+    const cb = byId('celebrate'); if (cb) cb.addEventListener('click', (e) => { if (e.target === cb) schliesseFeier(); }); }
   renderSwitches();
   loadAppearance(false);
   connect();

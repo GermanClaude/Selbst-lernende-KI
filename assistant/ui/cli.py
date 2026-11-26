@@ -2951,7 +2951,9 @@ class CLI:
         print("Ich lade jetzt das Premium-Paket …")
         try:
             PM.paket_holen(root)
-            self._premium_laden()
+            PM.laden(root, self)
+            self._werkzeuge_geaendert()
+            self._premium_event(lizenz["stufe"])
             print("Premium ist aktiv. Viel Freude damit!")
         except PM.PremiumFehler as exc:
             print(_c(f"Der Code gilt, aber das Paket kam noch nicht ({exc}). Spaeter: /novaaiupdate laden", YELLOW))
@@ -2969,10 +2971,21 @@ class CLI:
             try:
                 if PM.stufe(root) or PM.lizenz(root).get("gesperrt"):
                     PM.laden(root, self)
+                    self._werkzeuge_geaendert()
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Premium laden: %s", exc)
 
         threading.Thread(target=im_hintergrund, name="premium", daemon=True).start()
+
+    def _werkzeuge_geaendert(self) -> None:
+        """Premium hat Werkzeuge dazugeschaltet: dem Gehirn Bescheid geben (Thinking-Bloecke/Prompt)."""
+        try:
+            self.brain.werkzeuge_geaendert()
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _premium_event(self, stufe: str) -> None:
+        """Im Terminal: nichts (die Glueckwunsch-Meldung reicht). Im Fenster: ueberschrieben -> Feier-Animation."""
 
     def _sandbox_tier(self):
         """Welche Sandbox-Stufe gilt: echtes Premium, sonst die Simulation, sonst None (kostenlos: 1)."""
@@ -3036,6 +3049,8 @@ class CLI:
             return
         if was == "test_an":
             st = PM.simulation_laden(self.config.project_root, self)
+            self._werkzeuge_geaendert()
+            self._premium_event(st)
             print(f"Simulation AN - {PM.STUFEN.get(st, 'Premium')} zum Testen freigeschaltet (2 Stunden). "
                   "Werkzeug 'premium_demo' zeigt, dass es laeuft. Wieder aus: nochmal /simulation novaai.13696.")
         else:

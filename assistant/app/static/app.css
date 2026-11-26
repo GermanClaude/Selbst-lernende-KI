@@ -3378,50 +3378,134 @@ body.in-sandbox::after {
   color: #2a2300; background: rgba(232, 184, 0, .85);
 }
 
-/* ===== Animierter Startbildschirm (Splash) ===== */
+/* ===== Animierter Startbildschirm (Splash) – Aurora + wirbelnde Sphaere + Orbits ===== */
 #splash {
-  position: fixed; inset: 0; z-index: 9999;
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px;
-  background:
-    radial-gradient(1200px 600px at 50% 18%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 60%),
-    var(--bg);
-  opacity: 1; transition: opacity .6s ease;
+  position: fixed; inset: 0; z-index: 9999; overflow: hidden;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px;
+  background: radial-gradient(1200px 700px at 50% 30%, #1a1430 0%, #0d0b18 55%, #07060d 100%);
+  opacity: 1; transition: opacity .7s ease;
 }
+:root:not([data-theme="dark"]) #splash { background: radial-gradient(1200px 700px at 50% 30%, #efeaff 0%, #e7e9f6 60%, #dfe2f0 100%); }
 #splash.gone { opacity: 0; pointer-events: none; }
-.splash-orb { position: relative; width: 132px; height: 132px; }
+
+/* wabernde Aurora-Wolken im Hintergrund */
+.splash-aurora { position: absolute; inset: -20%; filter: blur(60px); opacity: .55; }
+.splash-aurora i { position: absolute; width: 46vmax; height: 46vmax; border-radius: 50%; mix-blend-mode: screen; }
+.splash-aurora i:nth-child(1) { left: 6%; top: 8%; background: radial-gradient(circle, #7c3aed, transparent 60%); animation: auroraA 9s ease-in-out infinite; }
+.splash-aurora i:nth-child(2) { right: 4%; top: 18%; background: radial-gradient(circle, #4f46e5, transparent 60%); animation: auroraB 11s ease-in-out infinite; }
+.splash-aurora i:nth-child(3) { left: 30%; bottom: 2%; background: radial-gradient(circle, #a855f7, transparent 60%); animation: auroraC 13s ease-in-out infinite; }
+
+.splash-stage { position: relative; width: 190px; height: 190px; perspective: 700px; }
+.splash-orb { position: absolute; inset: 0; transform-style: preserve-3d; animation: orbFloat 6s ease-in-out infinite; }
+
+/* Leuchtkern mit wirbelndem Farbverlauf + Glanzlicht */
 .splash-core {
-  position: absolute; inset: 14px; border-radius: 50%;
-  background: radial-gradient(circle at 38% 34%, #ede9fe 0 7%, #a78bfa 24%, #7c3aed 58%, #4f46e5 100%);
-  box-shadow: 0 0 46px 6px color-mix(in srgb, #7c3aed 60%, transparent);
-  animation: splashPulse 2.1s ease-in-out infinite;
+  position: absolute; left: 50%; top: 50%; width: 104px; height: 104px; margin: -52px 0 0 -52px;
+  border-radius: 50%; overflow: hidden;
+  background:
+    radial-gradient(circle at 36% 30%, rgba(255,255,255,.95) 0 6%, rgba(237,233,254,.6) 12%, transparent 34%),
+    conic-gradient(from 0deg, #4f46e5, #7c3aed, #a855f7, #6366f1, #4f46e5);
+  box-shadow: 0 0 60px 10px rgba(124,58,237,.55), inset 0 0 30px rgba(0,0,0,.35);
+  animation: coreSpin 7s linear infinite, corePulse 2.4s ease-in-out infinite;
 }
-.splash-ring {
-  position: absolute; inset: 0; border-radius: 50%;
-  border: 2px solid color-mix(in srgb, #a78bfa 70%, transparent);
-  animation: splashRing 2.1s ease-out infinite;
+.splash-core em {
+  position: absolute; left: 20%; top: 14%; width: 34%; height: 26%; border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,255,255,.9), transparent 70%); filter: blur(2px);
 }
-.splash-ring.r2 { animation-delay: 1.05s; }
+/* Halos */
+.splash-halo { position: absolute; left: 50%; top: 50%; width: 120px; height: 120px; margin: -60px 0 0 -60px;
+  border-radius: 50%; border: 2px solid rgba(167,139,250,.55); animation: halo 2.6s ease-out infinite; }
+.splash-halo.h2 { animation-delay: 1.3s; }
+
+/* drei gekippte Umlaufbahnen mit je einem Lichtpunkt */
+.splash-orbit { position: absolute; left: 50%; top: 50%; width: 176px; height: 176px; margin: -88px 0 0 -88px;
+  border-radius: 50%; border: 1px solid rgba(160,140,255,.18); transform-style: preserve-3d; }
+.splash-orbit.o1 { transform: rotateX(72deg) rotateY(0deg); animation: spin 3.6s linear infinite; }
+.splash-orbit.o2 { transform: rotateX(66deg) rotateY(60deg); width: 150px; height: 150px; margin: -75px 0 0 -75px; animation: spin 2.8s linear infinite reverse; }
+.splash-orbit.o3 { transform: rotateX(60deg) rotateY(120deg); width: 200px; height: 200px; margin: -100px 0 0 -100px; animation: spin 4.6s linear infinite; }
+.splash-orbit b { position: absolute; left: 50%; top: -5px; width: 10px; height: 10px; margin-left: -5px; border-radius: 50%;
+  background: radial-gradient(circle, #fff, #a78bfa 60%, transparent 72%); box-shadow: 0 0 12px 3px rgba(167,139,250,.8); }
+
 .splash-name {
-  font-size: 30px; font-weight: 800; letter-spacing: .04em;
-  color: var(--text);
-  background: linear-gradient(90deg, #a78bfa, #7c3aed, #4f46e5, #a78bfa);
-  background-size: 300% 100%;
-  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  position: relative; z-index: 2; font-size: 32px; font-weight: 800; letter-spacing: .05em;
+  background: linear-gradient(90deg, #c4b5fd, #7c3aed, #818cf8, #c4b5fd); background-size: 300% 100%;
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: transparent;
   animation: splashShine 3s linear infinite;
 }
-.splash-sub { font-size: 14px; color: var(--muted, #8a8a99); }
+.splash-sub { position: relative; z-index: 2; font-size: 13.5px; color: #b7b2d6; letter-spacing: .02em; }
 .splash-dots i { opacity: .25; animation: splashDot 1.2s infinite; }
 .splash-dots i:nth-child(2) { animation-delay: .2s; }
 .splash-dots i:nth-child(3) { animation-delay: .4s; }
-/* Premium: der Startbildschirm schimmert golden */
-body.premium #splash .splash-core { box-shadow: 0 0 50px 8px rgba(232, 184, 0, .5); }
-body.premium #splash .splash-ring { border-color: rgba(232, 184, 0, .7); }
+/* schlanke, wandernde Ladeleiste */
+.splash-bar { position: relative; z-index: 2; width: 180px; height: 3px; border-radius: 3px; overflow: hidden; background: rgba(160,140,255,.16); }
+.splash-bar span { position: absolute; left: -40%; width: 40%; height: 100%; border-radius: 3px;
+  background: linear-gradient(90deg, transparent, #a78bfa, #7c3aed, transparent); animation: barSlide 1.4s ease-in-out infinite; }
 
-@keyframes splashPulse { 0%, 100% { transform: scale(.94); } 50% { transform: scale(1.06); } }
-@keyframes splashRing { 0% { transform: scale(.7); opacity: .9; } 100% { transform: scale(1.35); opacity: 0; } }
+/* Premium: alles in Gold */
+body.premium #splash .splash-core { box-shadow: 0 0 64px 12px rgba(232,184,0,.55), inset 0 0 30px rgba(0,0,0,.3);
+  background: radial-gradient(circle at 36% 30%, #fff 0 6%, rgba(255,245,200,.6) 12%, transparent 34%), conic-gradient(from 0deg, #b8860b, #e8b800, #ffe79a, #f0c000, #b8860b); }
+body.premium #splash .splash-halo { border-color: rgba(232,184,0,.6); }
+body.premium #splash .splash-orbit b { background: radial-gradient(circle, #fff, #f0c000 60%, transparent 72%); box-shadow: 0 0 12px 3px rgba(232,184,0,.8); }
+body.premium #splash .splash-name { background: linear-gradient(90deg, #ffe79a, #e8b800, #fff3c0, #ffe79a); background-size: 300% 100%; -webkit-background-clip: text; background-clip: text; }
+
+@keyframes orbFloat { 0%,100% { transform: translateY(-6px) rotateZ(0deg); } 50% { transform: translateY(6px) rotateZ(6deg); } }
+@keyframes coreSpin { to { transform: rotate(360deg); } }
+@keyframes corePulse { 0%,100% { filter: brightness(1); } 50% { filter: brightness(1.18); } }
+@keyframes spin { to { transform: rotateX(72deg) rotateZ(360deg); } }
+@keyframes halo { 0% { transform: scale(.7); opacity: .85; } 100% { transform: scale(1.5); opacity: 0; } }
 @keyframes splashShine { 0% { background-position: 0% 50%; } 100% { background-position: 300% 50%; } }
-@keyframes splashDot { 0%, 100% { opacity: .25; } 40% { opacity: 1; } }
+@keyframes splashDot { 0%,100% { opacity: .25; } 40% { opacity: 1; } }
+@keyframes barSlide { 0% { left: -45%; } 100% { left: 110%; } }
+@keyframes auroraA { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(8%,6%) scale(1.15); } }
+@keyframes auroraB { 0%,100% { transform: translate(0,0) scale(1.1); } 50% { transform: translate(-7%,4%) scale(.95); } }
+@keyframes auroraC { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(4%,-8%) scale(1.2); } }
+
 @media (prefers-reduced-motion: reduce) {
-  .splash-core, .splash-ring, .splash-name, .splash-dots i { animation: none; }
-  .splash-ring.r2 { display: none; }
+  #splash * { animation: none !important; }
+  .splash-orbit, .splash-halo.h2 { display: none; }
+  .splash-aurora { opacity: .3; }
+}
+
+/* ===== Premium-Feier: Vollbild-Glueckwunsch mit Konfetti ===== */
+#celebrate {
+  position: fixed; inset: 0; z-index: 10000; display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(900px 600px at 50% 40%, rgba(124,58,237,.28), rgba(10,8,20,.72) 70%);
+  opacity: 0; transition: opacity .35s ease; backdrop-filter: blur(3px);
+}
+#celebrate.show { opacity: 1; }
+.cel-card {
+  position: relative; z-index: 2; max-width: 440px; width: calc(100% - 48px);
+  text-align: center; padding: 30px 28px 26px; border-radius: 20px;
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  border: 1px solid color-mix(in srgb, #f0c000 40%, transparent);
+  box-shadow: 0 24px 70px rgba(0,0,0,.5), 0 0 0 1px rgba(255,255,255,.06), 0 0 60px rgba(240,192,0,.25);
+  transform: translateY(14px) scale(.96); animation: celIn .5s cubic-bezier(.2,1.3,.4,1) forwards;
+}
+.cel-burst { font-size: 54px; line-height: 1; animation: celPop 1.8s ease-in-out infinite; }
+.cel-title {
+  margin: 8px 0 4px; font-size: 24px; font-weight: 800;
+  background: linear-gradient(90deg,#ffe79a,#e8b800,#fff3c0,#ffe79a); background-size: 300% 100%;
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  animation: splashShine 3s linear infinite;
+}
+.cel-sub { margin: 0 0 14px; color: var(--muted, #9a96b5); font-size: 14px; }
+.cel-list { list-style: none; margin: 0 0 18px; padding: 0; text-align: left; display: inline-block; }
+.cel-list li { position: relative; padding: 5px 4px 5px 26px; font-size: 14.5px; color: var(--text); }
+.cel-list li::before { content: "✓"; position: absolute; left: 4px; color: #16a34a; font-weight: 800; }
+.cel-ok { background: linear-gradient(135deg,#e8b800,#b8860b); color: #3a2d00; font-weight: 700; border: 0;
+  padding: 11px 26px; border-radius: 12px; box-shadow: 0 2px 10px rgba(200,150,0,.4); }
+.cel-confetti { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 1; }
+.cel-confetti i {
+  position: absolute; top: -20px; border-radius: 2px; opacity: .95;
+  animation-name: confettiFall; animation-timing-function: cubic-bezier(.3,.2,.5,1); animation-iteration-count: 1;
+}
+@keyframes confettiFall {
+  0% { transform: translate(0,-10vh) rotate(0deg); opacity: 1; }
+  100% { transform: translate(var(--sway,0), 108vh) rotate(var(--rot,360deg)); opacity: .9; }
+}
+@keyframes celIn { to { transform: translateY(0) scale(1); } }
+@keyframes celPop { 0%,100% { transform: scale(1) rotate(-4deg); } 50% { transform: scale(1.15) rotate(4deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .cel-burst, .cel-title, .cel-card { animation: none; }
+  .cel-card { transform: none; }
 }

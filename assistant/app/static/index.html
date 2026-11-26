@@ -12,15 +12,22 @@
 </head>
 <body>
 
-<!-- Animierter Startbildschirm: pulsierende Sphaere, blendet aus, sobald die App bereit ist -->
+<!-- Animierter Startbildschirm: Aurora, wirbelnde Sphaere, umkreisende Lichtpunkte; blendet aus, wenn bereit -->
 <div id="splash" aria-hidden="true">
-  <div class="splash-orb">
-    <span class="splash-ring"></span>
-    <span class="splash-ring r2"></span>
-    <span class="splash-core"></span>
+  <div class="splash-aurora"><i></i><i></i><i></i></div>
+  <div class="splash-stage">
+    <div class="splash-orb">
+      <span class="splash-halo"></span>
+      <span class="splash-halo h2"></span>
+      <span class="splash-orbit o1"><b></b></span>
+      <span class="splash-orbit o2"><b></b></span>
+      <span class="splash-orbit o3"><b></b></span>
+      <span class="splash-core"><em></em></span>
+    </div>
   </div>
   <div class="splash-name" id="splash-name">Nova</div>
   <div class="splash-sub">wird gestartet<span class="splash-dots"><i>.</i><i>.</i><i>.</i></span></div>
+  <div class="splash-bar"><span></span></div>
 </div>
 
 <div class="app" id="app">
@@ -32,6 +39,7 @@
       <div class="sb-id">
         <div class="sb-name" id="sb-name">KI</div>
         <div class="sb-meaning" id="sb-meaning" hidden></div>
+        <div id="premium-badge" hidden></div>
         <div class="sb-version" id="sb-version">Verbinde …</div>
       </div>
       <button class="icon-btn sb-close" id="sb-close" type="button" aria-label="Seitenleiste schließen" data-icon="x"></button>
@@ -1125,6 +1133,18 @@
 </div>
 
 <div class="toasts" id="toasts" aria-live="polite"></div>
+
+<!-- Premium freigeschaltet: Vollbild-Feier mit Konfetti -->
+<div id="celebrate" hidden aria-hidden="true">
+  <div class="cel-confetti" id="cel-confetti"></div>
+  <div class="cel-card">
+    <div class="cel-burst">🎉</div>
+    <h2 class="cel-title" id="cel-title">Premium freigeschaltet!</h2>
+    <p class="cel-sub">Herzlichen Glückwunsch – viel Freude mit deinen neuen Funktionen.</p>
+    <ul class="cel-list" id="cel-list"></ul>
+    <button class="btn cel-ok" id="cel-ok" type="button">Los geht's!</button>
+  </div>
+</div>
 <script src="/static/helfer.js"></script>
 <script src="/static/app.js"></script>
 <script src="/static/sehen.js"></script>

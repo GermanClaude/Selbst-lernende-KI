@@ -4,6 +4,18 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.48.0 – 2026-11-26
+
+**Premium-Feier, edlerer Startbildschirm, Fehler nach dem Freischalten behoben**
+- **Fehler behoben:** Direkt nachdem Premium freigeschaltet wurde, konnte die nächste Nachricht bei Claude einen
+  Fehler „Invalid signature in thinking block" auslösen (weil mitten im Gespräch neue Werkzeuge dazukamen). Das
+  ist jetzt abgefangen – Premium-Funktionen stehen sofort bereit, ohne Fehler.
+- **Große Freier-Animation:** Wenn du Premium freischaltest, feiert die App jetzt mit einer bildschirmfüllenden
+  Konfetti-Animation und zeigt groß „Herzlichen Glückwunsch" samt allen neuen Funktionen.
+- **Edlerer Startbildschirm:** Beim Hochfahren wabert eine Aurora im Hintergrund, die Sphäre wirbelt mit
+  umkreisenden Lichtpunkten, darunter eine schimmernde Ladeleiste. Mit Premium alles in Gold.
+- Wer Animationen reduziert hat, bekommt überall die ruhige Variante.
+
 ## 0.47.0 – 2026-11-26
 
 **Animierter Startbildschirm**

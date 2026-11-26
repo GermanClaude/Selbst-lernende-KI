@@ -277,6 +277,14 @@ class AppController(CLI):
             "commands": [{"cmd": c, "help": schoen(h)} for c, h in COMMANDS],
         }
 
+    def _premium_event(self, stufe: str) -> None:
+        """Premium freigeschaltet: dem Fenster ein Fest-Ereignis schicken (Konfetti + Vollbild-Glueckwunsch)."""
+        from .. import premium as PM
+
+        self._event({"type": "premium_unlock", "stufe": stufe, "name": PM.STUFEN.get(stufe, "Premium"),
+                     "funktionen": PM.FUNKTIONEN.get(stufe, [])})
+        self._state_changed()   # Seitenleiste/Abzeichen gleich aktualisieren
+
     def _premium_status(self) -> dict | None:
         """Fuer die Oberflaeche: welche Premium-Stufe gilt (edlere Optik). None = kostenlos."""
         try:

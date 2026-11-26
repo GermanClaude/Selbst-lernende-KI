@@ -310,6 +310,11 @@ class LLMProvider(ABC):
     @abstractmethod
     def reset_to_summary(self, summary: str) -> None: ...
 
+    def werkzeuge_geaendert(self) -> None:
+        """Wird aufgerufen, wenn sich mitten im Gespraech die Werkzeugliste aendert (z.B. Premium
+        schaltet neue Werkzeuge frei). Standard: nichts tun. Anthropic verwirft dann alte Thinking-Bloecke,
+        die an die vorherige Werkzeugliste gebunden sind (sonst 'Invalid signature in thinking block')."""
+
     # -- gemeinsam ----------------------------------------------------------
     def _rounds(self, max_tool_rounds: int | None) -> int:
         return max(1, max_tool_rounds or self.config.conversation.max_werkzeug_runden)

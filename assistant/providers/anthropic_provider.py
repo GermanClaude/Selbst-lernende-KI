@@ -67,6 +67,20 @@ class AnthropicProvider(LLMProvider):
             kwargs["tool_choice"] = {"type": "none"}  # z.B. Abschlussbericht eines Agenten
         return kwargs
 
+    def werkzeuge_geaendert(self) -> None:
+        """Werkzeugliste hat sich geaendert (z.B. Premium freigeschaltet): alte Thinking-Bloecke aus dem
+        Verlauf nehmen - ihre Signatur ist an die vorherige Werkzeugliste gebunden und wuerde die naechste
+        Anfrage mit 'Invalid signature in thinking block' abbrechen. Sie sind nur Kontext, kein Muss."""
+        entfernt = 0
+        for msg in self.messages:
+            if isinstance(msg, dict) and msg.get("role") == "assistant" and isinstance(msg.get("content"), list):
+                neu = [b for b in msg["content"] if _field(b, "type") not in ("thinking", "redacted_thinking")]
+                if len(neu) != len(msg["content"]):
+                    entfernt += len(msg["content"]) - len(neu)
+                    msg["content"] = neu or [{"type": "text", "text": ""}]
+        if entfernt:
+            logger.info("Anthropic: %d Thinking-Bloecke nach Werkzeug-Aenderung verworfen", entfernt)
+
     def _werkzeuge(self) -> list[dict[str, Any]]:
         specs = self.registry.specs()
         if getattr(self, "_ohne_strikt", False):

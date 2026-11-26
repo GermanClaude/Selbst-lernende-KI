@@ -270,6 +270,18 @@ class Brain:
         self.provider = new
         return not same
 
+    def werkzeuge_geaendert(self) -> None:
+        """Nach einer Aenderung der Werkzeugliste mitten im Gespraech (z.B. Premium freigeschaltet)."""
+        try:
+            self.provider.werkzeuge_geaendert()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            self.system_prompt = build_system_prompt(self.config, self.memory)   # z.B. Entwicklermodus-Block
+            self.provider.system_prompt = self.system_prompt
+        except Exception:  # noqa: BLE001
+            pass
+
     def gedaechtnis_neu_laden(self) -> None:
         """Nach einem Abgleich: das neu dazugekommene Wissen in den System-Prompt uebernehmen."""
         self.system_prompt = build_system_prompt(self.config, self.memory)
