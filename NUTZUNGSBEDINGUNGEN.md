@@ -76,6 +76,14 @@ für Minderjährige bestimmt.
 
 Die Software ersetzt **keine** Rechts-, Finanz-, Steuer-, oder medizinische Beratung.
 
+**Finanz- & Börsen-Coach (Premium):** Dieses Feature dient ausschließlich der **Bildung und Information** –
+es ist **keine Anlageberatung**, keine Empfehlung, kein Angebot und keine Aufforderung zum Kauf oder Verkauf
+von Wertpapieren, Kryptowährungen oder anderen Finanzprodukten. Die KI gibt **keine** persönlichen Kauf-/
+Verkaufsempfehlungen und führt **keine** Transaktionen aus. Kurse und Marktdaten können verzögert, unvollständig
+oder falsch sein, und die KI kann irren. **Alle Anlageentscheidungen triffst du selbst und auf eigenes Risiko.**
+Für echte Anlageentscheidungen wende dich an eine zugelassene Beraterin oder einen zugelassenen Berater.
+Es wird **keine Gewähr** für Richtigkeit, Vollständigkeit oder Ergebnisse übernommen.
+
 ## 8. Änderungen & salvatorische Klausel
 
 Diese Bedingungen können angepasst werden; es gilt die zum Zeitpunkt der Nutzung veröffentlichte

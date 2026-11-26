@@ -45,6 +45,8 @@ FUNKTIONEN = {
         "Tagesbriefing auf Knopfdruck (premium_tagesbriefing)",
         "Automatisches taegliches Briefing zur Wunschzeit",
         "Sandbox-Nova: bis zu 10 frische Test-Novas gleichzeitig (/sandbox)",
+        "Finanz- & Boersen-Coach fuer Einsteiger (nur Bildung, keine Anlageberatung)",
+        "Gruendliche Recherche mit Quellen (premium_recherche)",
         "Edlere Premium-Optik in der App",
     ],
     "max": [

@@ -4,6 +4,15 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.50.0 – 2026-11-26
+
+**Premium: Finanz- & Börsen-Coach für Einsteiger**
+- Neues Premium-Werkzeug **Finanzcoach**: erklärt dir die Börse, Aktien, ETFs, Zinsen, Risiko und
+  Finanzbegriffe einsteigerfreundlich und ordnet öffentliche Marktdaten ein. Es ist bewusst ein **Lern-Coach**:
+  **keine Anlageberatung**, keine persönlichen Kauf-/Verkaufsempfehlungen, und es handelt nichts – jede
+  Entscheidung triffst du selbst auf eigenes Risiko. Ein entsprechender Hinweis steht jetzt auch im
+  Rechtlichen der App.
+
 ## 0.49.0 – 2026-11-26
 
 **Große Tour mit Sprachausgabe + Nova darf Premium erklären**
