@@ -75,7 +75,9 @@ def cloud_einstellungen(root) -> dict:
     except ValueError:
         port = 8765
     token = os.environ.get("NOVA_TOKEN", "").strip()
-    eigener = len(token) >= 24
+    eigener = len(token) >= 24 and len(set(token)) >= 10      # "aaaa..." o.ae. waere zu leicht zu raten
+    if token and not eigener:
+        print("NOVA_TOKEN ist zu schwach (mind. 24 Zeichen, gemischt) - ich nehme stattdessen einen zufaelligen.")
     if not eigener:
         token = fester_token(root)
     hosts = [h.strip().lower() for h in os.environ.get("NOVA_HOST", "").replace(";", ",").split(",") if h.strip()]

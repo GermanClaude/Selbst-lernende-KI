@@ -278,6 +278,13 @@ Die Preise für die Anzeige stehen in `config/settings.toml` unter `[preise]` �
 
 ## Sicherheit & Berechtigungen (bitte lesen)
 
+> **Sicherheits-Check (0.40.0):** Nova wurde gegen die 10 typischen Lücken von KI-Apps geprüft (Schadcode in
+> Namen, fremde IDs, versteckte Admin-Seiten, Schlüssel im Browser, offene Tabellen, ausgetrickste KI-Regeln,
+> Rechte erschleichen, Codes raten, `.env` auf GitHub, gefälschte Uploads). Befehle der KI sehen keine
+> Schlüssel, echte Schlüssel werden in allen Werkzeug-Ergebnissen geschwärzt, Novas eigene Einstellungen,
+> Rechte und Schlüssel sind für ihre Werkzeuge gesperrt, Telegram koppelt nur mit Code, und die Cloud sperrt
+> nach 10 falschen Schlüsseln für 10 Minuten.
+
 Die KI kann viel – deshalb ist ein Schutznetz eingebaut. Alles steuerst du in
 `config/settings.toml` (beim ersten Start aus der Vorlage erzeugt, oder per
 `python -m assistant --einrichten`):
@@ -587,6 +594,26 @@ und auf Telegram antwortet sie rund um die Uhr – egal, ob dein PC an ist. Zwei
 In der Handy-App: Zurück-Taste → „Nova in der Cloud“ → `https://…/?t=<NOVA_TOKEN>`. Technisch:
 `python -m assistant --cloud` (bzw. `NOVA_CLOUD=1`) – lauscht auf `PORT`, nur mit `NOVA_TOKEN`, Telegram per
 Webhook (`NOVA_PUBLIC_URL`/`RENDER_EXTERNAL_URL`), dauerhafter Speicher unter `/data`.
+
+## Plugins für alle KI-Modelle (`/plugins`)
+
+Plugins geben Nova zusätzliche Werkzeuge – für **jedes** Modell (Claude, DeepSeek, Gemini, ChatGPT, Ollama …).
+Ein Plugin ist ein **MCP-Server** (Model Context Protocol, der offene Standard): Es gibt tausende fertige,
+z. B. für Kalender, Notion, GitHub, Datenbanken oder den Browser. Die Konfiguration ist dieselbe wie bei
+Claude Desktop oder Cursor – einfach aus der Anleitung des Plugins kopieren:
+
+```
+/plugins einfuegen {"mcpServers": {"zeit": {"command": "uvx", "args": ["mcp-server-time"]}}}
+/plugins einfuegen {"mcpServers": {"web": {"url": "https://…/mcp", "headers": {"Authorization": "Bearer …"}}}}
+```
+
+`/plugins` zeigt alle Plugins mit ihren Werkzeugen, `/plugins aus|an|entfernen <name>` verwaltet sie.
+Abgelegt wird alles in `config/plugins.json`.
+
+**Sicherheit:** Vor jedem Plugin-Aufruf fragt Nova nach (`/plugins vertrauen <name>` schaltet das für ein
+Plugin ab). Plugins bekommen keine Schlüssel von Nova – nur, was du ihnen unter `env` mitgibst. Ergebnisse
+nimmt Nova als Daten, nicht als Befehle. Ein Plugin ist ein Programm auf deinem Rechner: nur aus Quellen
+einfügen, denen du vertraust. Im Netz nur über `https://`.
 
 ### Ein Gedächtnis für PC und Cloud (`/abgleich`)
 

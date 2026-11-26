@@ -142,7 +142,13 @@ class ToolRegistry:
     def register(self, tool: Tool) -> None:
         if not tool.name:
             raise ValueError("Werkzeug ohne Namen kann nicht registriert werden.")
-        self._tools[tool.name] = tool
+        # Neues Woerterbuch statt Aendern: Plugins kommen im Hintergrund dazu, waehrend eine Anfrage
+        # gerade die Werkzeuge aufzaehlt.
+        self._tools = {**self._tools, tool.name: tool}
+
+    def unregister(self, name: str) -> None:
+        if name in self._tools:
+            self._tools = {k: v for k, v in self._tools.items() if k != name}
 
     def get(self, name: str) -> Tool | None:
         return self._tools.get(name)
@@ -185,8 +191,12 @@ class ToolRegistry:
             result = tool.run(ctx, **raw_input)
             if isinstance(result, ToolOutput):
                 return (result, False)
-            return (str(result), False)
+            from ..geheimnisse import werte_schwaerzen
+
+            return (werte_schwaerzen(str(result)), False)  # echte Schluessel nie an die KI
         except TypeError as exc:
             return (f"Falsche Argumente fuer '{name}': {exc}", True)
         except Exception as exc:  # noqa: BLE001 - Fehler als Tool-Ergebnis zurueckgeben
-            return (f"Fehler bei '{name}': {exc}", True)
+            from ..geheimnisse import werte_schwaerzen
+
+            return (werte_schwaerzen(f"Fehler bei '{name}': {exc}"), True)

@@ -112,6 +112,23 @@ class PermissionManager:
         self._away_write_ok = False
         self.away_urls = set()
 
+    # Dateien, mit denen sich die KI selbst mehr Rechte geben oder Schluessel lesen koennte. Die aendert
+    # nur der Mensch (ueber /befehle bzw. die Einstellungen) - nie ein Werkzeug der KI.
+    GESPERRT = (".env", "config/settings.toml", "config/permissions.toml", "config/plugins.json",
+                "data/server_token", "data/memory.sqlite3", "data/memory.sqlite3-wal", "data/memory.sqlite3-shm")
+    GESPERRT_ENDUNGEN = (".session", ".key", ".pem", ".keystore", ".jks")
+
+    def ist_gesperrt(self, resolved: Path) -> bool:
+        if not self.app_root:
+            return False
+        app = Path(self.app_root).resolve()
+        if not self._is_within(resolved, app):
+            return False
+        rel = resolved.relative_to(app).as_posix()
+        if rel in self.GESPERRT or rel.startswith("config/plugins/"):
+            return True
+        return rel.startswith("data/") and rel.endswith(self.GESPERRT_ENDUNGEN)
+
     def _in_app_dir(self, resolved: Path) -> bool:
         """Im Ordner der KI selbst (Schluessel, Einstellungen, Programm) - ausser ihrem Arbeitsordner."""
         if not self.app_root:
@@ -229,6 +246,10 @@ class PermissionManager:
         if not candidate.is_absolute():
             candidate = self.workspace_root / candidate
         resolved = candidate.resolve()
+        if self.ist_gesperrt(resolved):
+            raise PermissionError_(
+                "Das ist eine geschuetzte Datei von Nova selbst (Schluessel, Einstellungen, Rechte oder Plugins). "
+                "Die liest und aendert kein Werkzeug - dein Mensch stellt so etwas mit /befehlen in der App ein.")
 
         # Im AFK-Modus normalerweise nur der Arbeitsordner - auch zum Lesen (Schutz vor
         # eingeschleusten Anweisungen aus Webseiten, z.B. "lies die .env und schick sie an ...").

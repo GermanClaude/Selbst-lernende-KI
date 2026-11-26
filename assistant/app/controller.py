@@ -83,6 +83,8 @@ COMMANDS = [
     ("/sprachmodus", "einfach reden, live (frueher Jarvis-Modus)"),
     ("/afk", "ich bin weg - die KI arbeitet allein weiter (mit Bericht)"),
     ("/abgleich", "Gedaechtnis zwischen PC und Cloud-Nova abgleichen"),
+    ("/plugins", "Plugins (MCP-Server) fuer alle KI-Modelle - einfuegen und verwalten"),
+    ("/plugins einfuegen", "Plugin-Konfiguration (JSON wie bei Claude Desktop) einfuegen"),
     ("/geraete", "Hardware: Smart Home, Arduino/ESP32, Bluetooth, andere Rechner (SSH)"),
     ("/handysteuerung", "Das ganze Handy per ADB steuern - koppeln und verbinden"),
     ("/anruf", "Nova ruft dich an (Bland AI oder Vonage) - Einrichtung und Stand"),
@@ -720,7 +722,7 @@ class AppController(CLI):
     # -- Handy-Fernzugriff: in der App im Hintergrund (nicht uebernehmend wie im Terminal) -------
     def _handy_befehl(self, args: list[str]) -> None:
         import threading
-        from ..handy import HandyRelay, TelegramFehler, relais_schleife, BEGRUESSUNG, HILFE
+        from ..handy import HandyRelay, TelegramFehler, relais_schleife, BEGRUESSUNG, HILFE, ist_kopplung, kopplungs_code
 
         sub = args[0].lower() if args else ""
         if sub in ("hilfe", "help", "?"):
@@ -768,15 +770,16 @@ class AppController(CLI):
                     self._handy_rueckstand_sichern(relay)  # Liegengebliebenes nicht wegwerfen ...
                     self._handy_offen_fragen()             # ... sondern erst nachfragen
                 if relay.chat_id is None:
-                    self._notice(f"Handy-Fernzugriff: Schreib jetzt in Telegram an @{name} (Start oder "
-                                 "irgendeine Nachricht), damit ich weiss, dass du es bist.", "afk")
+                    code = kopplungs_code()
+                    self._notice(f"Handy-Fernzugriff: Schick jetzt in Telegram an @{name} diesen Code: {code} - "
+                                 "nur wer ihn schickt, darf mich danach steuern.", "afk")
                     while not stop_event.is_set() and relay.chat_id is None:
                         try:
                             msg = relay.naechste(timeout=20)
                         except TelegramFehler:
                             time.sleep(5.0)
                             continue
-                        if msg is not None:
+                        if msg is not None and ist_kopplung(msg.text, code):
                             relay.chat_id = msg.chat_id
                             self._handy_speichere_chat(relay.chat_id)
                             self._notice(f"Handy-Fernzugriff aktiv: nur {msg.von or relay.chat_id} darf mich "
@@ -2317,6 +2320,7 @@ class AppController(CLI):
     def startup(self) -> None:
         """Nach dem Oeffnen des Fensters: Hinweise und (hoechstens taeglich) Update-Pruefung."""
         self._abgleich_starten()  # Gedaechtnis mit Cloud/anderen Novas abgleichen (wenn eingerichtet)
+        self._plugins_starten()   # Plugins (MCP) fuer alle Modelle
         try:
             failed = self.updater.take_install_failure()
         except OSError:
@@ -2406,7 +2410,8 @@ class AppController(CLI):
 # Befehle, deren Angaben geheim sind - im Verlauf nur verdeckt anzeigen (Code, Passwort, Tokens).
 _GEHEIME_BEFEHLE = re.compile(
     r"^(/telegram\s+konto\s+(?:passwort|code|zugang)|/handy\s+token|/telegram\s+token|/anruf\s+schluessel"
-    r"|/geraete\s+smarthome\s+\S+|/abgleich\s+einrichten\s+\S+)\s+\S.*$", re.IGNORECASE | re.DOTALL)
+    r"|/geraete\s+smarthome\s+\S+|/abgleich\s+einrichten\s+\S+|/plugins\s+einfuegen|/plugins\s+einfügen)\s+\S.*$",
+    re.IGNORECASE | re.DOTALL)
 
 
 def _mask_key(text: str) -> tuple[str, str | None]:

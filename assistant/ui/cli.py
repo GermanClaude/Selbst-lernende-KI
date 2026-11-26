@@ -29,6 +29,7 @@ Sonderbefehle (mit '/' beginnen):
   /sprachmodus        - einfach reden, live (frueher „Jarvis-Modus"; Strg+C = zurueck)
   /anruf [schluessel <KEY>|vonage <ID> <Datei>|anbieter bland|vonage|nummer <Nr>|minuten <n>|persona|test]
                       - Nova ruft dich an (Bland AI oder Vonage), nur deine Nummer
+  /plugins [einfuegen <JSON>|an|aus|vertrauen|misstrauen|entfernen <name>|neu laden] - Plugins (MCP) fuer alle Modelle
   /abgleich [einrichten <besitzer/repo> <Token> <Passwort>|jetzt|aus] - Gedaechtnis PC <-> Cloud abgleichen
   /geraete [smarthome <URL> <Token>|ssh <name> <user@host>|esp <name> <http://...>|weg <name>] - Hardware
   /handysteuerung [koppeln <Port> <Code>|verbinden <Port>] - das ganze Handy per ADB steuern (Termux)
@@ -1150,12 +1151,16 @@ class CLI:
             self._handy_rueckstand_sichern(relay)  # was liegen geblieben ist, nicht wegwerfen ...
             self._handy_offen_fragen()             # ... sondern erst nachfragen
         if relay.chat_id is None:
-            print(_c(f"Schreib jetzt in Telegram an @{name} (Knopf 'Start' oder irgendeine Nachricht) - "
-                     "die erste Nachricht legt fest, dass nur du mich steuern darfst. (Strg+C bricht ab.)", CYAN))
+            from ..handy import ist_kopplung, kopplungs_code
+
+            code = kopplungs_code()
+            print(_c(f"Schick jetzt in Telegram an @{name} diesen Code: {code}\n"
+                     "Nur wer den Code schickt, darf mich danach steuern - andere Nachrichten ignoriere ich. "
+                     "(Strg+C bricht ab.)", CYAN))
             try:
                 while relay.chat_id is None:
                     msg = relay.naechste(timeout=30)
-                    if msg is None:
+                    if msg is None or not ist_kopplung(msg.text, code):
                         continue
                     relay.chat_id = msg.chat_id
                     self._handy_speichere_chat(relay.chat_id)
@@ -1323,6 +1328,84 @@ class CLI:
                  "  Dann: /anruf nummer 0171 1234567  |  /anruf test  |  Wechseln: /anruf anbieter bland|vonage\n"
                  "  Danach einfach sagen, z.B. 'ruf mich an, wenn der Download fertig ist'.", GREY))
 
+    # -- Plugins (MCP-Server) fuer alle Modelle (assistant/plugins.py) ------------
+    def _plugins_starten(self, warten: bool = False) -> None:
+        """Plugins im Hintergrund starten (npx/uvx brauchen beim ersten Mal etwas)."""
+        from ..plugins import PluginVerwaltung, laden
+
+        if not laden(self.config.project_root) and self.__dict__.get("_plugins") is None:
+            return
+        if self.__dict__.get("_plugins") is None:
+            self._plugins = PluginVerwaltung(self.config.project_root, self.registry)
+        th = threading.Thread(target=self._plugins.starten, name="plugins", daemon=True)
+        th.start()
+        if warten:
+            th.join(timeout=150)
+
+    def _plugins_stoppen(self) -> None:
+        p = self.__dict__.get("_plugins")
+        if p is not None:
+            try:
+                p.stoppen()
+            except Exception:  # noqa: BLE001
+                pass
+
+    def _plugins_befehl(self, cmd: str) -> None:
+        from .. import plugins as pl
+
+        root = self.config.project_root
+        teile = cmd.split(None, 2)
+        sub = teile[1].lower() if len(teile) > 1 else ""
+        rest = teile[2].strip() if len(teile) > 2 else ""
+        try:
+            if sub in ("einfuegen", "einfügen", "hinzufuegen", "add") and rest:
+                namen = pl.einfuegen(root, rest)
+                print(_c(f"Eingefuegt: {', '.join(namen)}. Ich starte die Plugins ...", GREEN))
+                self._plugins_starten(warten=True)
+                print(self._plugins.uebersicht())
+                return
+            alle = pl.laden(root)
+            if sub in ("an", "aus", "vertrauen", "misstrauen", "entfernen", "loeschen") and rest:
+                if rest not in alle:
+                    print(_c(f"Kein Plugin '{rest}'. Vorhanden: {', '.join(sorted(alle)) or 'keine'}", YELLOW))
+                    return
+                e = alle[rest]
+                if sub == "an":
+                    e.pop("disabled", None)
+                    e.pop("aus", None)
+                elif sub == "aus":
+                    e["disabled"] = True
+                elif sub == "vertrauen":
+                    e["vertrauen"] = True
+                elif sub == "misstrauen":
+                    e.pop("vertrauen", None)
+                    e.pop("trusted", None)
+                else:
+                    alle.pop(rest)
+                pl.speichern(root, alle)
+                print(_c({"an": f"'{rest}' ist an.", "aus": f"'{rest}' ist aus.",
+                          "vertrauen": f"'{rest}' darf jetzt ohne Nachfrage arbeiten.",
+                          "misstrauen": f"Bei '{rest}' frage ich wieder vor jedem Aufruf.",
+                          }.get(sub, f"'{rest}' entfernt."), GREEN))
+                self._plugins_starten(warten=True)
+                return
+            if sub in ("neu", "neustart", "laden"):
+                self._plugins_starten(warten=True)
+        except pl.PluginFehler as exc:
+            print(_c(str(exc), YELLOW))
+            return
+        v = self.__dict__.get("_plugins")
+        print(_c("\nPlugins - zusaetzliche Werkzeuge fuer ALLE Modelle (MCP-Server):", BOLD))
+        print(v.uebersicht() if v is not None else "  Noch keine Plugins.")
+        print(_c("  Einfuegen: die Konfiguration aus der Anleitung des Plugins (wie bei Claude Desktop) so:\n"
+                 "    /plugins einfuegen {\"mcpServers\": {\"zeit\": {\"command\": \"uvx\", \"args\": "
+                 "[\"mcp-server-time\"]}}}\n"
+                 "  Im Netz: {\"mcpServers\": {\"name\": {\"url\": \"https://...\", \"headers\": "
+                 "{\"Authorization\": \"Bearer ...\"}}}}\n"
+                 "  Verwalten: /plugins aus|an|entfernen <name>   Ohne Nachfrage: /plugins vertrauen <name>\n"
+                 "  Vor jedem Plugin-Aufruf frage ich nach. Plugins bekommen keine Schluessel von mir.\n"
+                 "  Nur Plugins aus Quellen einfuegen, denen du vertraust - es sind Programme auf deinem PC.", GREY))
+
     # -- Gedaechtnis-Abgleich PC <-> Cloud (assistant/abgleich.py) ---------------
     def _abgleich_starten(self) -> None:
         """Beim Start: einmal abgleichen, danach im Hintergrund weiter (nur wenn eingerichtet)."""
@@ -1379,9 +1462,9 @@ class CLI:
             if repo.count("/") != 1:
                 print(_c("Das Repo bitte als besitzer/name, z.B. deinname/nova-gedaechtnis.", YELLOW))
                 return
-            if len(passwort) < 8:
-                print(_c("Das Abgleich-Passwort bitte mindestens 8 Zeichen lang (auf allen Geraeten dasselbe).",
-                         YELLOW))
+            if len(passwort) < 12:
+                print(_c("Das Abgleich-Passwort bitte mindestens 12 Zeichen lang (auf allen Geraeten dasselbe) - "
+                         "z.B. drei Woerter mit Zahl: 'Fahrrad-Mond-Tasse-47'.", YELLOW))
                 return
             for name, wert in (("NOVA_ABGLEICH_REPO", repo), ("NOVA_ABGLEICH_TOKEN", token),
                                ("NOVA_ABGLEICH_PASSWORT", passwort)):
@@ -2424,6 +2507,7 @@ class CLI:
             self._sehen_beim_start()
             self._handy_beim_start()  # Nachrichten vom Handy, waehrend Nova aus war -> nachfragen
             self._abgleich_starten()  # Gedaechtnis mit Cloud/anderen Novas abgleichen (wenn eingerichtet)
+            self._plugins_starten()   # Plugins (MCP) fuer alle Modelle
             self._loop()
         except (KeyboardInterrupt, EOFError):
             print()
@@ -2629,6 +2713,8 @@ class CLI:
             self._arbeitsordner_command(cmd.split()[1:])
         elif base in ("/anruf", "/anrufen", "/telefon", "/bland"):
             self._anruf_befehl(cmd.split()[1:])
+        elif base in ("/plugins", "/plugin", "/mcp"):
+            self._plugins_befehl(cmd)
         elif base in ("/abgleich", "/sync", "/synchronisieren"):
             self._abgleich_befehl(cmd.split()[1:])
         elif base in ("/geraete", "/geräte", "/hardware", "/geraet"):
@@ -3284,6 +3370,7 @@ class CLI:
         except Exception:  # noqa: BLE001
             pass
         self._abgleich_beenden()  # nach der Zusammenfassung - die soll mit
+        self._plugins_stoppen()
         self.memory.close()
         print(_c("Bis bald!", CYAN))
 

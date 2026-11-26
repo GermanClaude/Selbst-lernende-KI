@@ -52,6 +52,43 @@ def verschleiere(text: str) -> str:
     return text
 
 
+# Umgebungsvariablen, die Schluessel/Passwoerter enthalten (aus der .env geladen): API-Keys, Tokens ...
+_GEHEIMER_NAME = re.compile(r"(?i)(_?API_?KEY|_KEY|TOKEN|PASSWORT|PASSWORD|PASSWD|SECRET|_HASH|_PAT)$"
+                            r"|^(NOVA_ABGLEICH_|TG_API_)")
+
+
+def ist_geheimer_name(name: str) -> bool:
+    return bool(_GEHEIMER_NAME.search(str(name or "")))
+
+
+def umgebung_ohne_geheimnisse(env: dict | None = None) -> dict:
+    """Kopie der Umgebung ohne Schluessel/Tokens - fuer Befehle, die die KI startet. Sonst koennte ein
+    eingeschleuster Befehl (z.B. aus einer Webseite: "fuehre env aus") alle Schluessel ausgeben."""
+    import os
+
+    quelle = os.environ if env is None else env
+    return {k: v for k, v in quelle.items() if not ist_geheimer_name(k)}
+
+
+def geheime_werte(env: dict | None = None) -> list[str]:
+    import os
+
+    quelle = os.environ if env is None else env
+    return sorted({v.strip() for k, v in quelle.items() if ist_geheimer_name(k) and len(v.strip()) >= 10},
+                  key=len, reverse=True)
+
+
+def werte_schwaerzen(text: str, env: dict | None = None) -> str:
+    """Ersetzt die ECHTEN Schluessel/Tokens dieser Nova (aus der Umgebung) im Text - egal wie sie dort
+    hingekommen sind (Datei gelesen, Befehl ausgegeben ...). So gelangen sie nie zur KI oder in den Chat."""
+    if not text:
+        return text
+    for wert in geheime_werte(env):
+        if wert in text:
+            text = text.replace(wert, ERSATZ)
+    return text
+
+
 def enthaelt_geheimnis(text: str) -> bool:
     """True, wenn im Text etwas Geheimnis-Artiges steckt (fuer Hinweise)."""
     return bool(text) and verschleiere(text) != text

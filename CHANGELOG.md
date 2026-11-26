@@ -4,6 +4,31 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.40.0 – 2026-11-26
+
+**Plugins für alle KI-Modelle**
+- Du kannst Nova jetzt **Plugins** geben – zusätzliche Werkzeuge, die jedes Modell nutzen kann (Claude,
+  DeepSeek, Gemini, ChatGPT, Ollama …). Plugins sind „MCP-Server“, der offene Standard für KI-Werkzeuge:
+  Es gibt tausende fertige (Kalender, Notion, GitHub, Datenbanken, Browser …).
+- Einfügen geht wie bei Claude Desktop: die Konfiguration aus der Anleitung des Plugins kopieren und
+  `/plugins einfuegen {…}` schreiben. `/plugins` zeigt, was läuft. `/plugins aus|an|entfernen <name>`.
+- Sicher: Vor jedem Plugin-Aufruf fragt Nova nach (abschaltbar pro Plugin mit `/plugins vertrauen <name>`),
+  Plugins bekommen keine deiner Schlüssel, und was sie zurückgeben, nimmt Nova als Daten, nicht als Befehl.
+
+**Sicherheits-Check: die 10 typischen Lücken geprüft und abgedichtet**
+- Geprüft wurden u. a. Schadcode in Namen, fremde IDs in Adressen, versteckte Admin-Seiten, Schlüssel im
+  Browser, offene Datentabellen, ausgetrickste KI-Regeln, Rechte erschleichen, Codes erraten, `.env` auf
+  GitHub und gefälschte Uploads. Das meiste war schon dicht – jetzt zusätzlich:
+- **Deine Schlüssel bleiben geheim, auch wenn Nova ausgetrickst wird:** Befehle, die Nova ausführt, sehen
+  keine API-Schlüssel und Tokens mehr, und taucht trotzdem irgendwo ein echter Schlüssel auf, wird er
+  geschwärzt, bevor die KI ihn sieht.
+- **Nova kann sich keine Rechte geben:** Ihre eigenen Einstellungen, Rechte, Schlüssel und die Plugin-Liste
+  kann kein Werkzeug der KI lesen oder ändern – das machst nur du.
+- **Telegram-Fernzugriff nur mit Code:** Beim ersten Verbinden zeigt Nova einen 6-stelligen Code, den du dem
+  Bot schickst. Ein Fremder, der deinem Bot zufällig zuerst schreibt, wird nicht mehr zum Besitzer.
+- **Raten zwecklos:** Wer bei der Cloud-Nova zehnmal einen falschen Schlüssel probiert, wird 10 Minuten
+  gesperrt. Zu einfache Cloud-Schlüssel werden ersetzt; das Abgleich-Passwort braucht jetzt 12 Zeichen.
+
 ## 0.39.0 – 2026-11-25
 
 **Ein Gedächtnis für alle deine Novas – PC und Cloud wissen dasselbe**

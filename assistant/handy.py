@@ -236,6 +236,17 @@ class WebhookRelay(HandyRelay):
             self._eingang.get_nowait()
 
 
+def kopplungs_code() -> str:
+    """6-stelliger Code, den nur du am PC siehst - wer ihn dem Bot schickt, ist der Besitzer."""
+    import secrets
+
+    return f"{secrets.randbelow(10 ** 6):06d}"
+
+
+def ist_kopplung(text: str, code: str) -> bool:
+    return bool(code) and code in "".join(str(text or "").split())
+
+
 # -- Nachrichten, die ankamen, waehrend der PC/Nova aus war --------------------------------------
 # Telegram hebt Nachrichten an den Bot rund 24 Stunden auf. Beim naechsten Start holt Nova sie ab,
 # legt sie hier lokal ab (bleiben auch, wenn du "spaeter" sagst oder das Fenster schliesst) und fragt

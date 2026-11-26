@@ -99,7 +99,9 @@ def _decode(data: bytes | None) -> str:
 
 
 def _child_env() -> dict[str, str]:
-    env = dict(os.environ)
+    from ..geheimnisse import umgebung_ohne_geheimnisse
+
+    env = umgebung_ohne_geheimnisse()  # keine API-Schluessel/Tokens an Befehle der KI
     env["PYTHONIOENCODING"] = "utf-8"  # Python-Skripte geben UTF-8 aus (eindeutig lesbar)
     env["WSL_UTF8"] = "1"  # wsl.exe ebenfalls UTF-8 statt UTF-16
     return env

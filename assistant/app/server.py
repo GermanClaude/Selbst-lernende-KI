@@ -99,6 +99,8 @@ class AppServer:
         self.token = token if token and len(token) >= 24 else secrets.token_urlsafe(24)
         self.hosts = hosts if hosts == "*" else {h.strip().lower() for h in (hosts or ()) if h.strip()}
         self.telegram = None             # Cloud: (geheimer Pfad, Geheimnis, WebhookRelay) - siehe handy_server
+        self._fehlversuche: dict[str, list[float]] = {}   # Absender -> Zeiten falscher Schluessel
+        self._fehl_lock = threading.Lock()
         self.hub = EventHub()
         self.controller = None
         self._factory = controller_factory
@@ -106,6 +108,21 @@ class AppServer:
         self.httpd.daemon_threads = True
         self.port = self.httpd.server_address[1]
         self.stopping = threading.Event()
+
+    SPERRE_VERSUCHE = 10      # so viele falsche Schluessel ...
+    SPERRE_FENSTER = 600.0    # ... in 10 Minuten -> 10 Minuten gesperrt (Raten zwecklos)
+
+    def gesperrt(self, absender: str) -> bool:
+        with self._fehl_lock:
+            zeiten = [z for z in self._fehlversuche.get(absender, []) if time.monotonic() - z < self.SPERRE_FENSTER]
+            self._fehlversuche[absender] = zeiten
+            return len(zeiten) >= self.SPERRE_VERSUCHE
+
+    def fehlversuch(self, absender: str) -> None:
+        with self._fehl_lock:
+            if len(self._fehlversuche) > 10000:   # Speicher begrenzen
+                self._fehlversuche.clear()
+            self._fehlversuche.setdefault(absender, []).append(time.monotonic())
 
     @property
     def url(self) -> str:
@@ -143,10 +160,24 @@ class AppServer:
                     return True
                 return host in server.hosts or host.split(":")[0] in server.hosts
 
+            def _absender(self) -> str:
+                # Hinter einem Proxy (Render, Caddy) haengt der Proxy die echte Adresse HINTEN an.
+                weiter = (self.headers.get("X-Forwarded-For") or "").split(",")[-1].strip()
+                return weiter or self.client_address[0]
+
             def _token_ok(self, query: dict) -> bool:
+                # Bremse nur, wenn Nova von aussen erreichbar ist (Cloud) - am PC wuerde sie sonst alte,
+                # nach einem Neustart ungueltige Fenster und damit dich selbst aussperren.
+                bremse = bool(server.hosts)
+                absender = self._absender()
+                if bremse and server.gesperrt(absender):
+                    return False
                 given = self.headers.get("X-KI-Token") or (query.get("t") or [""])[0]
                 # Ein "+" im Schluessel (z.B. von Render erzeugt) wird in Adressen zu einem Leerzeichen.
-                return hmac.compare_digest(given.replace(" ", "+").encode(), server.token.encode())
+                ok = hmac.compare_digest(given.replace(" ", "+").encode(), server.token.encode())
+                if not ok and bremse:
+                    server.fehlversuch(absender)
+                return ok
 
             def _send(self, code: int, body: bytes, ctype: str, extra: dict | None = None) -> None:
                 self.send_response(code)
