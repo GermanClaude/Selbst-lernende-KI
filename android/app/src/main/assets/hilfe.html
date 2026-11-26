@@ -48,6 +48,19 @@
   </div>
 
   <div class="karte">
+    <b>Sprachaktivierung</b> – Nova hört im Hintergrund auf dein Wachwort, auch wenn die App zu ist
+    <p id="hoeren">…</p>
+    <input id="wort" type="text" placeholder="Hey Nova" autocomplete="off" maxlength="60">
+    <label class="klein" style="display:block;margin-top:10px">
+      <input id="sprechen" type="checkbox" style="width:auto"> danach gleich zuhören (sonst nur die App öffnen)</label>
+    <button id="h_an" onclick="hoeren(true)">Sprachaktivierung einschalten</button>
+    <button id="h_aus" class="zweit" onclick="hoeren(false)">Ausschalten</button>
+    <p class="klein">Dein eigenes Wort geht auch („Computer bitte“, „Hallo Nova“). Solange es an ist, zeigt Android
+       die Mitteilung „Nova hört zu“ – darüber schaltest du es auch aus. Die Spracherkennung ist die von Android;
+       manche Handys piepen leise beim Zuhören. Kostet etwas Akku.</p>
+  </div>
+
+  <div class="karte">
     <b>Nova in der Cloud</b> – läuft immer, egal ob dein PC an ist
     <p>Die Adresse bekommst du beim Einrichten der Cloud-Nova (Anleitung: <code>cloud/ANLEITUNG.md</code>),
        z. B. <code>https://nova-xyz.onrender.com/?t=…</code></p>
@@ -76,6 +89,12 @@
     <input id="adr" type="url" inputmode="url" placeholder="http://127.0.0.1:8765/?t=…" autocomplete="off">
     <button class="zweit" onclick="NovaApp.verbinden(document.getElementById('adr').value)">Verbinden</button>
   </div>
+  <div class="karte">
+    <b>Nova vom Handy entfernen</b>
+    <p class="klein">Öffnet Androids eigene Nachfrage zum Deinstallieren. Nova am PC entfernst du dort mit
+       <code>/deinstallieren</code> (mit Sicherung deiner Erinnerungen auf dem Desktop, wenn du willst).</p>
+    <button class="zweit" onclick="NovaApp.deinstallieren()">Nova-App deinstallieren</button>
+  </div>
 </main>
 <script>
   function zeigen() {
@@ -95,8 +114,29 @@
     try { NovaApp.steuerungPausieren(NovaApp.steuerungStatus() !== 'pausiert'); } catch (e) {}
     zeigen();
   }
+  function hoerenZeigen() {
+    try {
+      var h = JSON.parse(NovaApp.hoerenStatus());
+      document.getElementById('hoeren').textContent = h.an
+        ? 'An – sag „' + h.wort + '“.' : 'Aus.';
+      document.getElementById('wort').value = h.wort || 'Hey Nova';
+      document.getElementById('sprechen').checked = h.sprechen !== false;
+      document.getElementById('h_an').textContent = h.an ? 'Übernehmen' : 'Sprachaktivierung einschalten';
+      document.getElementById('h_aus').style.display = h.an ? '' : 'none';
+    } catch (e) {}
+  }
+  function hoeren(an) {
+    try {
+      var w = document.getElementById('wort').value.trim();
+      if (w) NovaApp.wachwortSetzen(w);
+      NovaApp.hoerenSprechen(document.getElementById('sprechen').checked);
+      NovaApp.hoerenAn(an);
+    } catch (e) {}
+    setTimeout(hoerenZeigen, 300);
+  }
   zeigen();
-  document.addEventListener('visibilitychange', zeigen);
+  hoerenZeigen();
+  document.addEventListener('visibilitychange', function () { zeigen(); hoerenZeigen(); });
   try {
     var a = window.NovaApp && NovaApp.adresse();
     if (a) document.getElementById('jetzt').textContent = 'Verbunden mit: ' + a;

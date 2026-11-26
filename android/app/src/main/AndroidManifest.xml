@@ -2,6 +2,14 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- "Hey Nova" (NovaHoeren): Mikrofon im Hintergrund mit Mitteilung, nach dem Neustart wieder an -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- "Nova deinstallieren" auf der Hilfeseite: oeffnet Androids eigene Nachfrage -->
+    <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
 
     <!-- damit die App Termux finden und oeffnen kann - und die Handy-Steuerung die installierten Apps sieht -->
     <queries>
@@ -16,6 +24,12 @@
         </intent>
         <intent>
             <action android:name="android.intent.action.DIAL" />
+        </intent>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
         </intent>
         <intent>
             <action android:name="android.intent.action.SENDTO" />
@@ -58,5 +72,19 @@
                 android:name="android.accessibilityservice"
                 android:resource="@xml/bedienung" />
         </service>
+
+        <!-- "Hey Nova": hoert im Hintergrund aufs Wachwort (abschaltbar in der Mitteilung oder in der App) -->
+        <service
+            android:name=".NovaHoeren"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
+
+        <receiver
+            android:name=".NovaStart"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

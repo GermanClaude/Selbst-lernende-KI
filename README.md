@@ -587,7 +587,15 @@ Benachrichtigungen, Akku, Taschenlampe, Lautstärke und Musik. Das klappt mit je
 vorher wie gewohnt nach. In die Nova-App selbst, in Passwortfelder und in den App-Installierer tippt sie
 nie. Pausieren kannst du in der App, `/handyapp` zeigt, ob das Handy verbunden ist.
 
-Noch nicht auf dem Handy: Spracheingabe per Mikrofon-Knopf in der App.
+**„Hey Nova“ auf dem Handy (ab 0.43):** Zurück-Taste → *Sprachaktivierung* → Wachwort eintragen (frei
+wählbar) → *einschalten*. Die App hört dann im Hintergrund zu, auch wenn sie zu ist (Mitteilung „Nova hört
+zu“). Auf das Wachwort hin öffnet sie sich, nimmt deinen Befehl auf, Nova erledigt ihn und die Antwort wird
+vorgelesen. „Danach gleich zuhören“ lässt sich abschalten. Ab Android 14 muss man nach einem Neustart des
+Handys einmal auf die Mitteilung tippen, weil Android das Mikrofon sonst nicht freigibt.
+
+**Wo Novas Gehirn fürs Handy läuft:** in der Cloud (läuft immer, PC darf aus sein), am PC oder in Termux. Eine
+komplette Nova *in* der APK geht noch nicht. Die KI-Bibliotheken (anthropic/openai) brauchen Bausteine, die es
+für Android nicht gibt (pydantic-core, jiter).
 
 ## Nova in der Cloud (läuft auch, wenn der PC aus ist)
 
@@ -776,6 +784,20 @@ Die älteren Werkzeuge `maus_klick`/`tastatur_tippen` nutzen `pyautogui`, wenn e
 (`pip install pyautogui pillow`), sonst ebenfalls die Bordmittel. Not-Aus mit pyautogui: Maus in eine
 Bildschirmecke reißen.
 
+## Deinstallieren, Sicherung, Diagnose
+
+- `/deinstallieren` – Nova fragt, ob deine Erinnerungen als Sicherung (ZIP, ohne Schlüssel) auf den Desktop
+  sollen, oder ob alles weg soll (dann ein zweites Mal nachgefragt). Danach entfernt sie den
+  Wachwort-Lauscher, die Autostarts und Verknüpfungen und löscht nur ihre eigenen Dateien, fremde Dateien im
+  selben Ordner bleiben. Ein Arbeitsordner außerhalb des Nova-Ordners bleibt immer. Die KI selbst kann das
+  nicht auslösen, nur du per Befehl.
+- `/sicherung` legt eine Sicherung an, `/sicherung einspielen <Datei>` lädt sie (z. B. nach einer
+  Neuinstallation).
+- `/diagnose [was nicht geht]` – Bericht mit Version, System, Hardware, letzten Fehlern und Protokollzeilen.
+  Schlüssel, Benutzername, E-Mail-Adressen, Telefonnummern, Gespräche und Gedächtnis sind nie dabei. Er liegt
+  in `data/diagnose/`, gesendet wird nur nach deinem Ja, über denselben Weg wie das Feedback. Das Programm
+  kennt dabei keine E-Mail-Adresse. Stürzt Nova beim Start ab, bietet sie den Bericht von selbst an.
+
 ## Wachwort: „Hey Nova“ (Windows)
 
 `/wachwort an` startet einen kleinen Lauscher im Hintergrund, der beim Anmelden mitstartet und auch läuft,
@@ -818,6 +840,9 @@ Deutsch → Optionen).
 | `/handyapp` | Ist die Nova-Handy-App mit Handy-Steuerung verbunden? |
 | `/wachwort [an\|aus\|wort <…>\|sprechen an\|aus\|empfindlich <0.3–0.95>]` | Wachwort am PC („Hey Nova“) |
 | `/zeitplan [loeschen <id>]` | Geplante Aufgaben (Erinnerungen, Anrufe zu einer Uhrzeit) |
+| `/deinstallieren` | Nova entfernen – vorher Sicherung auf den Desktop oder alles löschen |
+| `/sicherung [einspielen <Datei>]` | Erinnerungen und Einstellungen sichern bzw. wieder laden |
+| `/diagnose [Beschreibung]` | Diagnose-Bericht erstellen, auf Wunsch an den Entwickler |
 | `/geraete [smarthome <URL> <Token>\|ssh <name> <user@host>\|esp <name> <URL>\|weg <name>]` | Hardware: Smart Home, Arduino/ESP32, Bluetooth, SSH |
 | `/telegram konto [zugang\|anmelden\|code\|passwort\|abmelden]` | Dein eigenes Telegram-Konto verbinden (Chats lesen) |
 | `/handy auto an\|aus` | Fernzugriff automatisch mit der App starten |

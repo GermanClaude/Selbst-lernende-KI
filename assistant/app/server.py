@@ -392,6 +392,8 @@ class AppServer:
 
             def _post(self, url, body: dict):
                 ctl = server.controller
+                if url.path == "/api/frage":           # Sprachbefehl vom Handy: wartet auf die Antwort
+                    return self._json(ctl.frage(str(body.get("text") or "")))
                 if url.path == "/api/aufwachen":       # Wachwort gehoert (assistant/wachwort.py)
                     return self._json(ctl.aufwachen())
                 if url.path == "/api/geraet/ergebnis":

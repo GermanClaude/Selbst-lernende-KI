@@ -1,10 +1,13 @@
 package de.nova.handy;
 
+import android.Manifest;
 import android.app.Activity;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
 import android.webkit.JavascriptInterface;
@@ -93,6 +96,9 @@ public class MainActivity extends Activity {
     }
 
     private void oeffne(Intent intent) {
+        if (prefs.getBoolean("hoeren", false) && erlaubnisseDa()) {
+            NovaStart.versuchen(this);          // App ist vorne: jetzt darf Android das Mikrofon starten
+        }
         Uri d = intent != null ? intent.getData() : null;
         if (d != null && ("http".equals(d.getScheme()) || "https".equals(d.getScheme()))) {
             prefs.edit().putString("url", d.toString()).apply();
@@ -100,6 +106,29 @@ public class MainActivity extends Activity {
         String url = prefs.getString("url", "");
         if (url.isEmpty()) zeigeHilfe();
         else web.loadUrl(url);
+    }
+
+    private static final int ERLAUBNIS = 9;
+
+    private boolean erlaubnisseDa() {
+        if (Build.VERSION.SDK_INT < 23) return true;
+        return checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private void erlaubnisseHolen() {
+        if (Build.VERSION.SDK_INT < 23) return;
+        String[] liste = Build.VERSION.SDK_INT >= 33
+                ? new String[]{Manifest.permission.RECORD_AUDIO, Manifest.permission.POST_NOTIFICATIONS}
+                : new String[]{Manifest.permission.RECORD_AUDIO};
+        requestPermissions(liste, ERLAUBNIS);
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int code, String[] rechte, int[] ergebnis) {
+        super.onRequestPermissionsResult(code, rechte, ergebnis);
+        if (code == ERLAUBNIS && erlaubnisseDa() && prefs.getBoolean("hoeren", false)) {
+            NovaStart.versuchen(this);
+        }
     }
 
     private void zeigeHilfe() {
@@ -158,6 +187,54 @@ public class MainActivity extends Activity {
             if (u.isEmpty()) return "";
             Uri x = Uri.parse(u);
             return x.getScheme() + "://" + x.getHost() + (x.getPort() > 0 ? ":" + x.getPort() : "");
+        }
+
+        /** "Hey Nova" (NovaHoeren): {"an": bool, "wort": "...", "sprechen": bool, "app": bool} als JSON. */
+        @JavascriptInterface
+        public String hoerenStatus() {
+            try {
+                return new org.json.JSONObject().put("an", prefs.getBoolean("hoeren", false))
+                        .put("wort", prefs.getString("wachwort", "Hey Nova"))
+                        .put("sprechen", prefs.getBoolean("hoeren_sprechen", true))
+                        .put("app", prefs.getBoolean("hoeren_app_oeffnen", true)).toString();
+            } catch (org.json.JSONException e) {
+                return "{}";
+            }
+        }
+
+        @JavascriptInterface
+        public void hoerenAn(boolean an) {
+            prefs.edit().putBoolean("hoeren", an).apply();
+            runOnUiThread(() -> {
+                if (!an) {
+                    NovaHoeren.stoppen(MainActivity.this);
+                } else if (erlaubnisseDa()) {
+                    NovaStart.versuchen(MainActivity.this);
+                } else {
+                    erlaubnisseHolen();
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void wachwortSetzen(String wort) {
+            String w = wort == null ? "" : wort.trim();
+            if (w.length() < 4 || w.length() > 60) return;
+            prefs.edit().putString("wachwort", w).apply();
+        }
+
+        @JavascriptInterface
+        public void hoerenSprechen(boolean sprechen) {
+            prefs.edit().putBoolean("hoeren_sprechen", sprechen).apply();
+        }
+
+        @JavascriptInterface
+        public void deinstallieren() {
+            runOnUiThread(() -> {
+                try {
+                    startActivity(new Intent(Intent.ACTION_DELETE, Uri.parse("package:" + getPackageName())));
+                } catch (ActivityNotFoundException ignored) { }
+            });
         }
 
         /** Handy-Steuerung (NovaSteuerung): "aus", "pausiert" oder "an". */

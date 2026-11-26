@@ -92,6 +92,9 @@ COMMANDS = [
     ("/wachwort an", "Wachwort einschalten (Hintergrund-Lauscher, startet beim Anmelden mit)"),
     ("/wachwort sprechen aus", "Beim Aufwachen NICHT gleich die Spracheingabe oeffnen"),
     ("/zeitplan", "Geplante Aufgaben (Erinnerungen, Anrufe zu einer Uhrzeit) ansehen"),
+    ("/diagnose", "Diagnose-Bericht erstellen (Fehler, System, Hardware) - auf Wunsch an den Entwickler"),
+    ("/sicherung", "Erinnerungen und Einstellungen als ZIP sichern (einspielen: /sicherung einspielen <Pfad>)"),
+    ("/deinstallieren", "Nova entfernen - vorher Sicherung auf den Desktop oder alles loeschen"),
     ("/anruf", "Nova ruft dich an (Bland AI oder Vonage) - Einrichtung und Stand"),
     ("/anruf vonage", "Vonage einrichten - Anrufe ohne Kreditkarte (PayPal)"),
     ("/anruf anbieter", "Anruf-Anbieter wechseln (bland oder vonage)"),
@@ -866,6 +869,47 @@ class AppController(CLI):
                 self.busy = False
             self._afk_dropped_notice()
             self._state_changed()
+
+    # -- Sprachbefehl vom Handy ("Hey Nova" in der Handy-App): Frage rein, Antwort zurueck ----------
+    _SPRACH_HINWEIS = ("[Per Sprachbefehl am Handy gesagt (Spracherkennung, kann Hoerfehler haben). Erledige es; "
+                       "antworte kurz in gesprochener Sprache - das Handy liest es vor. Rueckfragen gehen gerade "
+                       "nicht: was eine Freigabe braucht, schlage vor und sag, dass er es in der App bestaetigen "
+                       "kann.]\n")
+
+    def frage(self, text: str, warte: float = 170.0) -> dict:
+        """POST /api/frage: beantwortet text (seriell mit der App) und gibt die Antwort zurueck."""
+        text = (text or "").strip()[:4000]
+        if not text:
+            return {"ok": False, "error": "Leere Frage"}
+        ende = time.monotonic() + warte
+        while True:
+            with self._lock:
+                if not self.busy:
+                    self.busy = True
+                    self._live_turn = None
+                    self._drop_turn = False
+                    self.brain.provider.cancel_event.clear()
+                    break
+            if time.monotonic() > ende:
+                return {"ok": True, "antwort": "Ich bin gerade noch mit etwas anderem beschaeftigt - gleich nochmal."}
+            time.sleep(0.5)
+        alt = self.permissions.confirm_fn
+        self.permissions.confirm_fn = lambda _m, _r=None: False      # niemand kann gerade antworten
+        self._last_answer = ""
+        try:
+            self._answer(f"\U0001F399 {text}", model_text=self._SPRACH_HINWEIS + text, as_notice=True,
+                         notice_level="afk")
+        except Exception:  # noqa: BLE001
+            logger.exception("Sprachbefehl")
+        finally:
+            self.permissions.confirm_fn = alt
+            with self._lock:
+                self.busy = False
+            self._afk_dropped_notice()
+            self._state_changed()
+        from ..anruf_gespraech import fuer_sprache
+
+        return {"ok": True, "antwort": fuer_sprache(self._last_answer or "Erledigt.", 1200)}
 
     # -- Wachwort (assistant/wachwort.py): Nova nach vorne holen, Spracheingabe an ----------
     def aufwachen(self) -> dict:

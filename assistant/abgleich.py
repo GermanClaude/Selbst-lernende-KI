@@ -26,6 +26,7 @@ import time
 import urllib.error
 import urllib.request
 import zlib
+from pathlib import Path
 from typing import Callable
 
 from .logging_setup import get_logger
@@ -191,6 +192,8 @@ class Abgleich:
                     teile.append(f"{zahlen['geloescht']} vergessen")
                 if zahlen["episoden"]:
                     teile.append(f"{zahlen['episoden']} Gespraeche")
+                if zahlen.get("dateien"):
+                    teile.append(f"{zahlen['dateien']} Einstellungen")
                 self.letzte_meldung = "abgeglichen (" + ", ".join(teile) + ")"
                 if any(zahlen.values()) and self.bei_aenderung is not None:
                     try:
@@ -221,15 +224,78 @@ def _gleich(a: dict, b: dict) -> bool:
     def norm(d):
         return (sorted((f["content"], f["updated_at"]) for f in d.get("fakten") or []),
                 sorted((e["summary"], round(float(e["created_at"]), 2)) for e in d.get("episoden") or []),
-                sorted(v["content"] for v in d.get("vergessen") or []))
+                sorted(v["content"] for v in d.get("vergessen") or []),
+                sorted((k, round(float(v.get("zeit") or 0), 1)) for k, v in (d.get("dateien") or {}).items()))
     try:
         return norm(a) == norm(b)
     except (KeyError, TypeError, ValueError):
         return False
 
 
-def aus_umgebung(memory) -> Abgleich | None:
+# Einstellungen, die alle Novas (PC, Handy, Cloud) teilen - neueste Fassung gewinnt. Bewusst NICHT dabei:
+# Schluessel (.env), Rechte (permissions.toml), Plugins, Geraete - die gehoeren zu genau einem Geraet.
+GETEILTE_DATEIEN = ("config/ueber_mich.json", "config/persona.md", "config/skills.json", "config/anruf_persona.txt",
+                    "data/zeitplan.json")
+_MAX_DATEI = 256 * 1024
+
+
+class MitDateien:
+    """Gedaechtnis + geteilte Einstellungs-Dateien als eine Ablage (gleiche Schnittstelle wie Memory)."""
+
+    def __init__(self, memory, root, dateien=GETEILTE_DATEIEN):
+        self.memory, self.root, self.dateien = memory, Path(root), tuple(dateien)
+
+    def _lesen(self) -> dict:
+        aus = {}
+        for rel in self.dateien:
+            pfad = self.root / rel
+            try:
+                if pfad.is_file() and pfad.stat().st_size <= _MAX_DATEI:
+                    aus[rel] = {"text": pfad.read_text(encoding="utf-8"), "zeit": pfad.stat().st_mtime}
+            except (OSError, UnicodeDecodeError):
+                continue
+        return aus
+
+    def exportieren(self) -> dict:
+        daten = self.memory.exportieren()
+        daten["dateien"] = self._lesen()
+        return daten
+
+    def importieren(self, daten: dict) -> dict:
+        zahlen = self.memory.importieren(daten)
+        neu = 0
+        hier = self._lesen()
+        for rel, eintrag in (daten.get("dateien") or {}).items():
+            if rel not in self.dateien or not isinstance(eintrag, dict) or not isinstance(eintrag.get("text"), str):
+                continue                                  # nur die bekannten Dateien - nie einen fremden Pfad
+            zeit = float(eintrag.get("zeit") or 0)
+            if rel in hier and (hier[rel]["zeit"] >= zeit - 1 or hier[rel]["text"] == eintrag["text"]):
+                continue
+            pfad = self.root / rel
+            try:
+                pfad.parent.mkdir(parents=True, exist_ok=True)
+                tmp = pfad.with_name(pfad.name + ".abgleich")
+                tmp.write_text(eintrag["text"][:_MAX_DATEI], encoding="utf-8")
+                os.replace(tmp, pfad)
+                os.utime(pfad, (zeit, zeit))           # gleiche Zeit wie dort - sonst springt sie hin und her
+                neu += 1
+            except OSError:
+                continue
+        zahlen["dateien"] = neu
+        return zahlen
+
+    def fingerabdruck(self) -> tuple:
+        stand = []
+        for rel in self.dateien:
+            try:
+                stand.append(round((self.root / rel).stat().st_mtime, 1))
+            except OSError:
+                stand.append(0)
+        return tuple(self.memory.fingerabdruck()) + tuple(stand)
+
+
+def aus_umgebung(memory, root=None) -> Abgleich | None:
     if not eingerichtet():
         return None
     e = einstellungen()
-    return Abgleich(memory, e["repo"], e["token"], e["passwort"])
+    return Abgleich(MitDateien(memory, root) if root is not None else memory, e["repo"], e["token"], e["passwort"])

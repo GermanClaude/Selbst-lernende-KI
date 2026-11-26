@@ -87,6 +87,9 @@ public class NovaSteuerung extends AccessibilityService {
         super.onServiceConnected();
         if (aktiv) return;
         aktiv = true;
+        if (getSharedPreferences("nova", MODE_PRIVATE).getBoolean("hoeren", false)) {
+            NovaStart.versuchen(this);           // nach dem Neustart: "Hey Nova" wieder an (sonst Mitteilung)
+        }
         Thread faden = new Thread(this::schleife, "nova-steuerung");
         faden.setDaemon(true);
         faden.start();
@@ -304,6 +307,20 @@ public class NovaSteuerung extends AccessibilityService {
             }
             case "taschenlampe":
                 return taschenlampe(a.optBoolean("an", true));
+            case "wachwort": {                       // "Hey Nova" am Handy einstellen (an, text = Wort, sprechen)
+                SharedPreferences p = getSharedPreferences("nova", MODE_PRIVATE);
+                SharedPreferences.Editor e = p.edit();
+                String wort = a.optString("text").trim();
+                if (wort.length() >= 4 && wort.length() <= 60) e.putString("wachwort", wort);
+                if (a.has("sprechen")) e.putBoolean("hoeren_sprechen", a.optBoolean("sprechen", true));
+                if (a.has("an")) e.putBoolean("hoeren", a.optBoolean("an", false));
+                e.apply();
+                if (p.getBoolean("hoeren", false)) NovaStart.versuchen(this);
+                else NovaHoeren.stoppen(this);
+                return "Wachwort am Handy: " + (p.getBoolean("hoeren", false) ? "an" : "aus") + " ('"
+                        + p.getString("wachwort", "Hey Nova") + "'), Spracheingabe danach: "
+                        + (p.getBoolean("hoeren_sprechen", true) ? "an" : "aus") + ".";
+            }
             case "warten": {
                 double s = Math.max(0.5, Math.min(a.optDouble("sekunden", 2), 10));
                 schlafen((long) (s * 1000));

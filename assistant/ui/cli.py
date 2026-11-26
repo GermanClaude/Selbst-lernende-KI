@@ -1197,6 +1197,75 @@ class CLI:
             self.permissions.confirm_fn = alt
         print(_c("\n[Zurueck am PC.]", GREY))
 
+    # -- Deinstallieren, Sicherung, Diagnose (assistant/deinstallieren.py, diagnose.py) --
+    def _deinstallieren_befehl(self) -> bool:
+        """True = Nova beendet sich jetzt (das Loeschen laeuft danach). Nur per Befehl - nie als Werkzeug."""
+        from .. import deinstallieren as D
+
+        root = Path(self.config.project_root)
+        if os.environ.get("NOVA_CLOUD") == "1":
+            print("Das ist die Cloud-Nova: loesch den Dienst einfach beim Anbieter (Render: Settings -> Delete "
+                  "Service; eigener Server: docker compose down -v).")
+            return False
+        teile = D.zu_loeschen(root, self.config.workspace_path)
+        print(_c("\nNova deinstallieren", BOLD))
+        print("Entfernt wird: der Wachwort-Lauscher, Novas Autostart-Eintraege und Verknuepfungen, dann "
+              + ", ".join(t.name for t in teile) + f" in {root}.")
+        if (root / ".git").exists():
+            print("(Quellcode-Ordner: der Code bleibt, nur Daten und Einstellungen gehen.)")
+        if not self._ask_yes("Nova wirklich deinstallieren? [j/N]"):
+            print("Abgebrochen - nichts geaendert.")
+            return False
+        behalten = self._ask_yes("Erinnerungen und Einstellungen vorher als Sicherung auf den Desktop legen? "
+                                 "(Nein = alles loeschen, auch das Gedaechtnis) [J/n]", default=True)
+        if not behalten and not self._ask_yes("Wirklich ALLES loeschen - Gedaechtnis, Einstellungen und den "
+                                              "Arbeitsordner? Das kann man nicht rueckgaengig machen. [j/N]"):
+            print("Abgebrochen - nichts geaendert.")
+            return False
+        if behalten:
+            try:
+                pfad = D.sicherung(root, self.memory, self.config.workspace_path)
+                print(f"Sicherung: {pfad}")
+            except Exception as exc:  # noqa: BLE001 - ohne Sicherung nicht weiterloeschen
+                print(f"Die Sicherung ging nicht ({exc}) - ich loesche deshalb NICHTS.")
+                return False
+        for zeile in D.hintergrund_entfernen(root):
+            print("- " + zeile)
+        try:
+            self._abgleich_beenden()
+        except Exception:  # noqa: BLE001
+            pass
+        D.loeschen_starten(root, teile)
+        print("Nova beendet sich jetzt, danach werden die Dateien geloescht. Danke fuer die gemeinsame Zeit!"
+              + (" Die Handy-App entfernst du in Android wie jede App (lange antippen -> Deinstallieren)."))
+        return True
+
+    def _sicherung_befehl(self, args: list[str]) -> None:
+        from .. import deinstallieren as D
+
+        root = Path(self.config.project_root)
+        if len(args) >= 2 and args[0].lower() in ("einspielen", "laden", "zurueck"):
+            print(D.einspielen(root, self.memory, " ".join(args[1:])))
+            print("Neue Einstellungen gelten nach einem Neustart vollstaendig.")
+            return
+        pfad = D.sicherung(root, self.memory, self.config.workspace_path)
+        print(f"Sicherung angelegt: {pfad} (ohne Schluessel). Einspielen: /sicherung einspielen <Pfad>")
+
+    def _diagnose_befehl(self, beschreibung: str) -> None:
+        from .. import diagnose as G
+
+        fehler = [f"{f.get('quelle')}: {f.get('text')}" for f in self.__dict__.get("_fehler", [])]
+        gehirn = f"{self.config.active_provider} / {getattr(self.brain.provider, 'model', '?')}"
+        text = G.erstellen(self.config.project_root, beschreibung, fehler, gehirn)
+        pfad = G.speichern(self.config.project_root, text)
+        print(f"Diagnose-Bericht erstellt: {pfad}\n(Er enthaelt Version, System, Hardware, die letzten Fehler und "
+              "Protokollzeilen - Schluessel, Benutzername, E-Mail-Adressen und Telefonnummern sind geschwaerzt, "
+              "Gespraeche und Gedaechtnis sind nicht dabei. Du kannst ihn vorher oeffnen und ansehen.)")
+        if self._ask_yes("Diesen Bericht jetzt an den Entwickler schicken? [j/N]"):
+            print(G.senden(self.config, text))
+        else:
+            print("Nicht gesendet. Du kannst die Datei auch selbst weitergeben.")
+
     # -- Wachwort am PC (assistant/wachwort.py) --
     def _wachwort_befehl(self, args: list[str]) -> None:
         from .. import wachwort as W
@@ -1475,7 +1544,7 @@ class CLI:
         alt = self.__dict__.get("_abgleich_stop")
         if alt is not None:
             alt.set()
-        a = abgleich.aus_umgebung(self.memory)
+        a = abgleich.aus_umgebung(self.memory, self.config.project_root)   # + geteilte Einstellungen
         self._abgleich = a
         if a is None:
             return
@@ -2776,6 +2845,13 @@ class CLI:
             self._anruf_befehl(cmd.split()[1:])
         elif base in ("/plugins", "/plugin", "/mcp"):
             self._plugins_befehl(cmd)
+        elif base in ("/deinstallieren", "/deinstallation", "/uninstall", "/entfernen"):
+            if self._deinstallieren_befehl():
+                return True
+        elif base in ("/sicherung", "/backup"):
+            self._sicherung_befehl(cmd.split()[1:])
+        elif base in ("/diagnose", "/fehlerbericht", "/absturzbericht", "/crashreport"):
+            self._diagnose_befehl(cmd.partition(" ")[2])
         elif base in ("/wachwort", "/heynova", "/aufwecken"):
             self._wachwort_befehl(cmd.split()[1:])
         elif base in ("/zeitplan", "/termine", "/geplant", "/erinnerungen"):

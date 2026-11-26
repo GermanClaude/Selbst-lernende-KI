@@ -4,6 +4,29 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.43.0 – 2026-11-26
+
+**Sprachaktivierung auf dem Handy, ein Speicher für alle, sauber deinstallieren, Diagnose-Bericht**
+- **„Hey Nova“ auch auf dem Handy:** Die Nova-App hört im Hintergrund auf dein Wachwort, auch wenn sie zu
+  ist. Dann öffnet sie sich, hört deinen Befehl, schickt ihn an Nova und liest die Antwort vor. „Hey Nova,
+  wie wird das Wetter?“ geht auch in einem Satz. Das Wort ist frei wählbar, am Handy wie am PC
+  (`/wachwort wort …`). „Gleich zuhören“ lässt sich abschalten. Ausschalten geht über die Mitteilung
+  „Nova hört zu“, in der App, oder du sagst es Nova.
+- **Ein Speicher für PC, Handy und Cloud:** Der Gedächtnis-Abgleich über dein privates GitHub-Repo teilt jetzt
+  auch „Über mich“, die Persönlichkeit, deine Skills, die Telefon-Persona und den Zeitplan. Schlüssel und
+  Rechte bleiben auf jedem Gerät für sich.
+- **`/deinstallieren`:** Nova fragt, ob du deine Erinnerungen behalten willst. Wenn ja, legt sie eine Sicherung
+  (ZIP) auf den Desktop, mit Gedächtnis, Einstellungen und Arbeitsordner, aber ohne Schlüssel. Sonst löscht
+  sie alles, und bei „alles löschen“ fragt sie noch ein zweites Mal nach. Dann entfernt sie den
+  Hintergrund-Lauscher, die Autostarts und die Verknüpfungen und löscht ihre Dateien (nur ihre eigenen).
+  `/sicherung` legt jederzeit eine Sicherung an, `/sicherung einspielen <Datei>` lädt sie wieder. In der
+  Handy-App gibt es den Knopf „Nova-App deinstallieren“.
+- **Diagnose-Bericht (`/diagnose`):** Wenn etwas nicht geht, schickt Nova auf Wunsch einen Bericht an den
+  Entwickler: Version, System, Hardware, letzte Fehler und Protokollzeilen. Schlüssel, Benutzername,
+  E-Mail-Adressen, Telefonnummern, Gespräche und das Gedächtnis sind nie dabei, und du kannst den Bericht
+  vorher ansehen. Stürzt Nova schon beim Start ab, bietet sie den Bericht von selbst an. Gesendet wird nur
+  nach deinem Ja.
+
 ## 0.42.0 – 2026-11-26
 
 **Nova überall – auch ohne PC, auch ohne geöffnete App**

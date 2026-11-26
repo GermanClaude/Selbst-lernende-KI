@@ -141,6 +141,28 @@ def _after_start() -> None:
         pass
 
 
+def _absturz_bericht(absturz: str, fenster: bool) -> None:
+    """Nach einem Absturz beim Start: Diagnose-Bericht anbieten (nur mit Ja des Nutzers)."""
+    try:
+        from assistant.diagnose import nach_absturz
+
+        if fenster:
+            from assistant.app.launcher import ask_yes_no, message_box
+
+            nach_absturz(absturz, lambda frage: ask_yes_no(frage, "Nova - Diagnose"), message_box)
+        elif sys.stdin is not None and sys.stdin.isatty():
+            def frage(text: str) -> bool:
+                print("\n" + text)
+                try:
+                    return input("Senden? [j/N] ").strip().lower() in ("j", "ja", "y", "yes")
+                except (EOFError, KeyboardInterrupt):
+                    return False
+
+            nach_absturz(absturz, frage)
+    except Exception:  # noqa: BLE001 - der Bericht darf selbst nie abstuerzen
+        pass
+
+
 def main() -> int:
     # Projektpfad in sys.path aufnehmen (fuer den Start aus dem Quellordner).
     sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -183,6 +205,7 @@ def main() -> int:
                 message_box("Die KI konnte nicht starten:\n\n" + traceback.format_exc(limit=3))
             except Exception:  # noqa: BLE001
                 pass
+        _absturz_bericht(traceback.format_exc(), "--app" in sys.argv)
         code = 1
     # Die .exe schliesst ihr Fenster sofort - Fehler sonst nicht lesbar.
     # (43 = "laeuft schon in einem anderen Fenster" - dann still schliessen.)
