@@ -1196,6 +1196,7 @@
     sehenTitel();
     byId('sb-name').textContent = name;
     byId('tb-name').textContent = name;
+    const spn = byId('splash-name'); if (spn && name) spn.textContent = name;
     renderGreeting();
     byId('tour-cta-title').textContent = 'Tour starten – ' + name + ' zeigt dir alles';
     byId('jv-name').textContent = name;
@@ -9057,9 +9058,22 @@
   const FLOW = new Set(['user', 'start', 'thinking', 'chunk', 'tool', 'agent', 'info', 'done', 'stopped', 'error',
     'notice', 'reset', 'retract', 'afk_report', 'image', 'image_progress', 'sehen_still', 'spiel_bericht']);
 
+  let splashWeg = false;
+  function hideSplash() {
+    if (splashWeg) return;
+    splashWeg = true;
+    const el = byId('splash');
+    if (!el) return;
+    el.classList.add('gone');
+    setTimeout(() => { try { el.remove(); } catch (_) {} }, 700);
+  }
+  // Sicherheitsnetz: der Startbildschirm verschwindet spaetestens nach 8 s, auch ohne Verbindung.
+  setTimeout(hideSplash, 8000);
+
   function setConnected(ok) {
     connected = ok;
     if (ok) everConnected = true;
+    if (ok) setTimeout(hideSplash, 150);   // verbunden: Startbildschirm sanft ausblenden
     const banner = byId('conn-banner');
     banner.classList.remove('ended');
     if (!TOKEN) {

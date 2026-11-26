@@ -11,6 +11,18 @@
   <link id="custom-css" rel="stylesheet" href="/custom.css">
 </head>
 <body>
+
+<!-- Animierter Startbildschirm: pulsierende Sphaere, blendet aus, sobald die App bereit ist -->
+<div id="splash" aria-hidden="true">
+  <div class="splash-orb">
+    <span class="splash-ring"></span>
+    <span class="splash-ring r2"></span>
+    <span class="splash-core"></span>
+  </div>
+  <div class="splash-name" id="splash-name">Nova</div>
+  <div class="splash-sub">wird gestartet<span class="splash-dots"><i>.</i><i>.</i><i>.</i></span></div>
+</div>
+
 <div class="app" id="app">
 
   <!-- Seitenleiste -->

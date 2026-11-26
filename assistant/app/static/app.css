@@ -3377,3 +3377,51 @@ body.in-sandbox::after {
   text-align: center; font-size: 11px; font-weight: 600; padding: 2px 0;
   color: #2a2300; background: rgba(232, 184, 0, .85);
 }
+
+/* ===== Animierter Startbildschirm (Splash) ===== */
+#splash {
+  position: fixed; inset: 0; z-index: 9999;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px;
+  background:
+    radial-gradient(1200px 600px at 50% 18%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 60%),
+    var(--bg);
+  opacity: 1; transition: opacity .6s ease;
+}
+#splash.gone { opacity: 0; pointer-events: none; }
+.splash-orb { position: relative; width: 132px; height: 132px; }
+.splash-core {
+  position: absolute; inset: 14px; border-radius: 50%;
+  background: radial-gradient(circle at 38% 34%, #ede9fe 0 7%, #a78bfa 24%, #7c3aed 58%, #4f46e5 100%);
+  box-shadow: 0 0 46px 6px color-mix(in srgb, #7c3aed 60%, transparent);
+  animation: splashPulse 2.1s ease-in-out infinite;
+}
+.splash-ring {
+  position: absolute; inset: 0; border-radius: 50%;
+  border: 2px solid color-mix(in srgb, #a78bfa 70%, transparent);
+  animation: splashRing 2.1s ease-out infinite;
+}
+.splash-ring.r2 { animation-delay: 1.05s; }
+.splash-name {
+  font-size: 30px; font-weight: 800; letter-spacing: .04em;
+  color: var(--text);
+  background: linear-gradient(90deg, #a78bfa, #7c3aed, #4f46e5, #a78bfa);
+  background-size: 300% 100%;
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  animation: splashShine 3s linear infinite;
+}
+.splash-sub { font-size: 14px; color: var(--muted, #8a8a99); }
+.splash-dots i { opacity: .25; animation: splashDot 1.2s infinite; }
+.splash-dots i:nth-child(2) { animation-delay: .2s; }
+.splash-dots i:nth-child(3) { animation-delay: .4s; }
+/* Premium: der Startbildschirm schimmert golden */
+body.premium #splash .splash-core { box-shadow: 0 0 50px 8px rgba(232, 184, 0, .5); }
+body.premium #splash .splash-ring { border-color: rgba(232, 184, 0, .7); }
+
+@keyframes splashPulse { 0%, 100% { transform: scale(.94); } 50% { transform: scale(1.06); } }
+@keyframes splashRing { 0% { transform: scale(.7); opacity: .9; } 100% { transform: scale(1.35); opacity: 0; } }
+@keyframes splashShine { 0% { background-position: 0% 50%; } 100% { background-position: 300% 50%; } }
+@keyframes splashDot { 0%, 100% { opacity: .25; } 40% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .splash-core, .splash-ring, .splash-name, .splash-dots i { animation: none; }
+  .splash-ring.r2 { display: none; }
+}

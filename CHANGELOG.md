@@ -4,6 +4,14 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.47.0 – 2026-11-26
+
+**Animierter Startbildschirm**
+- Beim Hochfahren zeigt die App jetzt einen eleganten Startbildschirm: Novas Sphäre pulsiert mit Leuchtringen,
+  der Name schimmert, darunter „wird gestartet …". Sobald die Oberfläche bereit ist, blendet er sanft aus
+  (spätestens nach ein paar Sekunden). Mit Premium schimmert er golden. Wer Animationen reduziert hat, bekommt
+  eine ruhige Version.
+
 ## 0.46.0 – 2026-11-26
 
 **Premium sieht man jetzt**
