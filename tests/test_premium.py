@@ -189,3 +189,69 @@ def test_codegenerator_braucht_token(root, monkeypatch):
     monkeypatch.delenv("NOVA_PREMIUM_TOKEN", raising=False)
     with pytest.raises(P.PremiumFehler, match="NOVA_PREMIUM_TOKEN"):
         P.codegenerator_holen(root)
+
+
+# -- Entwicklermodus ----------------------------------------------------------
+def test_entwicklermodus_code(root):
+    k = P.kennung(root)
+    P.einloesen(root, _code(k, "dev", 99999, s="x", g="t"))
+    assert P.stufe(root) == "dev" and "Entwickler" in P.status_text(root)
+
+
+def test_entwicklerblock_nur_mit_dev(root, monkeypatch):
+    import assistant.personality as PR
+    cfg = type("C", (), {"project_root": root})()
+    assert PR._entwickler_block(cfg) == ""
+    P.einloesen(root, _code(P.kennung(root), "dev", 99999, s="x"))
+    block = PR._entwickler_block(cfg)
+    assert "/novaaiupdate" in block and "/codegenerator 13679" in block and "/sandbox" in block
+
+
+def test_code_muster_erkennt_echten_code(root):
+    c = _code(P.kennung(root))
+    assert P.CODE_MUSTER.match(c)
+    assert not P.CODE_MUSTER.match("hallo nova wie geht es dir")
+    assert not P.CODE_MUSTER.match("/novaaiupdate")
+
+
+# -- Sperrung (Entwickler nimmt Zugang zurueck) -------------------------------
+def _sperrliste(nonces=(), kennungen=()):
+    import base64 as b64
+    inner = json.dumps({"v": 1, "gesperrt": list(nonces), "kennungen": list(kennungen), "stand": 1},
+                       separators=(",", ":")).encode()
+    huelle = {"daten": b64.urlsafe_b64encode(inner).rstrip(b"=").decode(),
+              "sig": b64.b64encode(_sign(inner)).decode()}
+    return json.dumps(huelle).encode()
+
+
+def test_sperrung_schaltet_ab(root):
+    k = P.kennung(root)
+    P.einloesen(root, _code(k, "max", 99999, nonce="dead" * 4, s="x", g="token"))
+    assert P.stufe(root) == "max"
+    gesperrt = P.sperrung_pruefen(root, holen=lambda zugang, pfad: _sperrliste(nonces=["deaddeaddeaddead"]))
+    assert gesperrt and P.stufe(root) is None and P.lizenz(root)["gesperrt"]
+
+
+def test_sperrung_ganzes_geraet(root):
+    k = P.kennung(root)
+    P.einloesen(root, _code(k, "premium", 99999, nonce="aa" * 8, s="x", g="t"))
+    P.sperrung_pruefen(root, holen=lambda z, p: _sperrliste(kennungen=[k]))
+    assert P.stufe(root) is None
+
+
+def test_ohne_netz_bleibt_premium(root):
+    k = P.kennung(root)
+    P.einloesen(root, _code(k, "premium", 99999, nonce="bb" * 8, s="x", g="t"))
+
+    def kaputt(zugang, pfad):
+        raise OSError("kein Netz")
+    assert P.sperrung_pruefen(root, holen=kaputt) is False
+    assert P.stufe(root) == "premium"       # fehlendes Netz sperrt einen Zahler nie aus
+
+
+def test_gefaelschte_sperrliste_ignoriert(root, monkeypatch):
+    k = P.kennung(root)
+    P.einloesen(root, _code(k, "premium", 99999, nonce="cc" * 8, s="x", g="t"))
+    monkeypatch.setattr(P, "OEFFENTLICH_N", N + 4)   # Liste mit falschem Schluessel signiert
+    assert P.sperrung_pruefen(root, holen=lambda z, p: _sperrliste(nonces=["cccccccccccccccc"])) is False
+    assert P.lizenz(root).get("gesperrt") is None

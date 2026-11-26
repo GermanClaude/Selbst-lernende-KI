@@ -4,6 +4,23 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.45.0 – 2026-11-26
+
+**Premium: Sandbox-Nova, Entwicklermodus, Codes sperren**
+- **Sandbox-Nova (`/sandbox`):** Startet eine frische Nova zum Testen – ohne Gedächtnis (fängt bei null an),
+  mit vorgegaukelter Hardware/Software (jedes Mal anders), aber mit deinen API-Schlüsseln. Wie viele
+  gleichzeitig: kostenlos 1, Premium 10, Premium Max/Entwickler unbegrenzt. Das Limit lässt sich ohne
+  gültige Lizenz nicht hochsetzen. `/sandbox liste` und `/sandbox stop` verwalten sie.
+- **Entwicklermodus:** Eine eigene Code-Stufe (höchste Stufe). Ist sie freigeschaltet, kennt Nova die
+  geschlossenen Befehle und erklärt sie dir – gegenüber allen anderen bleibt der Schutz bestehen.
+- **Code einfach einlösen:** Du kannst einen Code jetzt direkt ins Nachrichtenfeld schreiben (statt
+  `/novaaiupdate …`) – Nova erkennt ihn und schaltet frei.
+- **Codes sperren:** Der Codegenerator führt jetzt ein Archiv aller erzeugten Codes mit Profil (Name, Tarif,
+  Betrag, bezahlt/offen, Zahldatum, Laufzeit – alles editierbar), kann einzelne Codes oder ganze Geräte
+  sperren und sich selbst aktualisieren. Ein gesperrter Code schaltet beim nächsten Start die Premium-Version
+  ab (zurück zur kostenlosen Version – Daten bleiben). Fehlt das Netz, bleibt ein zahlender Nutzer
+  freigeschaltet.
+
 ## 0.44.0 – 2026-11-26
 
 **Rechtliches, Selbstschutz und (geschlossenes) Premium**

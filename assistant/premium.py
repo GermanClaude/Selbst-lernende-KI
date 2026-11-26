@@ -18,6 +18,7 @@ import base64
 import hashlib
 import io
 import json
+import re
 import secrets
 import sys
 import time
@@ -27,13 +28,19 @@ import zipfile
 from pathlib import Path
 from typing import Callable
 
+from .logging_setup import get_logger
+
+logger = get_logger()
+
 # Oeffentlicher Schluessel des Entwicklers (RSA-3072, e = 65537). Der private liegt nur bei ihm.
 OEFFENTLICH_N = int(
     "c43005df09dd2dcdb5a70ad53c6b21cc1a58307beaf5828c0c41577e0ddf1178e6b9d137e54889865772074f24afd3eb2cd26edf18af9ae194f00ff00a2bbeeab7ec87317c579875bcb97a7e4a6bade350d677fe19d0b23890a243793ffcdcecc98f3c88f1d785e7ae8697462d00b83844481683f9af1e43bed16c0b132aa425ead55d625161ae70ecda9ea2d906827d92b2ddaee22465cf121dc45ca057905f9e80be8e98bafa8f87369195a1a1df649c27c983e0e05f5df5d306cfdb29cf9d1d2f85f184631a4af14041ff81573b8eda001c3a9128564105c39ab7181ba495d2836aa46a42d6f574e5bb1476420041aba1bbd871dd837e310a7b7686dd216489e5f162b6282d5676498700f09adc55fad9c36e2f88250c7c49f343311a3bbb7dc413fb37f07c43ce86b3fbeecc9ba1687098aed777ea0e09c197584ef8b53bf171bac4c7e97ada3518ed87bf5448959dfb92c9ba9cb5b4f275142ca035a1a3b98a12d0a8de22c231683e6c40469264b58c13f59f22da92cf5e672f46aa3e0d", 16)
 OEFFENTLICH_E = 65537
-STUFEN = {"premium": "Premium", "max": "Premium Max"}
+STUFEN = {"premium": "Premium", "max": "Premium Max", "dev": "Entwickler"}
+CODE_MUSTER = re.compile(r"^NOVA-[A-Za-z0-9_\-]{20,}\.[A-Za-z0-9_\-]{20,}$")
 PAKET_REPO = "GermanClaude/Nova-Premium"
 PAKET_PFAD = "pakete/nova-premium.bin"
+SPERR_PFAD = "pakete/gesperrt.json"       # signierte Liste gesperrter Codes (Entwickler kann Zugang zuruecknehmen)
 _SHA256_INFO = bytes.fromhex("3031300d060960864801650304020105000420")
 _TAG = 86400
 
@@ -106,11 +113,62 @@ def _speichern(root, d: dict) -> None:
 
 
 def stufe(root, jetzt: float | None = None) -> str | None:
-    """'premium' / 'max', solange die Laufzeit gilt - sonst None."""
+    """'premium' / 'max', solange die Laufzeit gilt und der Code nicht gesperrt ist - sonst None."""
     d = lizenz(root)
+    if d.get("gesperrt"):
+        return None
     if d.get("stufe") in STUFEN and float(d.get("bis") or 0) > (jetzt or time.time()):
         return d["stufe"]
     return None
+
+
+def sperrliste_lesen(blob: bytes, n: int = None) -> dict:
+    """Signierte Sperrliste {"gesperrt":[nonce...], "kennungen":[...], "stand":ts}. Nur mit gueltiger
+    Unterschrift des Entwicklers. Wirft PremiumFehler, wenn die Unterschrift fehlt/falsch ist."""
+    try:
+        huelle = json.loads(blob)
+        daten = _b64d(huelle["daten"]) if isinstance(huelle, dict) and "daten" in huelle else None
+        sig = base64.b64decode(huelle.get("sig", "")) if isinstance(huelle, dict) else b""
+    except (ValueError, KeyError, TypeError) as exc:
+        raise PremiumFehler("Sperrliste unlesbar.") from exc
+    if daten is None or not signatur_ok(daten, sig, n):
+        raise PremiumFehler("Sperrliste ist nicht vom Entwickler unterschrieben.")
+    liste = json.loads(daten)
+    return liste if isinstance(liste, dict) else {}
+
+
+def sperrung_pruefen(root, holen: Callable[[str, str], bytes] = None, n: int = None) -> bool:
+    """Prueft beim Entwickler-Repo, ob dieser Code gesperrt wurde. Gibt True zurueck, wenn JETZT gesperrt
+    wird (dann ist Premium weg). Ohne Netz/ohne Zugang bleibt der letzte Stand - ein zahlender Nutzer wird
+    durch fehlendes Netz nie ausgesperrt."""
+    holen = holen or _github
+    d = lizenz(root)
+    if not d.get("stufe") or not d.get("zugang"):
+        return False
+    try:
+        liste = sperrliste_lesen(holen(d["zugang"], SPERR_PFAD), n)
+    except PremiumFehler as exc:
+        if "unterschrieben" in str(exc):          # da liegt was Falsches - nicht darauf hereinfallen
+            logger.warning("Premium: Sperrliste ungueltig")
+        return False
+    except Exception:  # noqa: BLE001 - kein Netz, 404 (noch keine Liste): Stand lassen
+        return False
+    gesperrt = (d.get("nonce") in set(liste.get("gesperrt") or [])
+                or kennung(root) in set(liste.get("kennungen") or []))
+    if gesperrt and not d.get("gesperrt"):
+        d["gesperrt"] = True
+        d["gesperrt_am"] = time.time()
+        _speichern(root, d)
+        try:
+            paket_pfad(root).unlink(missing_ok=True)      # das Premium-Paket vom Geraet nehmen
+        except OSError:
+            pass
+        return True
+    if not gesperrt and d.get("gesperrt"):           # Entwickler hat wieder entsperrt
+        d.pop("gesperrt", None)
+        d.pop("gesperrt_am", None)
+        _speichern(root, d)
+    return False
 
 
 def einloesen(root, code: str, jetzt: float | None = None, n: int = None) -> dict:
@@ -132,7 +190,7 @@ def einloesen(root, code: str, jetzt: float | None = None, n: int = None) -> dic
         dauer = float(c.get("d") or 0) or max(1, int(c.get("m") or 1)) * 30 * _TAG   # Sekunden (Stunden..Jahre)
         dauer = max(60.0, min(dauer, 10 * 365 * _TAG))
         start = max(jetzt, float(alt.get("bis") or 0)) if alt.get("stufe") == c["t"] else jetzt
-        neu = {"benutzt": benutzt, "stufe": c["t"], "bis": start + dauer,
+        neu = {"benutzt": benutzt, "stufe": c["t"], "bis": start + dauer, "nonce": c.get("n"),
                "schluessel": c.get("s", ""), "zugang": c.get("g", ""), "eingeloest": jetzt}
     else:
         raise PremiumFehler("Unbekannte Stufe im Code.")
@@ -203,10 +261,16 @@ def paket_holen(root, holen: Callable[[str, str], bytes] = _github, n: int = Non
     return info
 
 
-def laden(root, ctl, n: int = None):
-    """Beim Start: gueltige Lizenz + unterschriebenes Paket -> nova_premium.registrieren(ctl, stufe)."""
+def laden(root, ctl, n: int = None, sperrung=True):
+    """Beim Start: gueltige Lizenz + unterschriebenes Paket -> nova_premium.registrieren(ctl, stufe).
+    sperrung=True: vorher beim Entwickler-Repo nachsehen, ob der Code zurueckgenommen wurde."""
     import importlib
 
+    if sperrung:
+        try:
+            sperrung_pruefen(root, n=n)        # gesperrt? -> stufe() ist danach None, nichts wird geladen
+        except Exception:  # noqa: BLE001
+            pass
     st = stufe(root)
     pfad = paket_pfad(root)
     if not st or not pfad.exists():

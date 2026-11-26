@@ -94,6 +94,19 @@ def _log_ende(pfad: Path, zeilen: int = MAX_LOG_ZEILEN) -> str:
 
 def system_info(lauf=subprocess.run) -> dict:
     from . import __version__
+    from . import sandbox
+
+    profil = sandbox.aktiv()
+    if profil is not None:                        # Sandbox: vorgegaukelte Hardware
+        return {
+            "Nova": __version__ + " (Sandbox-Test)",
+            "System": profil.get("system", "?"),
+            "Prozessor": f"{profil.get('prozessor', '?')}, {profil.get('kerne', '?')} Kerne",
+            "Arbeitsspeicher": f"{profil.get('arbeitsspeicher_gb', '?')} GB (frei {profil.get('frei_gb', '?')} GB)",
+            "Grafik": profil.get("grafik", "?"),
+            "Speicherplatz": f"{profil.get('speicherplatz_gb', '?')} GB frei",
+            "Hinweis": "simulierte Sandbox-Umgebung",
+        }
 
     try:
         frei = shutil.disk_usage(Path.home()).free / 2**30

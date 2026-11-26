@@ -2667,6 +2667,10 @@ class CLI:
             if key and not user_text.startswith("/"):
                 self._setup_key(key)  # Schluessel eingefuegt: einrichten - geht NIE an die KI
                 continue
+            from .. import premium as _PM
+            if _PM.CODE_MUSTER.match(user_text.strip()):   # Premium-/Entwickler-Code ins Feld: wie /novaaiupdate
+                self._premium_befehl([user_text.strip()])
+                continue
             if not user_text.startswith("/") and find_cloudflare_token(user_text):
                 print(_c(CLOUDFLARE_HINWEIS.replace("Gehirn & Schl\u00fcssel\u201c \u2192 \u201eBilder",
                                                     "Gehirn & Schl\u00fcssel\u201c (App) \u2192 \u201eBilder")
@@ -2909,6 +2913,8 @@ class CLI:
             self._codegenerator_befehl(cmd.split()[1:])
         elif base == "/simulation":
             self._simulation_befehl(cmd.split()[1:])
+        elif base in ("/sandbox", "/testnova", "/kivm"):
+            self._sandbox_befehl(cmd.split()[1:])
         elif _bildpfad(cmd.split()[0], self._bild_basis()):  # "/home/ich/foto.png Was ist das?"
             self._bildpfad_hinweis(cmd.split()[0])
         else:
@@ -2952,12 +2958,66 @@ class CLI:
     def _premium_laden(self) -> None:
         from .. import premium as PM
 
+        root = self.config.project_root
         try:
-            if PM.stufe(self.config.project_root):
-                PM.laden(self.config.project_root, self)
-            PM.simulation_laden(self.config.project_root, self)   # Testbetrieb (/simulation)
+            PM.simulation_laden(root, self)      # Testbetrieb (/simulation) - gleich, ohne Netz
         except Exception as exc:  # noqa: BLE001
-            logger.warning("Premium laden: %s", exc)
+            logger.warning("Premium (Simulation): %s", exc)
+
+        def im_hintergrund() -> None:            # die Sperrpruefung fragt beim Repo nach - nicht den Start blockieren
+            try:
+                if PM.stufe(root) or PM.lizenz(root).get("gesperrt"):
+                    PM.laden(root, self)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Premium laden: %s", exc)
+
+        threading.Thread(target=im_hintergrund, name="premium", daemon=True).start()
+
+    def _sandbox_tier(self):
+        """Welche Sandbox-Stufe gilt: echtes Premium, sonst die Simulation, sonst None (kostenlos: 1)."""
+        from .. import premium as PM
+
+        root = self.config.project_root
+        st = PM.stufe(root)
+        if st:
+            return st
+        sim = PM.lizenz(root).get("sim") or {}
+        import time as _t
+        if sim.get("stufe") and float(sim.get("bis") or 0) > _t.time():
+            return sim["stufe"]
+        return None
+
+    def _sandbox_befehl(self, args: list[str]) -> None:
+        """Sandbox-Nova (frische KI, andere Hardware, Schluessel geerbt). Frei 1, Premium 10, Max unbegrenzt."""
+        from .. import sandbox
+
+        root = self.config.project_root
+        if sandbox.aktiv() is not None:
+            print("Du bist schon in einer Sandbox-Nova - von hier aus startest du keine weitere.")
+            return
+        sub = args[0].lower() if args else "neu"
+        tier = self._sandbox_tier()
+        if sub in ("liste", "status"):
+            laufen = sandbox.offene(root)
+            print(f"Sandboxen offen: {len(laufen)}/{sandbox.grenze(tier)} "
+                  f"(Stufe: {tier or 'kostenlos'}). " + (", ".join(d["id"] for d in laufen) or "keine"))
+            return
+        if sub in ("stop", "stopp", "aus"):
+            sid = args[1] if len(args) > 1 else ""
+            print(f"{sandbox.stoppen(root, sid)} Sandbox(en) beendet.")
+            return
+        if sub in ("neu", "start", "new"):
+            try:
+                info = sandbox.starten(self.config, tier)
+            except RuntimeError as exc:
+                print(_c(str(exc), YELLOW))
+                return
+            p = info["profil"]
+            print(f"Sandbox-Nova gestartet ({info['offen']}/{info['limit']}): frisches Gedaechtnis, "
+                  f"vorgegaukelt {p['prozessor']} / {p['grafik']} / {p['arbeitsspeicher_gb']} GB / {p['system']}. "
+                  "Deine API-Schluessel sind geerbt. Schliessen: /sandbox stop oder das Fenster zu.")
+            return
+        print("Sandbox: neu | liste | stop [id]")
 
     def _simulation_befehl(self, args: list[str]) -> None:
         """Versteckt, nur fuer den Entwickler: Premium oertlich zum Testen an/aus (/simulation novaai.13696)."""

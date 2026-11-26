@@ -402,7 +402,11 @@ class AppController(CLI):
         if not text and not images:
             return {"ok": False, "error": "Leere Nachricht"}
         from ..schluessel import CLOUDFLARE_HINWEIS, find_cloudflare_token
+        from .. import premium as _PM
 
+        if _PM.CODE_MUSTER.match(text):          # ein Premium-/Entwickler-Code direkt ins Feld: wie /novaaiupdate
+            self.run_background(lambda: self._premium_befehl([text]))
+            return {"ok": True}
         if not text.startswith("/") and find_cloudflare_token(text):
             return {"ok": False, "error": CLOUDFLARE_HINWEIS}
         if images and _mask_key(text)[0].startswith("/"):

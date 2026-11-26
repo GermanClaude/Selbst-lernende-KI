@@ -20,6 +20,12 @@ class SystemInfoTool(Tool):
 
     def run(self, ctx: ToolContext) -> str:
         ctx.permissions.require(Risk.SAFE, "System-Info lesen")
+        from .. import sandbox
+
+        profil = sandbox.aktiv()
+        if profil is not None:                    # Sandbox-Nova: vorgegaukelte Hardware statt der echten
+            return (sandbox.system_info_text(profil)
+                    + f"\nAktuelle Zeit: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         usage = shutil.disk_usage(os.getcwd())
         gb = 1024 ** 3
         return (

@@ -51,6 +51,9 @@ def find_app_root() -> Path:
     Liegt die .exe im 'dist'-Ordner des Projekts (so wie build.bat sie ablegt) und
     steht die .env nur im Projektordner, wird der Projektordner genutzt.
     """
+    ueber = os.environ.get("NOVA_ROOT_OVERRIDE", "").strip()
+    if ueber:  # Sandbox-Nova (assistant/sandbox.py): eigener, leerer Ordner, erbt nur die .env der echten Nova
+        return Path(ueber).resolve()
     if not getattr(sys, "frozen", False):
         return Path(__file__).resolve().parent.parent
     exe_dir = Path(sys.executable).resolve().parent
