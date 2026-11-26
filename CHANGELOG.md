@@ -4,6 +4,26 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.41.0 – 2026-11-26
+
+**Nova bedient jede App – mit jedem KI-Modell**
+- Bisher brauchte Nova zum Bedienen von Programmen ein Bildschirmfoto – das können nur Modelle, die Bilder
+  sehen. Jetzt liest sie Fenster, Knöpfe, Felder und Menüs **als Text** über die Bedienungshilfen von
+  Windows. Damit steuern auch DeepSeek & Co. jedes Programm: „Öffne Spotify und spiel meine Playlist“,
+  „Trag in Excel … ein“, „Klick in den Einstellungen auf Bluetooth“.
+- Neue Werkzeuge:
+  - **Programme starten** nach Namen (alles aus dem Startmenü, auch Store-Apps) oder Dateien/Adressen öffnen
+  - **Fenster** auflisten, nach vorne holen, minimieren, maximieren, schließen
+  - **App bedienen:** Knöpfe klicken, Felder ausfüllen, Text lesen, Menüs aufklappen
+  - **Bildschirm-Text:** Texterkennung mit Position – „klick auf ‚Weiter‘“, auch in Apps ohne Bedienungshilfen
+  - **Maus** (klicken, ziehen, scrollen), **Tastatur** (tippen, Tastenkombinationen, Lautstärke, Musik),
+    **Zwischenablage**, **laufende Programme** (anzeigen, hängende beenden)
+- Alles mit Windows-Bordmitteln – keine Zusatzprogramme nötig. Tippen und Klicken klappt jetzt auch ohne
+  das Zusatzpaket „pyautogui“.
+- Sicher: Nova fragt vor dem Bedienen nach (wie immer abschaltbar mit `/stuetzraeder aus` bzw. `alles`).
+  In ihr **eigenes** Fenster klickt und tippt sie nie (sonst könnte sie sich selbst Rechte geben),
+  Passwortfelder liest und füllt sie nicht, und Windows selbst beendet sie nicht.
+
 ## 0.40.0 – 2026-11-26
 
 **Plugins für alle KI-Modelle**

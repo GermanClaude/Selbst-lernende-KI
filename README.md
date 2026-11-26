@@ -736,13 +736,23 @@ erhöhen, in `CHANGELOG.md` oben einen Abschnitt dazu schreiben und auf den
 Standard-Branch bringen. Alle Installationen holen sie sich dann selbst; die
 GitHub-Action baut dazu automatisch eine neue `KI.exe`.
 
-## PC-Steuerung (Maus/Tastatur) aktivieren (optional)
+## Jede App bedienen – mit jedem KI-Modell (Windows)
 
-```bash
-pip install pyautogui pillow
-```
-Und `safe_mode = false` setzen. Not-Aus: Maus in eine Bildschirmecke reißen
-stoppt die Steuerung sofort.
+Nova bedient Programme über die **Bedienungshilfen von Windows** und liest Fenster, Knöpfe, Felder und Menüs
+als Text. Dafür braucht das Modell **kein Bildverständnis**, das klappt also auch mit DeepSeek, Ollama & Co.
+Zusätzlich gibt es eine **Texterkennung des Bildschirms mit Positionen** („klick auf ‚Weiter‘“) für Apps ohne
+Bedienungshilfen. Werkzeuge: `programm_starten` (alles aus dem Startmenü, Dateien, Adressen), `fenster`,
+`app_bedienen`, `bildschirm_text`, `maus`, `tasten`, `zwischenablage`, `prozesse`. Alles läuft mit
+Windows-Bordmitteln, ohne Zusatzpakete.
+
+**Freigeben:** Standardmäßig fragt Nova vor jedem Bedienen nach. Vollen Zugriff gibst du mit
+`/stuetzraeder aus` (darf alles, fragt nicht mehr) oder `/stuetzraeder alles` (zusätzlich ohne letzte Bremsen).
+Was trotzdem immer gilt: In ihr **eigenes** Fenster klickt und tippt Nova nie (sonst könnte sie sich selbst
+Rechte geben), Passwortfelder liest und füllt sie nicht, und Windows-Systemprozesse beendet sie nicht.
+
+Die älteren Werkzeuge `maus_klick`/`tastatur_tippen` nutzen `pyautogui`, wenn es installiert ist
+(`pip install pyautogui pillow`), sonst ebenfalls die Bordmittel. Not-Aus mit pyautogui: Maus in eine
+Bildschirmecke reißen.
 
 ---
 

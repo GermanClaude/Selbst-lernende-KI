@@ -155,6 +155,13 @@ def _masstab(pyautogui, foto, bild) -> str:
             f"Fuer maus_klick die Bild-Koordinaten mal {faktor:.3f} nehmen.")
 
 
+def _ki_name(ctx: ToolContext) -> str:
+    try:
+        return ctx.extra.get("ki_name", lambda: "Nova")()
+    except Exception:  # noqa: BLE001
+        return "Nova"
+
+
 class MouseClickTool(Tool):
     name = "maus_klick"
     description = "Bewegt die Maus zu (x, y) und klickt. Koordinaten in Bildschirmpixeln."
@@ -170,7 +177,18 @@ class MouseClickTool(Tool):
 
     def run(self, ctx: ToolContext, x: int, y: int, taste: str = "links") -> str:
         ctx.permissions.require(Risk.DANGEROUS, f"Mausklick bei ({x}, {y}) [{taste}]")
+        from .. import windows_steuerung as W
+
+        if W.punkt_im_eigenen_fenster(x, y, _ki_name(ctx)):
+            return "Das ist Novas eigenes Fenster - dort klicke ich nicht (Einstellungen aendert nur dein Mensch)."
         pyautogui, err = _load_pyautogui()
+        if err and W.verfuegbar():   # ohne pyautogui: Windows-Bordmittel
+            try:
+                W.ausfuehren("maus", {"aktion": "klicken", "x": x, "y": y, "knopf": "rechts" if taste == "rechts" else "",
+                                      "doppelt": taste == "doppelt" or None}, ki_name=_ki_name(ctx))
+                return f"Geklickt bei ({x}, {y}) [{taste}]."
+            except W.SteuerFehler as exc:
+                return f"Ging nicht: {exc}"
         if err:
             return err
         if taste == "doppelt":
@@ -193,7 +211,17 @@ class TypeTextTool(Tool):
 
     def run(self, ctx: ToolContext, text: str) -> str:
         ctx.permissions.require(Risk.DANGEROUS, f"Text tippen: {text[:60]}")
+        from .. import windows_steuerung as W
+
+        if W.eigenes_fenster_vorne(_ki_name(ctx)):
+            return "Vorne ist Novas eigenes Fenster - dort tippe ich nicht hinein. Erst das richtige Fenster nach vorne holen."
         pyautogui, err = _load_pyautogui()
+        if err and W.verfuegbar():
+            try:
+                W.ausfuehren("tasten", {"aktion": "tippen", "text": text}, ki_name=_ki_name(ctx))
+                return f"Getippt ({len(text)} Zeichen)."
+            except W.SteuerFehler as exc:
+                return f"Ging nicht: {exc}"
         if err:
             return err
         _tippe(pyautogui, text)
@@ -218,7 +246,17 @@ class HotkeyTool(Tool):
     def run(self, ctx: ToolContext, tasten: list[str]) -> str:
         combo = "+".join(tasten)
         ctx.permissions.require(Risk.DANGEROUS, f"Tastenkombination: {combo}")
+        from .. import windows_steuerung as W
+
+        if W.eigenes_fenster_vorne(_ki_name(ctx)):
+            return "Vorne ist Novas eigenes Fenster - dort druecke ich keine Tasten. Erst das richtige Fenster nach vorne holen."
         pyautogui, err = _load_pyautogui()
+        if err and W.verfuegbar():
+            try:
+                W.ausfuehren("tasten", {"aktion": "kombi", "tasten": list(tasten)}, ki_name=_ki_name(ctx))
+                return f"Gedrueckt: {combo}"
+            except W.SteuerFehler as exc:
+                return f"Ging nicht: {exc}"
         if err:
             return err
         pyautogui.hotkey(*tasten)
