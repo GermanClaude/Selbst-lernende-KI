@@ -1302,6 +1302,7 @@
     input.placeholder = 'Schreib ' + name + ' eine Nachricht …';
     byId('sb-version').textContent = s.version ? 'Version ' + s.version : '';
     applyPremium(s.premium);
+    deck.ausState(s);
     { const pb = byId('sb-premium');
       if (pb) pb.hidden = !s.premium_shop || !!(s.premium && s.premium.stufe); }
 
@@ -1981,6 +1982,127 @@
   }
   byId('theme-btn').addEventListener('click', () => applyTheme(THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length]));
   applyTheme(theme);
+
+  // Stil: Cockpit (seriös, Standard) / Neon (dunkel, cool) / Einfach (ganz reduziert) / Klassisch (Chat-Blasen)
+  const STILE = ['cockpit', 'neon', 'einfach', 'klassisch'];
+  const STIL_NAME = { cockpit: 'Cockpit', neon: 'Neon', einfach: 'Einfach', klassisch: 'Klassisch' };
+  let stil = 'cockpit';
+  try { stil = localStorage.getItem('ki-stil') || 'cockpit'; } catch (_) { /* egal */ }
+  if (!STILE.includes(stil)) stil = 'cockpit';
+  const stilPop = byId('stil-pop');
+  const stilBtn = byId('stil-btn');
+  function applyStil(s) {
+    stil = STILE.includes(s) ? s : 'cockpit';
+    document.documentElement.dataset.stil = stil;
+    for (const b of stilPop.querySelectorAll('.sp-opt')) b.setAttribute('aria-checked', b.dataset.wahl === stil ? 'true' : 'false');
+    stilBtn.title = 'Stil: ' + STIL_NAME[stil] + ' – klicken zum Wechseln';
+    try { localStorage.setItem('ki-stil', stil); } catch (_) { /* egal */ }
+    deck.sichtbar();
+    sphere.refresh();
+    requestAnimationFrame(() => { try { fitTopbar(); } catch (_) { /* noch nicht bereit */ } });
+  }
+  function stilPopZu(fokus) {
+    if (stilPop.hidden) return;
+    stilPop.hidden = true;
+    stilBtn.setAttribute('aria-expanded', 'false');
+    if (fokus) stilBtn.focus();
+  }
+  stilBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (!stilPop.hidden) { stilPopZu(false); return; }
+    stilPop.hidden = false;
+    stilBtn.setAttribute('aria-expanded', 'true');
+    (stilPop.querySelector('[aria-checked="true"]') || stilPop.querySelector('.sp-opt')).focus();
+  });
+  stilPop.addEventListener('click', (e) => {
+    const opt = e.target.closest('.sp-opt');
+    if (!opt) return;
+    applyStil(opt.dataset.wahl);
+    stilPopZu(true);
+  });
+  stilPop.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { e.stopPropagation(); stilPopZu(true); return; }
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    e.preventDefault();
+    const opts = [...stilPop.querySelectorAll('.sp-opt')];
+    const i = opts.indexOf(document.activeElement);
+    opts[(i + (e.key === 'ArrowDown' ? 1 : opts.length - 1)) % opts.length].focus();
+  });
+  document.addEventListener('click', (e) => { if (!stilPop.hidden && !stilPop.contains(e.target)) stilPopZu(false); });
+
+  // Status-Deck: Gehirn, Prozessor, Arbeitsspeicher, aktive Modi, Kosten, Uhrzeit (nur Cockpit/Neon)
+  const deck = (() => {
+    const el = byId('deck');
+    let timer = 0;
+    let letzteMessung = null;
+    const fmtZahl = (v) => (v == null || !isFinite(v) ? '–' : Math.round(v) + ' %');
+    function setBar(id, v) {
+      const bar = byId(id);
+      const p = v == null || !isFinite(v) ? 0 : Math.max(0, Math.min(100, v));
+      bar.style.width = p + '%';
+      bar.parentElement.dataset.level = p >= 90 ? 'hoch' : p >= 70 ? 'mittel' : 'ok';
+    }
+    function uhr() {
+      const d = new Date();
+      byId('dk-zeit').textContent = d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+      byId('dk-datum').textContent = d.toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' });
+    }
+    async function messen() {
+      if (el.hidden || document.hidden) return;
+      const m = await getJson('/api/system');
+      if (!m || typeof m !== 'object') return;
+      letzteMessung = m;
+      byId('dk-cpu').textContent = fmtZahl(m.cpu);
+      setBar('dk-cpu-bar', m.cpu);
+      byId('dk-ram').textContent = fmtZahl(m.ram);
+      byId('dk-ram-lbl').textContent = m.ram_gb ? 'RAM · ' + Math.round(m.ram_gb) + ' GB' : 'RAM';
+      setBar('dk-ram-bar', m.ram);
+      if (m.hardware) byId('dk-cpu').title = String(m.hardware);
+    }
+    function tick() { uhr(); messen(); }
+    function sichtbar() {
+      el.hidden = !(stil === 'cockpit' || stil === 'neon');
+      clearInterval(timer);
+      timer = 0;
+      if (!el.hidden) { tick(); timer = setInterval(tick, 4000); }
+    }
+    function ausState(s) {
+      if (!s) return;
+      byId('dk-gehirn').textContent = s.api_key_missing ? 'Schlüssel fehlt' : String(s.model_name || s.provider_name || '–');
+      byId('dk-gehirn').title = byId('dk-gehirn').textContent;
+      const modi = [];
+      if (s.busy) modi.push('arbeitet');
+      if (s.afk) modi.push('AFK');
+      if (s.sehen && s.sehen.aktiv) modi.push('sieht zu');
+      if (s.spiel && (s.spiel.aktiv || s.spiel.an)) modi.push('spielt');
+      if (s.jarvis) modi.push('Sprachmodus');
+      if (s.vollzugriff) modi.push('Vollzugriff');
+      byId('dk-modi').textContent = modi.length ? modi.join(' · ') : 'Bereit';
+      el.dataset.busy = s.busy ? '1' : '0';
+      const eur = Number(s.eur);
+      byId('dk-kosten').textContent = s.kostenlos ? 'kostenlos' : isFinite(eur) ? eur.toLocaleString('de-DE', { style: 'currency', currency: 'EUR', minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '–';
+    }
+    document.addEventListener('visibilitychange', () => { if (!document.hidden && !el.hidden) tick(); });
+    return { sichtbar, ausState, get messung() { return letzteMessung; } };
+  })();
+  applyStil(stil);
+
+  // Sprachmodus-HUD: Uhr + Prozessor/Arbeitsspeicher am Rand (nur solange der Sprachmodus offen ist)
+  (() => {
+    const jv = byId('jarvis');
+    let n = 0;
+    setInterval(async () => {
+      if (jv.hidden || document.hidden) return;
+      const d = new Date();
+      byId('jv-clock').textContent = d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+      byId('jv-date').textContent = d.toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' });
+      if (n++ % 4) return;
+      const m = await getJson('/api/system');
+      if (!m || typeof m !== 'object') return;
+      byId('jv-cpu').textContent = m.cpu == null ? '–' : Math.round(m.cpu) + '%';
+      byId('jv-ram').textContent = m.ram == null ? '–' : Math.round(m.ram) + '%';
+    }, 1000);
+  })();
 
   // =====================================================================
   // Meldungen (Toasts)

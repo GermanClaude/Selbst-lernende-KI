@@ -173,7 +173,7 @@ def test_keine_email_adresse_und_keine_fremden_abrufe(name):
 
 def test_nur_harmlose_werte_im_browser_speicher():
     keys = set(re.findall(r"(?:local|session)Storage\.setItem\('([^']+)'", APP_JS))
-    assert keys <= {"ki-theme", "ki-stimme", "ki-tour-spaeter", "ki-tour-stimme"}, keys
+    assert keys <= {"ki-theme", "ki-stimme", "ki-tour-spaeter", "ki-tour-stimme", "ki-stil"}, keys
 
 
 def test_bild_adressen_nur_ueber_die_pruefung():

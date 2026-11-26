@@ -358,3 +358,45 @@ def test_alte_oeffentliche_pins_gelten_nicht_mehr():
     # die alten PINs standen im oeffentlichen Repo - sie duerfen nichts mehr oeffnen
     assert not P.sim_pin_ok("novaai." + "13696") and not P.cg_pin_ok("1367" + "9")
     assert not P.sim_pin_ok("") and not P.cg_pin_ok("x" * 100)
+
+
+# -- 0.53: data/premium.json von Hand aendern bringt nichts --------------------------
+def test_handgemachte_lizenz_gilt_nicht(root):
+    P._speichern(root, {"stufe": "dev", "bis": time.time() + 999999})
+    assert P.stufe(root) is None                       # kein unterschriebener Code -> nichts
+
+
+def test_laufzeit_verlaengern_von_hand_bringt_nichts(root):
+    jetzt = time.time()
+    P.einloesen(root, _code(P.kennung(root), "premium", 3600, u=SERVER), jetzt=jetzt)
+    d = P.lizenz(root)
+    d["bis"] = jetzt + 10 * 365 * 86400
+    P._speichern(root, d)
+    assert P.stufe(root, jetzt + 60) == "premium"
+    assert P.stufe(root, jetzt + 8 * 86400) is None    # hoechstens Frist (7 Tage) + Laufzeit (1 h)
+
+
+def test_stufe_von_hand_hochsetzen_bringt_nichts(root):
+    P.einloesen(root, _code(P.kennung(root), "premium", 99999, u=SERVER))
+    d = P.lizenz(root)
+    d["stufe"] = "dev"
+    P._speichern(root, d)
+    assert P.stufe(root) is None
+
+
+def test_verlaengerung_mit_zweitem_code_zaehlt(root):
+    jetzt = time.time()
+    k = P.kennung(root)
+    P.einloesen(root, _code(k, "max", 86400, nonce="11" * 8, u=SERVER), jetzt=jetzt)
+    P.einloesen(root, _code(k, "max", 86400, nonce="22" * 8, u=SERVER), jetzt=jetzt + 10)
+    assert len(P.lizenz(root)["codes"]) == 2
+    assert P.stufe(root, jetzt + 1.5 * 86400) == "max"  # zwei Tage gestapelt
+
+
+def test_fremder_code_in_der_liste_zaehlt_nicht(root):
+    P.einloesen(root, _code(P.kennung(root), "premium", 60, u=SERVER))
+    d = P.lizenz(root)
+    d["codes"].append(_code("ffffffffffffffff", "premium", 10 * 365 * 86400, nonce="33" * 8))
+    d["bis"] = time.time() + 10 * 365 * 86400
+    P._speichern(root, d)
+    assert P.stufe(root, time.time() + 30 * 86400) is None

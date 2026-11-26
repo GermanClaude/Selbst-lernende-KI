@@ -200,9 +200,31 @@
           <span class="jl-orb" aria-hidden="true"><i></i></span><span class="jl-text">Sprachmodus</span>
         </button>
         <button class="icon-btn" id="tb-new" type="button" aria-label="Neues Gespräch" title="Neues Gespräch (/neu)" data-icon="plusSquare" hidden></button>
+        <button class="icon-btn" id="stil-btn" type="button" aria-label="Stil wählen" aria-haspopup="dialog" aria-expanded="false" aria-controls="stil-pop" data-icon="palette" title="Stil: Cockpit, Klassisch, Einfach oder Neon"></button>
         <button class="icon-btn" id="theme-btn" type="button" aria-label="Design wechseln" data-icon="contrast"></button>
       </div>
     </header>
+
+    <!-- Stil-Auswahl: wie Nova aussieht (unabhaengig von hell/dunkel) -->
+    <div class="stil-pop" id="stil-pop" role="dialog" aria-label="Stil wählen" hidden>
+      <div class="sp-head"><span>Stil</span><small>Wie soll ich aussehen?</small></div>
+      <div class="sp-list" role="radiogroup" aria-label="Stil">
+        <button class="sp-opt" type="button" role="radio" aria-checked="false" data-wahl="cockpit"><span class="sp-prev pv-cockpit" aria-hidden="true"><i></i><i></i><i></i></span><span class="sp-t"><b>Cockpit</b><small>Seriös &amp; übersichtlich – Kommandozentrale mit Live-Systemstatus</small></span></button>
+        <button class="sp-opt" type="button" role="radio" aria-checked="false" data-wahl="neon"><span class="sp-prev pv-neon" aria-hidden="true"><i></i><i></i><i></i></span><span class="sp-t"><b>Neon</b><small>Dunkel &amp; cool – leuchtendes HUD wie im Film</small></span></button>
+        <button class="sp-opt" type="button" role="radio" aria-checked="false" data-wahl="einfach"><span class="sp-prev pv-einfach" aria-hidden="true"><i></i><i></i><i></i></span><span class="sp-t"><b>Einfach</b><small>Ganz reduziert – große Knöpfe, nur das Wichtigste</small></span></button>
+        <button class="sp-opt" type="button" role="radio" aria-checked="false" data-wahl="klassisch"><span class="sp-prev pv-klassisch" aria-hidden="true"><i></i><i></i><i></i></span><span class="sp-t"><b>Klassisch</b><small>Das bisherige Aussehen mit Chat-Blasen</small></span></button>
+      </div>
+    </div>
+
+    <!-- Status-Deck: was Nova gerade steuert und wie es dem PC geht (Cockpit/Neon) -->
+    <div class="deck" id="deck" role="region" aria-label="Systemstatus" hidden>
+      <div class="dk-tile dk-brain"><span class="dk-ic" data-icon="brain"></span><span class="dk-txt"><span class="dk-lbl">Gehirn</span><span class="dk-val" id="dk-gehirn">–</span></span></div>
+      <div class="dk-tile"><span class="dk-ic" data-icon="cpu"></span><span class="dk-txt"><span class="dk-lbl">Prozessor</span><span class="dk-val" id="dk-cpu">–</span></span><span class="dk-bar" aria-hidden="true"><i id="dk-cpu-bar"></i></span></div>
+      <div class="dk-tile"><span class="dk-ic" data-icon="activity"></span><span class="dk-txt"><span class="dk-lbl" id="dk-ram-lbl">RAM</span><span class="dk-val" id="dk-ram">–</span></span><span class="dk-bar" aria-hidden="true"><i id="dk-ram-bar"></i></span></div>
+      <div class="dk-tile dk-modi"><span class="dk-ic" data-icon="zap"></span><span class="dk-txt"><span class="dk-lbl">Aktiv</span><span class="dk-val" id="dk-modi">Bereit</span></span></div>
+      <div class="dk-tile dk-kosten"><span class="dk-ic" data-icon="coins"></span><span class="dk-txt"><span class="dk-lbl">Kosten</span><span class="dk-val" id="dk-kosten">–</span></span></div>
+      <div class="dk-tile dk-zeit"><span class="dk-ic" data-icon="clock"></span><span class="dk-txt"><span class="dk-lbl" id="dk-datum">Heute</span><span class="dk-val" id="dk-zeit">–</span></span></div>
+    </div>
 
     <div class="conn-banner" id="conn-banner" role="alert" hidden>
       <span class="spinner" aria-hidden="true"></span>
@@ -665,6 +687,11 @@
 <!-- Sprachmodus (reines Reden, live) -->
 <div class="jv" id="jarvis" data-state="listening" role="dialog" aria-modal="true" aria-labelledby="jv-title" aria-describedby="jv-hint" tabindex="-1" hidden>
   <div class="jv-aurora" aria-hidden="true"><i class="a1"></i><i class="a2"></i><i class="a3"></i></div>
+  <div class="jv-hud" aria-hidden="true">
+    <i class="hc tl"></i><i class="hc tr"></i><i class="hc bl"></i><i class="hc br"></i>
+    <span class="jv-hud-l"><b id="jv-clock">--:--</b><small id="jv-date"></small></span>
+    <span class="jv-hud-r"><span>CPU <b id="jv-cpu">–</b></span><span>RAM <b id="jv-ram">–</b></span></span>
+  </div>
   <header class="jv-top">
     <div class="jv-brand">
       <div class="avatar ai-avatar" aria-hidden="true"><span class="av-l">K</span></div>
@@ -675,7 +702,7 @@
     <button class="jv-x" id="jv-close" type="button" aria-label="Zurück zum Chat (Esc)" title="Zurück zum Chat (Esc)" data-icon="x"></button>
   </header>
   <div class="jv-stage">
-    <div class="jv-orb" id="jv-orb-wrap" aria-hidden="true"><canvas id="jv-orb"></canvas></div>
+    <div class="jv-orb" id="jv-orb-wrap" aria-hidden="true"><i class="jv-ring r1"></i><i class="jv-ring r2"></i><i class="jv-ring r3"></i><canvas id="jv-orb"></canvas></div>
     <div class="jv-state" id="jv-state" role="status"><i class="jv-dot" aria-hidden="true"></i><span id="jv-state-text">Starte …</span></div>
     <div class="jv-note" id="jv-note" role="alert" hidden></div>
     <div class="jv-text" id="jv-text">

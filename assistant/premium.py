@@ -143,14 +143,50 @@ def _speichern(root, d: dict) -> None:
     p.write_text(json.dumps(d, ensure_ascii=False, indent=1), encoding="utf-8")
 
 
-def stufe(root, jetzt: float | None = None) -> str | None:
-    """'premium' / 'max', solange die Laufzeit gilt und der Code nicht gesperrt ist - sonst None."""
+_PRUEF_CACHE: dict = {}
+
+
+def _codes(d: dict) -> list[str]:
+    codes = d.get("codes")
+    if isinstance(codes, list):
+        return [str(c) for c in codes if isinstance(c, str)][-50:]
+    return [str(d["code"])] if isinstance(d.get("code"), str) else []
+
+
+def _hoechstens_bis(root, d: dict, n: int = None) -> float:
+    """Obergrenze fuer 'bis', nur aus unterschriebenen Codes dieses Geraets und dieser Stufe berechnet:
+    max(Einloesefrist) + Summe(Laufzeiten). So bringt es nichts, data/premium.json von Hand zu aendern."""
+    schluessel = (tuple(_codes(d)), d.get("stufe"), n or OEFFENTLICH_N)
+    if schluessel in _PRUEF_CACHE:
+        return _PRUEF_CACHE[schluessel]
+    meine, fristen, summe = kennung(root), [], 0.0
+    for code in _codes(d):
+        try:
+            c = code_lesen(code, n)
+        except PremiumFehler:
+            continue
+        if c.get("k") != meine or c.get("t") != d.get("stufe"):
+            continue
+        dauer = float(c.get("d") or 0) or max(1, int(c.get("m") or 1)) * 30 * _TAG
+        summe += max(60.0, min(dauer, 10 * 365 * _TAG))
+        fristen.append(float(c.get("b") or 0))
+    grenze = (max(fristen) + summe) if fristen else 0.0
+    if len(_PRUEF_CACHE) > 64:
+        _PRUEF_CACHE.clear()
+    _PRUEF_CACHE[schluessel] = grenze
+    return grenze
+
+
+def stufe(root, jetzt: float | None = None, n: int = None) -> str | None:
+    """'premium' / 'max' / 'dev', solange die Laufzeit gilt und der Code nicht gesperrt ist - sonst None.
+    Die Laufzeit muss durch die gespeicherten, unterschriebenen Codes gedeckt sein (sonst wurde gemogelt)."""
     d = lizenz(root)
     if d.get("gesperrt"):
         return None
-    if d.get("stufe") in STUFEN and float(d.get("bis") or 0) > (jetzt or time.time()):
-        return d["stufe"]
-    return None
+    if d.get("stufe") not in STUFEN:
+        return None
+    bis = min(float(d.get("bis") or 0), _hoechstens_bis(root, d, n))
+    return d["stufe"] if bis > (jetzt or time.time()) else None
 
 
 def sperrliste_lesen(blob: bytes, n: int = None) -> dict:
@@ -223,8 +259,10 @@ def einloesen(root, code: str, jetzt: float | None = None, n: int = None) -> dic
         dauer = max(60.0, min(dauer, 10 * 365 * _TAG))
         start = max(jetzt, float(alt.get("bis") or 0)) if alt.get("stufe") == c["t"] else jetzt
         # Nichts Geheimes speichern: nur der (selbst nicht geheime) Code fuer den Lizenzserver und dessen Adresse.
+        sauber = "NOVA-" + "".join((code or "").split()).removeprefix("NOVA-").removeprefix("nova-")
+        frueher = _codes(alt) if alt.get("stufe") == c["t"] and float(alt.get("bis") or 0) > jetzt else []
         neu = {"benutzt": benutzt, "stufe": c["t"], "bis": start + dauer, "nonce": c.get("n"),
-               "code": "NOVA-" + "".join((code or "").split()).removeprefix("NOVA-").removeprefix("nova-"),
+               "code": sauber, "codes": (frueher + [sauber])[-50:],
                "server": str(c.get("u") or ""), "eingeloest": jetzt}
     else:
         raise PremiumFehler("Unbekannte Stufe im Code.")
@@ -365,6 +403,8 @@ def laden(root, ctl, n: int = None, sperrung=True):
     st = stufe(root)
     pfad = paket_pfad(root)
     if not st or not pfad.exists():
+        return None
+    if ctl is None:
         return None
     try:
         sig = json.loads((pfad.parent / "paket.sig").read_text(encoding="utf-8")).get("sig") or ""

@@ -226,6 +226,10 @@ class AppServer:
                     return self._json({"ok": True, "auftrag": KANAL.abholen(info)})
                 if url.path == "/api/state":
                     return self._json(ctl.state())
+                if url.path == "/api/system":          # Status-Deck: CPU/RAM/Akku (billig, zwischengespeichert)
+                    from ..systemstatus import messen
+
+                    return self._json(messen())
                 if url.path == "/api/history":
                     return self._json({"messages": ctl.history[-400:]})
                 if url.path == "/api/profile":

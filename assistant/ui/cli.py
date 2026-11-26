@@ -2993,18 +2993,11 @@ class CLI:
         """Im Terminal: nichts (die Glueckwunsch-Meldung reicht). Im Fenster: ueberschrieben -> Feier-Animation."""
 
     def _sandbox_tier(self):
-        """Welche Sandbox-Stufe gilt: echtes Premium, sonst die Simulation, sonst None (kostenlos: 1)."""
+        """Welche Sandbox-Stufe gilt: nur echtes Premium (die Simulation ist eine Demo und steht unsigniert in
+        data/premium.json - sie darf keine echten Premium-Grenzen freischalten). Sonst None (kostenlos: 1)."""
         from .. import premium as PM
 
-        root = self.config.project_root
-        st = PM.stufe(root)
-        if st:
-            return st
-        sim = PM.lizenz(root).get("sim") or {}
-        import time as _t
-        if sim.get("stufe") and float(sim.get("bis") or 0) > _t.time():
-            return sim["stufe"]
-        return None
+        return PM.stufe(self.config.project_root)
 
     def _sandbox_befehl(self, args: list[str]) -> None:
         """Sandbox-Nova (frische KI, andere Hardware, Schluessel geerbt). Frei 1, Premium 10, Max unbegrenzt."""
