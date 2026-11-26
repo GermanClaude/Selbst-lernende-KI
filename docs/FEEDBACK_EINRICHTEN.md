@@ -7,6 +7,12 @@ Sterne-Bewertungen sammelt das Skript zusätzlich in der Google-Tabelle **„Nov
 den Nova und die GitHub-Seite anzeigen; Text und Name erscheinen nur, wenn die Person
 „öffentlich zeigen“ angekreuzt hat. **Rezension ausblenden:** in der Tabelle in der Spalte
 „Sichtbar“ `FALSE` eintragen (nach höchstens 5 Minuten weg).
+**Seit 0.52 bequemer:** In der Mail zu jeder öffentlichen Rezension steht ein **Löschen-Link** (mit
+„Rückgängig“). Oder im Codegenerator, Reiter **Rezensionen** (*Einrichten …*: Skript-Adresse + den
+**Admin-Schlüssel** aus der Test-Mail – `testMail` einmal neu ausführen, dann steht er drin).
+Jede Installation darf nur **einmal pro Woche** öffentlich rezensieren; das Skript prüft das selbst.
+**Nach dem Aktualisieren des Skripts:** *Bereitstellen → Bereitstellungen verwalten → Bearbeiten → Neue
+Version → Bereitstellen* (die Adresse bleibt gleich).
 
 Damit das geht, ohne dass deine Adresse irgendwo in der App oder im öffentlichen Code
 steht, läuft ein kleines Skript **in deinem eigenen Google-Konto**. Es schickt jede

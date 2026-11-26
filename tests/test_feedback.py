@@ -649,7 +649,7 @@ def test_abschicken_ohne_postfach_merkt_es_sich(tmp_path):
     erg = feedback.abschicken(cfg, "idee", None, "Dunkler Modus!", fetch=FakeFetch(HttpFehler(404)), jetzt=JETZT)
     assert (erg.status, erg.grund) == ("gespeichert", "keine_url")
     assert feedback.status(cfg, fetch=FakeFetch(HttpFehler(404)), jetzt=JETZT) == {
-        "ok": True, "configured": False, "due": False, "pending": 1, "max_images": 5}
+        "ok": True, "configured": False, "due": False, "pending": 1, "max_images": 5, "rezension_ab": None}
     assert _stand(tmp_path)["zuletzt_gesendet"] == "2026-11-08T12:00:00"
 
 
@@ -657,7 +657,7 @@ def test_status_fuer_die_app(tmp_path):
     cfg = _cfg(tmp_path, adresse=URL)
     feedback.nutzung_hinzufuegen(4000, root=cfg)
     assert feedback.status(cfg, jetzt=JETZT) == {
-        "ok": True, "configured": True, "due": True, "pending": 0, "max_images": 5}
+        "ok": True, "configured": True, "due": True, "pending": 0, "max_images": 5, "rezension_ab": None}
 
 
 # -- Nachfrage-Plan -----------------------------------------------------------------
@@ -892,3 +892,29 @@ def test_echtes_requests_folgt_der_weiterleitung_wie_bei_google(tmp_path, monkey
     finally:
         server.shutdown()
         server.server_close()
+
+
+# -- 0.52: oeffentliche Rezension nur einmal pro Woche --------------------------------
+def test_oeffentliche_rezension_nur_einmal_pro_woche(tmp_path):
+    cfg = _cfg(tmp_path, adresse=URL)
+    post = FakePost(ok())
+    erste = feedback.abschicken(cfg, "bewertung", 5, "Toll!", oeffentlich=True, post=post, jetzt=JETZT)
+    assert erste.status == "gesendet"
+    assert feedback.status(cfg, jetzt=JETZT + timedelta(days=1))["rezension_ab"] == "15.11.2026"
+    zweite = feedback.abschicken(cfg, "bewertung", 4, "Nochmal", oeffentlich=True, post=post,
+                                 jetzt=JETZT + timedelta(days=3))
+    assert (zweite.status, zweite.grund) == ("abgelehnt", "woche") and "15.11.2026" in zweite.meldung
+    assert len(post.calls) == 1
+    privat = feedback.abschicken(cfg, "bewertung", 4, "Privat geht", oeffentlich=False, post=post,
+                                 jetzt=JETZT + timedelta(days=3))
+    assert privat.status == "gesendet"                    # Sterne/Feedback ohne "oeffentlich" gehen immer
+    spaeter = feedback.abschicken(cfg, "bewertung", 5, "Eine Woche spaeter", oeffentlich=True, post=post,
+                                  jetzt=JETZT + timedelta(days=7, minutes=1))
+    assert spaeter.status == "gesendet"
+
+
+def test_wochenlimit_verstellte_uhr_sperrt_nicht_ewig(tmp_path):
+    cfg = _cfg(tmp_path, adresse=URL)
+    feedback.abschicken(cfg, "bewertung", 5, "Zukunft", oeffentlich=True, post=FakePost(ok()),
+                        jetzt=JETZT + timedelta(days=400))
+    assert feedback.naechste_rezension(cfg, JETZT) is None

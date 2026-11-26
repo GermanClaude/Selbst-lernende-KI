@@ -4,6 +4,27 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.52.0 – 2026-11-27
+
+**Sicherheit: Premium-Codes enthalten nichts Geheimes mehr**
+- Ein Premium-Code war bisher für jeden lesbar und trug einen Zugang zum privaten Premium-Speicher in sich.
+  Das ist vorbei: **Codes enthalten jetzt nur noch Gerät, Stufe, Laufzeit und die Adresse des
+  Lizenzservers.** Das Premium-Paket gibt allein die Cloud-Nova des Entwicklers heraus – erst nachdem sie
+  den Code geprüft hat (Unterschrift, Gerät, Ablauf, Sperrliste). Ein Gerät hält nie wieder einen Schlüssel.
+- Alte, gespeicherte Zugänge werden beim nächsten Start automatisch vom Gerät gelöscht.
+- Auch ein gefälschter Server kann kein fremdes Paket unterschieben: Nova lädt nur, was der Entwickler
+  unterschrieben hat.
+- Der Test-Modus (Simulation) lädt nie mehr das echte Premium-Paket, und sein Code steht nicht mehr im
+  Klartext im Programm.
+- Discord-Webhook-Adressen und neue GitHub-Token werden in Protokollen und Ausgaben jetzt geschwärzt.
+
+**Rezensionen**
+- **Öffentlich rezensieren geht jetzt einmal pro Woche** (pro Installation). Sterne und Feedback kannst du
+  jederzeit schicken – nur der Haken „öffentlich zeigen“ ist bis zum angezeigten Datum gesperrt. Das
+  Postfach prüft es zusätzlich.
+- Der Entwickler kann öffentliche Rezensionen nach eigenem Ermessen **löschen** (ausblenden) und
+  wiederherstellen.
+
 ## 0.51.0 – 2026-11-26
 
 **Premium anfragen (Test-Ablauf, noch nicht für alle sichtbar)**

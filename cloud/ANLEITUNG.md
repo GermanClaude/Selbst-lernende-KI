@@ -83,6 +83,21 @@ Browser aufrufen. Oder: für die Cloud bei @BotFather einen zweiten Bot anlegen.
 - **Handy-Steuerung:** In der Nova-Handy-App die Cloud-Adresse eintragen und *Handy-Steuerung einschalten*.
   Das Handy holt sich dann die Aufträge bei der Cloud-Nova ab, auch wenn die App zu ist.
 
+## Lizenzserver für Premium (nur für den Entwickler)
+
+Deine Cloud-Nova kann die Premium-Pakete ausgeben – dann steckt in keinem Code mehr ein Schlüssel.
+
+1. Auf GitHub einen **fein-granularen Token** anlegen: nur Repo *Nova-Premium*, Rechte *Contents: Read-only*.
+2. Beim Anbieter (Render → Environment) eintragen: `NOVA_LIZENZSERVER` = `1` und
+   `NOVA_PREMIUM_REPO_TOKEN` = der Token. Neu starten.
+3. Im Codegenerator unter *Einstellungen → Adresse deiner Cloud-Nova* die https-Adresse eintragen
+   (z. B. `https://nova-ab12.onrender.com`). Jeder neue Code enthält dann nur diese Adresse.
+4. Paket bauen (`python werkzeuge/paket_bauen.py`) und `pakete/nova-premium.zip` + `.json` ins private Repo
+   pushen.
+
+Prüfen: `https://<deine-adresse>/lizenz/sperrliste` liefert die Sperrliste (oder „nicht gefunden“, solange du
+noch nichts gesperrt hast). Ist der Lizenzserver aus, antworten beide Adressen mit 404.
+
 ## Sicherheit
 
 - Ohne den Schlüssel (`?t=…`) kommt niemand an Nova heran. Die Adresse mit Schlüssel nicht weitergeben.

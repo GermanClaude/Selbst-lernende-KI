@@ -35,3 +35,7 @@ services:
         sync: false
       - key: BLAND_API_KEY
         sync: false
+      - key: NOVA_LIZENZSERVER       # nur deine eigene Cloud-Nova: Premium-Pakete ausgeben (1 = an)
+        sync: false
+      - key: NOVA_PREMIUM_REPO_TOKEN # fein-granular, NUR Repo Nova-Premium, Contents: Read-only
+        sync: false

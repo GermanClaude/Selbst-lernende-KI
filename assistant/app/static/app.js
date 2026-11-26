@@ -8888,6 +8888,12 @@
     if (gen !== fb.gen || fmodal.hidden || !d || typeof d !== 'object') return;
     const max = Number(d.max_images);
     fb.max = Number.isInteger(max) && max >= 0 && max <= 10 ? max : HL.MAX_FEEDBACK;
+    // Oeffentlich rezensieren: nur einmal pro Woche
+    const pubAb = typeof d.rezension_ab === 'string' && /^\d{2}\.\d{2}\.\d{4}$/.test(d.rezension_ab) ? d.rezension_ab : '';
+    fbPub.disabled = !!pubAb;
+    if (pubAb) { fbPub.checked = false; byId('fb-name-row').hidden = true; }
+    byId('fb-pub-hint').textContent = pubAb ? 'Diese Woche hast du schon öffentlich rezensiert – wieder ab ' + pubAb + '. Sterne und Feedback kannst du trotzdem senden.' : '';
+    byId('fb-pub-hint').hidden = !pubAb;
     byId('fb-att-max').textContent = '(optional, höchstens ' + fb.max + ')';
     byId('fb-att').hidden = fb.max <= 0;
     fbTray.render();

@@ -64,6 +64,7 @@ MAX_KONTAKT = 200
 MAX_NAME = 40
 MAX_REZENSION = 600
 MAX_REZENSIONEN = 30
+REZENSION_ABSTAND = timedelta(days=7)   # eine oeffentliche Rezension pro Woche
 BEWERTUNGEN_GUELTIG = timedelta(hours=1)
 BEWERTUNGEN_FEHLER_WARTEN = timedelta(minutes=15)
 MAX_PRO_STUNDE = 3
@@ -104,6 +105,8 @@ MELDUNGEN = {
               "gespeichert und wird sp\u00e4ter automatisch gesendet.",
     "fehler": "Senden hat gerade nicht geklappt. Dein Feedback ist gespeichert und wird "
               "sp\u00e4ter automatisch erneut gesendet.",
+    "woche": "\u00d6ffentlich rezensieren geht nur einmal pro Woche. Du kannst deine Bewertung trotzdem "
+             "senden \u2013 nimm einfach den Haken bei \u201e\u00f6ffentlich zeigen\u201c raus.",
     "speicher": "Dein Feedback konnte gerade weder gesendet noch gespeichert werden. Bitte "
                 "versuche es sp\u00e4ter noch einmal.",
 }
@@ -612,6 +615,17 @@ def senden(payload: dict, url: str | None, post: Callable | None = None, *, root
     return Ergebnis("gespeichert", MELDUNGEN.get(grund, MELDUNGEN["fehler"]), grund, datei)
 
 
+def naechste_rezension(root: Any = None, jetzt: datetime | None = None) -> datetime | None:
+    """Ab wann darf diese Installation wieder oeffentlich rezensieren? None = jetzt schon.
+    (Das Apps-Skript prueft es zusaetzlich - eine veraenderte App kommt so auch nicht oefter durch.)"""
+    letzte = _zeit(_lade_stand(_wurzel(root)).get("letzte_rezension"))
+    jetzt = _jetzt(jetzt)
+    if letzte is None or letzte > jetzt + timedelta(days=1):    # Uhr verstellt: nicht ewig sperren
+        return None
+    ab = letzte + REZENSION_ABSTAND
+    return ab if ab > jetzt else None
+
+
 def abschicken(config, kind: Any = "feedback", stars: Any = None, text: Any = "",
                contact: Any = None, bilder: Any = None, trigger: Any = "menue", *,
                oeffentlich: Any = False, name: Any = None,
@@ -628,9 +642,17 @@ def abschicken(config, kind: Any = "feedback", stars: Any = None, text: Any = ""
     except (BildFehler, FeedbackFehler) as exc:
         _log("abgelehnt", "ungueltig")
         return Ergebnis("abgelehnt", str(exc), "ungueltig")
+    if payload.get("public"):
+        ab = naechste_rezension(root, jetzt)
+        if ab is not None:
+            _log("abgelehnt", "woche")
+            return Ergebnis("abgelehnt", MELDUNGEN["woche"] + " Wieder m\u00f6glich ab "
+                            + ab.strftime("%d.%m.%Y") + ".", "woche")
     ergebnis = senden(payload, ziel_url(config, fetch=fetch, jetzt=jetzt), post, root=root, jetzt=jetzt)
     if ergebnis.ok:
         gesendet(jetzt, root=root)
+        if payload.get("public"):
+            _stand_aendern(root, lambda stand: stand.__setitem__("letzte_rezension", _iso(jetzt)))
         if ergebnis.status == "gesendet" and payload.get("stars"):
             # Neue Bewertung -> Durchschnitt beim naechsten Anzeigen frisch holen
             _stand_aendern(root, lambda stand: stand.pop("bewertungen", None))
@@ -897,4 +919,5 @@ def status(config, *, fetch: Callable | None = None, jetzt: datetime | None = No
         "due": ist_faellig(config, jetzt),
         "pending": ausgang_anzahl(config),
         "max_images": MAX_BILDER,
+        "rezension_ab": (lambda ab: ab.strftime("%d.%m.%Y") if ab else None)(naechste_rezension(config, jetzt)),
     }

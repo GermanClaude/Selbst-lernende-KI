@@ -16,10 +16,12 @@ ERSATZ = "[…entfernt: Geheimnis…]"
 _PRAEFIX = re.compile(
     r"(?<![A-Za-z0-9_\-])("
     r"sk-[A-Za-z0-9_\-]{16,}|ak_[A-Za-z0-9_\-]{16,}|AIza[A-Za-z0-9_\-]{20,}|"
-    r"ghp_[A-Za-z0-9]{20,}|gho_[A-Za-z0-9]{20,}|xox[baprs]-[A-Za-z0-9\-]{10,}|"
+    r"ghp_[A-Za-z0-9]{20,}|gho_[A-Za-z0-9]{20,}|ghs_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[baprs]-[A-Za-z0-9\-]{10,}|"
     r"AQ\.[A-Za-z0-9_\-]{20,}|eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{6,}"
     r")(?![A-Za-z0-9_\-])"
 )
+# Discord-/Slack-Webhook-Adressen: wer sie kennt, kann in deinem Namen posten.
+_WEBHOOK = re.compile(r"https://(?:(?:canary\.|ptb\.)?discord(?:app)?\.com/api/webhooks|hooks\.slack\.com/services)/\S+")
 # "Passwort: hunter2", "password = ...", "pin: 1234", "code: 123456" u.ae.
 _BENANNT = re.compile(
     r"(?i)\b(passwort|passwoerter|password|passwd|pwd|kennwort|pin|otp|2fa|code|token|secret|geheim(?:nis)?)\b"
@@ -45,6 +47,7 @@ def verschleiere(text: str) -> str:
     """Macht Geheimnisse im Text unkenntlich. Gibt den bereinigten Text zurueck."""
     if not text:
         return text
+    text = _WEBHOOK.sub(ERSATZ, text)
     text = _PRAEFIX.sub(ERSATZ, text)
     text = _BENANNT.sub(lambda m: re.split(r"[:=]", m.group(0), maxsplit=1)[0].rstrip() + ": " + ERSATZ, text)
     text = _KARTE.sub(lambda m: ERSATZ if sum(c.isdigit() for c in m.group(0)) >= 13 else m.group(0), text)
@@ -53,7 +56,7 @@ def verschleiere(text: str) -> str:
 
 
 # Umgebungsvariablen, die Schluessel/Passwoerter enthalten (aus der .env geladen): API-Keys, Tokens ...
-_GEHEIMER_NAME = re.compile(r"(?i)(_?API_?KEY|_KEY|TOKEN|PASSWORT|PASSWORD|PASSWD|SECRET|_HASH|_PAT)$"
+_GEHEIMER_NAME = re.compile(r"(?i)(_?API_?KEY|_KEY|TOKEN|PASSWORT|PASSWORD|PASSWD|SECRET|_HASH|_PAT|WEBHOOK|_PIN)$"
                             r"|^(NOVA_ABGLEICH_|TG_API_)")
 
 

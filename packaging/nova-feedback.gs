@@ -10,8 +10,16 @@
  * Bewertungen: Jede Rueckmeldung mit Sternen landet in der Google-Tabelle "Nova Bewertungen"
  * (legt das Skript selbst in deinem Google Drive an). Pro Installation zaehlt nur die letzte
  * Bewertung. Text und Name werden nur gezeigt, wenn die Person "oeffentlich" angekreuzt hat.
- * Eine Rezension ausblenden: in der Tabelle in der Spalte "Sichtbar" FALSE eintragen.
+ * Eine Rezension ausblenden: in der Tabelle in der Spalte "Sichtbar" FALSE eintragen - oder bequemer:
+ *   * in der Mail zu jeder oeffentlichen Rezension steht ein Loeschen-Link (nur du hast die Mail), oder
+ *   * im Codegenerator, Reiter "Rezensionen" (braucht den Admin-Schluessel aus der Test-Mail).
+ * Geloescht heisst ausgeblendet (Sichtbar = FALSE) - mit "Wiederherstellen" kommt sie zurueck.
+ * Oeffentlich posten darf jede Installation nur EINMAL PRO WOCHE (auch wenn die App veraendert wurde):
+ * eine weitere oeffentliche Rezension innerhalb von 7 Tagen wird nur privat gespeichert.
  * Abruf (fuer App und Repo): <Web-App-URL>?aktion=bewertungen
+ *
+ * Nach einer Aenderung an diesem Skript: Bereitstellen -> Bereitstellungen verwalten -> Bearbeiten ->
+ * Version "Neue Version" -> Bereitstellen (die Adresse bleibt gleich).
  */
 
 var EMPFAENGER = '';   // leer = an dich selbst (das Konto, dem das Skript gehoert)
@@ -22,7 +30,35 @@ var MAX_PRO_STUNDE = 30;                    // Schutz vor Spam ueber die oeffent
 var MAX_OEFFENTLICH = 30;                   // so viele oeffentliche Rezensionen liefert der Abruf
 var ARTEN = {bewertung: 'Bewertung', feedback: 'Feedback', bug: 'Fehler', idee: 'Idee'};
 var TABELLE_NAME = 'Nova Bewertungen';
-var SPALTEN = ['Datum', 'Sterne', 'Oeffentlich', 'Name', 'Text', 'Version', 'Kennung', 'Sichtbar'];
+var SPALTEN = ['Datum', 'Sterne', 'Oeffentlich', 'Name', 'Text', 'Version', 'Kennung', 'Sichtbar', 'ID'];
+var REZENSION_TAGE = 7;                     // eine oeffentliche Rezension pro Installation und Woche
+var SIG_FENSTER_MS = 10 * 60 * 1000;        // signierte Verwaltungs-Anfragen gelten 10 Minuten
+
+/** Geheimer Admin-Schluessel (legt das Skript selbst an, steht nur in den Skript-Eigenschaften). */
+function adminSchluessel() {
+  var props = PropertiesService.getScriptProperties();
+  var k = props.getProperty('admin');
+  if (!k) {
+    k = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
+    props.setProperty('admin', k);
+  }
+  return k;
+}
+
+function hmacHex(text) {
+  return Utilities.computeHmacSha256Signature(String(text), adminSchluessel()).map(function (b) {
+    return ('0' + ((b + 256) % 256).toString(16)).slice(-2);
+  }).join('');
+}
+
+/** Vergleich ohne Zeitverraet (gleich lange Hex-Texte). */
+function gleich(a, b) {
+  a = String(a || ''); b = String(b || '');
+  if (a.length !== b.length || !a.length) return false;
+  var x = 0;
+  for (var i = 0; i < a.length; i++) x |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return x === 0;
+}
 
 function empfaenger() {
   return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(EMPFAENGER) ? EMPFAENGER : Session.getEffectiveUser().getEmail();
@@ -36,7 +72,9 @@ function testMail() {
     to: empfaenger(),
     subject: '[Nova-Feedback] Test',
     body: 'Wenn du das liest, funktioniert das Feedback-Skript. Jetzt noch als Web-App bereitstellen ' +
-          '(Schritt 5 der Anleitung).\n\nDie Bewertungen sammle ich hier: ' + tabelle.getParent().getUrl(),
+          '(Schritt 5 der Anleitung).\n\nDie Bewertungen sammle ich hier: ' + tabelle.getParent().getUrl() +
+          '\n\nAdmin-Schluessel fuer den Codegenerator (Reiter "Rezensionen" - NICHT weitergeben):\n' +
+          adminSchluessel(),
     name: 'Nova Feedback'
   });
 }
@@ -46,7 +84,75 @@ function doGet(e) {
   if (aktion === 'bewertungen') {
     return antwort(bewertungen());
   }
+  if (aktion === 'loeschen' || aktion === 'wiederherstellen') {   // Link aus deiner Mail
+    var id = String(e.parameter.id || '').replace(/[^a-f0-9]/g, '').slice(0, 32);
+    if (!id || !gleich(e.parameter.t, hmacHex('link|' + id))) {
+      return HtmlService.createHtmlOutput('<p>Link ungueltig.</p>');
+    }
+    var an = aktion === 'wiederherstellen';
+    var ok = sichtbarSetzen(id, an);
+    var zurueck = ScriptApp.getService().getUrl() + '?aktion=' + (an ? 'loeschen' : 'wiederherstellen') +
+                  '&id=' + id + '&t=' + hmacHex('link|' + id);
+    return HtmlService.createHtmlOutput(
+      '<p style="font-family:sans-serif">' + (ok ? (an ? 'Rezension ist wieder sichtbar.' : 'Rezension geloescht ' +
+      '(ausgeblendet).') : 'Rezension nicht gefunden.') + '</p>' + (ok ? '<p style="font-family:sans-serif">' +
+      '<a href="' + zurueck + '" target="_top">' + (an ? 'Doch loeschen' : 'Rueckgaengig') + '</a></p>' : ''));
+  }
   return antwort({ok: true, dienst: 'nova-feedback'});
+}
+
+/** Verwaltung aus dem Codegenerator: {aktion, id?, zeit, sig = HMAC(admin, aktion|id|zeit)}. */
+function verwaltung(d) {
+  var zeit = Number(d.zeit) || 0;
+  var id = String(d.id || '').replace(/[^a-f0-9]/g, '').slice(0, 32);
+  if (Math.abs(Date.now() - zeit) > SIG_FENSTER_MS ||
+      !gleich(d.sig, hmacHex(String(d.aktion) + '|' + id + '|' + zeit))) {
+    return {ok: false, fehler: 'nicht_erlaubt'};
+  }
+  if (d.aktion === 'liste') {
+    var werte = blatt().getDataRange().getValues().slice(1);
+    var liste = [];
+    werte.forEach(function (z) {
+      if (!(z[2] === true || String(z[2]).toUpperCase() === 'TRUE') || !z[4]) return;
+      liste.push({id: String(z[8] || ''), datum: Utilities.formatDate(new Date(z[0]), 'Europe/Berlin', 'yyyy-MM-dd'),
+                  sterne: Number(z[1]), name: String(z[3] || '') || 'Anonym', text: String(z[4] || ''),
+                  sichtbar: !(z[7] === false || String(z[7]).toUpperCase() === 'FALSE')});
+    });
+    liste.reverse();
+    return {ok: true, rezensionen: liste.slice(0, 200)};
+  }
+  if (!id) return {ok: false, fehler: 'ungueltig'};
+  return {ok: sichtbarSetzen(id, d.aktion === 'wiederherstellen')};
+}
+
+function sichtbarSetzen(id, sichtbar) {
+  var sheet = blatt();
+  var werte = sheet.getDataRange().getValues();
+  for (var i = 1; i < werte.length; i++) {
+    if (String(werte[i][8] || '') === id) {
+      sheet.getRange(i + 1, 8).setValue(sichtbar);
+      CacheService.getScriptCache().remove('bewertungen');
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Hat diese Installation in den letzten 7 Tagen schon oeffentlich rezensiert? */
+function kuerzlichOeffentlich(kennung) {
+  if (!kennung) return false;
+  var grenze = Date.now() - REZENSION_TAGE * 86400000;
+  var werte = blatt().getDataRange().getValues().slice(1);
+  for (var i = werte.length - 1; i >= 0; i--) {
+    var z = werte[i];
+    if (String(z[6] || '') === kennung && (z[2] === true || String(z[2]).toUpperCase() === 'TRUE') &&
+        new Date(z[0]).getTime() >= grenze) return true;
+  }
+  return false;
+}
+
+function kennungAus(d) {
+  return String(d.install || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40);
 }
 
 function doPost(e) {
@@ -58,6 +164,9 @@ function doPost(e) {
     }
     if (!lock.tryLock(10000)) {
       return antwort({ok: false, fehler: 'limit'});
+    }
+    if (d.aktion === 'liste' || d.aktion === 'loeschen' || d.aktion === 'wiederherstellen') {
+      return antwort(verwaltung(d));
     }
     var cache = CacheService.getScriptCache();
     var zaehler = Number(cache.get('anzahl') || 0);
@@ -84,11 +193,18 @@ function doPost(e) {
     var kontakt = String(d.contact || '').trim().slice(0, 200);
     var text = String(d.text || '').slice(0, 20000);
     var oeffentlich = d.public === true && sterne > 0;
+    var wochenlimit = false;
+    if (oeffentlich && kuerzlichOeffentlich(kennungAus(d))) {   // nur einmal pro Woche oeffentlich
+      oeffentlich = false;
+      wochenlimit = true;
+    }
+    var id = Utilities.getUuid().replace(/-/g, '').slice(0, 16);
     var name = String(d.name || '').replace(/\s+/g, ' ').trim().slice(0, 40);
     var zeilen = [
       'Art: ' + art,
       'Sterne: ' + (sterne ? new Array(sterne + 1).join('★') + ' (' + sterne + '/5)' : '-'),
-      'Oeffentlich zeigen: ' + (oeffentlich ? 'ja' + (name ? ' (als "' + name + '")' : ' (ohne Namen)') : 'nein'),
+      'Oeffentlich zeigen: ' + (oeffentlich ? 'ja' + (name ? ' (als "' + name + '")' : ' (ohne Namen)') :
+        (wochenlimit ? 'nein (Wochenlimit - diese Woche schon eine oeffentliche Rezension)' : 'nein')),
       'Version: ' + String(d.version || '?').slice(0, 30),
       'System: ' + String(d.os || '?').slice(0, 120),
       'Gehirn: ' + String(d.brain || '?').slice(0, 80),
@@ -98,6 +214,10 @@ function doPost(e) {
       '',
       text || '(kein Text)'
     ];
+    if (oeffentlich) {
+      zeilen.push('', 'Diese Rezension loeschen (ausblenden): ' + ScriptApp.getService().getUrl() +
+                  '?aktion=loeschen&id=' + id + '&t=' + hmacHex('link|' + id));
+    }
     var mail = {
       to: empfaenger(),
       subject: '[Nova-Feedback] ' + art + (sterne ? ' ' + sterne + '★' : '') + ' – v' + String(d.version || '?').slice(0, 30),
@@ -111,7 +231,7 @@ function doPost(e) {
     MailApp.sendEmail(mail);
     if (sterne) {
       try {
-        bewertungSpeichern(sterne, oeffentlich, name, text, d);
+        bewertungSpeichern(sterne, oeffentlich, name, text, d, id);
       } catch (ignored) {}  // die Mail ist raus - eine volle Tabelle soll das Feedback nicht verhindern
     }
     cache.put('anzahl', String(zaehler + 1), 3600);
@@ -142,10 +262,10 @@ function blatt() {
   return datei.getSheets()[0];
 }
 
-function bewertungSpeichern(sterne, oeffentlich, name, text, d) {
-  var kennung = String(d.install || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40);
+function bewertungSpeichern(sterne, oeffentlich, name, text, d, id) {
+  var kennung = kennungAus(d);
   blatt().appendRow([new Date(), sterne, oeffentlich, oeffentlich ? name : '',
-                     oeffentlich ? saeubern(text) : '', String(d.version || '').slice(0, 30), kennung, true]);
+                     oeffentlich ? saeubern(text) : '', String(d.version || '').slice(0, 30), kennung, true, id]);
   CacheService.getScriptCache().remove('bewertungen');
 }
 
@@ -171,16 +291,18 @@ function bewertungen() {
   var letzte = {};   // Kennung -> neueste Zeile (pro Installation zaehlt nur die letzte Bewertung)
   var ohne = [];
   werte.forEach(function (z) {
-    if (z[7] === false || String(z[7]).toUpperCase() === 'FALSE') return;   // ausgeblendet
     var sterne = Number(z[1]);
     if (!(sterne >= 1 && sterne <= 5)) return;
     var eintrag = {datum: z[0], sterne: Math.round(sterne), oeffentlich: z[2] === true || String(z[2]).toUpperCase() === 'TRUE',
-                   name: String(z[3] || ''), text: String(z[4] || ''), version: String(z[5] || '')};
+                   name: String(z[3] || ''), text: String(z[4] || ''), version: String(z[5] || ''),
+                   versteckt: z[7] === false || String(z[7]).toUpperCase() === 'FALSE', id: String(z[8] || '')};
     var kennung = String(z[6] || '');
-    if (!kennung) { ohne.push(eintrag); return; }
+    if (!kennung) { if (!eintrag.versteckt) ohne.push(eintrag); return; }
+    // die neueste zaehlt - auch wenn du sie geloescht hast (dann taucht keine aeltere wieder auf)
     if (!letzte[kennung] || new Date(eintrag.datum) >= new Date(letzte[kennung].datum)) letzte[kennung] = eintrag;
   });
-  var alle = ohne.concat(Object.keys(letzte).map(function (k) { return letzte[k]; }));
+  var alle = ohne.concat(Object.keys(letzte).map(function (k) { return letzte[k]; })
+    .filter(function (b) { return !b.versteckt; }));
   var verteilung = {'1': 0, '2': 0, '3': 0, '4': 0, '5': 0};
   var summe = 0;
   alle.forEach(function (b) { verteilung[String(b.sterne)] += 1; summe += b.sterne; });

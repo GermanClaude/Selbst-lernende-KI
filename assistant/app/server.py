@@ -202,6 +202,8 @@ class AppServer:
                 query = parse_qs(url.query)
                 if url.path == "/gesund":  # fuer den Cloud-Anbieter: laeuft Nova? (verraet sonst nichts)
                     return self._send(200, b"ok", "text/plain; charset=utf-8")
+                if url.path == "/lizenz/sperrliste":   # Lizenzserver (nur Cloud des Entwicklers, sonst 404)
+                    return self._lizenz_sperrliste()
                 if not self._host_ok():
                     return self._deny()
                 if url.path in ("/", "/index.html"):
@@ -337,6 +339,8 @@ class AppServer:
                     return self._telegram_webhook()
                 if url.path.startswith("/vonage/"):   # laufender Anruf (Cloud) - geschuetzt durch geheimen Pfad
                     return self._vonage_webhook(url.path)
+                if url.path == "/lizenz/paket":       # Lizenzserver: Paket nur gegen gueltigen Code
+                    return self._lizenz_paket()
                 if not self._host_ok() or not self._token_ok({}):
                     self.close_connection = True  # Inhalt ungelesen -> nicht weiter auf dieser Verbindung
                     return self._deny()
@@ -365,6 +369,59 @@ class AppServer:
                 except Exception as exc:  # noqa: BLE001 - Antwort statt abgebrochener Verbindung
                     logger.exception("Fehler bei %s", url.path)
                     return self._json({"ok": False, "error": str(exc)}, 500)
+
+            # -- Lizenzserver (assistant/lizenzserver.py): ohne NOVA_TOKEN, aber mit Bremse --------------
+            def _lizenz_bremse(self) -> bool:
+                """True = dieser Absender hat zu oft Falsches geschickt -> erstmal Pause."""
+                return server.gesperrt("lizenz:" + self._absender())
+
+            def _lizenz_sperrliste(self) -> None:
+                from .. import lizenzserver as L
+
+                if not L.aktiv():
+                    return self._deny(404)
+                if self._lizenz_bremse():
+                    return self._json({"ok": False, "meldung": "Zu viele Versuche - bitte spaeter."}, 429)
+                try:
+                    return self._send(200, L.sperrliste_roh(), "application/json")
+                except L.LizenzFehler as exc:
+                    return self._json({"ok": False, "grund": str(exc)}, 404 if str(exc) == "nicht_gefunden" else 503)
+                except Exception:  # noqa: BLE001
+                    logger.warning("Lizenzserver: Sperrliste nicht lesbar")
+                    return self._json({"ok": False, "grund": "repo_fehler"}, 503)
+
+            def _lizenz_paket(self) -> None:
+                from .. import lizenzserver as L
+
+                if not L.aktiv():
+                    self.close_connection = True
+                    return self._deny(404)
+                absender = "lizenz:" + self._absender()
+                if server.gesperrt(absender):
+                    self.close_connection = True
+                    return self._json({"ok": False, "meldung": "Zu viele Versuche - bitte spaeter nochmal."}, 429)
+                try:
+                    length = int(self.headers.get("Content-Length") or 0)
+                    if length <= 0 or length > 8192:          # ein Code ist klein - mehr ist kein Code
+                        raise ValueError("Laenge")
+                    body = json.loads(self.rfile.read(length))
+                    code, kenn = str(body.get("code") or ""), str(body.get("kennung") or "")
+                except (ValueError, AttributeError, json.JSONDecodeError):
+                    self.close_connection = True
+                    server.fehlversuch(absender)
+                    return self._json({"ok": False, "meldung": "Ungueltige Anfrage."}, 400)
+                try:
+                    return self._json(L.paket_fuer_code(code, kenn))
+                except L.LizenzFehler as exc:
+                    grund = str(exc)
+                    if grund in ("ungueltig", "anderes_geraet", "keine_stufe"):
+                        server.fehlversuch(absender)    # Raten/Durchprobieren bremsen
+                    code_http = 503 if grund in ("repo_fehler", "nicht_gefunden", "paket_unsigniert") else 403
+                    return self._json({"ok": False, "grund": grund, "meldung": L.MELDUNGEN.get(grund, grund)},
+                                      code_http)
+                except Exception:  # noqa: BLE001 - nie Einzelheiten (oder gar den Token) nach aussen
+                    logger.exception("Lizenzserver: Fehler")
+                    return self._json({"ok": False, "meldung": "Fehler beim Lizenzserver."}, 500)
 
             def _kamera_bild(self) -> None:
                 """Webcam-Bild aus dem Fenster (rohe Bytes). Typ an den Bytes geprueft, nie gespeichert."""

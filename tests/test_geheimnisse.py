@@ -38,3 +38,12 @@ def test_normaler_text_bleibt():
 def test_enthaelt_geheimnis():
     assert enthaelt_geheimnis("Passwort: geheim123") is True
     assert enthaelt_geheimnis("") is False
+
+
+def test_webhooks_und_neue_github_tokens_werden_geschwaerzt():
+    from assistant.geheimnisse import ERSATZ, ist_geheimer_name, verschleiere
+    text = ("hook https://discord.com/api/webhooks/123456789/abcDEF_ghi-JKL und "
+            "github" + "_pat_11ABCDEFG0123456789_abcdefghijklmnopqrstuvwxyz")
+    sauber = verschleiere(text)
+    assert "abcDEF" not in sauber and "github_pat_" not in sauber and sauber.count(ERSATZ) == 2
+    assert ist_geheimer_name("NOVA_DISCORD_WEBHOOK") and ist_geheimer_name("NOVA_PREMIUM_REPO_TOKEN")

@@ -1,7 +1,8 @@
 """Nova Premium (geschlossen): Freischaltung per Code und Premium-Paket aus einem privaten Repo.
 
-Hier steht nur das Schloss - nicht die Premium-Funktionen selbst. Die liegen verschluesselt in einem privaten
-GitHub-Repo und kommen nur mit einem gueltigen Code auf den Rechner.
+Hier steht nur das Schloss - nicht die Premium-Funktionen selbst. Die liegen in einem privaten GitHub-Repo.
+Nur der Lizenzserver (Cloud-Nova des Entwicklers, assistant/lizenzserver.py) hat dafuer einen Lesezugang und
+gibt das unterschriebene Paket nur gegen einen gueltigen Code heraus. Ein Code enthaelt NICHTS Geheimes.
 
 Codes erzeugt allein der Entwickler mit seinem privaten Schluessel (nie in einem Repo). Jeder Code ist:
   * an GENAU eine Installation gebunden (Geraete-Kennung),
@@ -69,8 +70,7 @@ def glueckwunsch(stufe: str) -> str:
     punkte = "\n".join("  ✓ " + f for f in FUNKTIONEN.get(stufe, []))
     return (f"\U0001F389 Herzlichen Glueckwunsch - {name} ist freigeschaltet!\n\n"
             f"Das hast du jetzt:\n{punkte}\n")
-PAKET_REPO = "GermanClaude/Nova-Premium"
-PAKET_PFAD = "pakete/nova-premium.bin"
+PAKET_REPO = "GermanClaude/Nova-Premium"   # privat - nur der Lizenzserver hat einen Lesezugang
 SPERR_PFAD = "pakete/gesperrt.json"       # signierte Liste gesperrter Codes (Entwickler kann Zugang zuruecknehmen)
 _SHA256_INFO = bytes.fromhex("3031300d060960864801650304020105000420")
 _TAG = 86400
@@ -168,16 +168,17 @@ def sperrliste_lesen(blob: bytes, n: int = None) -> dict:
     return liste if isinstance(liste, dict) else {}
 
 
-def sperrung_pruefen(root, holen: Callable[[str, str], bytes] = None, n: int = None) -> bool:
-    """Prueft beim Entwickler-Repo, ob dieser Code gesperrt wurde. Gibt True zurueck, wenn JETZT gesperrt
-    wird (dann ist Premium weg). Ohne Netz/ohne Zugang bleibt der letzte Stand - ein zahlender Nutzer wird
-    durch fehlendes Netz nie ausgesperrt."""
-    holen = holen or _github
+def sperrung_pruefen(root, holen: Callable[[str], bytes] = None, n: int = None) -> bool:
+    """Fragt den Lizenzserver, ob dieser Code gesperrt wurde. Gibt True zurueck, wenn JETZT gesperrt wird
+    (dann ist Premium weg). Ohne Netz/ohne Server bleibt der letzte Stand - ein zahlender Nutzer wird durch
+    fehlendes Netz nie ausgesperrt. Die Liste ist signiert - eine gefaelschte wird ignoriert."""
+    holen = holen or _sperrliste_vom_server
     d = lizenz(root)
-    if not d.get("stufe") or not d.get("zugang"):
+    server = lizenzserver(d)
+    if not d.get("stufe") or not server:
         return False
     try:
-        liste = sperrliste_lesen(holen(d["zugang"], SPERR_PFAD), n)
+        liste = sperrliste_lesen(holen(server), n)
     except PremiumFehler as exc:
         if "unterschrieben" in str(exc):          # da liegt was Falsches - nicht darauf hereinfallen
             logger.warning("Premium: Sperrliste ungueltig")
@@ -221,8 +222,10 @@ def einloesen(root, code: str, jetzt: float | None = None, n: int = None) -> dic
         dauer = float(c.get("d") or 0) or max(1, int(c.get("m") or 1)) * 30 * _TAG   # Sekunden (Stunden..Jahre)
         dauer = max(60.0, min(dauer, 10 * 365 * _TAG))
         start = max(jetzt, float(alt.get("bis") or 0)) if alt.get("stufe") == c["t"] else jetzt
+        # Nichts Geheimes speichern: nur der (selbst nicht geheime) Code fuer den Lizenzserver und dessen Adresse.
         neu = {"benutzt": benutzt, "stufe": c["t"], "bis": start + dauer, "nonce": c.get("n"),
-               "schluessel": c.get("s", ""), "zugang": c.get("g", ""), "eingeloest": jetzt}
+               "code": "NOVA-" + "".join((code or "").split()).removeprefix("NOVA-").removeprefix("nova-"),
+               "server": str(c.get("u") or ""), "eingeloest": jetzt}
     else:
         raise PremiumFehler("Unbekannte Stufe im Code.")
     _speichern(root, neu)
@@ -246,6 +249,7 @@ def paket_pfad(root) -> Path:
 
 
 def _github(zugang: str, pfad: str, timeout: float = 60.0) -> bytes:
+    """Nur fuer den Codegenerator des Entwicklers (Token aus SEINER .env, nie aus einem Code)."""
     req = urllib.request.Request(f"https://api.github.com/repos/{PAKET_REPO}/contents/{pfad}",
                                  headers={"Authorization": f"Bearer {zugang}",
                                           "Accept": "application/vnd.github.raw+json",
@@ -254,37 +258,89 @@ def _github(zugang: str, pfad: str, timeout: float = 60.0) -> bytes:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return r.read()
     except urllib.error.HTTPError as exc:
-        raise PremiumFehler(f"Premium-Paket nicht erreichbar ({exc.code}) - der Zugang im Code ist evtl. "
-                            "abgelaufen.") from exc
+        raise PremiumFehler(f"Privates Repo nicht erreichbar ({exc.code}) - NOVA_PREMIUM_TOKEN pruefen.") from exc
     except (urllib.error.URLError, OSError) as exc:
-        raise PremiumFehler("Keine Verbindung - spaeter nochmal /novaaiupdate.") from exc
+        raise PremiumFehler("Keine Verbindung - spaeter nochmal.") from exc
 
 
-def paket_entpacken(blob: bytes, schluessel: str, n: int = None) -> tuple[bytes, str, dict]:
-    """Verschluesselt (wie der Abgleich) -> (zip, signatur, info). Die Unterschrift des Entwicklers muss passen."""
-    from .abgleich import AbgleichFehler, entschluesseln
+# ---------------------------------------------------------------- Lizenzserver (Cloud-Nova des Entwicklers)
+def _server_ok(url: str) -> bool:
+    """Nur https (oder http auf dem eigenen Rechner zum Testen) - ein Code soll nirgendwo anders hinschicken."""
+    url = (url or "").strip()
+    if url.startswith("https://") and len(url) > 12 and " " not in url:
+        return True
+    return url.startswith(("http://127.0.0.1", "http://localhost"))
 
+
+def lizenzserver(d: dict) -> str:
+    """Adresse des Lizenzservers: aus dem eingeloesten Code, sonst NOVA_LIZENZSERVER_URL (Umgebung)."""
+    import os
+
+    for kandidat in (str(d.get("server") or ""), os.environ.get("NOVA_LIZENZSERVER_URL", "")):
+        if _server_ok(kandidat):
+            return kandidat.strip().rstrip("/")
+    return ""
+
+
+def _sperrliste_vom_server(server: str, timeout: float = 20.0) -> bytes:
+    with urllib.request.urlopen(server + "/lizenz/sperrliste", timeout=timeout) as r:
+        return r.read()
+
+
+def _paket_vom_server(server: str, code: str, kenn: str, timeout: float = 90.0) -> dict:
+    """Code + Geraete-Kennung an den Lizenzserver - zurueck kommt das unterschriebene Paket. Kein Token im Spiel."""
+    body = json.dumps({"code": code, "kennung": kenn}).encode("utf-8")
+    req = urllib.request.Request(server + "/lizenz/paket", data=body, method="POST",
+                                 headers={"Content-Type": "application/json"})
     try:
-        d = entschluesseln(blob, schluessel)
-    except AbgleichFehler as exc:
-        raise PremiumFehler("Das Premium-Paket passt nicht zu deinem Code.") from exc
-    roh, sig = base64.b64decode(d.get("zip") or ""), str(d.get("sig") or "")
-    if not signatur_ok(roh, base64.b64decode(sig), n):
-        raise PremiumFehler("Das Premium-Paket ist nicht vom Entwickler unterschrieben - wird nicht geladen.")
-    return roh, sig, d.get("info") or {}
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        try:
+            meldung = json.loads(exc.read().decode("utf-8")).get("meldung")
+        except Exception:  # noqa: BLE001
+            meldung = None
+        raise PremiumFehler(meldung or f"Der Lizenzserver lehnt ab ({exc.code}).") from exc
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        raise PremiumFehler("Der Lizenzserver ist gerade nicht erreichbar - spaeter nochmal /novaaiupdate.") from exc
 
 
-def paket_holen(root, holen: Callable[[str, str], bytes] = _github, n: int = None) -> dict:
-    """Neuestes Paket laden (nur mit gueltiger Lizenz). Gibt die Paket-Info (Version ...) zurueck."""
+def _alte_geheimnisse_entfernen(root, d: dict) -> dict:
+    """Aeltere Versionen (bis 0.51) haben Token/Schluessel aus dem Code gespeichert - weg damit."""
+    if "zugang" in d or "schluessel" in d:
+        d.pop("zugang", None)
+        d.pop("schluessel", None)
+        _speichern(root, d)
+    return d
+
+
+def paket_holen(root, holen: Callable[[str, str, str], dict] = None, n: int = None) -> dict:
+    """Neuestes Paket vom Lizenzserver laden (nur mit gueltiger Lizenz). Gibt die Paket-Info zurueck."""
+    holen = holen or _paket_vom_server
     if not stufe(root):
         raise PremiumFehler("Kein gueltiges Premium - erst einen Code einloesen.")
-    d = lizenz(root)
-    if not d.get("zugang") or not d.get("schluessel"):
-        raise PremiumFehler("Dieser Code enthaelt keinen Paket-Zugang - bitte beim Entwickler melden.")
-    roh, sig, info = paket_entpacken(holen(d["zugang"], PAKET_PFAD), d["schluessel"], n)
-    with zipfile.ZipFile(io.BytesIO(roh)) as z:
-        if "nova_premium/__init__.py" not in z.namelist():
-            raise PremiumFehler("Das Premium-Paket ist unvollstaendig.")
+    d = _alte_geheimnisse_entfernen(root, lizenz(root))
+    server = lizenzserver(d)
+    if not d.get("code") or not server:
+        raise PremiumFehler("Fuer das Paket braucht es einen neuen Code (mit Lizenzserver) - bitte beim "
+                            "Entwickler melden.")
+    antwort = holen(server, d["code"], kennung(root))
+    if not isinstance(antwort, dict) or not antwort.get("ok"):
+        raise PremiumFehler(str((antwort or {}).get("meldung") or "Der Lizenzserver gibt kein Paket heraus."))
+    try:
+        roh, sig = base64.b64decode(antwort.get("zip") or ""), str(antwort.get("sig") or "")
+        sig_roh = base64.b64decode(sig)
+    except (ValueError, TypeError) as exc:
+        raise PremiumFehler("Antwort des Lizenzservers ist kaputt.") from exc
+    if not signatur_ok(roh, sig_roh, n):     # auch ein falscher Server kann kein fremdes Paket unterschieben
+        raise PremiumFehler("Das Premium-Paket ist nicht vom Entwickler unterschrieben - wird nicht geladen.")
+    try:
+        with zipfile.ZipFile(io.BytesIO(roh)) as z:
+            if "nova_premium/__init__.py" not in z.namelist():
+                raise PremiumFehler("Das Premium-Paket ist unvollstaendig.")
+    except zipfile.BadZipFile as exc:
+        raise PremiumFehler("Das Premium-Paket ist kaputt.") from exc
+    info = antwort.get("info") or {}
     ziel = paket_pfad(root)
     ziel.parent.mkdir(parents=True, exist_ok=True)
     ziel.write_bytes(roh)
@@ -294,9 +350,13 @@ def paket_holen(root, holen: Callable[[str, str], bytes] = _github, n: int = Non
 
 def laden(root, ctl, n: int = None, sperrung=True):
     """Beim Start: gueltige Lizenz + unterschriebenes Paket -> nova_premium.registrieren(ctl, stufe).
-    sperrung=True: vorher beim Entwickler-Repo nachsehen, ob der Code zurueckgenommen wurde."""
+    sperrung=True: vorher beim Lizenzserver nachsehen, ob der Code zurueckgenommen wurde."""
     import importlib
 
+    try:
+        _alte_geheimnisse_entfernen(root, lizenz(root))
+    except OSError:
+        pass
     if sperrung:
         try:
             sperrung_pruefen(root, n=n)        # gesperrt? -> stufe() ist danach None, nichts wird geladen
@@ -323,8 +383,18 @@ def laden(root, ctl, n: int = None, sperrung=True):
     return modul
 
 
-# ---------------------------------------------------------------- Codegenerator (nur Entwickler, /codegenerator 13679)
+# ---------------------------------------------------------------- Codegenerator (nur Entwickler)
 GENERATOR_PFAD = "werkzeuge/codegenerator.py"
+_CG_SALZ = b"nova-cg-1"
+_CG_HASH = "93469410b2f927097437a4079870e29ceb98c0bfa10e9d8002e8a6c57f0e54f0"
+
+
+def cg_pin_ok(pin: str) -> bool:
+    """PIN fuer /codegenerator - nur als Hash im Code (der Klartext steht nur im privaten Generator)."""
+    if not pin or len(pin) > 64:
+        return False
+    h = hashlib.pbkdf2_hmac("sha256", pin.encode("utf-8"), _CG_SALZ, 300000).hex()
+    return secrets.compare_digest(h, _CG_HASH)
 
 
 def codegenerator_holen(root, holen: Callable[[str, str], bytes] = _github) -> Path:
@@ -353,10 +423,21 @@ def codegenerator_starten(pfad, popen=None) -> None:
     popen(befehl, cwd=str(pfad.parent))
 
 
-# ---------------------------------------------------------------- Simulation (nur Entwickler, /simulation novaai.13696)
+# ---------------------------------------------------------------- Simulation (nur Entwickler, /simulation <PIN>)
 # Schaltet Premium oertlich zum TESTEN frei - ohne echten Code und ohne das private Paket. Die hier gezeigten
 # "Simulations-Werkzeuge" sind nur eine Demo, nicht der echte Premium-Inhalt (der bleibt im privaten Repo).
-SIM_PIN = "novaai.13696"
+# Nur der Hash steht im Code (PBKDF2) - wer die KI.exe auseinandernimmt, findet den PIN nicht im Klartext.
+_SIM_SALZ = b"nova-sim-1"
+_SIM_HASH = "01e95b1bd6f4abcd3a17c018630691da0d511458280e0434a6dc7e6a3d678739"
+
+
+def sim_pin_ok(pin: str) -> bool:
+    if not pin or len(pin) > 64:
+        return False
+    h = hashlib.pbkdf2_hmac("sha256", pin.encode("utf-8"), _SIM_SALZ, 300000).hex()
+    return secrets.compare_digest(h, _SIM_HASH)
+
+
 _SIM_DAUER = 2 * 3600
 
 
@@ -369,7 +450,7 @@ def simulation_status(root) -> str:
 
 
 def simulation_umschalten(root, pin: str, stufe: str = "max") -> str:
-    if pin != SIM_PIN:
+    if not sim_pin_ok(pin):
         raise PremiumFehler("Falscher Simulations-Code.")
     d = lizenz(root)
     sim = d.get("sim") or {}
@@ -401,17 +482,13 @@ def _sim_demo_werkzeuge(stufe: str):
 
 
 def simulation_laden(root, ctl) -> str | None:
-    """Beim Start bzw. nach dem Umschalten: wenn Simulation aktiv ist, Premium so registrieren wie echt -
-    das echte Paket, wenn es da ist, sonst die Demo-Werkzeuge."""
+    """Beim Start bzw. nach dem Umschalten: wenn Simulation aktiv ist, die Demo-Werkzeuge registrieren.
+    Das echte Paket laedt die Simulation NIE - das gibt es nur mit gueltiger Lizenz (sonst waere die
+    Simulation ein Weg, abgelaufenes Premium weiter zu nutzen)."""
     sim = lizenz(root).get("sim") or {}
     if not (sim.get("stufe") and float(sim.get("bis") or 0) > time.time()):
         return None
     st = sim["stufe"]
-    if paket_pfad(root).exists():
-        try:
-            laden(root, ctl)
-        except Exception:  # noqa: BLE001
-            pass
     for werkzeug in _sim_demo_werkzeuge(st):
         ctl.registry.register(werkzeug)
     return st

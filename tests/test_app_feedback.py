@@ -84,7 +84,7 @@ def test_feedback_status_and_sending_with_an_image(fb_app):
     post = Post()
     server = fb_app(post=post)
     assert _req(server, "/api/feedback") == (200, {"ok": True, "configured": True, "due": False, "pending": 0,
-                                                    "max_images": 5})
+                                                    "max_images": 5, "rezension_ab": None})
     status, body = _req(server, "/api/feedback", {"kind": "bug", "stars": 4, "text": "Knopf klemmt",
                                                   "contact": "rueckfrage@example.invalid", "trigger": "popup",
                                                   "images": [{"name": "fehler.png", "data": _data_url()}]})

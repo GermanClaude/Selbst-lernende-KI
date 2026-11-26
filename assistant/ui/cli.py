@@ -708,7 +708,12 @@ class CLI:
             contact = _feedback_frage("Deine E-Mail fuer Rueckfragen (optional, Enter = keine): ")
             oeffentlich, name = False, ""
             if stars is not None and text.strip():
-                antwort = _feedback_frage("Deine Bewertung oeffentlich zeigen (Sterne + Text, ohne E-Mail)? [j/N]: ")
+                ab = feedback.naechste_rezension(self.config)
+                if ab is not None:
+                    print(_c("Oeffentlich rezensieren geht nur einmal pro Woche - wieder ab "
+                             + ab.strftime("%d.%m.%Y") + ". Deine Sterne zaehlen trotzdem.", GREY))
+                antwort = "" if ab is not None else _feedback_frage(
+                    "Deine Bewertung oeffentlich zeigen (Sterne + Text, ohne E-Mail)? [j/N]: ")
                 oeffentlich = antwort.lower() in ("j", "ja", "y", "yes")
                 if oeffentlich:
                     name = _feedback_frage("Unter welchem Namen? (Enter = anonym): ")
@@ -3034,12 +3039,12 @@ class CLI:
         print("Sandbox: neu | liste | stop [id]")
 
     def _simulation_befehl(self, args: list[str]) -> None:
-        """Versteckt, nur fuer den Entwickler: Premium oertlich zum Testen an/aus (/simulation novaai.13696)."""
+        """Versteckt, nur fuer den Entwickler: Premium oertlich zum Testen an/aus (/simulation <PIN>)."""
         from .. import premium as PM
 
         pin = args[0] if args else ""
         stufe = args[1].lower() if len(args) > 1 and args[1].lower() in PM.STUFEN else "max"
-        if pin in ("status", "") and not (len(args) == 1 and pin == PM.SIM_PIN):
+        if pin in ("status", ""):
             print(PM.simulation_status(self.config.project_root))
             return
         try:
@@ -3052,16 +3057,17 @@ class CLI:
             self._werkzeuge_geaendert()
             self._premium_event(st)
             print(f"Simulation AN - {PM.STUFEN.get(st, 'Premium')} zum Testen freigeschaltet (2 Stunden). "
-                  "Werkzeug 'premium_demo' zeigt, dass es laeuft. Wieder aus: nochmal /simulation novaai.13696.")
+                  "Werkzeug 'premium_demo' zeigt, dass es laeuft. Wieder aus: nochmal /simulation mit deinem PIN.")
         else:
             print("Simulation aus - zurueck zur normalen Version. (Neustart stellt die Werkzeugliste ganz her.)")
 
     def _codegenerator_befehl(self, args: list[str]) -> None:
         """Einmalig fuer den Entwickler: holt den Codegenerator (privates Repo) und startet ihn. Nur mit PIN."""
-        if args[:1] != ["13679"]:
+        from .. import premium as PM
+
+        if not args or not PM.cg_pin_ok(args[0]):
             print(_c("Unbekannter Befehl: /codegenerator. /hilfe zeigt alle.", YELLOW))
             return
-        from .. import premium as PM
 
         print("Hole den Codegenerator aus dem privaten Repo …")
         try:
