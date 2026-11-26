@@ -20,7 +20,8 @@ jobs:
        github.event.workflow_run.head_branch == github.event.repository.default_branch)
     runs-on: ubuntu-latest
     env:
-      GH_TOKEN: ${{ github.token }}
+      GH_TOKEN: ${{ secrets.KANAL_TOKEN || github.token }}
+      ZIEL: ${{ secrets.KANAL_TOKEN != '' && 'GermanClaude/Selbst-lernende-KI' || github.repository }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -33,10 +34,10 @@ jobs:
           IFS=. read -r a b c <<< "$V"
           echo "version=$V" >> "$GITHUB_OUTPUT"
           echo "code=$((a * 10000 + b * 100 + c))" >> "$GITHUB_OUTPUT"
-          if ! gh release view "v$V" > /dev/null 2>&1; then
+          if ! gh release view "v$V" --repo "$ZIEL" > /dev/null 2>&1; then
             echo "::warning::Release v$V gibt es (noch) nicht - nichts zu tun."
             echo "bauen=false" >> "$GITHUB_OUTPUT"
-          elif gh release view "v$V" --json assets -q '.assets[].name' | grep -qx 'Nova-Handy.apk' \
+          elif gh release view "v$V" --repo "$ZIEL" --json assets -q '.assets[].name' | grep -qx 'Nova-Handy.apk' \
                && [ "${{ github.event_name }}" != "workflow_dispatch" ]; then
             echo "Nova-Handy.apk ist schon im Release v$V."
             echo "bauen=false" >> "$GITHUB_OUTPUT"
@@ -81,5 +82,5 @@ jobs:
         run: |
           cp android/app/build/outputs/apk/release/app-release.apk Nova-Handy.apk
           ls -l Nova-Handy.apk
-          gh release upload "v${{ steps.v.outputs.version }}" Nova-Handy.apk --clobber
+          gh release upload "v${{ steps.v.outputs.version }}" Nova-Handy.apk --clobber --repo "$ZIEL"
           rm -f android/nova.keystore

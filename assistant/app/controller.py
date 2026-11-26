@@ -2590,6 +2590,7 @@ class AppController(CLI):
         """Nach dem Oeffnen des Fensters: Hinweise und (hoechstens taeglich) Update-Pruefung."""
         self._abgleich_starten()  # Gedaechtnis mit Cloud/anderen Novas abgleichen (wenn eingerichtet)
         self._plugins_starten()   # Plugins (MCP) fuer alle Modelle
+        self._premium_laden()     # Nova Premium (geschlossen), falls freigeschaltet
         self._zeitplan_starten()  # geplante Aufgaben (auch ohne dass jemand die App offen hat)
         self.tool_ctx.extra["anruf_gespraech"] = self._anruf_gespraech   # Telefonat mit Auftraegen (Vonage)
         threading.Thread(target=self._wachwort_beim_start, name="wachwort", daemon=True).start()

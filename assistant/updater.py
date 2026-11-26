@@ -52,6 +52,19 @@ _CREATE_ONLY = {"config/persona.md", "config/werte.md"}
 # Hier duerfen veraltete Dateien entfernt werden (sie liegen ja in der Sicherung).
 _CODE_DIRS = ("assistant/", "tests/", "packaging/")
 
+QUELLE_REPO = "GermanClaude/Nova-Quellcode"   # privat; der oeffentliche Kanal heisst weiter wie frueher
+
+
+def _github_holen(url: str, token: str, timeout: float) -> bytes:
+    import urllib.request
+
+    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}",
+                                               "Accept": "application/vnd.github.raw+json",
+                                               "X-GitHub-Api-Version": "2022-11-28"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return r.read()
+
+
 _VERSION_RE = re.compile(r"""__version__\s*=\s*["']([^"']+)["']""")
 
 
@@ -298,7 +311,18 @@ class Updater:
     def _ref(self) -> str:
         return (self.settings.branch or "").strip()
 
+    def _privat(self) -> tuple[str, str] | None:
+        """Quellcode liegt seit 0.44 in einem privaten Repo: mit NOVA_UPDATE_TOKEN (nur Lesen) bekommen eigene
+        Quellcode-Installationen (Cloud, Termux, PC) weiter Updates. Ohne Token: der oeffentliche Kanal."""
+        token = os.environ.get("NOVA_UPDATE_TOKEN", "").strip()
+        if not token:
+            return None
+        return os.environ.get("NOVA_QUELLE_REPO", "").strip() or QUELLE_REPO, token
+
     def _check_source(self) -> UpdateInfo | None:
+        privat = self._privat()
+        if privat is not None:
+            return self._check_source_privat(*privat)
         repo = self.settings.repo.strip()
         ref = self._ref() or "HEAD"  # HEAD = Standard-Branch
         base = f"https://raw.githubusercontent.com/{repo}/{quote(ref, safe='/')}/"
@@ -320,6 +344,23 @@ class Updater:
             download_url=f"https://api.github.com/repos/{repo}/zipball{zip_ref}",
             kind="quelle",
         )
+
+    def _check_source_privat(self, repo: str, token: str) -> UpdateInfo | None:
+        ref = self._ref()
+        suffix = f"?ref={quote(ref, safe='')}" if ref else ""
+        api = f"https://api.github.com/repos/{repo}"
+        remote = read_version(_github_holen(f"{api}/contents/assistant/__init__.py{suffix}", token, 10)
+                              .decode("utf-8", "replace"))
+        self.last_seen = remote
+        if not remote or not is_newer(remote, self.current):
+            return None
+        try:
+            changelog = _github_holen(f"{api}/contents/CHANGELOG.md{suffix}", token, 10).decode("utf-8", "replace")
+        except Exception:  # noqa: BLE001
+            changelog = ""
+        zip_ref = f"/{quote(ref, safe='/')}" if ref else ""
+        return UpdateInfo(current=self.current, new=remote, notes=changelog_between(changelog, self.current, remote),
+                          download_url=f"token:{api}/zipball{zip_ref}", kind="quelle")
 
     def _check_exe(self) -> UpdateInfo | None:
         repo = self.settings.repo.strip()
@@ -376,7 +417,13 @@ class Updater:
                 "Dieser Ordner ist ein Git-Checkout - bitte mit 'git pull' aktualisieren."
             )
         say(f"Lade Version {info.new} herunter …")
-        data = self.fetch(info.download_url, timeout=180)
+        if info.download_url.startswith("token:"):
+            privat = self._privat()
+            if privat is None:
+                raise UpdateError("Fuer dieses Update fehlt NOVA_UPDATE_TOKEN.")
+            data = _github_holen(info.download_url[len("token:"):], privat[1], 180)
+        else:
+            data = self.fetch(info.download_url, timeout=180)
         with tempfile.TemporaryDirectory() as tmp:
             new_root = _extract_zip(data, Path(tmp))
             new_version = read_version(
@@ -384,6 +431,13 @@ class Updater:
             )
             if not new_version or not is_newer(new_version, self.current):
                 raise UpdateError("Die heruntergeladene Version ist nicht neuer - nichts geaendert.")
+            # Schutz: ein Stand ohne Programmcode (z.B. der reine Update-Kanal) darf nie die Dateien hier loeschen.
+            neu_code = [p for p in program_files(new_root) if p.startswith("assistant/") and p.endswith(".py")]
+            alt_code = [p for p in program_files(self.root) if p.startswith("assistant/") and p.endswith(".py")]
+            if len(neu_code) <= 1 < len(alt_code):
+                raise UpdateError("Dieses Update enthaelt keinen vollstaendigen Programmcode - nichts geaendert. "
+                                  "(Der Quellcode ist privat; Updates fuer Quellcode-Installationen brauchen "
+                                  "NOVA_UPDATE_TOKEN - sonst die KI.exe bzw. die Cloud nutzen.)")
             backup = self._backup_source(program_files(new_root))
             say(f"Alte Version {self.current} gesichert in {backup.relative_to(self.root).as_posix()}/")
             old_requirements = _read_bytes(self.root / "requirements.txt")

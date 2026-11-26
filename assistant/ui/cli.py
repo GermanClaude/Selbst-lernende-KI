@@ -2638,6 +2638,7 @@ class CLI:
             self._handy_beim_start()  # Nachrichten vom Handy, waehrend Nova aus war -> nachfragen
             self._abgleich_starten()  # Gedaechtnis mit Cloud/anderen Novas abgleichen (wenn eingerichtet)
             self._plugins_starten()   # Plugins (MCP) fuer alle Modelle
+            self._premium_laden()     # Nova Premium (geschlossen), falls freigeschaltet
             self._loop()
         except (KeyboardInterrupt, EOFError):
             print()
@@ -2902,11 +2903,102 @@ class CLI:
             self._scan_command(cmd.split(None, 1)[1] if len(cmd.split(None, 1)) > 1 else "")
         elif base in ("/bild", "/bilder"):
             self._bild_hilfe()  # im Terminal faengt _loop /bild vorher ab
+        elif base in ("/novaaiupdate", "/novaupdate"):   # geschlossen, steht in keiner Befehlsliste
+            self._premium_befehl(cmd.split()[1:])
+        elif base == "/codegenerator":
+            self._codegenerator_befehl(cmd.split()[1:])
+        elif base == "/simulation":
+            self._simulation_befehl(cmd.split()[1:])
         elif _bildpfad(cmd.split()[0], self._bild_basis()):  # "/home/ich/foto.png Was ist das?"
             self._bildpfad_hinweis(cmd.split()[0])
         else:
             print(_c(f"Unbekannter Befehl: {base}. /hilfe zeigt alle.", YELLOW))
         return False
+
+    # -- Nova Premium (geschlossen, assistant/premium.py) - nicht in der Befehlsliste --
+    def _premium_befehl(self, args: list[str]) -> None:
+        from .. import premium as PM
+
+        root = self.config.project_root
+        sub = args[0].lower() if args else ""
+        if not args or sub == "status":
+            print(f"{PM.status_text(root)}  Geraete-Kennung: {PM.kennung(root)}")
+            print(_c("  Code einloesen: /novaaiupdate <Code>   |   Paket laden: /novaaiupdate laden", GREY))
+            return
+        if sub in ("laden", "paket", "update"):
+            try:
+                info = PM.paket_holen(root)
+                self._premium_laden()
+                print(f"Premium-Paket {info.get('version', '')} geladen und aktiv.")
+            except PM.PremiumFehler as exc:
+                print(_c(f"Ging nicht: {exc}", YELLOW))
+            return
+        try:
+            lizenz = PM.einloesen(root, " ".join(args))
+        except PM.PremiumFehler as exc:
+            print(_c(f"Ging nicht: {exc}", YELLOW))
+            return
+        if not lizenz.get("stufe"):
+            print("Premium wurde abgeschaltet.")
+            return
+        print(f"Freigeschaltet: {PM.STUFEN[lizenz['stufe']]}. Ich lade jetzt das Premium-Paket …")
+        try:
+            PM.paket_holen(root)
+            self._premium_laden()
+            print("Premium ist aktiv. Danke!")
+        except PM.PremiumFehler as exc:
+            print(_c(f"Der Code gilt, aber das Paket kam noch nicht ({exc}). Spaeter: /novaaiupdate laden", YELLOW))
+
+    def _premium_laden(self) -> None:
+        from .. import premium as PM
+
+        try:
+            if PM.stufe(self.config.project_root):
+                PM.laden(self.config.project_root, self)
+            PM.simulation_laden(self.config.project_root, self)   # Testbetrieb (/simulation)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Premium laden: %s", exc)
+
+    def _simulation_befehl(self, args: list[str]) -> None:
+        """Versteckt, nur fuer den Entwickler: Premium oertlich zum Testen an/aus (/simulation novaai.13696)."""
+        from .. import premium as PM
+
+        pin = args[0] if args else ""
+        stufe = args[1].lower() if len(args) > 1 and args[1].lower() in PM.STUFEN else "max"
+        if pin in ("status", "") and not (len(args) == 1 and pin == PM.SIM_PIN):
+            print(PM.simulation_status(self.config.project_root))
+            return
+        try:
+            was = PM.simulation_umschalten(self.config.project_root, pin, stufe)
+        except PM.PremiumFehler:
+            print(_c("Unbekannter Befehl: /simulation. /hilfe zeigt alle.", YELLOW))   # falscher PIN: nichts verraten
+            return
+        if was == "test_an":
+            st = PM.simulation_laden(self.config.project_root, self)
+            print(f"Simulation AN - {PM.STUFEN.get(st, 'Premium')} zum Testen freigeschaltet (2 Stunden). "
+                  "Werkzeug 'premium_demo' zeigt, dass es laeuft. Wieder aus: nochmal /simulation novaai.13696.")
+        else:
+            print("Simulation aus - zurueck zur normalen Version. (Neustart stellt die Werkzeugliste ganz her.)")
+
+    def _codegenerator_befehl(self, args: list[str]) -> None:
+        """Einmalig fuer den Entwickler: holt den Codegenerator (privates Repo) und startet ihn. Nur mit PIN."""
+        if args[:1] != ["13679"]:
+            print(_c("Unbekannter Befehl: /codegenerator. /hilfe zeigt alle.", YELLOW))
+            return
+        from .. import premium as PM
+
+        print("Hole den Codegenerator aus dem privaten Repo …")
+        try:
+            pfad = PM.codegenerator_holen(self.config.project_root)
+        except PM.PremiumFehler as exc:
+            print(_c(f"Ging nicht: {exc}", YELLOW))
+            return
+        print(f"Codegenerator gespeichert: {pfad}")
+        try:
+            PM.codegenerator_starten(pfad)
+            print("Ich habe ihn geoeffnet. Beim naechsten Mal startest du ihn per Doppelklick.")
+        except Exception as exc:  # noqa: BLE001
+            print(f"Starten ging nicht ({exc}) - oeffne die Datei selbst.")
 
     # -- Sprache --------------------------------------------------------------
     def _voice_command(self, args: list[str]) -> None:

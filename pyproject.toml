@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Ein lokaler, lernfaehiger KI-Assistent (Jarvis-Stil) mit Gedaechtnis, Werkzeugen und PC-Zugriff unter deiner Kontrolle."
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "MIT" }
+license = { text = "Proprietaer - alle Rechte vorbehalten (siehe LICENSE)" }
 dependencies = [
     "anthropic>=1.11.0",
     "openai>=1.40",

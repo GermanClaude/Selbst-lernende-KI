@@ -1,21 +1,21 @@
-MIT License
+Nova – Selbst-lernende KI
+Copyright (c) 2026 der Urheber von Nova. Alle Rechte vorbehalten.
 
-Copyright (c) 2026 Selbst-lernende-KI (Projektautoren)
+Diese Software (Programme, Quelltext, Objektcode, Oberflächen, Texte, Grafiken, Sphäre, Persönlichkeit,
+Befehle, Abläufe, Dokumentation und alle Zusatzinhalte wie Premium-Pakete) ist urheberrechtlich geschützt.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+Erlaubt ist ausschließlich: die von der offiziellen Release-Seite bezogenen Programme (KI.exe, KI-App.exe,
+Nova-Handy.apk) für den eigenen, privaten Gebrauch zu installieren und zu nutzen – nach Maßgabe der
+NUTZUNGSBEDINGUNGEN.md. Premium-Funktionen nur mit einem eigenen, gültigen Code.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+Ohne vorherige schriftliche Erlaubnis des Urhebers ist insbesondere verboten: Vervielfältigen, Verbreiten,
+öffentlich Zugänglichmachen, Bearbeiten, Übersetzen, Dekompilieren, Disassemblieren, Zurückentwickeln
+(Reverse Engineering), das Umgehen von Schutz- oder Freischaltmechanismen, Vermieten, Verkaufen, Unterlizenzieren
+sowie jede Nachahmung (Einzelheiten und Beispiele: NUTZUNGSBEDINGUNGEN.md, Abschnitt 9). Zwingende gesetzliche
+Rechte (z. B. §§ 69d, 69e UrhG) bleiben unberührt.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+Hinweis: Versionen bis einschließlich 0.43.0 wurden unter der MIT-Lizenz veröffentlicht; für genau diese
+Kopien gilt sie weiter. Für alle späteren Versionen gilt ausschließlich diese Lizenz.
+
+DIE SOFTWARE WIRD OHNE JEDE GEWÄHRLEISTUNG BEREITGESTELLT, SOWEIT GESETZLICH ZULÄSSIG (siehe
+NUTZUNGSBEDINGUNGEN.md, Abschnitt 3).

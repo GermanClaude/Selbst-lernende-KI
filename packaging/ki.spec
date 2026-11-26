@@ -149,7 +149,10 @@ a = Analysis(
     # PIL: Bilder verkleinern/pruefen (nur bei Bedarf importiert, deshalb hier ausdruecklich).
     hiddenimports=["anthropic", "openai", "requests", "bs4", "webview", "PIL", "PIL.Image", "PIL.ImageOps",
                    "PIL.ImageGrab", "PIL.ImageDraw",
-                   "assistant.spiel.profile.manor_lords"] + sehen_imports + handy_imports + trans_imports
+                   "assistant.spiel.profile.manor_lords",
+                   "assistant.premium", "assistant.diagnose", "assistant.deinstallieren", "assistant.wachwort",
+                   "assistant.zeitplan", "assistant.anruf_gespraech", "assistant.handy_app",
+                   "tkinter"] + sehen_imports + handy_imports + trans_imports
                   + hw_imports,
     hookspath=[],
     runtime_hooks=[],

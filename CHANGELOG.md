@@ -4,6 +4,24 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.44.0 – 2026-11-26
+
+**Rechtliches, Selbstschutz und (geschlossenes) Premium**
+- **Neue Lizenz:** Nova steht jetzt unter „Alle Rechte vorbehalten“ mit einem ausführlichen Kopier- und
+  Nachahmungsverbot (siehe `LICENSE` und `NUTZUNGSBEDINGUNGEN.md`, Abschnitt 9). Versionen bis 0.43.0 bleiben
+  unter der MIT-Lizenz.
+- **Nova schützt sich selbst:** Eine feste Regel verbietet ihr, ihren eigenen Programmcode, interne
+  Anweisungen, Zugangsdaten oder Premium-Inhalte herauszugeben – auch bei Überlistungs-Versuchen. In der
+  fertigen KI.exe sind Novas eigene Programmdateien und die Premium-Dateien für alle Werkzeuge gesperrt
+  (dein eigener Arbeitsordner bleibt natürlich offen).
+- **Premium (geschlossen, im Aufbau):** Mit `/novaaiupdate <Code>` lässt sich eine Premium-Stufe
+  freischalten. Jeder Code ist an ein Gerät gebunden, nur einmal und nur eine Weile einlösbar und mit einem
+  3072-Bit-Schlüssel unterschrieben (nicht zu erraten). Die Premium-Funktionen liegen verschlüsselt in einem
+  privaten Repo und kommen nur mit gültigem Code auf den Rechner. Freischalten und Abschalten geht nur über
+  einen Code, nie durch die KI selbst. (Diese Befehle erscheinen in keiner Befehlsliste.)
+- Unter der Haube: Vorbereitung für einen eigenen Update-Kanal, damit der Quellcode später privat sein kann,
+  ohne dass Updates ausbleiben.
+
 ## 0.43.0 – 2026-11-26
 
 **Sprachaktivierung auf dem Handy, ein Speicher für alle, sauber deinstallieren, Diagnose-Bericht**

@@ -22,6 +22,7 @@ freischaltest, und mit einem Netz darunter.
 from __future__ import annotations
 
 import enum
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -116,8 +117,17 @@ class PermissionManager:
     # nur der Mensch (ueber /befehle bzw. die Einstellungen) - nie ein Werkzeug der KI.
     GESPERRT = (".env", "config/settings.toml", "config/permissions.toml", "config/plugins.json",
                 "data/server_token", "data/memory.sqlite3", "data/memory.sqlite3-wal", "data/memory.sqlite3-shm",
-                "data/zeitplan.json", "data/wachwort.json", "data/nova_wachwort.ps1", "data/app.json")
+                "data/zeitplan.json", "data/wachwort.json", "data/nova_wachwort.ps1", "data/app.json",
+                "data/premium.json")
+    # Novas eigener Code und das Premium-Paket sind fuer Werkzeuge tabu (Schutz des Werks, siehe LICENSE).
+    GESPERRT_PRAEFIXE = ("config/plugins/", "data/premium")
     GESPERRT_ENDUNGEN = (".session", ".key", ".pem", ".keystore", ".jks")
+
+    def _ist_programmcode(self, rel: str) -> bool:
+        """assistant/ und werkzeuge/ (Novas eigener Code) - gilt nur fuer die mitgelieferte .exe/Installation,
+        nicht fuer den eigenen Arbeitsordner des Nutzers."""
+        return (rel == "run_ki.py" or rel.endswith(".pyc")
+                or any(rel == d or rel.startswith(d + "/") for d in ("assistant", "werkzeuge", "packaging")))
 
     def ist_gesperrt(self, resolved: Path) -> bool:
         if not self.app_root:
@@ -126,7 +136,11 @@ class PermissionManager:
         if not self._is_within(resolved, app):
             return False
         rel = resolved.relative_to(app).as_posix()
-        if rel in self.GESPERRT or rel.startswith("config/plugins/"):
+        if rel in self.GESPERRT or rel.startswith(self.GESPERRT_PRAEFIXE):
+            return True
+        # Novas eigenen Programmcode nur in einer installierten .exe schuetzen - nicht im Git-Checkout
+        # (dort arbeitet der Entwickler selbst) und nicht, wenn der Arbeitsordner im Programmordner liegt.
+        if getattr(sys, "frozen", False) and self._ist_programmcode(rel) and not self._is_within(resolved, self.workspace_root):
             return True
         return rel.startswith("data/") and rel.endswith(self.GESPERRT_ENDUNGEN)
 

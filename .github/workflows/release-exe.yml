@@ -1,6 +1,9 @@
 # Baut bei jeder neuen Version auf dem Standard-Branch KI.exe + KI-App.exe und
-# veroeffentlicht sie als GitHub-Release "v<Version>". Die KI.exe-Updater laden
-# sie von dort. Neue Version = __version__ in assistant/__init__.py erhoehen.
+# veroeffentlicht sie als GitHub-Release "v<Version>" im oeffentlichen UPDATE-KANAL (Repo
+# GermanClaude/Selbst-lernende-KI - nur Programme, Versionsinfo, Neuigkeiten, Webseite; der
+# Quellcode liegt privat). Dafuer braucht dieses Repo das Secret KANAL_TOKEN (fein-granularer
+# Token nur fuer den Kanal, Contents: Read and write). Ohne Secret: Release im eigenen Repo.
+# Neue Version = __version__ in assistant/__init__.py erhoehen.
 name: KI.exe bauen und veroeffentlichen
 
 on:
@@ -14,6 +17,9 @@ permissions:
 concurrency:
   group: release-exe-${{ github.ref }}
   cancel-in-progress: false
+
+env:
+  KANAL: GermanClaude/Selbst-lernende-KI
 
 jobs:
   release:
@@ -31,11 +37,14 @@ jobs:
         id: version
         shell: bash
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.KANAL_TOKEN || github.token }}
+          HAT_KANAL: ${{ secrets.KANAL_TOKEN != '' }}
         run: |
           VERSION=$(python packaging/release_notes.py --version | tr -d '\r')
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          if gh release view "v$VERSION" > /dev/null 2>&1; then
+          ZIEL="$KANAL"; [ "$HAT_KANAL" = "true" ] || ZIEL="${{ github.repository }}"
+          echo "ziel=$ZIEL" >> "$GITHUB_OUTPUT"
+          if gh release view "v$VERSION" --repo "$ZIEL" > /dev/null 2>&1; then
             echo "Version v$VERSION gibt es schon - nichts zu tun."
             echo "neu=false" >> "$GITHUB_OUTPUT"
           else
@@ -135,10 +144,26 @@ jobs:
         if: steps.version.outputs.neu == 'true'
         shell: bash
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.KANAL_TOKEN || github.token }}
+          ZIEL: ${{ steps.version.outputs.ziel }}
         run: |
           python packaging/release_notes.py > notes.md
+          ZIELSTAND="${{ github.sha }}"
+          if [ "$ZIEL" != "${{ github.repository }}" ]; then
+            # Kanal auf den neuen Stand bringen (nur oeffentliche Dateien, kein Quellcode)
+            git clone --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/$ZIEL.git" kanal
+            python packaging/kanal_dateien.py kanal
+            cd kanal
+            git config user.name "Nova-Release"
+            git config user.email "nova-release@users.noreply.github.com"
+            git add -A
+            git diff --cached --quiet || git commit -m "Version ${{ steps.version.outputs.version }}"
+            git push origin HEAD
+            ZIELSTAND=$(git rev-parse HEAD)
+            cd ..
+          fi
           gh release create "v${{ steps.version.outputs.version }}" dist/KI.exe dist/KI-App.exe \
+            --repo "$ZIEL" \
             --title "Version ${{ steps.version.outputs.version }}" \
             --notes-file notes.md \
-            --target "${{ github.sha }}"
+            --target "$ZIELSTAND"
