@@ -1166,6 +1166,28 @@
     byId('favicon').href = 'data:image/svg+xml,' + encodeURIComponent(svg);
   }
 
+  function applyPremium(p) {
+    // Premium aktiv -> edlere Optik (goldener Akzent + Abzeichen). Stufen: premium | max | dev.
+    const stufe = p && typeof p === 'object' ? String(p.stufe || '') : '';
+    const body = document.body;
+    for (const c of ['premium', 'premium-premium', 'premium-max', 'premium-dev', 'in-sandbox']) body.classList.remove(c);
+    let badge = byId('premium-badge');
+    if (!stufe) { if (badge) badge.hidden = true; return; }
+    body.classList.add('premium', 'premium-' + stufe);
+    if (p.sandbox) body.classList.add('in-sandbox');
+    if (!badge) {
+      badge = document.createElement('div');
+      badge.id = 'premium-badge';
+      const sb = byId('sb-version');
+      if (sb && sb.parentNode) sb.parentNode.insertBefore(badge, sb);
+      else document.body.appendChild(badge);
+    }
+    badge.hidden = false;
+    badge.textContent = (stufe === 'dev' ? '◆ Entwickler' : stufe === 'max' ? '★ Premium Max' : '★ Premium')
+      + (p.sandbox ? ' · Sandbox' : '');
+    badge.title = 'Premium ist freigeschaltet';
+  }
+
   function applyState(s) {
     if (!s || typeof s !== 'object') return;
     state = s;
@@ -1187,6 +1209,7 @@
     setFavicon(letter);
     input.placeholder = 'Schreib ' + name + ' eine Nachricht …';
     byId('sb-version').textContent = s.version ? 'Version ' + s.version : '';
+    applyPremium(s.premium);
 
     // Gehirn (Karte in der Seitenleiste oeffnet "Gehirn & Schluessel")
     const prov = String(s.provider || '');

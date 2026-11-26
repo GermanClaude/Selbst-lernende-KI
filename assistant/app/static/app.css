@@ -3343,3 +3343,37 @@ button.att-thumb:hover { border-color: var(--accent); box-shadow: var(--shadow-s
 
 /* Fehlerkarte: "Nova fragen" */
 .card.error .card-ask { margin-top: 8px; }
+
+/* ---- Premium-Optik: goldener Akzent + Abzeichen, wenn Premium/Entwickler aktiv ---- */
+#premium-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  margin: 6px 0 2px; padding: 3px 10px; border-radius: 999px;
+  font-size: 12px; font-weight: 700; letter-spacing: .02em; color: #3a2d00;
+  background: linear-gradient(135deg, #ffe79a 0%, #e8b800 45%, #b8860b 100%);
+  box-shadow: 0 1px 6px rgba(200, 150, 0, .45), inset 0 1px 0 rgba(255, 255, 255, .5);
+  white-space: nowrap;
+}
+body.premium-dev #premium-badge {
+  color: #f4ecff;
+  background: linear-gradient(135deg, #b98bff 0%, #7c3aed 50%, #4f46e5 100%);
+  box-shadow: 0 1px 8px rgba(124, 58, 237, .55), inset 0 1px 0 rgba(255, 255, 255, .35);
+}
+body.premium-max #premium-badge {
+  background: linear-gradient(135deg, #fff1b0 0%, #f0c000 40%, #9c6b00 100%);
+}
+/* dezenter Gold-Schimmer am Rand des Fensters + an der Sphaere */
+body.premium::before {
+  content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 60;
+  box-shadow: inset 0 0 0 2px rgba(232, 184, 0, .5), inset 0 0 36px rgba(232, 184, 0, .12);
+  border-radius: 2px;
+}
+body.premium-dev::before { box-shadow: inset 0 0 0 2px rgba(124, 58, 237, .55), inset 0 0 36px rgba(124, 58, 237, .14); }
+body.premium #orb, body.premium .ai-avatar > .av-l { filter: drop-shadow(0 0 6px rgba(232, 184, 0, .5)); }
+body.premium-dev #orb { filter: drop-shadow(0 0 7px rgba(124, 58, 237, .6)); }
+/* Sandbox: zusaetzlich ein ruhiger Hinweisstreifen oben */
+body.in-sandbox::after {
+  content: "Sandbox-Test – frisches Gedächtnis, simulierte Hardware";
+  position: fixed; top: 0; left: 0; right: 0; z-index: 61; pointer-events: none;
+  text-align: center; font-size: 11px; font-weight: 600; padding: 2px 0;
+  color: #2a2300; background: rgba(232, 184, 0, .85);
+}

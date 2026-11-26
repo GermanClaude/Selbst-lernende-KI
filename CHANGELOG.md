@@ -4,6 +4,13 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.46.0 – 2026-11-26
+
+**Premium sieht man jetzt**
+- Ist Premium (oder die Simulation/der Entwicklermodus) aktiv, bekommt die App eine edlere Optik: ein
+  goldenes **Abzeichen** in der Seitenleiste (★ Premium, ★ Premium Max, ◆ Entwickler), ein dezenter goldener
+  Rahmen und ein Schimmer an der Sphäre. In einer Sandbox-Nova steht oben ein ruhiger Hinweisstreifen.
+
 ## 0.45.0 – 2026-11-26
 
 **Premium: Sandbox-Nova, Entwicklermodus, Codes sperren**

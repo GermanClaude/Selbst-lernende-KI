@@ -2947,11 +2947,12 @@ class CLI:
         if not lizenz.get("stufe"):
             print("Premium wurde abgeschaltet.")
             return
-        print(f"Freigeschaltet: {PM.STUFEN[lizenz['stufe']]}. Ich lade jetzt das Premium-Paket …")
+        print(_c(PM.glueckwunsch(lizenz["stufe"]), BOLD))
+        print("Ich lade jetzt das Premium-Paket …")
         try:
             PM.paket_holen(root)
             self._premium_laden()
-            print("Premium ist aktiv. Danke!")
+            print("Premium ist aktiv. Viel Freude damit!")
         except PM.PremiumFehler as exc:
             print(_c(f"Der Code gilt, aber das Paket kam noch nicht ({exc}). Spaeter: /novaaiupdate laden", YELLOW))
 

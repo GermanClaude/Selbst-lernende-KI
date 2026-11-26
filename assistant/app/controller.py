@@ -273,8 +273,28 @@ class AppController(CLI):
             "tutorial_done": self._tutorial_done(),
             "feedback_due": self._feedback_due(),
             "started_by": self.started_by,
+            "premium": self._premium_status(),
             "commands": [{"cmd": c, "help": schoen(h)} for c, h in COMMANDS],
         }
+
+    def _premium_status(self) -> dict | None:
+        """Fuer die Oberflaeche: welche Premium-Stufe gilt (edlere Optik). None = kostenlos."""
+        try:
+            from .. import premium as PM
+            from .. import sandbox
+
+            root = self.config.project_root
+            st = PM.stufe(root)
+            if not st:
+                sim = PM.lizenz(root).get("sim") or {}
+                if sim.get("stufe") and float(sim.get("bis") or 0) > time.time():
+                    st = sim["stufe"]
+            if not st:
+                return None
+            return {"stufe": st, "name": PM.STUFEN.get(st, "Premium"),
+                    "sandbox": sandbox.aktiv() is not None}
+        except Exception:  # noqa: BLE001
+            return None
 
     def _state_changed(self) -> None:
         self._event({"type": "state", "state": self.state()})

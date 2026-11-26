@@ -38,6 +38,35 @@ OEFFENTLICH_N = int(
 OEFFENTLICH_E = 65537
 STUFEN = {"premium": "Premium", "max": "Premium Max", "dev": "Entwickler"}
 CODE_MUSTER = re.compile(r"^NOVA-[A-Za-z0-9_\-]{20,}\.[A-Za-z0-9_\-]{20,}$")
+
+# Was jede Stufe kann (fuer die Glueckwunsch-Meldung beim Freischalten).
+FUNKTIONEN = {
+    "premium": [
+        "Tagesbriefing auf Knopfdruck (premium_tagesbriefing)",
+        "Automatisches taegliches Briefing zur Wunschzeit",
+        "Sandbox-Nova: bis zu 10 frische Test-Novas gleichzeitig (/sandbox)",
+        "Edlere Premium-Optik in der App",
+    ],
+    "max": [
+        "Alles aus Premium",
+        "Fokus-Bloecke mit Erinnerungen (premium_fokus)",
+        "Sehr lange Texte/Dateien gruendlich zusammenfassen (premium_lang_zusammenfassen)",
+        "Mehr Anrufe pro Tag (15 statt 5)",
+        "Sandbox-Nova unbegrenzt gleichzeitig",
+    ],
+    "dev": [
+        "Alles aus Premium Max",
+        "Entwicklermodus: Nova kennt und erklaert dir die geschlossenen Befehle",
+        "Sandbox-Nova unbegrenzt",
+    ],
+}
+
+
+def glueckwunsch(stufe: str) -> str:
+    name = STUFEN.get(stufe, "Premium")
+    punkte = "\n".join("  ✓ " + f for f in FUNKTIONEN.get(stufe, []))
+    return (f"\U0001F389 Herzlichen Glueckwunsch - {name} ist freigeschaltet!\n\n"
+            f"Das hast du jetzt:\n{punkte}\n")
 PAKET_REPO = "GermanClaude/Nova-Premium"
 PAKET_PFAD = "pakete/nova-premium.bin"
 SPERR_PFAD = "pakete/gesperrt.json"       # signierte Liste gesperrter Codes (Entwickler kann Zugang zuruecknehmen)
