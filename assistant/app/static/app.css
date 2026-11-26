@@ -3531,3 +3531,25 @@ body.premium #splash .splash-name { background: linear-gradient(90deg, #ffe79a, 
 .tour-voice .tv-wave i:nth-child(3) { height: 7px; animation-delay: .3s; }
 @keyframes tvWave { 0%, 100% { transform: scaleY(.5); } 50% { transform: scaleY(1); } }
 @media (prefers-reduced-motion: reduce) { .tour-voice .tv-wave i { animation: none; } }
+
+/* ===== Premium-Shop (Seitenleiste + Anfrage-Dialog) ===== */
+.sb-premium { font-weight: 700; color: #7a5b00; }
+.sb-premium span[data-icon] { color: #e8b800; }
+body:not(.premium) .sb-premium { background: linear-gradient(90deg, color-mix(in srgb,#f0c000 16%,transparent), transparent); }
+.pm-body { display: flex; flex-direction: column; gap: 10px; }
+.pm-intro { margin: 0; color: var(--muted, #8a8a99); }
+.pm-feats { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.pm-feats li { position: relative; padding-left: 22px; font-size: 14px; }
+.pm-feats li::before { content: "★"; position: absolute; left: 2px; color: #e8b800; }
+.pm-form { display: flex; flex-direction: column; gap: 10px; margin-top: 6px; }
+.pm-lab { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted, #8a8a99); }
+.pm-lab select, .pm-lab input { padding: 9px 10px; border-radius: 10px; border: 1px solid var(--border, #2a2e38);
+  background: var(--bg, #111318); color: var(--text); font-size: 15px; }
+.pm-dur { display: flex; align-items: center; gap: 8px; color: var(--text); }
+.pm-dur input { width: 100px; }
+.pm-sim { color: #b45309; font-weight: 600; }
+.pm-id { color: var(--muted, #8a8a99); }
+.pm-hint { color: var(--muted, #8a8a99); }
+.pm-msg { margin: 0; padding: 8px 10px; border-radius: 8px; background: color-mix(in srgb, #ef4444 12%, transparent);
+  color: #b91c1c; font-size: 14px; }
+.pm-msg.ok { background: color-mix(in srgb, #16a34a 14%, transparent); color: #15803d; }

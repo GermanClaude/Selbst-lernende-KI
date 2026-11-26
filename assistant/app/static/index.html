@@ -157,6 +157,7 @@
 
     <nav class="sb-section" aria-labelledby="h-cmds">
       <h2 class="sb-heading" id="h-cmds">Befehle</h2>
+      <button class="sb-btn sb-premium" type="button" id="sb-premium" hidden><span data-icon="star"></span>Premium</button>
       <button class="sb-btn" type="button" id="sb-tour"><span data-icon="compass"></span>Tour starten</button>
       <button class="sb-btn" type="button" data-cmd="/status"><span data-icon="activity"></span>Status</button>
       <button class="sb-btn" type="button" data-cmd="/gedaechtnis"><span data-icon="book"></span>Gedächtnis</button>
@@ -890,6 +891,44 @@
       <button class="btn ghost" id="hd-beenden" type="button">Beenden</button>
       <button class="btn ghost" id="hd-schliessen" type="button">Schließen</button>
       <button class="btn primary" id="hd-neu" type="button">Neu koppeln</button>
+    </div>
+  </div>
+</div>
+
+<!-- Premium: Vorteile + anfragen (Test-Simulation, kein echtes Geld) -->
+<div class="modal premmodal" id="premmodal" hidden>
+  <div class="dialog pdialog" id="pdialog" role="dialog" aria-modal="true" aria-labelledby="pm-title" tabindex="-1">
+    <div class="dlg-head">
+      <h2 class="dlg-title" id="pm-title">★ Nova Premium</h2>
+      <button class="icon-btn dlg-x" id="pm-x" type="button" aria-label="Schließen" data-icon="x"></button>
+    </div>
+    <div class="dlg-body pm-body">
+      <p class="pm-intro" id="pm-intro">Mehr aus Nova holen – mit Premium.</p>
+      <ul class="pm-feats" id="pm-feats"></ul>
+      <div class="pm-form">
+        <label class="pm-lab">Stufe
+          <select id="pm-stufe">
+            <option value="premium">Premium</option>
+            <option value="max" selected>Premium Max</option>
+          </select></label>
+        <label class="pm-lab">Laufzeit
+          <span class="pm-dur"><input id="pm-tage" type="number" min="1" max="3660" value="30" inputmode="numeric"> Tage</span></label>
+        <div class="pm-preis" id="pm-preis"></div>
+        <label class="pm-lab">Betrag (EUR) <span class="pm-sim">Simulation – kein echtes Geld</span>
+          <input id="pm-betrag" type="number" min="0" step="1" value="0" inputmode="decimal"></label>
+        <label class="pm-lab">Notiz (optional)
+          <input id="pm-notiz" type="text" maxlength="400" placeholder="z. B. Wunsch, Frage …"></label>
+        <p class="pm-id klein" id="pm-id"></p>
+        <p class="pm-hint klein">Deine Anfrage geht an den Entwickler. Es wird <b>kein Geld</b> abgebucht und keine
+          Zahlungsdaten erhoben – das dient nur zum Testen des Ablaufs. Du bekommst dann einen Code, den du mit
+          <code>/novaaiupdate</code> einlöst.</p>
+        <p class="pm-msg" id="pm-msg" role="status" hidden></p>
+      </div>
+    </div>
+    <div class="dlg-foot">
+      <button class="btn ghost" id="pm-code" type="button">Ich habe schon einen Code</button>
+      <span class="tour-gap"></span>
+      <button class="btn primary" id="pm-send" type="button">Anfrage senden</button>
     </div>
   </div>
 </div>

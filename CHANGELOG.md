@@ -4,6 +4,16 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.51.0 – 2026-11-26
+
+**Premium anfragen (Test-Ablauf, noch nicht für alle sichtbar)**
+- Ein neuer **Premium**-Knopf in der Seitenleiste öffnet ein Fenster: es zeigt, was Premium bietet, und du
+  kannst eine **Anfrage** stellen (Stufe, Laufzeit, Notiz). Ein Betrag ist dabei ausdrücklich eine
+  **Simulation – es wird kein Geld abgebucht und keine Zahlungsdaten erhoben.** Die Anfrage geht mit deiner
+  anonymen Geräte-Kennung an den Entwickler (per E-Mail und, wenn eingerichtet, Discord-Webhook
+  `NOVA_DISCORD_WEBHOOK`). Du bekommst dann einen Code zum Einlösen.
+- Der Knopf ist vorerst nur im Test sichtbar (Simulation/Entwicklermodus oder `NOVA_PREMIUM_SHOP=1`).
+
 ## 0.50.0 – 2026-11-26
 
 **Premium: Finanz- & Börsen-Coach für Einsteiger**

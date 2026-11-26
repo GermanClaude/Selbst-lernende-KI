@@ -1211,6 +1211,52 @@
     wrap.appendChild(frag);
   }
 
+  const PM_FEATURES = {
+    premium: ['Tagesbriefing & automatisches Morgen-Briefing', 'Finanz- & Börsen-Coach für Einsteiger (nur Wissen)',
+      'Gründliche Recherche mit Quellen', 'Sandbox-Nova (bis 10 gleichzeitig)', 'Edlere Premium-Optik'],
+    max: ['Alles aus Premium', 'Fokus-Blöcke mit Erinnerungen', 'Lange Texte gründlich zusammenfassen',
+      'Mehr Anrufe pro Tag', 'Sandbox-Nova unbegrenzt', 'Wochenrückblick'],
+  };
+  function renderPmFeats() {
+    const sel = byId('pm-stufe');
+    const stufe = sel ? sel.value : 'max';
+    const ul = byId('pm-feats');
+    if (!ul) return;
+    ul.innerHTML = '';
+    const feats = stufe === 'max' ? PM_FEATURES.max : PM_FEATURES.premium;
+    for (const f of feats) { const li = document.createElement('li'); li.textContent = f; ul.appendChild(li); }
+  }
+  function openPremium() {
+    const m = byId('premmodal');
+    if (!m) return;
+    renderPmFeats();
+    const id = state && state.premium_kennung ? String(state.premium_kennung) : '';
+    byId('pm-id').textContent = id ? 'Deine Geräte-Kennung: ' + id : '';
+    byId('pm-msg').hidden = true;
+    m.hidden = false;
+    requestAnimationFrame(() => { const d = byId('pdialog'); if (d) d.focus(); });
+  }
+  function closePremium() { const m = byId('premmodal'); if (m) m.hidden = true; }
+  async function sendPremium() {
+    const btn = byId('pm-send');
+    if (btn) btn.disabled = true;
+    const body = {
+      stufe: (byId('pm-stufe') || {}).value || 'max',
+      tage: parseInt((byId('pm-tage') || {}).value, 10) || 30,
+      betrag: parseFloat((byId('pm-betrag') || {}).value) || 0,
+      notiz: ((byId('pm-notiz') || {}).value || '').slice(0, 400),
+    };
+    let r = null;
+    try { r = await post('/api/premium/anfrage', body); } catch (_) { r = null; }
+    if (btn) btn.disabled = false;
+    const msg = byId('pm-msg');
+    if (msg) {
+      msg.hidden = false;
+      msg.textContent = r && r.meldung ? r.meldung : 'Konnte nicht gesendet werden – bitte später nochmal.';
+      msg.classList.toggle('ok', !!(r && r.ok));
+    }
+  }
+
   function applyPremium(p) {
     // Premium aktiv -> edlere Optik (goldener Akzent + Abzeichen). Stufen: premium | max | dev.
     const stufe = p && typeof p === 'object' ? String(p.stufe || '') : '';
@@ -1256,6 +1302,8 @@
     input.placeholder = 'Schreib ' + name + ' eine Nachricht …';
     byId('sb-version').textContent = s.version ? 'Version ' + s.version : '';
     applyPremium(s.premium);
+    { const pb = byId('sb-premium');
+      if (pb) pb.hidden = !s.premium_shop || !!(s.premium && s.premium.stufe); }
 
     // Gehirn (Karte in der Seitenleiste oeffnet "Gehirn & Schluessel")
     const prov = String(s.provider || '');
@@ -4734,7 +4782,7 @@
   // Charakter & Profil (eigenes Fenster mit Reitern)
   // Alle Texte vom Server kommen nur per textContent / value hinein.
   // =====================================================================
-  const pmodal = byId('pmodal');
+  const pmodal = byId('premmodal');
   const panel = byId('panel');
   const pfName = byId('pf-name');
   const pfMeaning = byId('pf-meaning');
@@ -9628,6 +9676,12 @@
   setConnected(false);
   { const b = byId('cel-ok'); if (b) b.addEventListener('click', schliesseFeier);
     const cb = byId('celebrate'); if (cb) cb.addEventListener('click', (e) => { if (e.target === cb) schliesseFeier(); }); }
+  { const pb = byId('sb-premium'); if (pb) pb.addEventListener('click', () => { closeSidebar(); openPremium(); });
+    const px = byId('pm-x'); if (px) px.addEventListener('click', closePremium);
+    const ps = byId('pm-send'); if (ps) ps.addEventListener('click', sendPremium);
+    const pc = byId('pm-code'); if (pc) pc.addEventListener('click', () => { closePremium(); try { input.focus(); } catch (_) {} });
+    const pst = byId('pm-stufe'); if (pst) pst.addEventListener('change', renderPmFeats);
+    const pm = byId('premmodal'); if (pm) pm.addEventListener('click', (e) => { if (e.target === pm) closePremium(); }); }
   renderSwitches();
   loadAppearance(false);
   connect();

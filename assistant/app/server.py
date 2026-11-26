@@ -400,6 +400,9 @@ class AppServer:
                     from ..handy_app import KANAL
 
                     return self._json({"ok": KANAL.ergebnis(str(body.get("id") or ""), body)})
+                if url.path == "/api/premium/anfrage":
+                    return self._json(ctl.premium_anfrage(str(body.get("stufe") or ""), body.get("tage"),
+                                                          body.get("betrag"), str(body.get("notiz") or "")))
                 if url.path == "/api/send":
                     return self._json(ctl.submit(str(body.get("text") or ""), bool(body.get("interrupt")),
                                                  images=body.get("images"), client_id=body.get("client_id")))

@@ -275,6 +275,8 @@ class AppController(CLI):
             "feedback_due": self._feedback_due(),
             "started_by": self.started_by,
             "premium": self._premium_status(),
+            "premium_shop": self._premium_shop(),
+            "premium_kennung": self._premium_kennung_wenn_shop(),
             "commands": [{"cmd": c, "help": schoen(h)} for c, h in COMMANDS],
         }
 
@@ -285,6 +287,43 @@ class AppController(CLI):
         self._event({"type": "premium_unlock", "stufe": stufe, "name": PM.STUFEN.get(stufe, "Premium"),
                      "funktionen": PM.FUNKTIONEN.get(stufe, [])})
         self._state_changed()   # Seitenleiste/Abzeichen gleich aktualisieren
+
+    def premium_anfrage(self, stufe: str, tage, betrag, notiz: str) -> dict:
+        """'Premium anfragen': schickt die Anfrage an den Entwickler (Gmail + Discord). Kein echtes Geld."""
+        from .. import premium as PM
+        from .. import premium_anfrage as PA
+
+        try:
+            tage = int(tage or 1)
+        except (TypeError, ValueError):
+            tage = 1
+        return PA.senden(self.config, str(stufe or "premium"), tage, betrag, str(notiz or ""),
+                         PM.kennung(self.config.project_root))
+
+    def _premium_kennung_wenn_shop(self) -> str:
+        if not self._premium_shop():
+            return ""
+        try:
+            from .. import premium as PM
+
+            return PM.kennung(self.config.project_root)
+        except Exception:  # noqa: BLE001
+            return ""
+
+    def _premium_shop(self) -> bool:
+        """Zeigt die App den 'Premium'-Knopf? Noch nicht fuer alle: nur im Test (Simulation/Entwickler) oder
+        wenn der Entwickler NOVA_PREMIUM_SHOP=1 setzt."""
+        if os.environ.get("NOVA_PREMIUM_SHOP") == "1":
+            return True
+        try:
+            from .. import premium as PM
+
+            d = PM.lizenz(self.config.project_root)
+            sim = d.get("sim") or {}
+            return bool(sim.get("stufe") and float(sim.get("bis") or 0) > time.time()) or PM.stufe(
+                self.config.project_root) == "dev"
+        except Exception:  # noqa: BLE001
+            return False
 
     def _premium_status(self) -> dict | None:
         """Fuer die Oberflaeche: welche Premium-Stufe gilt (edlere Optik). None = kostenlos."""
