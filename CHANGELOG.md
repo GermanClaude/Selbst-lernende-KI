@@ -4,6 +4,28 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.42.0 – 2026-11-26
+
+**Nova überall – auch ohne PC, auch ohne geöffnete App**
+- **Handy-Steuerung über die Nova-Handy-App:** Nova bedient dein Android-Handy wie mit dem Finger: Apps
+  öffnen, Bildschirm lesen, tippen, schreiben, wischen, Tasten, Lautstärke, Musik, Taschenlampe,
+  Benachrichtigungen, Nummer wählen, SMS vorbereiten. Das läuft im Hintergrund, auch wenn die App zu ist,
+  und klappt mit jedem KI-Modell. Mit der Cloud-Nova geht es sogar, wenn der PC aus ist. Ganz ohne Termux und
+  ohne Kabel. Einschalten: in der App Zurück-Taste → „Handy-Steuerung einschalten“.
+- **Anrufe aus der Cloud:** Die Cloud-Nova ruft dich an, auch wenn PC und App aus sind. Vonage meldet sich
+  dabei direkt bei ihr, ein Tunnel am PC ist nicht nötig.
+- **Telefonieren mit Nova:** Sag „ruf mich an“. Am Telefon sagst du dann, was sie tun soll (auch mehrere
+  Sachen hintereinander), sie erledigt es mit allen Werkzeugen und antwortet dir im selben Anruf. Vor heiklen
+  Schritten fragt sie dich am Telefon („Darf ich …? Ja oder nein“). Zum Beenden sagst du „tschüss“
+  (nur mit Vonage).
+- **Zeitplan:** „Ruf mich morgen um 8 an“, „jeden Werktag um 7 das Wetter aufs Handy“, „in 20 Minuten an
+  den Herd erinnern“. Nova macht das dann von selbst, in der Cloud rund um die Uhr. `/zeitplan` zeigt
+  alles.
+- **Wachwort am PC:** Sag „Hey Nova“ (oder dein eigenes Wort). Nova startet bzw. kommt nach vorne, und zwar
+  auf einem Bildschirm, auf dem gerade kein Spiel oder Vollbild läuft. Die Spracheingabe geht gleich an
+  (abschaltbar: `/wachwort sprechen aus`, oder sag es Nova). Der Lauscher ist klein, läuft offline im
+  Hintergrund, startet beim Anmelden mit und hört nur auf das Wachwort. Einschalten: `/wachwort an`.
+
 ## 0.41.0 – 2026-11-26
 
 **Nova bedient jede App – mit jedem KI-Modell**

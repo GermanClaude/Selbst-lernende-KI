@@ -577,8 +577,17 @@ Kopplungscode koppeln*, dann in Nova `/handysteuerung koppeln <Port> <Code>` und
 verbinden <Port>`. Danach kann Nova den Bildschirm lesen, tippen, wischen, schreiben, Apps starten und
 installieren – ohne Root. Linux-Systeme installiert sie über `proot-distro`, Kali über NetHunter Rootless.
 
-Noch nicht auf dem Handy: Spracheingabe per Mikrofon-Knopf und die PC-Werkzeuge (Maus/Tastatur am PC,
-Live-Sehen, Spielmodus).
+**Handy-Steuerung ohne Termux und ohne Kabel (ab 0.42):** In der Nova-App die Zurück-Taste drücken, dann
+**„Handy-Steuerung einschalten“** → in den Android-Einstellungen *Bedienungshilfen* → *Nova – Handy-Steuerung*
+→ an. Ist der Schalter ausgegraut (Android 13+), zuerst in der App-Info von Nova über ⋮ *Eingeschränkte
+Einstellungen zulassen*. Danach läuft die Steuerung im Hintergrund, die App muss nicht offen sein. Nova
+(am PC oder in der Cloud) bedient dann jede App über das Werkzeug `handy_bedienen`: Bildschirm als Text
+lesen, tippen, schreiben, wischen, Tasten, Apps starten, Links öffnen, Nummer wählen, SMS vorbereiten,
+Benachrichtigungen, Akku, Taschenlampe, Lautstärke und Musik. Das klappt mit jedem KI-Modell. Nova fragt
+vorher wie gewohnt nach. In die Nova-App selbst, in Passwortfelder und in den App-Installierer tippt sie
+nie. Pausieren kannst du in der App, `/handyapp` zeigt, ob das Handy verbunden ist.
+
+Noch nicht auf dem Handy: Spracheingabe per Mikrofon-Knopf in der App.
 
 ## Nova in der Cloud (läuft auch, wenn der PC aus ist)
 
@@ -590,6 +599,10 @@ und auf Telegram antwortet sie rund um die Uhr – egal, ob dein PC an ist. Zwei
   ohne Besuch (Aufwachen ca. 1 Min., auch per Telegram-Nachricht), das Gedächtnis beginnt danach neu.
 - **Eigener Server** (z. B. Hetzner, ca. 6–7 €/Monat): `cloud/server-installieren.sh` richtet Docker, Nova
   und https (Caddy + sslip.io) ein – läuft immer, Gedächtnis bleibt.
+
+In der Cloud kann Nova auch **anrufen** (Vonage meldet sich direkt bei ihr, kein cloudflared nötig – den
+Schlüssel als `VONAGE_PRIVATE_KEY` eintragen), **geplante Aufgaben** erledigen (`/zeitplan`; auf Render Free hält
+Nova sich wach, solange etwas geplant ist) und über die Nova-Handy-App **dein Handy bedienen**.
 
 In der Handy-App: Zurück-Taste → „Nova in der Cloud“ → `https://…/?t=<NOVA_TOKEN>`. Technisch:
 `python -m assistant --cloud` (bzw. `NOVA_CLOUD=1`) – lauscht auf `PORT`, nur mit `NOVA_TOKEN`, Telegram per
@@ -685,6 +698,15 @@ ihn danach. Ohne cloudflared gibt es eine Ansage. Wer schon eine eigene öffentl
 `VONAGE_WEBHOOK_URL` und `VONAGE_WEBHOOK_PORT` in die `.env` ein. Eine gekaufte Vonage-Nummer als
 Absender: `/anruf vonage nummer <Nummer>`. Wechseln: `/anruf anbieter bland|vonage`.
 
+**Telefonieren mit Nova (Vonage):** Sag *„ruf mich an“* oder *„lass uns telefonieren“*. Am Telefon gibst du
+Aufträge („mach Spotify am PC an“, „schreib Max auf WhatsApp, dass ich später komme“), Nova erledigt sie mit
+allen Werkzeugen und antwortet im selben Anruf, bis du „tschüss“ sagst. Vor heiklen Schritten fragt sie am
+Telefon nach („Darf ich …? Ja oder nein“). Dafür braucht es den Rückkanal: die Cloud-Nova, cloudflared am PC
+oder eine eigene Adresse. Ein Gespräch dauert höchstens 15 Minuten.
+
+**Zu einer Uhrzeit:** *„Ruf mich morgen um 8 an und erinnere mich an den Zahnarzt“* – Nova plant das (Werkzeug
+`zeitplan`) und ruft dann von selbst an. Gesteuert wird das in der Cloud, sodass PC und App aus sein dürfen.
+
 ## Fernzugriff: Nova vom Handy steuern (Telegram)
 
 Du bist unterwegs und willst Nova am PC etwas auftragen? Mit `/handy` (oder dem Knopf
@@ -754,6 +776,26 @@ Die älteren Werkzeuge `maus_klick`/`tastatur_tippen` nutzen `pyautogui`, wenn e
 (`pip install pyautogui pillow`), sonst ebenfalls die Bordmittel. Not-Aus mit pyautogui: Maus in eine
 Bildschirmecke reißen.
 
+## Wachwort: „Hey Nova“ (Windows)
+
+`/wachwort an` startet einen kleinen Lauscher im Hintergrund, der beim Anmelden mitstartet und auch läuft,
+wenn Nova zu ist. Sagst du das Wachwort, passiert Folgendes:
+- Nova startet, oder kommt nach vorne, wenn sie schon läuft.
+- Sie öffnet sich auf einem Bildschirm, auf dem gerade **kein Spiel und kein Vollbild** läuft (bevorzugt der
+  mit der Maus, sonst der Hauptbildschirm).
+- Die **Spracheingabe** geht gleich an.
+
+Der Lauscher nutzt die Spracherkennung von Windows, offline, und reagiert nur auf das Wachwort; alles andere
+verwirft er sofort. Windows zeigt dabei das Mikrofon-Symbol. Einstellen:
+- `/wachwort wort Nova bist du da` setzt ein eigenes Wort (2–5 Wörter).
+- `/wachwort sprechen aus` öffnet beim Aufwachen nur das Fenster, ohne Spracheingabe. Das kann Nova auch
+  selbst umstellen, wenn du sie darum bittest.
+- `/wachwort empfindlich 0.7` lässt es seltener aus Versehen auslösen.
+- `/wachwort aus` schaltet den Lauscher ab.
+
+Voraussetzung ist die deutsche Spracherkennung von Windows (Einstellungen → Zeit und Sprache → Sprache →
+Deutsch → Optionen).
+
 ---
 
 ## Befehle im Chat
@@ -773,6 +815,9 @@ Bildschirmecke reißen.
 | `/skill [add <Name> <Anweisung>\|addfuer <gehirn> …\|an\|aus\|weg]` | Eigene Regeln/Skills (für alle Gehirne oder eins) – in der App auch per Klick im Reiter **Skills** |
 | `/sprachmodus` | Sprachmodus: einfach reden, live (zurück: „Chat-Modus“ sagen) |
 | `/handysteuerung [koppeln <Port> <Code>\|verbinden <Port>]` | Das ganze Handy per ADB steuern (Nova in Termux) |
+| `/handyapp` | Ist die Nova-Handy-App mit Handy-Steuerung verbunden? |
+| `/wachwort [an\|aus\|wort <…>\|sprechen an\|aus\|empfindlich <0.3–0.95>]` | Wachwort am PC („Hey Nova“) |
+| `/zeitplan [loeschen <id>]` | Geplante Aufgaben (Erinnerungen, Anrufe zu einer Uhrzeit) |
 | `/geraete [smarthome <URL> <Token>\|ssh <name> <user@host>\|esp <name> <URL>\|weg <name>]` | Hardware: Smart Home, Arduino/ESP32, Bluetooth, SSH |
 | `/telegram konto [zugang\|anmelden\|code\|passwort\|abmelden]` | Dein eigenes Telegram-Konto verbinden (Chats lesen) |
 | `/handy auto an\|aus` | Fernzugriff automatisch mit der App starten |

@@ -34,6 +34,20 @@
      einer Minute. Einfach kurz warten und nochmal versuchen.</p>
 
   <div class="karte">
+    <b>Handy-Steuerung</b> – Nova bedient dieses Handy (Apps öffnen, tippen, schreiben, wischen),
+    auch wenn die App geschlossen ist
+    <p id="steuerung">…</p>
+    <button id="st_an" onclick="NovaApp.bedienungshilfeOeffnen()">Handy-Steuerung einschalten</button>
+    <button id="st_pause" class="zweit" onclick="pause()">Pausieren</button>
+    <p class="klein">In den Einstellungen: <b>Bedienungshilfen</b> → <b>Nova – Handy-Steuerung</b> → an.
+       Ist der Schalter ausgegraut (Android 13+), zuerst hier
+       <a href="#" onclick="NovaApp.appInfoOeffnen();return false" style="color:#a78bfa">App-Info</a> öffnen →
+       ⋮ oben rechts → <b>Eingeschränkte Einstellungen zulassen</b>.<br>
+       Nova fragt vor dem Handeln wie gewohnt nach. Nie: Passwortfelder, Eingaben in die Nova-App selbst,
+       Apps installieren.</p>
+  </div>
+
+  <div class="karte">
     <b>Nova in der Cloud</b> – läuft immer, egal ob dein PC an ist
     <p>Die Adresse bekommst du beim Einrichten der Cloud-Nova (Anleitung: <code>cloud/ANLEITUNG.md</code>),
        z. B. <code>https://nova-xyz.onrender.com/?t=…</code></p>
@@ -64,6 +78,25 @@
   </div>
 </main>
 <script>
+  function zeigen() {
+    try {
+      var st = NovaApp.steuerungStatus();
+      var t = {an: 'Eingeschaltet – Nova kann dieses Handy bedienen.',
+               pausiert: 'Pausiert – Nova kann das Handy gerade nicht bedienen.',
+               aus: 'Aus. Einschalten in den Android-Bedienungshilfen.'}[st] || '';
+      document.getElementById('steuerung').textContent = t;
+      document.getElementById('st_an').style.display = st === 'aus' ? '' : 'none';
+      var p = document.getElementById('st_pause');
+      p.style.display = st === 'aus' ? 'none' : '';
+      p.textContent = st === 'pausiert' ? 'Weitermachen lassen' : 'Pausieren';
+    } catch (e) {}
+  }
+  function pause() {
+    try { NovaApp.steuerungPausieren(NovaApp.steuerungStatus() !== 'pausiert'); } catch (e) {}
+    zeigen();
+  }
+  zeigen();
+  document.addEventListener('visibilitychange', zeigen);
   try {
     var a = window.NovaApp && NovaApp.adresse();
     if (a) document.getElementById('jetzt').textContent = 'Verbunden mit: ' + a;

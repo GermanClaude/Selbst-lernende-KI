@@ -25,3 +25,13 @@ services:
         sync: false
       - key: NOVA_ABGLEICH_PASSWORT
         sync: false
+      - key: ANRUF_NUMMER            # Anrufe: deine Handynummer (nur die ruft Nova an)
+        sync: false
+      - key: ANRUF_ANBIETER          # vonage oder bland
+        sync: false
+      - key: VONAGE_APP_ID
+        sync: false
+      - key: VONAGE_PRIVATE_KEY      # Inhalt der private.key (mehrzeilig oder Base64)
+        sync: false
+      - key: BLAND_API_KEY
+        sync: false

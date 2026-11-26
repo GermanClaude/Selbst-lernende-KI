@@ -9,11 +9,12 @@ Zwei Arten:
 - Frage mit Antwort: Nova fragt, du antwortest am Telefon, Nova bekommt deine Antwort als Text. Dafuer
   braucht Vonage eine oeffentliche Adresse auf deinem PC (Rueckkanal). Nova startet sie selbst mit
   cloudflared (kostenlos, ohne Konto: winget install --id Cloudflare.cloudflared) - oder du traegst eine
-  eigene ein (VONAGE_WEBHOOK_URL + VONAGE_WEBHOOK_PORT).
+  eigene ein (VONAGE_WEBHOOK_URL + VONAGE_WEBHOOK_PORT). In der Cloud braucht es nichts davon: dort hat Nova
+  schon eine oeffentliche https-Adresse, und Vonage meldet sich direkt bei ihr (webhook_basis_setzen).
 
 Anmeldung: Vonage will ein JWT (RS256), unterschrieben mit dem privaten Schluessel deiner Vonage-"Application".
 Das macht dieses Modul selbst (reines Python, keine Zusatz-Bibliothek). Der Schluessel liegt nur lokal in
-data/vonage_private.key und geht nie an die KI.
+data/vonage_private.key (Cloud: als Geheimnis VONAGE_PRIVATE_KEY beim Anbieter) und geht nie an die KI.
 """
 from __future__ import annotations
 
@@ -127,8 +128,31 @@ def schluessel_speichern(root, pem: str) -> None:
         pass
 
 
+def schluessel_text(root) -> str | None:
+    """Der private Schluessel: aus VONAGE_PRIVATE_KEY (Cloud - der PEM-Text, auch mit '\\n' statt
+    Zeilenumbruechen, oder Base64 davon) oder aus data/vonage_private.key. None, wenn keiner da ist."""
+    roh = os.environ.get("VONAGE_PRIVATE_KEY", "").strip()
+    if roh:
+        if "BEGIN" not in roh:
+            try:
+                roh = base64.b64decode(roh, validate=False).decode("utf-8", errors="replace")
+            except (ValueError, TypeError):
+                return None
+        return roh.replace("\\n", "\n").strip() + "\n"
+    if root is None:
+        return None
+    try:
+        return schluessel_pfad(root).read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+
 def eingerichtet(root) -> bool:
-    return bool(os.environ.get("VONAGE_APP_ID", "").strip()) and root is not None and schluessel_pfad(root).exists()
+    if not os.environ.get("VONAGE_APP_ID", "").strip():
+        return False
+    if os.environ.get("VONAGE_PRIVATE_KEY", "").strip():
+        return True
+    return root is not None and schluessel_pfad(root).exists()
 
 
 def nur_ziffern(nummer: str) -> str:
@@ -199,6 +223,18 @@ class Rueckkanal:
             return [_sprich(NOCHMAL + self.frage, barge_in=True), _hoer_zu(self.url("antwort"))]
         return [_sprich(SPAETER)]
 
+    def bearbeiten(self, pfad: str, nutzlast) -> bytes | None:
+        """Eine Meldung von Vonage. None = falscher Pfad (-> 404)."""
+        if not isinstance(nutzlast, dict):
+            nutzlast = {}
+        if pfad == self.pfad("antwort"):
+            return json.dumps(self.antwort_ncco(nutzlast)).encode("utf-8")
+        if pfad == self.pfad("event"):
+            if nutzlast.get("status"):
+                self.status.append(str(nutzlast["status"]))
+            return b"{}"
+        return None
+
     def starten(self) -> None:
         kanal = self
 
@@ -212,13 +248,8 @@ class Rueckkanal:
                     nutzlast = json.loads(self.rfile.read(laenge).decode("utf-8", errors="replace") or "{}")
                 except ValueError:
                     nutzlast = {}
-                if self.path == kanal.pfad("antwort"):
-                    antwort = json.dumps(kanal.antwort_ncco(nutzlast)).encode("utf-8")
-                elif self.path == kanal.pfad("event"):
-                    if isinstance(nutzlast, dict) and nutzlast.get("status"):
-                        kanal.status.append(str(nutzlast["status"]))
-                    antwort = b"{}"
-                else:
+                antwort = kanal.bearbeiten(self.path, nutzlast)
+                if antwort is None:
                     self.send_response(404)
                     self.end_headers()
                     return
@@ -259,6 +290,8 @@ class Rueckkanal:
         return False
 
     def stoppen(self) -> None:
+        with _KANAELE_LOCK:
+            _KANAELE.pop(self.geheim, None)
         if self._tunnel is not None:
             try:
                 self._tunnel.terminate()
@@ -283,15 +316,47 @@ def cloudflared_finden(root=None) -> str | None:
     return None
 
 
-def rueckkanal_oeffnen(frage: str, root=None) -> Rueckkanal | None:
-    """Rueckkanal mit oeffentlicher Adresse - eigene (VONAGE_WEBHOOK_URL/_PORT) oder cloudflared. Sonst None."""
+# ---------------------------------------------------------------- Cloud: Vonage meldet sich bei Novas Server
+_KANAELE: dict[str, Rueckkanal] = {}
+_KANAELE_LOCK = threading.Lock()
+_SERVER_BASIS = {"url": ""}
+
+
+def webhook_basis_setzen(url: str) -> None:
+    """Die Cloud-Nova ist unter dieser https-Adresse erreichbar - Rueckkanaele laufen dann ueber ihren Server
+    (Pfad /vonage/<Geheimnis>/...), ganz ohne cloudflared und ohne PC."""
+    url = (url or "").strip().rstrip("/")
+    _SERVER_BASIS["url"] = url if url.startswith("https://") else ""
+
+
+def webhook_bearbeiten(pfad: str, nutzlast) -> bytes | None:
+    """Vom Server aufgerufen (POST /vonage/...). None = kein laufender Anruf mit diesem Geheimnis."""
+    teile = pfad.split("/")
+    if len(teile) != 4 or teile[1] != "vonage":
+        return None
+    with _KANAELE_LOCK:
+        kanal = _KANAELE.get(teile[2])
+    if kanal is None or not secrets.compare_digest(kanal.geheim, teile[2]):
+        return None
+    return kanal.bearbeiten(pfad, nutzlast)
+
+
+def rueckkanal_oeffnen(frage: str, root=None, fabrik=None) -> Rueckkanal | None:
+    """Rueckkanal mit oeffentlicher Adresse - Novas eigener Cloud-Server, eine eigene Adresse
+    (VONAGE_WEBHOOK_URL/_PORT) oder cloudflared. Sonst None (dann nur Ansage)."""
+    fabrik = fabrik or Rueckkanal
+    if _SERVER_BASIS["url"]:
+        kanal = fabrik(frage, oeffentlich=_SERVER_BASIS["url"])
+        with _KANAELE_LOCK:
+            _KANAELE[kanal.geheim] = kanal
+        return kanal
     eigene = os.environ.get("VONAGE_WEBHOOK_URL", "").strip()
     if eigene:
         try:
             port = int(os.environ.get("VONAGE_WEBHOOK_PORT", "") or 8766)
         except ValueError:
             port = 8766
-        kanal = Rueckkanal(frage, port=port, oeffentlich=eigene)
+        kanal = fabrik(frage, port=port, oeffentlich=eigene)
         try:
             kanal.starten()
         except OSError:
@@ -300,7 +365,7 @@ def rueckkanal_oeffnen(frage: str, root=None) -> Rueckkanal | None:
     cf = cloudflared_finden(root)
     if not cf:
         return None
-    kanal = Rueckkanal(frage)
+    kanal = fabrik(frage)
     kanal.starten()
     if kanal.tunnel_starten(cf):
         return kanal
@@ -365,6 +430,14 @@ class Vonage:
 
     def status(self, call_id: str) -> dict:
         return self.transport(self._token(), "GET", f"/calls/{call_id}", None, 20.0) or {}
+
+    def uebergeben(self, call_id: str, ncco: list[dict]) -> None:
+        """Laufendem Anruf neue Anweisungen geben (z.B. Novas Antwort sprechen, dann wieder zuhoeren)."""
+        self.transport(self._token(), "PUT", f"/calls/{call_id}",
+                       {"action": "transfer", "destination": {"type": "ncco", "ncco": ncco}}, 20.0)
+
+    def auflegen(self, call_id: str) -> None:
+        self.transport(self._token(), "PUT", f"/calls/{call_id}", {"action": "hangup"}, 20.0)
 
 
 def warte_auf_ende(vonage: Vonage, call_id: str, max_sekunden: float, intervall: float = 5.0,

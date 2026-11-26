@@ -115,7 +115,8 @@ class PermissionManager:
     # Dateien, mit denen sich die KI selbst mehr Rechte geben oder Schluessel lesen koennte. Die aendert
     # nur der Mensch (ueber /befehle bzw. die Einstellungen) - nie ein Werkzeug der KI.
     GESPERRT = (".env", "config/settings.toml", "config/permissions.toml", "config/plugins.json",
-                "data/server_token", "data/memory.sqlite3", "data/memory.sqlite3-wal", "data/memory.sqlite3-shm")
+                "data/server_token", "data/memory.sqlite3", "data/memory.sqlite3-wal", "data/memory.sqlite3-shm",
+                "data/zeitplan.json", "data/wachwort.json", "data/nova_wachwort.ps1", "data/app.json")
     GESPERRT_ENDUNGEN = (".session", ".key", ".pem", ".keystore", ".jks")
 
     def ist_gesperrt(self, resolved: Path) -> bool:

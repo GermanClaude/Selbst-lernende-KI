@@ -30,10 +30,10 @@ def einstellungen(root=None) -> dict:
 def vonage_anrufen(root, nummer: str, anliegen: str, name: str, minuten: int, warten: bool = True,
                    gezaehlt=None) -> str:
     """Ein Vonage-Anruf: mit Rueckkanal (Frage + Antwort) wenn moeglich, sonst als Ansage."""
-    try:
-        pem = vonage_mod.schluessel_pfad(root).read_text(encoding="utf-8")
-    except OSError:
-        return "Anruf ging nicht: der Vonage-Schluessel fehlt (/anruf vonage <Application-ID> <Pfad zur private.key>)."
+    pem = vonage_mod.schluessel_text(root)
+    if not pem:
+        return ("Anruf ging nicht: der Vonage-Schluessel fehlt (/anruf vonage <Application-ID> <Pfad zur "
+                "private.key>, in der Cloud: VONAGE_PRIVATE_KEY).")
     v = vonage_mod.Vonage(os.environ.get("VONAGE_APP_ID", "").strip(), pem, os.environ.get("VONAGE_NUMMER", ""))
     kanal = vonage_mod.rueckkanal_oeffnen(anliegen, root) if warten else None
     try:
@@ -62,18 +62,22 @@ class AnrufTool(Tool):
         "schiefgegangen, oder er hat gesagt 'ruf mich an, wenn ...'. Fuer Kleinigkeiten lieber eine Nachricht. "
         "Kostet Geld pro Minute, hoechstens wenige Anrufe am Tag. 'anliegen': was du ihm sagen bzw. ihn fragen "
         "willst (konkret, kurz, als ganzer Satz - bei Vonage wird es genau so vorgelesen). 'warten' (Standard: "
-        "ja): bis zum Ende warten und seine Antwort bekommen."
+        "ja): bis zum Ende warten und seine Antwort bekommen. 'gespraech' (nur Vonage): ein echtes Telefonat - "
+        "er sagt dir am Telefon, was du tun sollst, du erledigst es mit deinen Werkzeugen und antwortest im selben "
+        "Anruf, hin und her bis 'tschuess'. Nimm das, wenn er mit dir telefonieren will ('ruf mich an', "
+        "'lass uns telefonieren')."
     )
     input_schema = {
         "type": "object",
         "properties": {
             "anliegen": {"type": "string", "description": "Was du sagen/fragen willst."},
             "warten": {"type": "boolean", "description": "Bis zum Ende warten und die Antwort holen."},
+            "gespraech": {"type": "boolean", "description": "Telefonat mit Auftraegen hin und her (Vonage)."},
         },
         "required": ["anliegen"],
     }
 
-    def run(self, ctx: ToolContext, anliegen: str, warten: bool = True) -> str:
+    def run(self, ctx: ToolContext, anliegen: str, warten: bool = True, gespraech: bool = False) -> str:
         root = ctx.extra.get("app_root")
         e = einstellungen(root)
         if not e["bereit"] or not e["nummer"]:
@@ -90,6 +94,9 @@ class AnrufTool(Tool):
             ctx.permissions.require(Risk.MODERATE, f"Dich anrufen ({anruf_mod.maskiere(e['nummer'])}): "
                                                    f"{anliegen.strip()[:160]}")
         name = ctx.extra.get("ki_name", lambda: "Nova")()
+        starter = ctx.extra.get("anruf_gespraech")
+        if gespraech and e["anbieter"] == "vonage" and starter is not None:
+            return starter(anliegen)
         if e["anbieter"] == "vonage":
             return vonage_anrufen(root, e["nummer"], anliegen, name, e["minuten"], warten,
                                   gezaehlt=(lambda: anruf_mod.heute_zaehlen(root)) if root is not None else None)

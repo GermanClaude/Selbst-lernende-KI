@@ -7,7 +7,7 @@ nutzen kann.
 """
 from __future__ import annotations
 
-from . import (abwesenheit, agents, anruf, app_fehler, apps, aussehen, geraete, handy_steuerung, telegram, bild_tools, computer, filesystem, gehirn, memory_tools,
+from . import (abwesenheit, agents, anruf, app_fehler, apps, aussehen, geraete, handy_app, handy_steuerung, wachwort, zeitplan, telegram, bild_tools, computer, filesystem, gehirn, memory_tools,
                mitschnitt, sehen, shell, sicherheit, skill, spiel, stimme, system_info, web)
 from .base import Tool, ToolContext, ToolRegistry
 
@@ -24,6 +24,7 @@ def build_registry(include_computer: bool = True, include_agents: bool = True) -
     if include_computer:
         computer.register(registry)
         apps.register(registry)   # jede App bedienen - auch fuer Modelle ohne Bildverstaendnis
+        handy_app.register(registry)  # das Handy ueber die Nova-Handy-App bedienen (auch aus der Cloud)
     if include_agents:
         agents.register(registry)
     aussehen.register(registry)
@@ -37,6 +38,8 @@ def build_registry(include_computer: bool = True, include_agents: bool = True) -
     mitschnitt.register(registry)
     skill.register(registry)
     anruf.register(registry)
+    zeitplan.register(registry)
+    wachwort.register(registry)
     app_fehler.register(registry)
     geraete.register(registry)
     handy_steuerung.register(registry)

@@ -35,6 +35,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="Nur den App-Server starten (Handy/Termux: Oberflaeche in der Nova-APK oder im Browser)")
     parser.add_argument("--port", type=int, default=8765, help="Port fuer --server (Standard 8765)")
     parser.add_argument("--nicht-oeffnen", action="store_true", help="--server: Oberflaeche nicht selbst oeffnen")
+    parser.add_argument("--aufwachen", action="store_true",
+                        help="Vom Wachwort gestartet: auf freiem Bildschirm oeffnen, Spracheingabe an")
     parser.add_argument("--cloud", action="store_true",
                         help="Als Cloud-Server (Docker/VPS): von aussen erreichbar, nur mit Schluessel (NOVA_TOKEN)")
     # Unbekanntes (z.B. eine Datei auf KI-App.exe gezogen) wird ignoriert statt still abzubrechen.
@@ -87,6 +89,13 @@ def main(argv: list[str] | None = None) -> int:
 
     guard = StartGuard(config.project_root)
     started_by, unexpected = guard.record_start()
+    if args.aufwachen:
+        from .selbststart import ancestry
+        from .wachwort import gestartet_vom_lauscher
+
+        os.environ["NOVA_AUFWACHEN"] = "1"
+        if unexpected and gestartet_vom_lauscher(config.project_root, {pid for pid, _n in ancestry()}):
+            started_by, unexpected = "per Wachwort", False
     # Cloud: im Container ist Nova immer Prozess 1 - ein alter Eintrag wuerde sonst "laeuft schon" melden.
     other = guard.running_pid() if config.ki.nur_ein_fenster and not cloud else None
     if other:

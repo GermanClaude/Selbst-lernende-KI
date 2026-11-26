@@ -1197,6 +1197,67 @@ class CLI:
             self.permissions.confirm_fn = alt
         print(_c("\n[Zurueck am PC.]", GREY))
 
+    # -- Wachwort am PC (assistant/wachwort.py) --
+    def _wachwort_befehl(self, args: list[str]) -> None:
+        from .. import wachwort as W
+
+        root = self.config.project_root
+        sub = args[0].lower() if args else ""
+        try:
+            if sub in ("an", "ein", "start"):
+                if sys.platform != "win32":
+                    print("Das Wachwort gibt es nur unter Windows.")
+                    return
+                if not W.erkenner():
+                    print("Auf diesem PC ist keine Windows-Spracherkennung installiert: Einstellungen > Zeit und "
+                          "Sprache > Sprache > Deutsch > Optionen > 'Spracherkennung' hinzufuegen, dann nochmal.")
+                    return
+                W.einschalten(root)
+                e = W.laden(root)
+                print(f"Wachwort an: Sag '{e['wort']}' - ich starte bzw. komme nach vorne, auf einem Bildschirm ohne "
+                      "Spiel, und hoere gleich zu. Der Lauscher laeuft im Hintergrund (auch wenn ich zu bin) und "
+                      "startet beim Anmelden mit. Er arbeitet offline und hoert nur auf das Wachwort. "
+                      "Windows zeigt dabei das Mikrofon-Symbol. Aus: /wachwort aus")
+            elif sub in ("aus", "stop", "stopp"):
+                W.ausschalten(root)
+                print("Wachwort aus - der Lauscher beendet sich gleich und startet nicht mehr mit.")
+            elif sub == "wort" and len(args) > 1:
+                e = W.speichern(root, wort=" ".join(args[1:]))
+                print(f"Neues Wachwort: '{e['wort']}'.")
+            elif sub in ("sprechen", "spracheingabe", "zuhoeren") and len(args) > 1:
+                an = args[1].lower() in ("an", "ein", "ja", "1")
+                W.speichern(root, sprechen=an)
+                print("Beim Aufwachen geht die Spracheingabe " + ("gleich an." if an else "NICHT mehr an - nur das "
+                                                                  "Fenster kommt nach vorne."))
+            elif sub in ("empfindlich", "empfindlichkeit") and len(args) > 1:
+                e = W.speichern(root, empfindlich=float(args[1].replace(",", ".")))
+                print(f"Empfindlichkeit: {e['empfindlich']} (hoeher = seltener aus Versehen, 0.3-0.95).")
+            else:
+                print(W.status_text(root))
+                print(_c("  /wachwort an | aus | wort <Hey Nova> | sprechen an|aus | empfindlich <0.3-0.95>", GREY))
+        except (W.WachwortFehler, ValueError, OSError) as exc:
+            print(f"Ging nicht: {exc}")
+
+    # -- Geplante Aufgaben (assistant/zeitplan.py) --
+    def _zeitplan_befehl(self, args: list[str]) -> None:
+        from .. import zeitplan as Z
+
+        root = self.config.project_root
+        if len(args) >= 2 and args[0].lower() in ("loeschen", "weg", "entfernen"):
+            print("Geloescht." if Z.loeschen(root, args[1]) else "Diese Aufgabe gibt es nicht.")
+            return
+        print(Z.uebersicht(root))
+        print(_c("  Planen: sag es mir einfach ('ruf mich morgen um 8 an', 'jeden Morgen um 7 das Wetter aufs "
+                 "Handy'). Loeschen: /zeitplan loeschen <id>", GREY))
+
+    # -- Handy-App mit Handy-Steuerung (assistant/handy_app.py) --
+    def _handy_app_befehl(self) -> None:
+        from .. import handy_app as H
+
+        print(H.KANAL.status_text())
+        if H.KANAL.verbunden():
+            print("Ich kann das Handy bedienen (Werkzeug handy_bedienen) - sag z.B. 'oeffne WhatsApp auf dem Handy'.")
+
     # -- Anrufe ueber Bland AI / Vonage (assistant/anruf.py, anruf_vonage.py, Werkzeug "anrufen") --
     def _anruf_befehl(self, args: list[str]) -> None:
         import os
@@ -1317,7 +1378,7 @@ class CLI:
         if e["anbieter"] == "vonage":
             cf = vonage_mod.cloudflared_finden(root)
             print(f"  Antwort am Telefon hoeren: "
-                  f"{'ja (eigene Adresse)' if os.environ.get('VONAGE_WEBHOOK_URL') else ('ja (cloudflared)' if cf else 'nein - nur Ansagen (winget install --id Cloudflare.cloudflared)')}")
+                  f"{'ja (ueber die Cloud-Adresse)' if vonage_mod._SERVER_BASIS['url'] else ''}{'' if vonage_mod._SERVER_BASIS['url'] else 'ja (eigene Adresse)' if os.environ.get('VONAGE_WEBHOOK_URL') else ('ja (cloudflared)' if cf else 'nein - nur Ansagen (winget install --id Cloudflare.cloudflared)')}")
         print(_c("  Bland AI (Kreditkarte, echte Gespraechs-KI): /anruf schluessel <KEY>\n"
                  "  Vonage (PayPal/Ueberweisung, kostenloser Test ohne Karte):\n"
                  "    1) dashboard.nexmo.com registrieren (deine Handynummer angeben)\n"
@@ -2715,6 +2776,12 @@ class CLI:
             self._anruf_befehl(cmd.split()[1:])
         elif base in ("/plugins", "/plugin", "/mcp"):
             self._plugins_befehl(cmd)
+        elif base in ("/wachwort", "/heynova", "/aufwecken"):
+            self._wachwort_befehl(cmd.split()[1:])
+        elif base in ("/zeitplan", "/termine", "/geplant", "/erinnerungen"):
+            self._zeitplan_befehl(cmd.split()[1:])
+        elif base in ("/handyapp", "/handy-app"):
+            self._handy_app_befehl()
         elif base in ("/abgleich", "/sync", "/synchronisieren"):
             self._abgleich_befehl(cmd.split()[1:])
         elif base in ("/geraete", "/geräte", "/hardware", "/geraet"):

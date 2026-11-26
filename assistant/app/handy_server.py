@@ -101,6 +101,10 @@ def run_cloud(config) -> int:
     def beenden(*_a):
         raise KeyboardInterrupt  # -> run_server faehrt sauber herunter (Zusammenfassung, letzter Abgleich)
 
+    from .. import anruf_vonage
+
+    os.environ.setdefault("NOVA_ZEITZONE", "Europe/Berlin")     # Server laufen in UTC - Termine in deiner Zeit
+    anruf_vonage.webhook_basis_setzen(oeffentliche_adresse())  # Anrufe mit Antwort: Vonage meldet sich hier
     try:
         signal.signal(signal.SIGTERM, beenden)
     except (ValueError, OSError):  # nicht im Haupt-Thread (Tests)

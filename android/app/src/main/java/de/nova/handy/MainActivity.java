@@ -6,6 +6,7 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.net.Uri;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.webkit.JavascriptInterface;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
@@ -21,6 +22,7 @@ import android.webkit.WebViewClient;
  * Laeuft Nova nicht, erscheint eine Hilfeseite (Termux oeffnen, nochmal versuchen, Adresse eingeben).
  * Nova kann auch in der Cloud laufen (https://...?t=...) - dann ist es egal, ob PC oder Termux laufen.
  * Zurueck-Taste auf der Startseite von Nova: Hilfeseite (Adresse wechseln); dort nochmal: App schliessen.
+ * Handy-Steuerung (Nova bedient das Handy, auch wenn diese App zu ist): NovaSteuerung.java.
  */
 public class MainActivity extends Activity {
     private static final int DATEI_WAHL = 7;
@@ -156,6 +158,37 @@ public class MainActivity extends Activity {
             if (u.isEmpty()) return "";
             Uri x = Uri.parse(u);
             return x.getScheme() + "://" + x.getHost() + (x.getPort() > 0 ? ":" + x.getPort() : "");
+        }
+
+        /** Handy-Steuerung (NovaSteuerung): "aus", "pausiert" oder "an". */
+        @JavascriptInterface
+        public String steuerungStatus() {
+            if (!NovaSteuerung.eingeschaltet(MainActivity.this)) return "aus";
+            return prefs.getBoolean("steuern_pause", false) ? "pausiert" : "an";
+        }
+
+        @JavascriptInterface
+        public void steuerungPausieren(boolean pause) {
+            prefs.edit().putBoolean("steuern_pause", pause).apply();
+        }
+
+        @JavascriptInterface
+        public void bedienungshilfeOeffnen() {
+            runOnUiThread(() -> {
+                try {
+                    startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
+                } catch (ActivityNotFoundException ignored) { }
+            });
+        }
+
+        @JavascriptInterface
+        public void appInfoOeffnen() {
+            runOnUiThread(() -> {
+                try {
+                    startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                            Uri.parse("package:" + getPackageName())));
+                } catch (ActivityNotFoundException ignored) { }
+            });
         }
 
         @JavascriptInterface

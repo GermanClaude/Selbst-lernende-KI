@@ -68,9 +68,26 @@ Telegram erlaubt nur **einen** Empfänger pro Bot: Solange die Cloud-Nova ihn be
 `TELEGRAM_BOT_TOKEN` entfernen und einmal `https://api.telegram.org/bot<DEIN-BOT-TOKEN>/deleteWebhook` im
 Browser aufrufen. Oder: für die Cloud bei @BotFather einen zweiten Bot anlegen.
 
+## Anrufe, Zeitplan und Handy-Steuerung aus der Cloud
+
+- **Anrufe (Vonage):** `VONAGE_APP_ID`, `VONAGE_PRIVATE_KEY` und `ANRUF_NUMMER` eintragen
+  (`ANRUF_ANBIETER=vonage`). Für `VONAGE_PRIVATE_KEY` den ganzen Inhalt der `private.key` einfügen (mehrzeilig
+  geht; sonst als eine Zeile mit `\n` oder Base64). Die Cloud-Nova ist selbst erreichbar, deshalb hört sie
+  deine Antwort am Telefon und kann ganze **Gespräche** führen („ruf mich an“), ohne cloudflared.
+  Bland geht auch: `BLAND_API_KEY`.
+- **Zeitplan:** „Ruf mich morgen um 8 an“ und Ähnliches führt die Cloud-Nova zur Uhrzeit von selbst aus
+  (Zeitzone `NOVA_ZEITZONE`, Standard Europe/Berlin). Auf **Render Free** besucht Nova alle 10 Minuten ihre
+  eigene Adresse, solange etwas geplant ist, damit sie nicht einschläft (abschalten: `NOVA_WACH_HALTEN=0`).
+  Ohne dauerhaften Speicher gehen geplante Aufgaben bei einem Neustart verloren. Zuverlässig ist ein
+  eigener Server (Weg 2).
+- **Handy-Steuerung:** In der Nova-Handy-App die Cloud-Adresse eintragen und *Handy-Steuerung einschalten*.
+  Das Handy holt sich dann die Aufträge bei der Cloud-Nova ab, auch wenn die App zu ist.
+
 ## Sicherheit
 
 - Ohne den Schlüssel (`?t=…`) kommt niemand an Nova heran. Die Adresse mit Schlüssel nicht weitergeben.
 - Die Telegram-Adresse ist doppelt geschützt (geheimer Pfad + geheime Kopfzeile, die nur Telegram kennt),
   und Nova antwortet nur deiner Chat-ID.
 - Deine KI-Schlüssel liegen beim Anbieter als geheime Werte, nicht im Code.
+- Die Anruf-Adressen (`/vonage/…`) enthalten ein Zufallsgeheimnis und gelten nur, solange ein Anruf läuft.
+- Die Handy-Steuerung meldet sich mit demselben Schlüssel (`?t=…`) an wie die App.

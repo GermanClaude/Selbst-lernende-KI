@@ -87,6 +87,11 @@ COMMANDS = [
     ("/plugins einfuegen", "Plugin-Konfiguration (JSON wie bei Claude Desktop) einfuegen"),
     ("/geraete", "Hardware: Smart Home, Arduino/ESP32, Bluetooth, andere Rechner (SSH)"),
     ("/handysteuerung", "Das ganze Handy per ADB steuern - koppeln und verbinden"),
+    ("/handyapp", "Handy-Steuerung ueber die Nova-Handy-App (auch aus der Cloud) - verbunden?"),
+    ("/wachwort", "Wachwort am PC ('Hey Nova') - Nova startet und hoert zu, auch wenn sie zu ist"),
+    ("/wachwort an", "Wachwort einschalten (Hintergrund-Lauscher, startet beim Anmelden mit)"),
+    ("/wachwort sprechen aus", "Beim Aufwachen NICHT gleich die Spracheingabe oeffnen"),
+    ("/zeitplan", "Geplante Aufgaben (Erinnerungen, Anrufe zu einer Uhrzeit) ansehen"),
     ("/anruf", "Nova ruft dich an (Bland AI oder Vonage) - Einrichtung und Stand"),
     ("/anruf vonage", "Vonage einrichten - Anrufe ohne Kreditkarte (PayPal)"),
     ("/anruf anbieter", "Anruf-Anbieter wechseln (bland oder vonage)"),
@@ -861,6 +866,226 @@ class AppController(CLI):
                 self.busy = False
             self._afk_dropped_notice()
             self._state_changed()
+
+    # -- Wachwort (assistant/wachwort.py): Nova nach vorne holen, Spracheingabe an ----------
+    def aufwachen(self) -> dict:
+        """Der Lauscher hat das Wachwort gehoert und Nova laeuft schon: Fenster auf einen freien Bildschirm
+        holen und (wenn eingestellt) die Spracheingabe oeffnen."""
+        from .. import wachwort as W
+
+        e = W.laden(self.config.project_root)
+        win = getattr(self, "_window", None)
+        if win is not None:
+            def nach_vorne() -> None:
+                try:
+                    ziel = W.ziel_rechteck((self.config.ki.name,))
+                    win.restore()
+                    if ziel:
+                        win.move(ziel[0], ziel[1])
+                    win.show()
+                    win.on_top = True       # sichtbar nach vorne, ohne einem Spiel die Tastatur zu stehlen
+                    time.sleep(0.4)
+                    win.on_top = False
+                except Exception as exc:  # noqa: BLE001 - aeltere pywebview
+                    logger.info("Aufwachen: Fenster nicht verschoben (%s)", exc)
+
+            threading.Thread(target=nach_vorne, name="aufwachen", daemon=True).start()
+        if e["sprechen"]:
+            self._event({"type": "aufwachen", "sprechen": True})
+        return {"ok": True}
+
+    def aufwachen_abholen(self) -> dict | None:
+        """Fuer das erste verbundene Fenster nach einem Start per Wachwort: einmal 'Spracheingabe an'."""
+        if os.environ.get("NOVA_AUFWACHEN") != "1" or self.__dict__.get("_aufwachen_erledigt"):
+            return None
+        self._aufwachen_erledigt = True
+        from .. import wachwort as W
+
+        return {"type": "aufwachen", "sprechen": True} if W.laden(self.config.project_root)["sprechen"] else None
+
+    def _wachwort_beim_start(self) -> None:
+        """Ist das Wachwort an: Lauscher-Skript erneuern (nach Updates) und starten, falls er nicht laeuft."""
+        if sys.platform != "win32" or os.environ.get("NOVA_CLOUD") == "1":
+            return
+        from .. import wachwort as W
+
+        root = self.config.project_root
+        if not W.laden(root)["an"]:
+            return
+        try:
+            W.skript_schreiben(root)
+            W.lauscher_starten(root)       # laeuft er schon, beendet sich der neue sofort (Mutex)
+        except Exception as exc:  # noqa: BLE001
+            logger.info("Wachwort-Lauscher nicht gestartet: %s", exc)
+
+    # -- Telefon-Gespraech (assistant/anruf_gespraech.py): Auftraege am Telefon, Nova handelt ----------
+    _TELEFON_HINWEIS = ("[Das hat dein Mensch gerade am TELEFON gesagt (Spracherkennung, kann Hoerfehler haben). "
+                        "Erledige es mit deinen Werkzeugen wie sonst auch. Antworte dann kurz in gesprochener Sprache "
+                        "(ein bis drei Saetze, keine Listen, kein Markdown) - das wird ihm vorgelesen. Rueckfragen "
+                        "vor heiklen Aktionen stellt das System automatisch am Telefon.]\n")
+
+    def _anruf_gespraech(self, anliegen: str) -> str:
+        from .. import anruf as anruf_mod
+        from .. import anruf_gespraech as G
+        from .. import anruf_vonage as V
+        from ..tools.anruf import einstellungen
+
+        root = self.config.project_root
+        e = einstellungen(root)
+        laufend = self.__dict__.get("_gespraech")
+        if laufend is not None and not laufend.beendet.is_set():
+            return "Es laeuft schon ein Telefonat mit ihm."
+        pem = V.schluessel_text(root)
+        if not pem:
+            return "Anruf ging nicht: der Vonage-Schluessel fehlt."
+        v = V.Vonage(os.environ.get("VONAGE_APP_ID", "").strip(), pem, os.environ.get("VONAGE_NUMMER", ""))
+        try:
+            g = G.starten(v, e["nummer"], anliegen, self.config.ki.name, max(e["minuten"], 10),
+                          self._gespraech_text, root)
+        except anruf_mod.AnrufFehler as exc:
+            return f"Anruf ging nicht: {exc}"
+        anruf_mod.heute_zaehlen(root)
+        self._gespraech = g
+        threading.Thread(target=self._gespraech_ende, args=(g,), name="anruf-ende", daemon=True).start()
+        return (f"Ich rufe ihn jetzt an ({anruf_mod.maskiere(e['nummer'])}) - als Gespraech. Was er am Telefon "
+                "sagt, bekommst du gleich als neue Nachricht und kannst es sofort erledigen. Sag jetzt nichts "
+                "weiter, beende diese Antwort mit einem kurzen Satz.")
+
+    def _gespraech_ende(self, g) -> None:
+        g.beendet.wait(16 * 60)
+        if not g.beendet.is_set():
+            g.auflegen()
+        g.stoppen()
+        self._notice("Telefonat beendet.", "afk")
+
+    def _gespraech_text(self, g, text: str) -> None:
+        """Ein Satz vom Telefon: wie eine Nachricht beantworten (seriell mit der App), Antwort vorlesen."""
+        from ..anruf import AnrufFehler
+
+        gewartet = 0.0
+        while True:
+            with self._lock:
+                if not self.busy:
+                    self.busy = True
+                    self._live_turn = None
+                    self._drop_turn = False
+                    self.brain.provider.cancel_event.clear()
+                    break
+            if g.beendet.is_set():
+                return
+            time.sleep(0.5)
+            gewartet += 0.5
+            if gewartet > 240:
+                try:
+                    g.sagen("Ich bin noch mit etwas anderem beschaeftigt. Sag es mir gleich nochmal.")
+                except AnrufFehler:
+                    pass
+                return
+        alt = self.permissions.confirm_fn
+        self.permissions.confirm_fn = lambda beschreibung, _risk=None: g.darf_ich(str(beschreibung))
+        self._last_answer = ""
+        try:
+            self._answer(f"📞 {text}", model_text=self._TELEFON_HINWEIS + text, as_notice=True,
+                         notice_level="afk")
+        except Exception:  # noqa: BLE001
+            logger.exception("Telefon-Gespraech")
+        finally:
+            self.permissions.confirm_fn = alt
+            with self._lock:
+                self.busy = False
+            self._afk_dropped_notice()
+            self._state_changed()
+        try:
+            g.sagen(self._last_answer or "Erledigt.")
+        except AnrufFehler:
+            pass
+
+    # -- Geplante Aufgaben (assistant/zeitplan.py): Nova handelt zur Uhrzeit von selbst ----------
+    def _zeitplan_starten(self) -> None:
+        if self.__dict__.get("_zeitplan_thread") is not None:
+            return
+        stop = self._stop_watch
+
+        def schleife() -> None:
+            from .. import zeitplan as Z
+
+            root = self.config.project_root
+            letzter_ping = 0.0
+            while not stop.wait(20.0):
+                try:
+                    for eintrag in Z.faellige_nehmen(root):
+                        self._geplant_ausfuehren(eintrag)
+                    letzter_ping = self._wach_halten(root, letzter_ping)
+                except Exception:  # noqa: BLE001 - der Zeitplan darf Nova nie stoppen
+                    logger.exception("Zeitplan")
+
+        self._zeitplan_thread = threading.Thread(target=schleife, name="zeitplan", daemon=True)
+        self._zeitplan_thread.start()
+
+    def _wach_halten(self, root, letzter: float) -> float:
+        """Cloud mit Schlafmodus (Render Free): solange Aufgaben geplant sind, alle 10 Minuten die eigene
+        Adresse besuchen - sonst schlaeft Nova ein und verpasst den Termin. Abschalten: NOVA_WACH_HALTEN=0."""
+        from .. import zeitplan as Z
+        from .handy_server import oeffentliche_adresse
+
+        adresse = oeffentliche_adresse()
+        if not adresse or os.environ.get("NOVA_WACH_HALTEN") == "0" or time.monotonic() - letzter < 600:
+            return letzter
+        if not Z.laden(root):
+            return letzter
+        import urllib.request
+
+        try:
+            urllib.request.urlopen(adresse + "/gesund", timeout=20).read(16)
+        except Exception:  # noqa: BLE001
+            pass
+        return time.monotonic()
+
+    def _geplant_ausfuehren(self, eintrag: dict) -> None:
+        """Eine faellige Aufgabe: wie im AFK-Modus (niemand da, keine Rueckfragen), Ergebnis aufs Handy."""
+        from .. import zeitplan as Z
+
+        wartezeit = 0
+        while True:
+            with self._lock:
+                if not self.busy:
+                    self.busy = True
+                    self._live_turn = None
+                    self._drop_turn = False
+                    self.brain.provider.cancel_event.clear()
+                    break
+            if self._stop_watch.wait(2.0):
+                return
+            wartezeit += 2
+            if wartezeit > 900:   # 15 Minuten belegt: trotzdem nicht verlieren, nur melden
+                self._notice(f"Geplante Aufgabe [{eintrag['id']}] ausgelassen - ich war zu lange beschaeftigt: "
+                             f"{eintrag['auftrag'][:160]}", "warn")
+                return
+        schon_weg = self.permissions.away
+        self._state_changed()
+        self._last_answer = ""
+        try:
+            if not schon_weg:
+                self.permissions.begin_away()
+            self._answer(f"⏰ Geplant: {eintrag['auftrag']}",
+                         model_text=Z.modell_auftrag(eintrag, self.config.ki.name), as_notice=True,
+                         notice_level="afk")
+        except Exception:  # noqa: BLE001
+            logger.exception("Geplante Aufgabe")
+        finally:
+            if not schon_weg:
+                self.permissions.end_away()
+            with self._lock:
+                self.busy = False
+            self._afk_dropped_notice()
+            self._state_changed()
+        antwort = (self._last_answer or "").strip()
+        relay = getattr(self, "_handy_relay", None)
+        if antwort and relay is not None:
+            try:
+                relay.sende(f"⏰ {eintrag['auftrag'][:120]}\n\n{antwort[:3500]}")
+            except Exception:  # noqa: BLE001
+                pass
 
     # -- Arbeitsordner im Fenster: nativer Ordner-Auswahldialog -------------------
     def _arbeitsordner_picker(self) -> str:
@@ -2321,6 +2546,9 @@ class AppController(CLI):
         """Nach dem Oeffnen des Fensters: Hinweise und (hoechstens taeglich) Update-Pruefung."""
         self._abgleich_starten()  # Gedaechtnis mit Cloud/anderen Novas abgleichen (wenn eingerichtet)
         self._plugins_starten()   # Plugins (MCP) fuer alle Modelle
+        self._zeitplan_starten()  # geplante Aufgaben (auch ohne dass jemand die App offen hat)
+        self.tool_ctx.extra["anruf_gespraech"] = self._anruf_gespraech   # Telefonat mit Auftraegen (Vonage)
+        threading.Thread(target=self._wachwort_beim_start, name="wachwort", daemon=True).start()
         try:
             failed = self.updater.take_install_failure()
         except OSError:

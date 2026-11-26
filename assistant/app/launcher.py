@@ -345,8 +345,15 @@ def run_native_window(server, ctl, title: str, storage: Path, on_quit_holder: di
     try:
         logger.info("App: Programmfenster wird geoeffnet (pywebview %s, Profil %s)",
                     getattr(webview, "__version__", "?"), storage)
+        lage = {}
+        if os.environ.get("NOVA_AUFWACHEN") == "1":   # vom Wachwort: auf einem freien Bildschirm (ohne Spiel)
+            from ..wachwort import ziel_rechteck
+
+            ziel = ziel_rechteck((title.split(" - ")[0],))
+            if ziel:
+                lage = {"x": ziel[0], "y": ziel[1], "width": ziel[2], "height": ziel[3]}
         window = webview.create_window(
-            title, server.url, width=1200, height=860, min_size=(480, 560),
+            title, server.url, **({"width": 1200, "height": 860} | lage), min_size=(480, 560),
             background_color="#111318", text_select=True,
         )
         steps = {"initialized": "Darstellung bereit", "before_show": "Fenster wird gezeigt",

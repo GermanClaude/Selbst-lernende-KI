@@ -94,7 +94,7 @@ def eingerichtet(monkeypatch):
 def test_werkzeug_hat_kein_nummernfeld():
     tool = build_registry().get("anrufen")
     assert tool is not None
-    assert set(tool.input_schema["properties"]) == {"anliegen", "warten"}   # niemand anderen anrufen
+    assert set(tool.input_schema["properties"]) == {"anliegen", "warten", "gespraech"}   # niemand anderen anrufen
 
 
 def test_werkzeug_ohne_einrichtung(tmp_path, monkeypatch):

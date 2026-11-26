@@ -217,6 +217,11 @@ class AppServer:
                 ctl = server.controller
                 if url.path == "/api/events":
                     return self._events()
+                if url.path == "/api/geraet/auftrag":   # die Handy-App holt Auftraege ab (wartet bis zu 25 s)
+                    from ..handy_app import KANAL
+
+                    info = {k: (v or [""])[0] for k, v in query.items() if k != "t"}
+                    return self._json({"ok": True, "auftrag": KANAL.abholen(info)})
                 if url.path == "/api/state":
                     return self._json(ctl.state())
                 if url.path == "/api/history":
@@ -307,10 +312,31 @@ class AppServer:
                 self._json({"ok": True})             # sofort quittieren, die Antwort kommt per sendMessage
                 relay.einwerfen(update)
 
+            def _vonage_webhook(self, pfad: str) -> None:
+                from ..anruf_vonage import webhook_bearbeiten
+
+                try:
+                    length = int(self.headers.get("Content-Length") or 0)
+                except ValueError:
+                    length = -1
+                if not 0 <= length <= 65536:
+                    self.close_connection = True
+                    return self._deny(404)
+                try:
+                    nutzlast = json.loads(self.rfile.read(length) or b"{}") if length else {}
+                except ValueError:
+                    nutzlast = {}
+                antwort = webhook_bearbeiten(pfad, nutzlast)
+                if antwort is None:
+                    return self._deny(404)
+                return self._send(200, antwort, "application/json")
+
             def do_POST(self):  # noqa: N802
                 url = urlparse(self.path)
                 if server.telegram is not None and url.path == server.telegram[0]:
                     return self._telegram_webhook()
+                if url.path.startswith("/vonage/"):   # laufender Anruf (Cloud) - geschuetzt durch geheimen Pfad
+                    return self._vonage_webhook(url.path)
                 if not self._host_ok() or not self._token_ok({}):
                     self.close_connection = True  # Inhalt ungelesen -> nicht weiter auf dieser Verbindung
                     return self._deny()
@@ -366,6 +392,12 @@ class AppServer:
 
             def _post(self, url, body: dict):
                 ctl = server.controller
+                if url.path == "/api/aufwachen":       # Wachwort gehoert (assistant/wachwort.py)
+                    return self._json(ctl.aufwachen())
+                if url.path == "/api/geraet/ergebnis":
+                    from ..handy_app import KANAL
+
+                    return self._json({"ok": KANAL.ergebnis(str(body.get("id") or ""), body)})
                 if url.path == "/api/send":
                     return self._json(ctl.submit(str(body.get("text") or ""), bool(body.get("interrupt")),
                                                  images=body.get("images"), client_id=body.get("client_id")))
@@ -455,6 +487,9 @@ class AppServer:
                     # wartet die KI auf eine Antwort, die niemand mehr geben kann.
                     for ask in server.controller.open_asks():
                         self.wfile.write(f"data: {json.dumps(ask, ensure_ascii=False)}\n\n".encode("utf-8"))
+                    wach = server.controller.aufwachen_abholen()   # vom Wachwort gestartet: Spracheingabe an
+                    if wach:
+                        self.wfile.write(f"data: {json.dumps(wach, ensure_ascii=False)}\n\n".encode("utf-8"))
                     self.wfile.flush()
                     while not server.stopping.is_set():
                         try:

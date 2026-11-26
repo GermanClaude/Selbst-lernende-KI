@@ -3,9 +3,24 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
-    <!-- damit die App Termux finden und oeffnen kann -->
+    <!-- damit die App Termux finden und oeffnen kann - und die Handy-Steuerung die installierten Apps sieht -->
     <queries>
         <package android:name="com.termux" />
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.DIAL" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SENDTO" />
+            <data android:scheme="smsto" />
+        </intent>
     </queries>
 
     <application
@@ -29,5 +44,19 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Handy-Steuerung: laeuft im Hintergrund, sobald in Einstellungen > Bedienungshilfen eingeschaltet -->
+        <service
+            android:name=".NovaSteuerung"
+            android:label="@string/bedienung_name"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/bedienung" />
+        </service>
     </application>
 </manifest>

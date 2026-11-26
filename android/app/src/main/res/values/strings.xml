@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="bedienung_name">Nova – Handy-Steuerung</string>
+    <string name="bedienung_beschreibung">Damit kann Nova dein Handy bedienen, auch wenn die App geschlossen ist: Bildschirm lesen, tippen, schreiben, wischen, Apps öffnen. Nova fragt vorher nach (Stützräder). Nie: Passwortfelder, Eingaben in die Nova-App selbst, Apps installieren. Ausschalten: hier wieder aus – oder in der Nova-App „Pausieren“.</string>
+</resources>

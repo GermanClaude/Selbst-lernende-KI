@@ -9306,6 +9306,9 @@
         applyState(ev.state);
         resyncIfQuiet();
         break;
+      case 'aufwachen': // Wachwort gehoert ("Hey Nova"): gleich zuhoeren (abschaltbar: /wachwort sprechen aus)
+        if (ev.sprechen) startJarvis();
+        break;
       case 'user':
         onUserEcho(ev);
         break;
