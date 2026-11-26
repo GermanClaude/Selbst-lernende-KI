@@ -2775,7 +2775,7 @@
     if (!text && !imgs.length) return false;
     // /sprachmodus (/jarvis), /tutorial und /feedback oeffnen die Ansichten direkt im Fenster (nicht senden)
     const low = text.toLowerCase();
-    if (low === '/sprachmodus' || low === '/sprechen' || low === '/jarvis' || low === '/tutorial' || low === '/tour' || low === '/feedback' || low === '/bewertung') {
+    if (low === '/sprachmodus' || low === '/sprechen' || low === '/jarvis' || low === '/tutorial' || low === '/tour' || low === '/tour2' || low === '/grosse-tour' || low === '/große-tour' || low === '/feedback' || low === '/bewertung') {
       if (fromInput) {
         input.value = '';
         autosize();
@@ -2785,6 +2785,7 @@
       recallIdx = -1;
       if (low === '/sprachmodus' || low === '/sprechen' || low === '/jarvis') startJarvis();
       else if (low === '/feedback' || low === '/bewertung') openFeedback({ trigger: 'menue' });
+      else if (low === '/tour2' || low === '/grosse-tour' || low === '/große-tour') startTour({ detail: true, voice: true });
       else startTour();
       return true;
     }
@@ -6875,13 +6876,60 @@
   try { tourLater = sessionStorage.getItem('ki-tour-spaeter') === '1'; } catch (_) { /* egal */ }
   const isDrawer = () => window.matchMedia('(max-width: 800px)').matches;
 
-  async function startTour() {
+  // --- Sprachausgabe fuer die grosse Tour (Browser-Stimme, offline, kostenlos) ---
+  function ttsVerfuegbar() {
+    try { return typeof window.speechSynthesis !== 'undefined' && typeof SpeechSynthesisUtterance !== 'undefined'; }
+    catch (_) { return false; }
+  }
+  function waehleStimme() {
+    if (!ttsVerfuegbar()) return null;
+    const vs = window.speechSynthesis.getVoices() || [];
+    return vs.find((v) => /de[-_]/i.test(v.lang) && /google|microsoft|natural/i.test(v.name))
+      || vs.find((v) => /de[-_]/i.test(v.lang)) || vs.find((v) => /^de/i.test(v.lang)) || null;
+  }
+  function erzaehle(text) {
+    if (!tour.voice || !ttsVerfuegbar() || !text) return;
+    try {
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(String(text));
+      const v = waehleStimme();
+      if (v) { u.voice = v; u.lang = v.lang; } else { u.lang = 'de-DE'; }
+      u.rate = 1.02; u.pitch = 1.0;
+      window.speechSynthesis.speak(u);
+    } catch (_) { /* egal */ }
+  }
+  function stummTour() { try { if (ttsVerfuegbar()) window.speechSynthesis.cancel(); } catch (_) {} }
+  function erzaehleSchritt() {
+    if (!tour.open || tour.paused || !tour.voice) { stummTour(); return; }
+    const st = tour.steps[tour.i];
+    if (st) erzaehle(st.titel + '. ' + st.text);
+  }
+  function tourStimmeToggle() {
+    tour.voice = !tour.voice && ttsVerfuegbar();
+    try { localStorage.setItem('ki-tour-stimme', tour.voice ? '1' : '0'); } catch (_) {}
+    renderTourVoice();
+    if (tour.voice) erzaehleSchritt(); else stummTour();
+  }
+  function renderTourVoice() {
+    const b = byId('tour-voice');
+    if (!b) return;
+    b.hidden = !ttsVerfuegbar();
+    b.classList.toggle('on', !!tour.voice);
+    b.setAttribute('aria-pressed', tour.voice ? 'true' : 'false');
+    b.title = tour.voice ? 'Vorlesen aus' : 'Vorlesen an';
+  }
+
+  async function startTour(opts) {
     if (ended) return;
+    const detail = !!(opts && opts.detail);
+    const voice = !!(opts && opts.voice);
     if (tour.open) { if (!tour.paused) focusTour(); return; }
     if (tour.loading) return;
     tour.loading = true;
-    const d = await getJson('/api/tutorial');
+    const d = await getJson('/api/tutorial' + (detail ? '?detail=1' : ''));
     tour.loading = false;
+    tour.voice = voice && ttsVerfuegbar();
+    tour.detail = detail;
     const steps = d && Array.isArray(d.steps) ? d.steps.filter((s) => s && typeof s === 'object').map((s) => ({
       titel: str(s.titel).trim(),
       text: str(s.text).trim(),
@@ -6946,6 +6994,7 @@
     void tourCard.offsetWidth; // Einblende-Animation neu starten (einmal pro Schritt)
     tourCard.classList.add('fresh');
     tourFollow(520);
+    erzaehleSchritt();
     requestAnimationFrame(focusTour);
   }
 
@@ -6982,6 +7031,7 @@
         h('span', null, tour.waiting ? kiName() + ' führt es dir gerade vor …' : 'Vorgeführt – das Ergebnis steht im Chat.'));
     }
     tourCard.classList.toggle('demo', tour.demo);
+    renderTourVoice();
   }
 
   let tourQueued = false;
@@ -7127,12 +7177,13 @@
     tour.paused = p;
     tourEl.hidden = p;
     updateInert();
-    if (!p) { tourFollow(300); requestAnimationFrame(focusTour); }
+    if (p) stummTour(); else { tourFollow(300); erzaehleSchritt(); requestAnimationFrame(focusTour); }
   }
 
   /** Tour schliessen; markDone: dem Server melden, dass sie erledigt ist. */
   function endTour(finished, markDone = true) {
     if (!tour.open) return;
+    stummTour();
     tour.open = false;
     tour.paused = false;
     tour.waiting = false;
@@ -7160,6 +7211,7 @@
   byId('tour-back').addEventListener('click', tourBack);
   byId('tour-show').addEventListener('click', tourShow);
   byId('tour-end').addEventListener('click', () => endTour(false));
+  { const tv = byId('tour-voice'); if (tv) tv.addEventListener('click', tourStimmeToggle); }
   byId('tour-start').addEventListener('click', () => startTour());
   byId('sb-tour').addEventListener('click', () => { closeSidebar(); startTour(); });
   byId('tour-later').addEventListener('click', () => {

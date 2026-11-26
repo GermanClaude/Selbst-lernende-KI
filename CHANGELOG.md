@@ -4,6 +4,17 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.49.0 – 2026-11-26
+
+**Große Tour mit Sprachausgabe + Nova darf Premium erklären**
+- **Neue, vorgelesene Tour (`/tour2`):** Neben der bisherigen Tour gibt es jetzt eine ausführliche, die dir
+  jeden Schritt **vorliest** und alle Funktionen und Befehle genauer erklärt – vom Chat über Sprachmodus,
+  Gehirn/Modelle, Internet, Dateien, Gedächtnis, Sicherheit, AFK, Live-Sehen, Handy, Anrufe, Cloud, Wachwort
+  und Zeitplan bis zu den Befehlen. Mit dem Lautsprecher-Knopf schaltest du die Stimme an/aus (sie nutzt die
+  Stimme deines Systems, läuft offline).
+- **Nova bewirbt Premium:** Fragt jemand, was Premium kann oder kostet, erklärt Nova jetzt die Vorteile und
+  wie man es freischaltet – nur den Code und den internen Aufbau gibt sie weiterhin nicht preis.
+
 ## 0.48.0 – 2026-11-26
 
 **Premium-Feier, edlerer Startbildschirm, Fehler nach dem Freischalten behoben**

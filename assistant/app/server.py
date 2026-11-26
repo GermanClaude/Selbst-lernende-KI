@@ -233,7 +233,7 @@ class AppServer:
                 if url.path == "/api/skills":
                     return self._json(ctl.skills_info())
                 if url.path == "/api/tutorial":
-                    return self._json(ctl.tutorial())
+                    return self._json(ctl.tutorial(ausfuehrlich=(query.get("detail") or [""])[0] == "1"))
                 if url.path == "/api/appearance":
                     return self._json(ctl.appearance())
                 if url.path == "/api/setup":

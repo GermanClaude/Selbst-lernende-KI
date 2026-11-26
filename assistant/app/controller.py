@@ -63,6 +63,7 @@ COMMANDS = [
     ("/erlauben fragen", "wieder nachfragen"),
     ("/neu", "neues Gespraech (Charakter & Profil frisch)"),
     ("/tutorial", "Nova zeigt dir, was sie kann"),
+    ("/tour2", "Grosse Tour mit Sprachausgabe - erklaert alle Funktionen und Befehle genauer"),
     ("/stuetzraeder", "Stuetzraeder an/aus/alles (Vollzugriff)"),
     ("/arbeitsordner waehlen", "Arbeitsordner waehlen - dort legst du Dateien fuer Nova ab"),
     ("/stimme", "Stimme waehlen: gratis oder realistisch"),
@@ -2415,12 +2416,13 @@ class AppController(CLI):
 
         return is_done(self.config.project_root)
 
-    def tutorial(self) -> dict:
+    def tutorial(self, ausfuehrlich: bool = False) -> dict:
         from ..tutorial import steps
 
         shown = [{k: (schoen(v) if k in ("titel", "text", "zeigen") and isinstance(v, str) else v)
-                  for k, v in step.items()} for step in steps(self.config)]  # ids/ziele bleiben unveraendert
-        return {"steps": shown, "done": self._tutorial_done()}
+                  for k, v in step.items()}
+                 for step in steps(self.config, ausfuehrlich=ausfuehrlich)]  # ids/ziele bleiben unveraendert
+        return {"steps": shown, "done": self._tutorial_done(), "ausfuehrlich": ausfuehrlich}
 
     def tutorial_action(self, action: str) -> dict:
         from ..tutorial import mark_done

@@ -3509,3 +3509,25 @@ body.premium #splash .splash-name { background: linear-gradient(90deg, #ffe79a, 
   .cel-burst, .cel-title, .cel-card { animation: none; }
   .cel-card { transform: none; }
 }
+
+/* ===== Vorlese-Knopf der grossen Tour ===== */
+.tour-voice {
+  display: inline-flex; align-items: center; gap: 5px; margin-left: 8px;
+  border: 1px solid var(--border, #2a2e38); background: transparent; color: var(--muted, #8a8a99);
+  border-radius: 999px; padding: 3px 9px; font-size: 12px; cursor: pointer;
+}
+.tour-voice.on { color: var(--accent-text, #4338ca); border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.tour-voice .tv-ic { width: 14px; height: 14px; border-radius: 2px;
+  -webkit-mask: no-repeat center/contain; mask: no-repeat center/contain;
+  -webkit-mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M3 10v4h4l5 5V5L7 10H3zm13.5 2a4.5 4.5 0 00-2.5-4v8a4.5 4.5 0 002.5-4z'/></svg>");
+  mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M3 10v4h4l5 5V5L7 10H3zm13.5 2a4.5 4.5 0 00-2.5-4v8a4.5 4.5 0 002.5-4z'/></svg>");
+  background: currentColor; }
+.tour-voice .tv-wave { display: none; align-items: flex-end; gap: 2px; height: 12px; }
+.tour-voice.on .tv-wave { display: inline-flex; }
+.tour-voice .tv-wave i { width: 2px; background: currentColor; border-radius: 2px; animation: tvWave 1s ease-in-out infinite; }
+.tour-voice .tv-wave i:nth-child(1) { height: 5px; animation-delay: 0s; }
+.tour-voice .tv-wave i:nth-child(2) { height: 11px; animation-delay: .15s; }
+.tour-voice .tv-wave i:nth-child(3) { height: 7px; animation-delay: .3s; }
+@keyframes tvWave { 0%, 100% { transform: scaleY(.5); } 50% { transform: scaleY(1); } }
+@media (prefers-reduced-motion: reduce) { .tour-voice .tv-wave i { animation: none; } }
