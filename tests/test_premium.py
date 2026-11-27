@@ -473,3 +473,51 @@ def test_features_werden_gespeichert(root):
 def test_ohne_features_alle_der_stufe(root):
     P.einloesen(root, _code(P.kennung(root), "max", 99999, u=SERVER))
     assert P.features(root) is None
+
+
+# -- 0.57: ein Schluessel allein wird NICHT mehr automatisch eingeloest (nur mit /novaaiupdate) ----------
+def test_nackter_code_loest_nicht_automatisch_ein(tmp_path):
+    from assistant.app.controller import AppController
+    from assistant.config import load_config
+
+    cfg = load_config(tmp_path)
+    cfg.update.modus = "aus"
+    cfg.anthropic_api_key = cfg.anthropic_api_key or "sk-ant-test"
+    ereignisse: list = []
+    ctl = AppController(cfg, ereignisse.append)
+    try:
+        code = "NOVA-" + "a" * 25 + "." + "b" * 25
+        assert P.CODE_MUSTER.match(code)                      # sieht aus wie ein Code
+        r = ctl.submit(code)
+        assert r.get("ok") is True
+        # NICHT eingeloest, kein Premium dazugekommen:
+        assert not P.lizenz(cfg.project_root).get("stufe")
+        # Stattdessen ein Hinweis auf den Befehl - und der Code ging NIE an die KI (kein user-Ereignis):
+        texte = " ".join(str(e.get("text", "")) for e in ereignisse if isinstance(e, dict))
+        assert "/novaaiupdate" in texte
+        assert not any(isinstance(e, dict) and e.get("type") == "user" for e in ereignisse)
+    finally:
+        ctl.shutdown()
+
+
+def test_premium_signatur_wechsel_loest_neustart(tmp_path, monkeypatch):
+    """Aendert sich die echte Premium-Stufe, soll das Fenster neu starten (altes zu, neues auf)."""
+    from assistant.app.controller import AppController
+    from assistant.config import load_config
+
+    cfg = load_config(tmp_path)
+    cfg.update.modus = "aus"
+    cfg.anthropic_api_key = cfg.anthropic_api_key or "sk-ant-test"
+    ctl = AppController(cfg, lambda e: None)
+    try:
+        monkeypatch.setattr(ctl, "_premium_signatur", lambda: "premium|")
+        ctl._premium_sig = None
+        assert ctl._premium_wechsel_pruefen() is False       # erste Pruefung: nur merken
+        assert ctl._premium_sig == "premium|"
+        neugestartet = []
+        monkeypatch.setattr(ctl, "_premium_neustart", lambda grund: neugestartet.append(grund))
+        monkeypatch.setattr(ctl, "_premium_signatur", lambda: "")   # Stufe weg (entzogen/abgelaufen)
+        assert ctl._premium_wechsel_pruefen("entzug") is True
+        assert neugestartet == ["entzug"]
+    finally:
+        ctl.shutdown()

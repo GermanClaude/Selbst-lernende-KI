@@ -1167,6 +1167,24 @@
   }
 
   let feierWeg = null;
+  function zeigeNeustart(grund) {
+    // Der Premium-Modus hat sich geaendert - das Fenster schliesst gleich und oeffnet frisch.
+    if (byId('neustart-overlay')) return;
+    const text = grund === 'entzug'
+      ? 'Dein Zugang wurde angepasst. Nova startet kurz neu, damit der neue Stand gilt …'
+      : 'Der Modus hat sich geaendert. Nova startet kurz neu …';
+    const ov = document.createElement('div');
+    ov.id = 'neustart-overlay';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:99999;display:flex;align-items:center;'
+      + 'justify-content:center;background:rgba(10,12,16,.92);backdrop-filter:blur(4px);'
+      + 'color:#e8ecf3;font-size:17px;text-align:center;padding:24px;';
+    ov.innerHTML = '<div style="max-width:420px;line-height:1.5">'
+      + '<div style="font-size:26px;margin-bottom:14px">↻</div>'
+      + '<div>' + text + '</div></div>';
+    document.body.appendChild(ov);
+    try { setBusy(true); } catch (e) {}
+  }
+
   function feierePremium(ev) {
     const box = byId('celebrate');
     if (!box) return;
@@ -9629,6 +9647,9 @@
         break;
       case 'premium_unlock': // Premium freigeschaltet: Vollbild-Feier mit Konfetti
         feierePremium(ev);
+        break;
+      case 'premium_neustart': // Modus geaendert (entzogen/abgelaufen/hochgestuft): Fenster zu, neues auf
+        zeigeNeustart(ev && ev.grund);
         break;
       case 'user':
         onUserEcho(ev);

@@ -489,8 +489,9 @@ class AppController(CLI):
         from ..schluessel import CLOUDFLARE_HINWEIS, find_cloudflare_token
         from .. import premium as _PM
 
-        if _PM.CODE_MUSTER.match(text):          # ein Premium-/Entwickler-Code direkt ins Feld: wie /novaaiupdate
-            self.run_background(lambda: self._premium_befehl([text]))
+        if _PM.CODE_MUSTER.match(text):          # ein Schluessel allein: NICHT automatisch einloesen (Versehen vermeiden)
+            self._notice("Das sieht nach einem Nova-Schluessel aus. Zum Einloesen schreib bitte den Befehl davor: "
+                         "/novaaiupdate <dein Schluessel> - so wird er nie aus Versehen aktiviert.", "info")
             return {"ok": True}
         if _PM.gen_pin_ok(text.strip()):         # Generator-Passwort: geht NIE an die KI, schaltet den Modus frei
             self.run_background(self._generator_modus_aktivieren)
@@ -2632,6 +2633,8 @@ class AppController(CLI):
 
         def work() -> None:
             try:
+                if self._premium_wechsel_pruefen("update"):   # entzogen/abgelaufen/hochgestuft -> Fenster neu
+                    return                                    # (das Fenster schliesst gleich)
                 info = self.updater.check()
                 if info or self.updater.last_error is None:
                     self._pending_update = info  # nichts Neueres mehr -> Hinweis weg
@@ -2728,6 +2731,8 @@ class AppController(CLI):
 
             threading.Thread(target=ollama_check, name="ollama-pruefen", daemon=True).start()
         self._start_update_watch()
+        self._premium_sig = self._premium_signatur()   # Ausgangsstand merken (fuer Fenster-Neustart bei Entzug)
+        self._start_premium_watch()   # entzogen/abgelaufen? -> altes Fenster zu, neues auf
         self._start_feedback_watch()  # Nutzungszeit zaehlen, Feedback-Ausgang nachsenden
         # Nachrichten vom Handy, waehrend Nova aus war: abholen und nachfragen (im Hintergrund - Netz)
         # Fernzugriff automatisch (/handy auto an) - der holt Liegengebliebenes selbst ab und fragt nach.
@@ -2750,6 +2755,62 @@ class AppController(CLI):
             return self.exit_code if self._startup_update() else None
 
         self.run_background(check)
+
+    # -- Premium-Moduswechsel: altes Fenster zu, neues auf -----------------------------
+    def _premium_signatur(self) -> str:
+        """Kurzkennung der aktuell gueltigen ECHTEN Premium-Stufe (ohne Demo/Simulation).
+        Aendert sie sich, hat sich der Modus geaendert (entzogen, abgelaufen, hoch-/runtergestuft)."""
+        try:
+            from .. import premium as PM
+
+            root = self.config.project_root
+            return f"{PM.stufe(root) or ''}|{PM.anzeigename(root) or ''}"
+        except Exception:  # noqa: BLE001
+            return ""
+
+    def _premium_neustart(self, grund: str) -> None:
+        """Das Fenster schliessen und frisch oeffnen, damit der neue Premium-Stand sauber gilt
+        (Werkzeuge einer entzogenen Stufe verschwinden erst mit einem frischen Start)."""
+        kind = "exe" if getattr(sys, "frozen", False) else "prozess"
+        self._event({"type": "premium_neustart", "grund": grund})   # Fenster zeigt kurz Bescheid
+        time.sleep(1.2)                                             # dem Fenster Zeit fuer den Hinweis geben
+        try:
+            self._restart(kind)          # neue Instanz oeffnen
+        finally:
+            self.on_quit(self.exit_code) # altes Fenster schliessen
+
+    def _premium_wechsel_pruefen(self, grund: str = "update") -> bool:
+        """Beim Lizenzserver nachsehen (Entzug) und pruefen, ob sich der Modus seit dem Fenster-Start
+        geaendert hat. Wenn ja: Fenster neu starten. True = Neustart ausgeloest."""
+        try:
+            from .. import premium as PM
+
+            PM.sperrung_pruefen(self.config.project_root)
+        except Exception:  # noqa: BLE001 - kein Netz: Stand lassen
+            pass
+        neu = self._premium_signatur()
+        alt = getattr(self, "_premium_sig", None)
+        if alt is None:                  # erste Pruefung: nur merken, nicht neu starten
+            self._premium_sig = neu
+            return False
+        if neu == alt:
+            return False
+        self._premium_sig = neu
+        logger.info("Premium-Modus geaendert (%s -> %s), Fenster wird neu gestartet", alt, neu)
+        self._premium_neustart(grund)
+        return True
+
+    def _start_premium_watch(self) -> None:
+        """Laeuft die App lange, schaut sie regelmaessig nach, ob der Modus entzogen/abgelaufen ist."""
+        def watch() -> None:
+            while not self._stop_watch.wait(900):   # alle 15 Minuten
+                try:
+                    if self._premium_wechsel_pruefen("entzug"):
+                        return
+                except Exception as exc:  # noqa: BLE001
+                    logger.info("Premium-Wechselpruefung: %s", exc)
+
+        threading.Thread(target=watch, name="premium-watch", daemon=True).start()
 
     def _restart(self, kind: str) -> bool:
         """Nach Update/Zurueck: die App mit der neuen Version neu oeffnen."""

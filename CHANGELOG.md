@@ -4,6 +4,17 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.57.0 – 2026-11-27
+
+- **Schlüssel nur noch mit Befehl einlösen:** Wenn du nur einen Schlüssel ins Feld
+  tippst (ohne `/novaaiupdate` davor), wird er **nicht mehr automatisch** aktiviert.
+  So kann ein Code nicht mehr aus Versehen eingelöst werden. Zum Einlösen schreibst
+  du jetzt bewusst: `/novaaiupdate <dein Schlüssel>`.
+- **Fenster startet bei Moduswechsel neu:** Wenn sich dein Zugang ändert – entzogen,
+  abgelaufen oder hoch-/heruntergestuft – schließt sich das alte Fenster und ein
+  frisches öffnet sich, damit sofort der richtige Stand gilt. Das passiert von selbst
+  (Nova schaut regelmäßig nach) und auch, wenn du auf „Jetzt prüfen" gehst.
+
 ## 0.56.0 – 2026-11-27
 
 **Individuelle Premium-Abos**

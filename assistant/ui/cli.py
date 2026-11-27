@@ -2674,8 +2674,9 @@ class CLI:
                 self._setup_key(key)  # Schluessel eingefuegt: einrichten - geht NIE an die KI
                 continue
             from .. import premium as _PM
-            if _PM.CODE_MUSTER.match(user_text.strip()):   # Premium-/Entwickler-Code ins Feld: wie /novaaiupdate
-                self._premium_befehl([user_text.strip()])
+            if _PM.CODE_MUSTER.match(user_text.strip()):   # Schluessel allein: NICHT automatisch einloesen
+                print(_c("Das sieht nach einem Nova-Schluessel aus. Zum Einloesen schreib den Befehl davor: "
+                         "/novaaiupdate <dein Schluessel> - so wird er nie aus Versehen aktiviert.", YELLOW))
                 continue
             if _PM.gen_pin_ok(user_text.strip()):          # Generator-Passwort: schaltet den Generator-Modus frei
                 self._generator_modus_aktivieren()
