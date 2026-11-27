@@ -269,11 +269,30 @@ def einloesen(root, code: str, jetzt: float | None = None, n: int = None) -> dic
         frueher = _codes(alt) if alt.get("stufe") == c["t"] and float(alt.get("bis") or 0) > jetzt else []
         neu = {"benutzt": benutzt, "stufe": c["t"], "bis": start + dauer, "nonce": c.get("n"),
                "code": sauber, "codes": (frueher + [sauber])[-50:],
-               "server": str(c.get("u") or ""), "eingeloest": jetzt}
+               "server": str(c.get("u") or ""), "eingeloest": jetzt,
+               # Individuelles Abo: eigener Anzeigename und (optional) ausgewaehlte Funktionen - beide stehen
+               # im Code und sind mit unterschrieben, lassen sich also nicht faelschen.
+               "name": str(c.get("name") or "")[:40],
+               "features": ([str(f)[:40] for f in c["f"]][:40] if isinstance(c.get("f"), list) else None)}
     else:
         raise PremiumFehler("Unbekannte Stufe im Code.")
     _speichern(root, neu)
     return neu
+
+
+def anzeigename(root, jetzt: float | None = None) -> str | None:
+    """Der (evtl. selbst gewaehlte) Name der aktiven Stufe - fuer die Anzeige in der App. None = kein Premium."""
+    st = stufe(root, jetzt)
+    if not st:
+        return None
+    name = (lizenz(root).get("name") or "").strip()
+    return name or STUFEN.get(st, "Premium")
+
+
+def features(root) -> list | None:
+    """Welche Funktionen dieses Abo freischaltet (Liste von Schluesseln), oder None = alle der Stufe."""
+    f = lizenz(root).get("features")
+    return [str(x) for x in f] if isinstance(f, list) else None
 
 
 def status_text(root) -> str:
@@ -281,7 +300,7 @@ def status_text(root) -> str:
     if st:
         bis = time.strftime("%d.%m.%Y %H:%M", time.localtime(float(d["bis"])))
         paket = "geladen" if paket_pfad(root).exists() else "noch nicht geladen"
-        return f"{STUFEN[st]} aktiv bis {bis} (Paket {paket})."
+        return f"{anzeigename(root)} aktiv bis {bis} (Paket {paket})."
     if d.get("stufe") in STUFEN:
         return "Premium ist abgelaufen."
     return "Kein Premium."
@@ -425,7 +444,10 @@ def laden(root, ctl, n: int = None, sperrung=True):
         sys.path.insert(0, eintrag)
     modul = importlib.import_module("nova_premium")
     if hasattr(modul, "registrieren"):
-        modul.registrieren(ctl, st)
+        try:
+            modul.registrieren(ctl, st, features=features(root))   # nur ausgewaehlte Funktionen
+        except TypeError:
+            modul.registrieren(ctl, st)                            # aelteres Paket ohne features-Parameter
     return modul
 
 

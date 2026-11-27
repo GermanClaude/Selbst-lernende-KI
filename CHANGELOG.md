@@ -4,6 +4,14 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.56.0 – 2026-11-27
+
+**Individuelle Premium-Abos**
+- Ein Premium-Zugang kann jetzt einen **eigenen Namen** tragen (z. B. „Premium Sandbox") – der erscheint dann
+  in Nova statt „Premium Max". Und er kann **genau die Funktionen** enthalten, die dazugebucht wurden
+  (à la carte) statt immer das ganze Paket. Beides steckt sicher (mitunterschrieben) im Code und gilt weiter
+  nur für das eine Gerät.
+
 ## 0.55.1 – 2026-11-27
 
 **Fehler behoben**

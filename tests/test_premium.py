@@ -450,3 +450,26 @@ def test_generator_passwort_nur_als_hash(root):
     assert P.gen_pin_ok(pw)                      # echtes Passwort oeffnet
     for mod in (P, __import__("assistant.personality", fromlist=["x"])):
         assert pw not in Path(mod.__file__).read_text(encoding="utf-8")
+
+
+# -- 0.56: individuelle Abos (eigener Name + a la carte Funktionen) -------------------
+def test_eigener_abo_name(root):
+    k = P.kennung(root)
+    P.einloesen(root, _code(k, "premium", 99999, u=SERVER, name="Premium Sandbox"))
+    assert P.anzeigename(root) == "Premium Sandbox"
+    assert "Premium Sandbox" in P.status_text(root)
+
+
+def test_ohne_eigenen_namen_steht_die_stufe(root):
+    P.einloesen(root, _code(P.kennung(root), "max", 99999, u=SERVER))
+    assert P.anzeigename(root) == "Premium Max"
+
+
+def test_features_werden_gespeichert(root):
+    P.einloesen(root, _code(P.kennung(root), "premium", 99999, u=SERVER, f=["lernkarten", "gewohnheiten"]))
+    assert P.features(root) == ["lernkarten", "gewohnheiten"]
+
+
+def test_ohne_features_alle_der_stufe(root):
+    P.einloesen(root, _code(P.kennung(root), "max", 99999, u=SERVER))
+    assert P.features(root) is None

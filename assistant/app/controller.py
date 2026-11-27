@@ -355,7 +355,8 @@ class AppController(CLI):
                     st = sim["stufe"]
             if not st:
                 return None
-            return {"stufe": st, "name": PM.STUFEN.get(st, "Premium"),
+            name = PM.anzeigename(root) or PM.STUFEN.get(st, "Premium")   # eigener Abo-Name, falls gesetzt
+            return {"stufe": st, "name": name,
                     "sandbox": sandbox.aktiv() is not None}
         except Exception:  # noqa: BLE001
             return None
