@@ -116,7 +116,7 @@ def grenze(stufe: str | None) -> int:
     return GRENZEN.get(stufe, GRENZEN[None])
 
 
-def starten(config, stufe: str | None, spawn=None, env_setzen=None) -> dict:
+def starten(config, stufe: str | None, spawn=None, env_setzen=None, auftrag: str = "") -> dict:
     """Eine neue Sandbox-Nova starten. Wirft RuntimeError, wenn das Limit erreicht ist.
     spawn(root, env): startet die App (fuer Tests ersetzbar)."""
     root = Path(config.project_root)
@@ -138,6 +138,8 @@ def starten(config, stufe: str | None, spawn=None, env_setzen=None) -> dict:
         q = root / "config" / name
         if q.is_file():
             shutil.copyfile(q, ordner / "config" / name)
+    if auftrag and auftrag.strip():
+        (ordner / "data" / "sim_auftrag.txt").write_text(auftrag.strip()[:8000], encoding="utf-8")
     profil = hardware_profil(sid)
     umgebung = dict(os.environ)
     umgebung.update({"NOVA_ROOT_OVERRIDE": str(ordner), "NOVA_SIM": "1", "NOVA_SIM_HW": json.dumps(profil),
@@ -149,7 +151,21 @@ def starten(config, stufe: str | None, spawn=None, env_setzen=None) -> dict:
     pid = (spawn or _spawn_app)(ordner, umgebung)
     (ordner / "sim.json").write_text(json.dumps({"id": sid, "pid": pid, "profil": profil,
                                                  "gestartet": time.time()}), encoding="utf-8")
-    return {"id": sid, "pid": pid, "profil": profil, "ordner": str(ordner), "offen": len(laufen) + 1, "limit": limit}
+    return {"id": sid, "pid": pid, "profil": profil, "ordner": str(ordner), "offen": len(laufen) + 1,
+            "limit": limit, "auftrag": bool(auftrag and auftrag.strip())}
+
+
+def auftrag_lesen(root) -> str:
+    """Einmaliger Start-Auftrag fuer eine Sandbox-Nova (/simulate) - danach geloescht."""
+    if aktiv() is None:
+        return ""
+    p = Path(root) / "data" / "sim_auftrag.txt"
+    try:
+        text = p.read_text(encoding="utf-8").strip()
+        p.unlink(missing_ok=True)
+        return text
+    except OSError:
+        return ""
 
 
 def _spawn_app(ordner: Path, umgebung: dict) -> int:

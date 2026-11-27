@@ -167,6 +167,7 @@ class AppController(CLI):
         self.broadcast = broadcast
         self.brain.provider.wait_fn = lambda: self._event({"type": "thinking", "on": True})
         self.tool_ctx.extra["cancel_event"] = self.brain.provider.cancel_event
+        self.tool_ctx.extra["tresor_filler"] = lambda daten: __import__("assistant.tresor", fromlist=["x"]).tippe_login(daten, self.config.ki.name)
         self.busy = False
         self.history: list[dict] = []
         self.on_quit: Callable[[int], None] = lambda code: None
@@ -2659,6 +2660,28 @@ class AppController(CLI):
         return {"ok": False, "error": f"Unbekannt: {action}"}
 
     # -- Start / Neustart / Ende -----------------------------------------------------
+    def _sim_auftrag_starten(self) -> None:
+        """Nur in einer Sandbox-Nova: liegt ein /simulate-Auftrag vor, fuehrt diese frische Nova ihn selbst aus
+        (zum gefahrlosen Testen, z.B. 'schick eine Diagnose an den Entwickler')."""
+        from .. import sandbox
+
+        if sandbox.aktiv() is None:
+            return
+        auftrag = sandbox.auftrag_lesen(self.config.project_root)
+        if not auftrag:
+            return
+
+        def los() -> None:
+            import time as _t
+            _t.sleep(2.5)
+            try:
+                self._notice("Test-Szenario (/simulate) laeuft in dieser Sandbox-Nova.", "info")
+                self.submit("[Simulations-Auftrag zum Testen] " + auftrag)
+            except Exception:  # noqa: BLE001
+                logger.exception("Sandbox-Auftrag fehlgeschlagen")
+
+        threading.Thread(target=los, name="sim-auftrag", daemon=True).start()
+
     def startup(self) -> None:
         """Nach dem Oeffnen des Fensters: Hinweise und (hoechstens taeglich) Update-Pruefung."""
         self._abgleich_starten()  # Gedaechtnis mit Cloud/anderen Novas abgleichen (wenn eingerichtet)
@@ -2694,6 +2717,7 @@ class AppController(CLI):
             threading.Thread(target=lambda: self._handy_befehl([]), name="handy-autostart", daemon=True).start()
         else:
             threading.Thread(target=self._handy_beim_start, name="handy-rueckstand", daemon=True).start()
+        self._sim_auftrag_starten()   # /simulate: frische Sandbox-Nova fuehrt einen Test-Auftrag aus
         try:
             self._sehen_beim_start()
         except Exception as exc:  # noqa: BLE001

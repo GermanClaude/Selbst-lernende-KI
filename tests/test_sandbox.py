@@ -97,3 +97,23 @@ def test_config_root_override(tmp_path, monkeypatch):
     from assistant.config import find_app_root
     monkeypatch.setenv("NOVA_ROOT_OVERRIDE", str(tmp_path / "sim42"))
     assert find_app_root() == (tmp_path / "sim42").resolve()
+
+
+def test_simulate_auftrag_wird_abgelegt_und_einmal_gelesen(cfg, monkeypatch):
+    sp = _spawn(cfg)
+    info = S.starten(cfg, None, spawn=sp, auftrag="Schick eine Diagnose an den Entwickler.")
+    assert info["auftrag"] is True
+    ordner = sp.letzter_ordner
+    assert (ordner / "data" / "sim_auftrag.txt").exists()
+    # auftrag_lesen nur, wenn DIESE Nova eine Sandbox ist (NOVA_SIM) - einmalig, dann weg
+    monkeypatch.setenv("NOVA_SIM", "1")
+    monkeypatch.setenv("NOVA_SIM_HW", json.dumps({"prozessor": "x", "grafik": "y", "arbeitsspeicher_gb": 8}))
+    assert S.auftrag_lesen(ordner) == "Schick eine Diagnose an den Entwickler."
+    assert S.auftrag_lesen(ordner) == ""     # nur einmal
+
+
+def test_auftrag_lesen_nur_in_sandbox(cfg, monkeypatch):
+    monkeypatch.delenv("NOVA_SIM", raising=False)
+    sp = _spawn(cfg)
+    S.starten(cfg, None, spawn=sp, auftrag="test")
+    assert S.auftrag_lesen(sp.letzter_ordner) == ""     # keine Sandbox -> kein Auftrag

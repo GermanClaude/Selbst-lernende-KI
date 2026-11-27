@@ -8,7 +8,7 @@ nutzen kann.
 from __future__ import annotations
 
 from . import (abwesenheit, agents, anruf, app_fehler, apps, aussehen, geraete, handy_app, helfer, handy_steuerung, wachwort, zeitplan, telegram, bild_tools, computer, filesystem, gehirn, memory_tools,
-               mitschnitt, sehen, shell, sicherheit, skill, spiel, stimme, system_info, web)
+               mitschnitt, sehen, shell, sicherheit, skill, spiel, stimme, system_info, tresor_tool, web)
 from .base import Tool, ToolContext, ToolRegistry
 
 __all__ = ["READ_ONLY_TOOLS", "Tool", "ToolContext", "ToolRegistry", "build_registry", "subset"]
@@ -45,6 +45,7 @@ def build_registry(include_computer: bool = True, include_agents: bool = True) -
     handy_steuerung.register(registry)
     telegram.register(registry)
     helfer.register(registry)    # Rechner, Einheiten, Datum, Wetter, PC-Auslastung
+    tresor_tool.register(registry)   # Zugangs-Tresor (Logins, Passwoerter lokal verschluesselt)
     return registry
 
 

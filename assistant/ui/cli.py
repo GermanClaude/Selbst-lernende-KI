@@ -227,6 +227,7 @@ class CLI:
         self.registry = build_registry(include_computer=True)
         self.tool_ctx = ToolContext(permissions=self.permissions, memory=self.memory)
         self.tool_ctx.extra["app_root"] = config.project_root
+        self.tool_ctx.extra["tresor_filler"] = lambda daten: __import__("assistant.tresor", fromlist=["x"]).tippe_login(daten, self.config.ki.name)
         self.tool_ctx.extra["ki_name"] = lambda: self.config.ki.name  # z.B. fuer Anrufe ("Hallo, hier ist ...")
         self.tool_ctx.extra["fehler_liste"] = lambda: list(self.__dict__.get("_fehler", []))  # Werkzeug app_fehler
         self.tool_ctx.extra["handy_aktiv"] = self._handy_aktiv  # Werkzeug telegram: nichts wegschnappen
@@ -2811,6 +2812,8 @@ class CLI:
             self._mitschnitt_command(cmd.split()[1:])
         elif base in ("/protokoll", "/aktivitaet"):
             self._protokoll_command(cmd.split()[1:])
+        elif base in ("/zugang", "/tresor", "/passwoerter"):
+            self._zugang_command(cmd.split()[1:])
         elif base in ("/skill", "/skills"):
             self._skills_command(cmd.split()[1:])
         elif base == "/update":
@@ -2920,6 +2923,8 @@ class CLI:
             self._simulation_befehl(cmd.split()[1:])
         elif base in ("/sandbox", "/testnova", "/kivm"):
             self._sandbox_befehl(cmd.split()[1:])
+        elif base in ("/simulate", "/simuliere", "/testlauf"):
+            self._simulate_befehl(cmd.split(None, 1)[1] if len(cmd.split(None, 1)) > 1 else "")
         elif _bildpfad(cmd.split()[0], self._bild_basis()):  # "/home/ich/foto.png Was ist das?"
             self._bildpfad_hinweis(cmd.split()[0])
         else:
@@ -3030,6 +3035,28 @@ class CLI:
                   "Deine API-Schluessel sind geerbt. Schliessen: /sandbox stop oder das Fenster zu.")
             return
         print("Sandbox: neu | liste | stop [id]")
+
+    def _simulate_befehl(self, auftrag: str) -> None:
+        """/simulate <was Nova tun soll>: startet eine frische Sandbox-Nova, die genau diesen Auftrag ausfuehrt -
+        zum gefahrlosen Ausprobieren (z.B. 'pruefe, ob die Diagnose wirklich an den Entwickler geht')."""
+        from .. import sandbox
+
+        if sandbox.aktiv() is not None:
+            print(_c("Du bist schon in einer Sandbox - von hier startest du keine weitere.", YELLOW))
+            return
+        auftrag = (auftrag or "").strip()
+        if not auftrag:
+            print(_c("So: /simulate <was die Test-Nova tun soll>. Beispiel:", CYAN))
+            print(_c("  /simulate Schick eine Diagnose an den Entwickler und sag mir, ob es geklappt hat.", GREY))
+            return
+        try:
+            info = sandbox.starten(self.config, self._sandbox_tier(), auftrag=auftrag)
+        except RuntimeError as exc:
+            print(_c(str(exc), YELLOW))
+            return
+        print(_c(f"Test-Nova gestartet ({info['offen']}/{info['limit']}). Sie fuehrt deinen Auftrag in einem "
+                 "eigenen Fenster aus - frisches Gedaechtnis, eigene vorgegaukelte Hardware, deine Schluessel "
+                 "geerbt. Nichts davon beruehrt deine echte Nova. Schliessen: /sandbox stop.", GREEN))
 
     def _simulation_befehl(self, args: list[str]) -> None:
         """Versteckt, nur fuer den Entwickler: Premium oertlich zum Testen an/aus (/simulation <PIN>)."""
@@ -3317,6 +3344,70 @@ class CLI:
                  CYAN))
 
     # -- Skills (gespeicherte Anweisungen) -----------------------------------
+    def _zugang_command(self, args: list[str]) -> None:
+        """Verschluesselter Zugangs-Tresor: Logins, die Nova fuer dich nutzen kann (Passwoerter bleiben lokal)."""
+        import getpass
+
+        from .. import tresor as T
+
+        root = self.config.project_root
+        sub = (args[0].lower() if args else "status")
+
+        def frage_haupt(neu: bool) -> str:
+            return getpass.getpass("Haupt-Passwort" + (" (neu, mind. 8 Zeichen): " if neu else ": "))
+
+        try:
+            if sub in ("status", ""):
+                print(_c(T.status_text(root), CYAN))
+                print(_c("  /zugang einrichten | oeffnen | liste | passwort <Dienst> | merken <Dienst> <Benutzer> | "
+                         "weg <Dienst> | zu", GREY))
+                return
+            if sub in ("einrichten", "neu"):
+                print(_c(T.einrichten(root, frage_haupt(True)), GREEN))
+                return
+            if sub in ("oeffnen", "auf", "entsperren"):
+                print(_c(T.oeffnen(root, frage_haupt(False)), GREEN))
+                return
+            if sub in ("zu", "schliessen", "sperren"):
+                T.zusperren(root)
+                print(_c("Tresor zu.", GREY))
+                return
+            if not T.ist_offen(root):
+                print(_c("Tresor ist zu - erst /zugang oeffnen.", YELLOW))
+                return
+            if sub in ("liste", "list", "ls"):
+                eintraege = T.liste(root)
+                if not eintraege:
+                    print(_c("Noch keine Logins. Anlegen: /zugang passwort <Dienst>", GREY))
+                for e in eintraege:
+                    schl = "" if e["hat_passwort"] else _c("  [kein Passwort]", YELLOW)
+                    print(f"  {e['dienst']}" + (f"  ({e['benutzer']})" if e['benutzer'] else "") + schl)
+                return
+            if sub in ("merken", "add") and args[1:]:
+                dienst = args[1]
+                benutzer = args[2] if len(args) > 2 else ""
+                print(_c(T.eintrag(root, dienst, benutzer=benutzer), GREEN))
+                print(_c(f"Passwort dazu: /zugang passwort {dienst}", GREY))
+                return
+            if sub in ("passwort", "pw", "pass") and args[1:]:
+                dienst = args[1]
+                benutzer = input("Benutzername (Enter = unveraendert): ").strip()
+                pw1 = getpass.getpass(f"Passwort fuer {dienst}: ")
+                if not pw1:
+                    print(_c("Abgebrochen.", GREY))
+                    return
+                if getpass.getpass("Nochmal zur Sicherheit: ") != pw1:
+                    print(_c("Die Passwoerter stimmen nicht ueberein.", YELLOW))
+                    return
+                print(_c(T.eintrag(root, dienst, benutzer=benutzer, passwort=pw1), GREEN))
+                return
+            if sub in ("weg", "loeschen", "entfernen", "remove") and args[1:]:
+                print(_c("Entfernt." if T.entfernen(root, args[1]) else "War nicht im Tresor.", GREEN))
+                return
+            print(_c("Unbekannt. /zugang zeigt die Befehle.", YELLOW))
+        except T.TresorFehler as exc:
+            print(_c(str(exc), YELLOW))
+
     def _skills_command(self, args: list[str]) -> None:
         from .. import skills as sk
 

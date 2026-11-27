@@ -4,6 +4,38 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.54.0 – 2026-11-27
+
+**Zugangs-Tresor: Nova kann sich für dich anmelden – deine Passwörter bleiben lokal**
+- Neuer verschlüsselter Tresor für deine Logins (Dienst, Benutzer, Passwort). Alles liegt **nur auf deinem
+  Gerät**, verschlüsselt mit einem **Haupt-Passwort**, das nie gespeichert wird und das Gerät nie verlässt.
+- **Nova sieht deine Passwörter nie.** Das Werkzeug gibt Passwörter grundsätzlich nicht als Text aus und nimmt
+  auch keines im Chat entgegen – beim Anmelden tippt die App Benutzer und Passwort direkt ins Login-Feld, am
+  Modell und am KI-Anbieter vorbei. So kann Nova z. B. Instagram oder dein E-Mail-Konto für dich öffnen und
+  Nachrichten schreiben, ohne dass irgendwer an die Zugangsdaten kommt.
+- Die Tresor-Datei ist für alle Werkzeuge gesperrt. Selbst wer sie stiehlt, hat ohne dein Haupt-Passwort
+  nichts. Jede Installation hat ihren eigenen lokalen Tresor – es gibt keinen Server, auf dem Passwörter
+  liegen, also nichts zentral abzugreifen.
+- Bedienen mit `/zugang` (einrichten, öffnen, `passwort <Dienst>`, Liste, entfernen). Nach 30 Minuten ohne
+  Nutzung schließt sich der Tresor von selbst.
+
+**`/simulate` – alles gefahrlos zur Probe laufen lassen**
+- `/simulate <was Nova tun soll>` startet eine **frische Test-Nova** in einem eigenen Fenster, die genau
+  diesen Auftrag in deinen Worten ausführt – mit eigenem, leerem Gedächtnis und eigener vorgegaukelter
+  Hardware. Ideal, um z. B. zu prüfen, ob die Diagnose wirklich beim Entwickler ankommt, ohne deine echte
+  Nova anzufassen.
+
+**Premium 1.5 (mit gültigem Code)**
+- **Agententeam** (`premium_agententeam`): Für große Aufgaben teilt Nova die Arbeit auf mehrere eigenständige
+  Agenten auf (Recherche, je Teilschritt ein Helfer, am Ende ein Prüfer) und fasst das Ergebnis zusammen. Geht
+  auch ohne Agenten – dann bekommst du einen klaren Plan, den Nova selbst abarbeitet.
+
+**Sicherheit – nochmal geprüft**
+- Vollständiger Scan beider Repos und der Codegenerator-EXE: **kein GitHub-Token, kein Paket-Schlüssel, keine
+  echten Codes** irgendwo im Code. Ein Premium-Code enthält nur `{Gerät, Stufe, Laufzeit, Frist, Nummer,
+  Serveradresse}`. Der Repo-Token liegt allein als Umgebungsvariable auf deinem Lizenzserver und lässt sich
+  jederzeit wechseln, ohne dass ein einziger Code neu ausgegeben werden muss (siehe cloud/ANLEITUNG.md).
+
 ## 0.53.0 – 2026-11-27
 
 **Neues Aussehen: Nova als Kommandozentrale**

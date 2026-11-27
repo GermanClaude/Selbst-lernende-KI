@@ -52,6 +52,7 @@ FUNKTIONEN = {
         "Lernkarten mit Wiederholungssystem - Nova fragt dich ab (premium_lernkarten)",
         "Gewohnheiten-Tracker mit Serien (premium_gewohnheiten)",
         "Haushaltsbuch mit Budgets und Monatsauswertung (premium_haushaltsbuch)",
+        "Agententeam: grosse Aufgaben automatisch aufteilen und abarbeiten lassen (premium_agententeam)",
         "Edlere Premium-Optik in der App",
     ],
     "max": [

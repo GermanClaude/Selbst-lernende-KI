@@ -95,6 +95,11 @@ Deine Cloud-Nova kann die Premium-Pakete ausgeben – dann steckt in keinem Code
 4. Paket bauen (`python werkzeuge/paket_bauen.py`) und `pakete/nova-premium.zip` + `.json` ins private Repo
    pushen.
 
+**Token wechseln (falls er je auffliegt):** Erzeuge auf GitHub einen neuen fein-granularen Token und trag ihn
+bei Render als `NOVA_PREMIUM_REPO_TOKEN` neu ein (alten Token auf GitHub löschen). Mehr ist nicht nötig – in den
+Premium-Codes steckt **kein** Token, nur die Serveradresse. Nichts muss neu ausgegeben werden. Den Schreib-Token
+zum Sperren (Admin-Token) wechselst du genauso im Codegenerator unter *Einstellungen*.
+
 Prüfen: `https://<deine-adresse>/lizenz/sperrliste` liefert die Sperrliste (oder „nicht gefunden“, solange du
 noch nichts gesperrt hast). Ist der Lizenzserver aus, antworten beide Adressen mit 404.
 
