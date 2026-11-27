@@ -4,6 +4,14 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.57.1 – 2026-11-27
+
+- **Dein Zugang bleibt über Updates erhalten:** Deine gekaufte Stufe (und wie lange
+  sie gilt) liegt in Daten, die ein Update nie anfasst – ein Update nimmt dir also
+  nie dein Premium. Sollte nach einem Update das Premium-Zubehör fehlen, holt Nova
+  es jetzt **von selbst** wieder, ohne dass du einen Code neu eingeben musst.
+  (Ein Zugang verschwindet nur, wenn er abläuft oder der Entwickler ihn sperrt.)
+
 ## 0.57.0 – 2026-11-27
 
 - **Schlüssel nur noch mit Befehl einlösen:** Wenn du nur einen Schlüssel ins Feld

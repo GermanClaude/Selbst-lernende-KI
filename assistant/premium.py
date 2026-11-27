@@ -426,9 +426,18 @@ def laden(root, ctl, n: int = None, sperrung=True):
         except Exception:  # noqa: BLE001
             pass
     st = stufe(root)
-    pfad = paket_pfad(root)
-    if not st or not pfad.exists():
+    if not st:
         return None
+    pfad = paket_pfad(root)
+    if not pfad.exists():
+        # Die Stufe gilt (bezahlt, nicht gesperrt, nicht abgelaufen), nur das Paket fehlt - z.B. nach einem
+        # Update/Neuaufsetzen. Dann holen wir es automatisch wieder (signiert), statt Premium zu verlieren.
+        try:
+            paket_holen(root, n=n)
+        except PremiumFehler:
+            return None
+        if not pfad.exists():
+            return None
     if ctl is None:
         return None
     try:

@@ -521,3 +521,32 @@ def test_premium_signatur_wechsel_loest_neustart(tmp_path, monkeypatch):
         assert neugestartet == ["entzug"]
     finally:
         ctl.shutdown()
+
+
+# -- 0.58: eine gueltige Stufe ueberlebt Updates (Lizenz/Paket/Kennung liegen in data/, das der Updater nie anfasst)
+def test_update_fasst_premium_dateien_nicht_an():
+    from assistant import updater as U
+    for rel in ("data/premium.json", "data/premium/paket.zip", "data/premium/paket.sig",
+                "data/feedback_state.json"):
+        assert U._is_protected(rel), rel        # -> Update behaelt die gekaufte Stufe
+
+
+def test_paket_wird_automatisch_nachgeholt_wenn_es_fehlt(root, monkeypatch):
+    """Stufe gilt, aber das Paket fehlt (z.B. frisch aufgesetzt) -> laden() holt es selbst wieder,
+    statt Premium fallen zu lassen."""
+    P.einloesen(root, _code(P.kennung(root), "max", 3600, u=SERVER))
+    assert P.stufe(root) == "max"
+    assert not P.paket_pfad(root).exists()
+    geholt = []
+
+    def fake_holen(r, **kw):
+        geholt.append(True)
+        ziel = P.paket_pfad(r)
+        ziel.parent.mkdir(parents=True, exist_ok=True)
+        ziel.write_bytes(b"PK\x03\x04test")
+        return {"version": "test"}
+
+    monkeypatch.setattr(P, "paket_holen", fake_holen)
+    P.laden(root, ctl=None, sperrung=False)     # ctl=None: laedt nichts, aber holt das Paket nach
+    assert geholt == [True]
+    assert P.paket_pfad(root).exists()
