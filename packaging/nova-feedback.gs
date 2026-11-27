@@ -12,7 +12,7 @@
  * Bewertung. Text und Name werden nur gezeigt, wenn die Person "oeffentlich" angekreuzt hat.
  * Eine Rezension ausblenden: in der Tabelle in der Spalte "Sichtbar" FALSE eintragen - oder bequemer:
  *   * in der Mail zu jeder oeffentlichen Rezension steht ein Loeschen-Link (nur du hast die Mail), oder
- *   * im Codegenerator, Reiter "Rezensionen" (braucht den Admin-Schluessel aus der Test-Mail).
+ *   * im Codegenerator, Reiter "Rezensionen" (unterschreibt mit dem privaten Schluessel - KEIN Schluessel noetig).
  * Geloescht heisst ausgeblendet (Sichtbar = FALSE) - mit "Wiederherstellen" kommt sie zurueck.
  * Oeffentlich posten darf jede Installation nur EINMAL PRO WOCHE (auch wenn die App veraendert wurde):
  * eine weitere oeffentliche Rezension innerhalb von 7 Tagen wird nur privat gespeichert.
@@ -101,12 +101,65 @@ function doGet(e) {
   return antwort({ok: true, dienst: 'nova-feedback'});
 }
 
-/** Verwaltung aus dem Codegenerator: {aktion, id?, zeit, sig = HMAC(admin, aktion|id|zeit)}. */
+
+// --- Entwickler-Signatur (RSA) statt Admin-Schluessel: Rezensionen verwalten geht NUR mit dem privaten
+//     Schluessel des Entwicklers (Codegenerator). Hier liegt nur der oeffentliche Schluessel - damit laesst
+//     sich pruefen, aber nichts faelschen. Braucht die V8-Laufzeit (Standard; sonst in appsscript.json setzen).
+var PUB_E = 65537n;
+var PUB_N = BigInt('0xc43005df09dd2dcdb5a70ad53c6b21cc1a58307beaf5828c0c41577e0ddf1178e6b9d137e54889865772074f24afd3eb2cd26edf18af9ae194f00ff00a2bbeeab7ec87317c579875bcb97a7e4a6bade350d677fe19d0b23890a243793ffcdcecc98f3c88f1d785e7ae8697462d00b83844481683f9af1e43bed16c0b132aa425ead55d625161ae70ecda9ea2d906827d92b2ddaee22465cf121dc45ca057905f9e80be8e98bafa8f87369195a1a1df649c27c983e0e05f5df5d306cfdb29cf9d1d2f85f184631a4af14041ff81573b8eda001c3a9128564105c39ab7181ba495d2836aa46a42d6f574e5bb1476420041aba1bbd871dd837e310a7b7686dd216489e5f162b6282d5676498700f09adc55fad9c36e2f88250c7c49f343311a3bbb7dc413fb37f07c43ce86b3fbeecc9ba1687098aed777ea0e09c197584ef8b53bf171bac4c7e97ada3518ed87bf5448959dfb92c9ba9cb5b4f275142ca035a1a3b98a12d0a8de22c231683e6c40469264b58c13f59f22da92cf5e672f46aa3e0d');
+var SHA256_DER = [0x30,0x31,0x30,0x0d,0x06,0x09,0x60,0x86,0x48,0x01,0x65,0x03,0x04,0x02,0x01,0x05,0x00,0x04,0x20];
+
+function _modpow(b, e, m) {
+  b = b % m;
+  var r = 1n;
+  while (e > 0n) { if (e & 1n) r = (r * b) % m; e >>= 1n; b = (b * b) % m; }
+  return r;
+}
+
+function _bytesToBig(bytes) {
+  var x = 0n;
+  for (var i = 0; i < bytes.length; i++) x = (x << 8n) | BigInt(bytes[i] & 0xff);
+  return x;
+}
+
+function _bigToBytes(x, k) {
+  var out = new Array(k);
+  for (var i = k - 1; i >= 0; i--) { out[i] = Number(x & 0xffn); x >>= 8n; }
+  return out;
+}
+
+/** Prueft die RSA-PKCS#1-v1.5/SHA-256-Unterschrift des Entwicklers ueber 'message'. sigB64 = Base64. */
+function rezSigOk(message, sigB64) {
+  try {
+    if (!sigB64) return false;
+    var sig = Utilities.base64Decode(sigB64);
+    var k = Math.ceil(PUB_N.toString(2).length / 8);
+    if (sig.length !== k) return false;
+    var em = _bigToBytes(_modpow(_bytesToBig(sig), PUB_E, PUB_N), k);
+    var hash = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, message, Utilities.Charset.UTF_8);
+    var t = SHA256_DER.slice();
+    for (var h = 0; h < hash.length; h++) t.push(hash[h] & 0xff);
+    var ps = k - t.length - 3;
+    if (ps < 8) return false;
+    var exp = [0x00, 0x01];
+    for (var f = 0; f < ps; f++) exp.push(0xff);
+    exp.push(0x00);
+    for (var c = 0; c < t.length; c++) exp.push(t[c]);
+    var diff = 0;
+    for (var j = 0; j < k; j++) diff |= (em[j] & 0xff) ^ (exp[j] & 0xff);
+    return diff === 0;
+  } catch (err) {
+    return false;
+  }
+}
+
+/** Verwaltung aus dem Codegenerator: {aktion, id?, zeit, sig}. sig = RSA-Unterschrift des Entwicklers
+ *  ueber 'aktion|id|zeit' (mit seinem privaten Schluessel) - kein Admin-Schluessel noetig. */
 function verwaltung(d) {
   var zeit = Number(d.zeit) || 0;
   var id = String(d.id || '').replace(/[^a-f0-9]/g, '').slice(0, 32);
   if (Math.abs(Date.now() - zeit) > SIG_FENSTER_MS ||
-      !gleich(d.sig, hmacHex(String(d.aktion) + '|' + id + '|' + zeit))) {
+      !rezSigOk(String(d.aktion) + '|' + id + '|' + zeit, String(d.sig || ''))) {
     return {ok: false, fehler: 'nicht_erlaubt'};
   }
   if (d.aktion === 'liste') {

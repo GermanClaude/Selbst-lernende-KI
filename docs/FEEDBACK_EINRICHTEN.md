@@ -8,8 +8,10 @@ den Nova und die GitHub-Seite anzeigen; Text und Name erscheinen nur, wenn die P
 „öffentlich zeigen“ angekreuzt hat. **Rezension ausblenden:** in der Tabelle in der Spalte
 „Sichtbar“ `FALSE` eintragen (nach höchstens 5 Minuten weg).
 **Seit 0.52 bequemer:** In der Mail zu jeder öffentlichen Rezension steht ein **Löschen-Link** (mit
-„Rückgängig“). Oder im Codegenerator, Reiter **Rezensionen** (*Einrichten …*: Skript-Adresse + den
-**Admin-Schlüssel** aus der Test-Mail – `testMail` einmal neu ausführen, dann steht er drin).
+„Rückgängig“). Oder im Codegenerator, Reiter **Rezensionen**: dort bei *Einrichten …* nur die **Adresse**
+deines Feedback-Skripts eintragen (kein Schlüssel!). Der Generator unterschreibt Lösch-/Wiederherstellen-
+Anfragen mit deinem **privaten Schlüssel** (`privat.pem`) – das Skript prüft die Unterschrift mit dem
+öffentlichen Schlüssel. So kannst du Rezensionen mit einem Klick ausblenden, ohne je einen Code einzugeben.
 Jede Installation darf nur **einmal pro Woche** öffentlich rezensieren; das Skript prüft das selbst.
 **Nach dem Aktualisieren des Skripts:** *Bereitstellen → Bereitstellungen verwalten → Bearbeiten → Neue
 Version → Bereitstellen* (die Adresse bleibt gleich).
