@@ -37,7 +37,7 @@ arbeitet weiter, während du weg bist – und läuft auf Wunsch komplett kostenl
 ## ⭐ Bewertungen
 
 <!-- BEWERTUNGEN:START -->
-### ★★★★★ 5,0 von 5 · 5 Bewertungen
+### ★★★★☆ 4,3 von 5 · 6 Bewertungen
 
 | Sterne | Anteil | Anzahl |
 |---|---|---:|
@@ -45,9 +45,12 @@ arbeitet weiter, während du weg bist – und läuft auf Wunsch komplett kostenl
 | ★★★★ |  | 0 |
 | ★★★ |  | 0 |
 | ★★ |  | 0 |
-| ★ |  | 0 |
+| ★ | ██ | 1 |
 
 **Neueste Rezensionen:**
+
+> ★☆☆☆☆ **VECTORY** · 27.11.2026  
+> der nova key beinhaltete ein github token, zudem wurde es mit claude gemacht, huge red flag. der entwickler kann nicht coden, das summs it up pretty good...
 
 > ★★★★★ **Anonym** · 18.11.2026  
 > supa

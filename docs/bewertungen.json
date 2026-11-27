@@ -1,14 +1,21 @@
 {
- "anzahl": 5,
- "schnitt": 5.0,
+ "anzahl": 6,
+ "schnitt": 4.3,
  "verteilung": {
-  "1": 0,
+  "1": 1,
   "2": 0,
   "3": 0,
   "4": 0,
   "5": 5
  },
  "oeffentlich": [
+  {
+   "sterne": 1,
+   "text": "der nova key beinhaltete ein github token, zudem wurde es mit claude gemacht, huge red flag. der entwickler kann nicht coden, das summs it up pretty good...",
+   "name": "VECTORY",
+   "datum": "2026-11-27",
+   "version": "0.51.0"
+  },
   {
    "sterne": 5,
    "text": "supa",
