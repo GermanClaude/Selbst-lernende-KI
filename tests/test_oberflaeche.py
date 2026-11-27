@@ -433,3 +433,17 @@ def test_helfer_laeuft_ohne_seite_und_ohne_crypto(tmp_path):
     r = subprocess.run([NODE, str(script), str(STATIC / "helfer.js")], capture_output=True, text=True, timeout=60)
     assert r.returncode == 0, r.stderr
     assert json.loads(r.stdout) > 30
+
+
+def test_profil_fenster_zeigt_profil_nicht_premium():
+    """0.54.1-Regression: die Variable pmodal (Profil-Fenster) muss auf #pmodal zeigen, nicht auf den
+    Premium-Shop #premmodal - sonst oeffnet 'Charakter & Profil' den Premium-Dialog und friert beim
+    Schliessen die App ein (app.inert bleibt true)."""
+    import re
+    from pathlib import Path
+    js = (Path(__file__).resolve().parent.parent / "assistant" / "app" / "static" / "app.js").read_text(encoding="utf-8")
+    m = re.search(r"const pmodal = byId\('([a-zA-Z]+)'\)", js)
+    assert m and m.group(1) == "pmodal", f"pmodal zeigt auf #{m.group(1) if m else '?'} statt #pmodal"
+    # #pmodal (Profil-Overlay) und #premmodal (Premium-Shop) sind verschiedene Elemente
+    html = (Path(__file__).resolve().parent.parent / "assistant" / "app" / "static" / "index.html").read_text(encoding="utf-8")
+    assert 'id="pmodal"' in html and 'id="premmodal"' in html and 'id="panel"' in html

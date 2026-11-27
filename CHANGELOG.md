@@ -4,6 +4,15 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.54.1 – 2026-11-27
+
+**Fehler behoben: „Charakter & Profil" und App-Freeze**
+- „Charakter & Profil" öffnete versehentlich das **Premium-Fenster** statt der Profil-Einstellungen –
+  und beim Schließen fror die ganze App ein, sodass nur ein Neustart half. Ursache war eine vertauschte
+  Fenster-Zuordnung im App-Code. Jetzt öffnet der Knopf wieder das volle Profil-Fenster mit allen Reitern
+  (Charakter, Stil, Über mich, Werte, Gedächtnis, Skills, Sicherheit, Gehirn) – alles wieder individuell
+  einstellbar wie zuvor. Kein Einfrieren mehr.
+
 ## 0.54.0 – 2026-11-27
 
 **Zugangs-Tresor: Nova kann sich für dich anmelden – deine Passwörter bleiben lokal**

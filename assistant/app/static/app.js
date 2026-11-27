@@ -4904,7 +4904,7 @@
   // Charakter & Profil (eigenes Fenster mit Reitern)
   // Alle Texte vom Server kommen nur per textContent / value hinein.
   // =====================================================================
-  const pmodal = byId('premmodal');
+  const pmodal = byId('pmodal');     // Overlay des Profil-Fensters (enthaelt #panel) - NICHT der Premium-Shop
   const panel = byId('panel');
   const pfName = byId('pf-name');
   const pfMeaning = byId('pf-meaning');
