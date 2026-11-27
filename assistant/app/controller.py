@@ -199,6 +199,7 @@ class AppController(CLI):
         self._afk_return: tuple[float, str] | None = None  # (Beginn der Abwesenheit, Bericht)
         self.tool_ctx.extra["afk_start"] = self._afk_request
         self.tool_ctx.extra["afk_update"] = self._state_changed
+        self.tool_ctx.extra["agenten_api"] = self._agenten_api()   # dirigierte Agent-Fenster (Premium Max)
         self._cloudflare_http = None  # fuer Tests austauschbar (None = echtes Netz)
         self._ollama_caps: dict[tuple[str, str], list] = {}  # (Adresse, Modell) -> Faehigkeiten
         # Live-Sehen: wartende Wortmeldung (nur die neueste) und ob gerade eine laeuft
@@ -2704,6 +2705,104 @@ class AppController(CLI):
 
         threading.Thread(target=los, name="sim-auftrag", daemon=True).start()
 
+    # -- Dirigierte Agent-Fenster (Premium Max) ------------------------------------------
+    _AGENT_HINWEIS = ("[Du bist ein beauftragter Agent in einem eigenen Fenster. Erledige NUR diese Teilaufgabe "
+                      "eigenstaendig und vollstaendig und melde am Ende knapp dein Ergebnis. Starte selbst keine "
+                      "weiteren Agenten.] ")
+
+    def _agent_turn(self, text: str, warte: float = 900.0) -> str:
+        """Ein Agent arbeitet einen Auftrag des Dirigenten seriell ab und gibt den Ergebnistext zurueck."""
+        ende = time.monotonic() + warte
+        while True:
+            with self._lock:
+                if not self.busy:
+                    self.busy = True
+                    self._live_turn = None
+                    self._drop_turn = False
+                    self.brain.provider.cancel_event.clear()
+                    break
+            if time.monotonic() > ende or self._closing:
+                return "(Agent war zu lange beschaeftigt - Auftrag ausgelassen.)"
+            if self._stop_watch.wait(0.5):
+                return "(beendet)"
+        alt = self.permissions.confirm_fn
+        self.permissions.confirm_fn = lambda _m, _r=None: False      # ein Agent fragt nicht zurueck
+        schon_weg = self.permissions.away
+        self._last_answer = ""
+        try:
+            if not schon_weg:
+                self.permissions.begin_away()
+            self._answer("\U0001F916 " + text, model_text=self._AGENT_HINWEIS + text, as_notice=True,
+                         notice_level="info")
+        except Exception:  # noqa: BLE001
+            logger.exception("Agent-Auftrag")
+        finally:
+            self.permissions.confirm_fn = alt
+            if not schon_weg:
+                self.permissions.end_away()
+            with self._lock:
+                self.busy = False
+            self._state_changed()
+        return (self._last_answer or "Erledigt.").strip()
+
+    def _agent_schleife_starten(self) -> None:
+        """Nur in einer Agent-Nova: auf Auftraege des Dirigenten warten, erledigen und das Ergebnis ins
+        Protokoll schreiben. Der Agent wird nie von selbst taetig - nur auf Zuruf."""
+        from .. import agenten
+
+        if agenten.aktiv() is None:
+            return
+
+        def lauf() -> None:
+            root = self.config.project_root
+            erledigt: set = set()
+            agenten.status_setzen(root, "frei")
+            while not self._stop_watch.wait(agenten._POLL):
+                try:
+                    for a in agenten.neue_auftraege(root, erledigt):
+                        erledigt.add(a["nr"])
+                        agenten.status_setzen(root, "arbeitet", a["nr"])
+                        self._notice(f"Auftrag {a['nr']} vom Dirigenten: {a['text'][:160]}", "info")
+                        ergebnis = self._agent_turn(a["text"])
+                        agenten.log_anhaengen(root, a["nr"], ergebnis)
+                        agenten.status_setzen(root, "frei", a["nr"])
+                except Exception:  # noqa: BLE001
+                    logger.exception("Agent-Schleife")
+
+        threading.Thread(target=lauf, name="agent-schleife", daemon=True).start()
+
+    def _agenten_api(self) -> dict:
+        """Steuerung der Agent-Fenster fuer das Premium-Max-Werkzeug. Jede Funktion prueft selbst die Stufe
+        und verweigert, wenn diese Nova schon ein Agent ist (ein Agent startet keine weiteren Agenten)."""
+        from .. import agenten
+
+        def erlaubt() -> bool:
+            from .. import premium as PM
+
+            return agenten.aktiv() is None and PM.stufe(self.config.project_root) in ("max", "dev")
+
+        root = lambda: self.config.project_root
+        stufe = lambda: __import__("assistant.premium", fromlist=["x"]).stufe(self.config.project_root)
+
+        def starten(name: str, auftrag: str) -> dict:
+            if not erlaubt():
+                return {"ok": False, "fehler": "Agent-Fenster gibt es nur in Premium Max."}
+            if len(agenten.liste(root())) >= agenten.HOECHSTENS:
+                return {"ok": False, "fehler": f"Es laufen schon {agenten.HOECHSTENS} Agenten - schliess erst welche."}
+            try:
+                a = agenten.starten(self.config, stufe(), name, auftrag)
+            except RuntimeError as exc:
+                return {"ok": False, "fehler": str(exc)}
+            return {"ok": True, "agent": a}
+
+        return {
+            "erlaubt": erlaubt,
+            "starten": starten,
+            "liste": lambda: agenten.liste(root()),
+            "auftrag": lambda ziel, text: agenten.auftrag_geben(root(), ziel, text),
+            "schliessen": lambda ziel="": agenten.schliessen(root(), ziel),
+        }
+
     def startup(self) -> None:
         """Nach dem Oeffnen des Fensters: Hinweise und (hoechstens taeglich) Update-Pruefung."""
         self._abgleich_starten()  # Gedaechtnis mit Cloud/anderen Novas abgleichen (wenn eingerichtet)
@@ -2742,6 +2841,7 @@ class AppController(CLI):
         else:
             threading.Thread(target=self._handy_beim_start, name="handy-rueckstand", daemon=True).start()
         self._sim_auftrag_starten()   # /simulate: frische Sandbox-Nova fuehrt einen Test-Auftrag aus
+        self._agent_schleife_starten()   # Agent-Fenster (Premium Max): auf Auftraege des Dirigenten warten
         try:
             self._sehen_beim_start()
         except Exception as exc:  # noqa: BLE001

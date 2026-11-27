@@ -4,6 +4,16 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.58.0 – 2026-11-27
+
+- **Agenten-Fenster (Premium Max):** Für eine große Aufgabe kann Nova jetzt mehrere
+  echte, sichtbare Helfer-Fenster öffnen – jedes eine eigene Nova. Nova entscheidet,
+  wie viele es braucht, gibt jedem einen Namen und eine Teilaufgabe, dirigiert sie
+  vom Hauptfenster aus und teilt die Arbeit auf, damit es schneller geht. Du kannst
+  den Agenten nicht hineinreden; nur Nova gibt ihnen Aufträge. Alles, was sie machen,
+  wird mitprotokolliert; wenn die Arbeit fertig ist, schließt Nova die Fenster wieder
+  und merkt sich das Wichtige. (Nova fragt kurz nach, bevor Fenster aufgehen.)
+
 ## 0.57.1 – 2026-11-27
 
 - **Dein Zugang bleibt über Updates erhalten:** Deine gekaufte Stufe (und wie lange
