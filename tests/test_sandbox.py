@@ -117,3 +117,12 @@ def test_auftrag_lesen_nur_in_sandbox(cfg, monkeypatch):
     sp = _spawn(cfg)
     S.starten(cfg, None, spawn=sp, auftrag="test")
     assert S.auftrag_lesen(sp.letzter_ordner) == ""     # keine Sandbox -> kein Auftrag
+
+
+def test_lebt_stuerzt_nicht_bei_kaputter_tasklist_ausgabe(monkeypatch):
+    # Regression: tasklist-stdout None (Decode-Fehler in Windows) -> darf nicht "in None" abstuerzen
+    import subprocess
+    class R:
+        stdout = None
+    monkeypatch.setattr(S.subprocess, "run", lambda *a, **k: R())
+    assert S._lebt(12345) in (True, False)   # kein TypeError

@@ -87,10 +87,13 @@ def _lebt(pid: int) -> bool:
         return False
     if sys.platform == "win32":
         try:
+            # errors="ignore": tasklist kann Prozessnamen mit Zeichen ausgeben, die die Windows-Locale nicht
+            # dekodiert - ohne das wird stdout None und "in None" wuerde abstuerzen.
             out = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/NH"], capture_output=True, text=True,
-                                 timeout=10, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).stdout
-            return str(pid) in out
-        except (OSError, subprocess.SubprocessError):
+                                 errors="ignore", timeout=10,
+                                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).stdout
+            return str(pid) in (out or "")
+        except (OSError, subprocess.SubprocessError, ValueError):
             return True   # im Zweifel als laufend zaehlen (lieber eine zu wenig erlauben)
     try:
         os.kill(pid, 0)

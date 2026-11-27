@@ -4,6 +4,12 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.55.1 – 2026-11-27
+
+**Fehler behoben**
+- **`/sandbox` stürzte ab** („argument of type 'NoneType' is not iterable"), wenn gerade ein Programm mit
+  Sonderzeichen im Namen lief – die Prozessliste war dann nicht lesbar. Behoben; die Sandbox startet wieder.
+
 ## 0.55.0 – 2026-11-27
 
 **Unter der Haube**
