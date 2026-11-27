@@ -4,6 +4,45 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.53.0 – 2026-11-27
+
+**Neues Aussehen: Nova als Kommandozentrale**
+- **Vier Stile** zum Aussuchen (Knopf mit der Farbpalette oben rechts – oder sag Nova einfach
+  „mach dich cooler“):
+  - **Cockpit** (neu, Standard): seriös und übersichtlich. Deine Aufträge stehen als klare Befehlszeilen,
+    Novas Antworten als Berichtskarten.
+  - **Neon**: dunkel und cool, mit leuchtendem HUD, Gitter-Hintergrund und Cyan-Akzenten.
+  - **Einfach**: ganz reduziert, mit großer Kugel, großen Knöpfen und nur dem Wichtigsten. Das Menü öffnest
+    du über ☰.
+  - **Klassisch**: das bisherige Aussehen mit Chat-Blasen.
+- **Status-Deck** unter der Kopfzeile (Cockpit/Neon): Gehirn, Prozessor- und Arbeitsspeicher-Auslastung
+  live, was Nova gerade tut, Kosten, Uhrzeit.
+- **Sprachmodus als HUD**: rotierende Ringe um die Kugel, Eckmarken, Uhrzeit und Systemwerte am Rand.
+
+**Neue Werkzeuge für alle**
+- **Rechner** (rechnet exakt statt im Kopf), **Einheiten umrechnen**, **Datum rechnen** (Wochentag,
+  Kalenderwoche, Tage/Werktage zwischen zwei Daten), **Wetter** (ohne Schlüssel, Quelle open-meteo.com)
+  und **PC-Auslastung**.
+- **Skill-Bibliothek**: acht fertige Regeln, die Nova sparsamer, sorgfältiger oder vorsichtiger machen
+  (z. B. „Sparsam“, „Selbst-prüfen“, „Sicher“). `/skill vorlagen` zeigt sie, `/skill vorlage Sparsam`
+  schaltet eine ein.
+
+**Premium 1.4** (mit gültigem Code)
+- **PC-Gesundheitscheck**: Speicherplatz, größte Dateien, Autostarts, mit Tipps. Nova schaut nur und
+  ändert nichts.
+- **Lernkarten** mit Wiederholungssystem: Nova erstellt Karteikarten zu jedem Thema und fragt dich ab.
+- **Gewohnheiten-Tracker** mit Serien und **Haushaltsbuch** mit Budgets und Monatsauswertung.
+- **Premium Max – Ordner-Autopilot**: sortiert z. B. deinen Downloads-Ordner nach Dateityp, mit Vorschau
+  und Rückgängig.
+
+**Sicherheit**
+- Premium lässt sich nicht mehr durch Bearbeiten von Dateien verlängern oder hochstufen. Die Laufzeit
+  ergibt sich nur noch aus unterschriebenen Codes.
+- Nova liest und ändert keine Zugangsdaten außerhalb ihres Ordners (SSH-Schlüssel, gespeicherte
+  GitHub-/Git-/Cloud-Zugänge, den Premium-Signierschlüssel). Ein Befehl, der darauf zugreift, fragt immer
+  nach, auch bei Vollzugriff. Im AFK-Modus geht das gar nicht.
+- Neue automatische Angriffstests für den App-Server.
+
 ## 0.52.0 – 2026-11-27
 
 **Sicherheit: Premium-Codes enthalten nichts Geheimes mehr**

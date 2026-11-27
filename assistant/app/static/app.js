@@ -6074,6 +6074,14 @@
         ':root:where([data-theme="dark"]){' + dark + '}';
     }
     lookStyle.textContent = css;
+    // Stil, den Nova gesetzt hat: beim ersten Laden nur, wenn du selbst noch keinen gewaehlt hast -
+    // danach jedes Mal, wenn Nova ihn aendert ("mach dich cooler" -> neon)
+    if (typeof s.stil === 'string' && STILE.includes(s.stil) && s.stil !== look.serverStil) {
+      let eigener = null;
+      try { eigener = localStorage.getItem('ki-stil'); } catch (_) { /* egal */ }
+      if (look.serverStil !== undefined || !eigener) applyStil(s.stil);
+      look.serverStil = s.stil;
+    } else if (look.serverStil === undefined) look.serverStil = typeof s.stil === 'string' ? s.stil : null;
     look.greeting = typeof s.begruessung === 'string' ? s.begruessung.trim().slice(0, 300) : '';
     look.examples = (Array.isArray(s.beispiele) ? s.beispiele : [])
       .map((x) => (typeof x === 'string' || typeof x === 'number' ? String(x).trim().slice(0, 160) : ''))

@@ -7,7 +7,7 @@ nutzen kann.
 """
 from __future__ import annotations
 
-from . import (abwesenheit, agents, anruf, app_fehler, apps, aussehen, geraete, handy_app, handy_steuerung, wachwort, zeitplan, telegram, bild_tools, computer, filesystem, gehirn, memory_tools,
+from . import (abwesenheit, agents, anruf, app_fehler, apps, aussehen, geraete, handy_app, helfer, handy_steuerung, wachwort, zeitplan, telegram, bild_tools, computer, filesystem, gehirn, memory_tools,
                mitschnitt, sehen, shell, sicherheit, skill, spiel, stimme, system_info, web)
 from .base import Tool, ToolContext, ToolRegistry
 
@@ -44,11 +44,13 @@ def build_registry(include_computer: bool = True, include_agents: bool = True) -
     geraete.register(registry)
     handy_steuerung.register(registry)
     telegram.register(registry)
+    helfer.register(registry)    # Rechner, Einheiten, Datum, Wetter, PC-Auslastung
     return registry
 
 
 # Werkzeuge, die nur lesen - fuer Agenten, die nichts veraendern sollen.
-READ_ONLY_TOOLS = ("datei_lesen", "ordner_auflisten", "web_suche", "web_abrufen", "system_info", "erinnern")
+READ_ONLY_TOOLS = ("datei_lesen", "ordner_auflisten", "web_suche", "web_abrufen", "system_info", "erinnern",
+                   "rechner", "einheiten_umrechnen", "datum_rechnen", "wetter", "pc_auslastung")
 
 
 def subset(registry: ToolRegistry, names) -> ToolRegistry:

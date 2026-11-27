@@ -3341,6 +3341,14 @@ class CLI:
         if sub in ("an", "aus") and args[1:]:
             print(_c("Umgeschaltet." if sk.umschalten(root, args[1], sub == "an") else "Nicht gefunden.", GREEN))
             return
+        if sub in ("vorlagen", "bibliothek"):
+            print(_c("Skill-Bibliothek - einschalten mit /skill vorlage <Name>:", CYAN))
+            print(_c(sk.vorlagen_text(), GREY))
+            return
+        if sub == "vorlage" and args[1:]:
+            ok, msg = sk.vorlage_aktivieren(root, args[1])
+            print(_c(msg, GREEN if ok else YELLOW))
+            return
         skills = sk.laden(root)
         if not skills:
             print(_c("Noch keine Skills. Anlegen: /skill add Knapp 'Antworte extrem kurz, spare Tokens.' "

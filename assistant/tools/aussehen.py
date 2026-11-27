@@ -22,7 +22,9 @@ class AppAnpassenTool(Tool):
         "als Hex wie #22c55e, schriftgroesse 80-140 Prozent, ecken eckig|normal|rund, dichte "
         "kompakt|normal|luftig, begruessung (Text auf dem Startbildschirm), beispiele (Beispiel-Fragen), "
         "avatar sphaere|buchstabe (dein Gesicht in der App), sphaere_farbe als Hex, bewegung "
-        "ruhig|normal|lebhaft), 'css_ersetzen' / 'css_anhaengen' (eigenes CSS fuer alles, was die "
+        "ruhig|normal|lebhaft, stil cockpit|neon|einfach|klassisch = der ganze Stil der App: cockpit = "
+        "serioes mit Systemstatus, neon = dunkel/cool mit Leuchten, einfach = ganz reduziert, klassisch = "
+        "Chat-Blasen), 'css_ersetzen' / 'css_anhaengen' (eigenes CSS fuer alles, was die "
         "Vorlagen nicht abdecken; die App nutzt CSS-Variablen wie --accent, --bg, --surface, --text, "
         "--radius, --font-scale), 'zuruecksetzen' (Original-Aussehen, loescht auch Hintergrundbild). "
         "Leerer Wert bei 'setzen' = diese Einstellung zuruecksetzen."
@@ -44,6 +46,7 @@ class AppAnpassenTool(Tool):
             "avatar": {"type": "string"},
             "sphaere_farbe": {"type": "string"},
             "bewegung": {"type": "string"},
+            "stil": {"type": "string", "enum": ["cockpit", "neon", "einfach", "klassisch"]},
             "css": {"type": "string"},
         },
         "required": ["aktion"],

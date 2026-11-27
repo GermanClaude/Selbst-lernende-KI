@@ -60,3 +60,11 @@ def test_werkzeug_skill(tmp_path):
     assert skills[0].provider == "venice"  # nur_dieses_gehirn -> aktives Gehirn
     out2, _ = reg.execute(ctx, "skill", {"aktion": "liste"})
     assert "Sparsam" in out2
+
+
+def test_skill_bibliothek(tmp_path):
+    from assistant import skills as sk
+    assert "Sparsam" in sk.vorlagen_text()
+    ok, _ = sk.vorlage_aktivieren(tmp_path, "sparsam")
+    assert ok and any(s.name == "Sparsam" for s in sk.laden(tmp_path))
+    assert not sk.vorlage_aktivieren(tmp_path, "gibtsnicht")[0]

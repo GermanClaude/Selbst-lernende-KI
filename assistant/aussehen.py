@@ -26,6 +26,7 @@ CHOICES = {
     "dichte": ("kompakt", "normal", "luftig"),
     "avatar": ("sphaere", "buchstabe"),           # Novas Gesicht: leuchtende Sphaere oder Buchstabe
     "bewegung": ("ruhig", "normal", "lebhaft"),   # wie lebendig die Sphaere sich bewegt
+    "stil": ("cockpit", "neon", "einfach", "klassisch"),   # Gesamt-Stil der App (siehe app.css "STILE")
 }
 _HEX = re.compile(r"^#(?:[0-9a-fA-F]{3}){1,2}$")
 

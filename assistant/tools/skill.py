@@ -14,13 +14,14 @@ class SkillTool(Tool):
         "Legt eine dauerhafte Regel/Verhaltensweise fuer DICH an (einen 'Skill') oder listet/loescht "
         "sie - z.B. 'Antworte extrem knapp, um Tokens zu sparen'. aktion: 'hinzufuegen' (name, anweisung; "
         "nur_dieses_gehirn=true -> gilt nur fuer das gerade aktive Gehirn, sonst fuer alle), 'liste', "
-        "'entfernen' (name). Ein Skill ist eine Anweisung in Worten, KEIN Programmcode. Wirkt ab dem "
+        "'entfernen' (name), 'vorlagen' (fertige Optimierungs-Skills zeigen), 'vorlage' (name - eine davon "
+        "einschalten). Ein Skill ist eine Anweisung in Worten, KEIN Programmcode. Wirkt ab dem "
         "naechsten Gespraech. Nur anlegen, wenn dein Mensch das moechte oder dir eine Vorliebe nennt."
     )
     input_schema = {
         "type": "object",
         "properties": {
-            "aktion": {"type": "string", "enum": ["hinzufuegen", "liste", "entfernen"]},
+            "aktion": {"type": "string", "enum": ["hinzufuegen", "liste", "entfernen", "vorlagen", "vorlage"]},
             "name": {"type": "string"},
             "anweisung": {"type": "string"},
             "nur_dieses_gehirn": {"type": "boolean"},
@@ -43,6 +44,10 @@ class SkillTool(Tool):
             return "Skills:\n" + "\n".join(
                 f"- {s.name} ({'alle' if not s.provider else s.provider}{'' if s.an else ', aus'}): {s.anweisung}"
                 for s in skills)
+        if aktion == "vorlagen":
+            return "Skill-Bibliothek (einschalten mit aktion 'vorlage' + name):\n" + sk.vorlagen_text()
+        if aktion == "vorlage":
+            return sk.vorlage_aktivieren(root, name)[1]
         if aktion == "entfernen":
             return "Skill geloescht." if sk.entfernen(root, name) else "Keinen Skill mit dem Namen gefunden."
         provider = config.active_provider if nur_dieses_gehirn else ""
