@@ -400,3 +400,53 @@ def test_fremder_code_in_der_liste_zaehlt_nicht(root):
     d["bis"] = time.time() + 10 * 365 * 86400
     P._speichern(root, d)
     assert P.stufe(root, time.time() + 30 * 86400) is None
+
+
+# -- 0.55: Generator-Modus (ein Passwort schaltet Nova den Generator frei) ------------
+def test_generator_passwort_logik(root, monkeypatch):
+    import hashlib
+    pw = "test-gen-passwort"
+    monkeypatch.setattr(P, "_GEN_HASH", hashlib.pbkdf2_hmac("sha256", pw.encode(), P._GEN_SALZ, 300000).hex())
+    assert P.gen_pin_ok(pw)
+    assert not P.gen_pin_ok("falsch") and not P.gen_pin_ok("") and not P.gen_pin_ok("x" * 100)
+
+
+def test_generator_modus_merken(root):
+    assert P.generator_modus_an(root) is False
+    P.generator_modus_setzen(root, True)
+    assert P.generator_modus_an(root) is True
+    P.generator_modus_setzen(root, False)
+    assert P.generator_modus_an(root) is False
+
+
+def test_generator_block_nur_im_modus(root):
+    import assistant.personality as PR
+    cfg = type("C", (), {"project_root": root})()
+    assert "GENERATOR-MODUS" not in PR._entwickler_block(cfg)
+    P.generator_modus_setzen(root, True)
+    block = PR._entwickler_block(cfg)
+    assert "GENERATOR-MODUS" in block and "/codegenerator" in block
+
+
+def test_generator_datei_gesperrt(root):
+    from assistant.config import PermissionSettings
+    from assistant.permissions import PermissionError_, PermissionManager
+    pm = PermissionManager(PermissionSettings(allow_full_filesystem=True, vollzugriff=True, safe_mode=False),
+                           root / "ws", app_root=root, confirm_fn=lambda m, r: True)
+    with pytest.raises(PermissionError_):
+        pm.resolve_path(str(root / "data" / "generator.json"))
+
+
+def test_generator_passwort_nur_als_hash(root):
+    # das echte Passwort (nur in ~/.nova-premium/pins.json) darf NICHT im Quellcode stehen
+    import json
+    from pathlib import Path
+    pins = Path.home() / ".nova-premium" / "pins.json"
+    if not pins.exists():
+        pytest.skip("keine pins.json")
+    pw = json.loads(pins.read_text()).get("generator_modus")
+    if not pw:
+        pytest.skip("kein generator-Passwort gesetzt")
+    assert P.gen_pin_ok(pw)                      # echtes Passwort oeffnet
+    for mod in (P, __import__("assistant.personality", fromlist=["x"])):
+        assert pw not in Path(mod.__file__).read_text(encoding="utf-8")

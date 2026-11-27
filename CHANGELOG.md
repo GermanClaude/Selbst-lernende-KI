@@ -4,6 +4,12 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.55.0 – 2026-11-27
+
+**Unter der Haube**
+- Verbesserungen rund um die Premium-Einrichtung und die Entwickler-Werkzeuge. Für normale Nutzer ändert
+  sich nichts an der Bedienung.
+
 ## 0.54.1 – 2026-11-27
 
 **Fehler behoben: „Charakter & Profil" und App-Freeze**

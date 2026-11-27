@@ -443,6 +443,51 @@ def cg_pin_ok(pin: str) -> bool:
     return secrets.compare_digest(h, _CG_HASH)
 
 
+# -- Generator-Modus: ein Passwort, mit dem der Entwickler Nova den Generator freischaltet. In diesem Modus
+#    darf Nova den Generator oeffnen und seine Einrichtung erklaeren (Tokens, Render, Rezensionen). Das Passwort
+#    steht nur als Hash im Code; der Klartext liegt beim Entwickler (~/.nova-premium/pins.json).
+_GEN_SALZ = b"nova-gen-1"
+_GEN_HASH = "f6b29c25d528cab16b9f97223667f9a9d07fcfc19a78ec02bff056e0bec585ba"
+
+
+def gen_pin_ok(pin: str) -> bool:
+    if not pin or len(pin) > 64:
+        return False
+    h = hashlib.pbkdf2_hmac("sha256", pin.encode("utf-8"), _GEN_SALZ, 300000).hex()
+    return secrets.compare_digest(h, _GEN_HASH)
+
+
+def _gen_pfad(root) -> Path:
+    return Path(root) / "data" / "generator.json"
+
+
+def generator_modus_an(root) -> bool:
+    try:
+        return bool(json.loads(_gen_pfad(root).read_text(encoding="utf-8")).get("an"))
+    except (OSError, ValueError):
+        return False
+
+
+def generator_modus_setzen(root, an: bool) -> None:
+    p = _gen_pfad(root)
+    if an:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps({"an": True, "seit": time.time()}), encoding="utf-8")
+    else:
+        try:
+            p.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def generator_oeffnen(root):
+    """Generator-Modus einschalten und den Codegenerator holen + oeffnen. Gibt den Pfad zurueck."""
+    generator_modus_setzen(root, True)
+    pfad = codegenerator_holen(root)
+    codegenerator_starten(pfad)
+    return pfad
+
+
 def codegenerator_holen(root, holen: Callable[[str, str], bytes] = _github) -> Path:
     """Laedt den Codegenerator aus dem privaten Repo. Braucht NOVA_PREMIUM_TOKEN (Lesezugang) in der Umgebung
     - das ist bewusst NICHT in einem Code, sondern nur beim Entwickler gesetzt. Als KI.exe die fertige .exe,

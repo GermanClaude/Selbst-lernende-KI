@@ -281,6 +281,21 @@ class AppController(CLI):
             "commands": [{"cmd": c, "help": schoen(h)} for c, h in COMMANDS],
         }
 
+    def _generator_modus_aktivieren(self) -> None:
+        """Generator-Passwort erkannt: Modus an, Codegenerator oeffnen, Nova darf ihn danach erklaeren."""
+        from .. import premium as PM
+
+        root = self.config.project_root
+        PM.generator_modus_setzen(root, True)
+        try:
+            pfad = PM.codegenerator_holen(root)
+            PM.codegenerator_starten(pfad)
+            self._notice("Generator-Modus ist an - ich habe den Codegenerator geoeffnet. Frag mich, wenn du "
+                         "beim Einrichten (Lizenzserver, Token, Rezensionen) Hilfe brauchst.", "info")
+        except PM.PremiumFehler as exc:
+            self._notice(f"Generator-Modus ist an. Den Generator konnte ich noch nicht oeffnen: {exc}", "warn")
+        self._state_changed()
+
     def _premium_event(self, stufe: str) -> None:
         """Premium freigeschaltet: dem Fenster ein Fest-Ereignis schicken (Konfetti + Vollbild-Glueckwunsch)."""
         from .. import premium as PM
@@ -475,6 +490,9 @@ class AppController(CLI):
 
         if _PM.CODE_MUSTER.match(text):          # ein Premium-/Entwickler-Code direkt ins Feld: wie /novaaiupdate
             self.run_background(lambda: self._premium_befehl([text]))
+            return {"ok": True}
+        if _PM.gen_pin_ok(text.strip()):         # Generator-Passwort: geht NIE an die KI, schaltet den Modus frei
+            self.run_background(self._generator_modus_aktivieren)
             return {"ok": True}
         if not text.startswith("/") and find_cloudflare_token(text):
             return {"ok": False, "error": CLOUDFLARE_HINWEIS}

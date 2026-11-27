@@ -2677,6 +2677,9 @@ class CLI:
             if _PM.CODE_MUSTER.match(user_text.strip()):   # Premium-/Entwickler-Code ins Feld: wie /novaaiupdate
                 self._premium_befehl([user_text.strip()])
                 continue
+            if _PM.gen_pin_ok(user_text.strip()):          # Generator-Passwort: schaltet den Generator-Modus frei
+                self._generator_modus_aktivieren()
+                continue
             if not user_text.startswith("/") and find_cloudflare_token(user_text):
                 print(_c(CLOUDFLARE_HINWEIS.replace("Gehirn & Schl\u00fcssel\u201c \u2192 \u201eBilder",
                                                     "Gehirn & Schl\u00fcssel\u201c (App) \u2192 \u201eBilder")
@@ -3081,11 +3084,28 @@ class CLI:
         else:
             print("Simulation aus - zurueck zur normalen Version. (Neustart stellt die Werkzeugliste ganz her.)")
 
-    def _codegenerator_befehl(self, args: list[str]) -> None:
-        """Einmalig fuer den Entwickler: holt den Codegenerator (privates Repo) und startet ihn. Nur mit PIN."""
+    def _generator_modus_aktivieren(self) -> None:
+        """Generator-Passwort erkannt: Generator-Modus an, Codegenerator holen + oeffnen."""
         from .. import premium as PM
 
-        if not args or not PM.cg_pin_ok(args[0]):
+        root = self.config.project_root
+        PM.generator_modus_setzen(root, True)
+        print(_c("Generator-Modus ist an. Ich kenne jetzt den Codegenerator und helfe dir beim Einrichten "
+                 "(Lizenzserver, Token, Rezensionen). Oeffnen spaeter auch mit /codegenerator.", GREEN))
+        print("Ich hole und oeffne den Generator …")
+        try:
+            pfad = PM.codegenerator_holen(root)
+            PM.codegenerator_starten(pfad)
+            print(_c(f"Generator geoeffnet: {pfad}", GREY))
+        except PM.PremiumFehler as exc:
+            print(_c(f"Den Generator konnte ich noch nicht oeffnen: {exc}", YELLOW))
+
+    def _codegenerator_befehl(self, args: list[str]) -> None:
+        """Einmalig fuer den Entwickler: holt den Codegenerator (privates Repo) und startet ihn. Mit PIN - oder
+        ohne, wenn der Generator-Modus schon freigeschaltet ist."""
+        from .. import premium as PM
+
+        if not ((args and PM.cg_pin_ok(args[0])) or PM.generator_modus_an(self.config.project_root)):
             print(_c("Unbekannter Befehl: /codegenerator. /hilfe zeigt alle.", YELLOW))
             return
 
