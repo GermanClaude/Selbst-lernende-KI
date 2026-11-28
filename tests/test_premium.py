@@ -702,3 +702,12 @@ def test_lizenzserver_lokal_setzen_prueft_adresse(root):
 def test_lizenzserver_txt_ist_gesperrt(tmp_path):
     pm = PermissionManager(PermissionSettings(), tmp_path / "ws", app_root=tmp_path)
     assert pm.ist_gesperrt((tmp_path / "data" / "lizenzserver.txt").resolve())
+
+
+def test_lebenszeit_code_nicht_auf_10_jahre_gekappt(root):
+    # Ein 'Lebenszeit'-Code (1000 Jahre) darf nicht mehr auf 10 Jahre gestutzt werden.
+    k = P.kennung(root)
+    jetzt = time.time()
+    lebenszeit = 1000 * 365 * 86400
+    P.einloesen(root, _code(k, "max", dauer=lebenszeit, u=SERVER), jetzt=jetzt)
+    assert P.stufe(root, jetzt + 50 * 365 * 86400) == "max"   # nach 50 Jahren noch aktiv

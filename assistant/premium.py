@@ -213,7 +213,7 @@ def _hoechstens_bis(root, d: dict, n: int = None) -> float:
         if c.get("k") != meine or c.get("t") != d.get("stufe"):
             continue
         dauer = float(c.get("d") or 0) or max(1, int(c.get("m") or 1)) * 30 * _TAG
-        summe += max(60.0, min(dauer, 10 * 365 * _TAG))
+        summe += max(60.0, min(dauer, 1001 * 365 * _TAG))
         fristen.append(float(c.get("b") or 0))
     grenze = (max(fristen) + summe) if fristen else 0.0
     if len(_PRUEF_CACHE) > 64:
@@ -301,7 +301,7 @@ def einloesen(root, code: str, jetzt: float | None = None, n: int = None) -> dic
         neu = {"benutzt": benutzt, "stufe": None, "bis": 0}
     elif c.get("t") in STUFEN:
         dauer = float(c.get("d") or 0) or max(1, int(c.get("m") or 1)) * 30 * _TAG   # Sekunden (Stunden..Jahre)
-        dauer = max(60.0, min(dauer, 10 * 365 * _TAG))
+        dauer = max(60.0, min(dauer, 1001 * 365 * _TAG))
         start = max(jetzt, float(alt.get("bis") or 0)) if alt.get("stufe") == c["t"] else jetzt
         # Nichts Geheimes speichern: nur der (selbst nicht geheime) Code fuer den Lizenzserver und dessen Adresse.
         sauber = "NOVA-" + "".join((code or "").split()).removeprefix("NOVA-").removeprefix("nova-")

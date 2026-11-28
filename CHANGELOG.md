@@ -4,6 +4,12 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.79.0 – 2026-11-28
+
+- **Lebenszeit-Lizenzen möglich:** Codes dürfen jetzt eine Laufzeit bis „Lebenszeit"
+  (rund 1000 Jahre) haben. Vorher wurde jede Laufzeit beim Einlösen auf höchstens
+  10 Jahre gekürzt – ein als „für immer" gedachter Code wäre nach 10 Jahren abgelaufen.
+
 ## 0.78.0 – 2026-11-28
 
 - **No-Code-Upgrade repariert:** Premium ohne Code klappt jetzt auch, wenn du noch **nie**
