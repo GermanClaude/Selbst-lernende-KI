@@ -8,6 +8,9 @@ die KI laeuft dann einfach per Tastatur weiter.
 """
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
 from .logging_setup import get_logger
 
 logger = get_logger()
@@ -575,9 +578,109 @@ ELEVEN_MODELL = "eleven_multilingual_v2"  # gutes Deutsch, stabil fuer lange Tex
 
 _TTS_RATE = 24_000  # OpenAI pcm und ElevenLabs pcm_24000 liefern 24 kHz, 16 bit, mono
 
+# Kokoro-82M: realistische Stimme KOMPLETT lokal (kein Konto, kein Schluessel), als Alternative zu ElevenLabs.
+# Laeuft ueber das Paket 'kokoro-onnx' + zwei Modelldateien (einmaliger Download, ~330 MB). Gibt 24 kHz-Audio.
+KOKORO_RATE = 24_000
+_KOKORO_DIR = Path.home() / ".nova-kokoro"
+_KOKORO_MODELL = _KOKORO_DIR / "kokoro-v1.0.onnx"
+_KOKORO_STIMMEN_DAT = _KOKORO_DIR / "voices-v1.0.bin"
+KOKORO_MODELL_URL = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx"
+KOKORO_STIMMEN_URL = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin"
+KOKORO_PACKAGES = ["kokoro-onnx", "soundfile"]
+KOKORO_STANDARD_STIMME = "af_heart"   # warme Stimme; viele weitere im Modell (af_*, am_*, bf_* ...)
+_kokoro_cache: dict = {}
+
+
+def kokoro_dateien_da() -> bool:
+    """True, wenn die beiden Kokoro-Modelldateien schon heruntergeladen sind."""
+    return _KOKORO_MODELL.exists() and _KOKORO_STIMMEN_DAT.exists()
+
+
+def kokoro_verfuegbar() -> bool:
+    """True, wenn Kokoro genutzt werden kann (Paket installiert UND Modelldateien da)."""
+    return _importable("kokoro_onnx") and kokoro_dateien_da()
+
+
+def _kokoro_laden():
+    """Laedt das Kokoro-Modell einmal und merkt es sich (teuer beim ersten Mal)."""
+    tts = _kokoro_cache.get("tts")
+    if tts is None:
+        from kokoro_onnx import Kokoro
+
+        tts = Kokoro(str(_KOKORO_MODELL), str(_KOKORO_STIMMEN_DAT))
+        _kokoro_cache["tts"] = tts
+    return tts
+
+
+def kokoro_pcm(text: str, voice: str = "", tempo: float = 1.0, sprache: str = "de") -> bytes:
+    """Erzeugt lokal aus Text rohes PCM (24 kHz, 16 bit, mono) mit Kokoro - gleiche Form wie die Cloud-Stimmen."""
+    import numpy as np
+
+    tts = _kokoro_laden()
+    lang = "de" if (sprache or "de").lower().startswith("de") else (sprache or "en-us")
+    try:
+        samples, sr = tts.create(text, voice=(voice or KOKORO_STANDARD_STIMME),
+                                 speed=max(0.5, min(2.0, float(tempo or 1.0))), lang=lang)
+    except TypeError:                      # aeltere Signatur ohne 'lang'
+        samples, sr = tts.create(text, voice=(voice or KOKORO_STANDARD_STIMME),
+                                 speed=max(0.5, min(2.0, float(tempo or 1.0))))
+    samples = np.asarray(samples, dtype="float32").flatten()
+    if sr and sr != KOKORO_RATE:           # sollte 24 kHz sein; sonst einfache Neuabtastung
+        idx = (np.arange(0, len(samples), sr / KOKORO_RATE)).astype(int)
+        samples = samples[idx[idx < len(samples)]]
+    return (np.clip(samples, -1.0, 1.0) * 32767.0).astype("<i2").tobytes()
+
+
+def install_kokoro(run=None, fetch=None, fortschritt=None) -> tuple[bool, str]:
+    """Richtet Kokoro ein: 1) pip install kokoro-onnx soundfile, 2) die zwei Modelldateien laden (~330 MB).
+    'run'/'fetch' sind fuer Tests ueberschreibbar. Gibt (ok, Meldung)."""
+    import subprocess
+    import urllib.request
+
+    run = run or (lambda cmd: subprocess.run(cmd, capture_output=True, text=True))
+    if not _importable("kokoro_onnx"):
+        res = run([sys.executable, "-m", "pip", "install", *KOKORO_PACKAGES])
+        if getattr(res, "returncode", 1) != 0:
+            return False, "Konnte 'kokoro-onnx' nicht installieren: " + (getattr(res, "stderr", "") or "")[-400:]
+    _KOKORO_DIR.mkdir(parents=True, exist_ok=True)
+
+    def hol(url: str, ziel: Path) -> None:
+        if ziel.exists() and ziel.stat().st_size > 1_000_000:
+            return
+        if fetch is not None:
+            ziel.write_bytes(fetch(url))
+            return
+        tmp = ziel.with_suffix(ziel.suffix + ".teil")
+        with urllib.request.urlopen(url, timeout=60) as r:
+            gesamt = int(r.headers.get("Content-Length") or 0)
+            geladen = 0
+            with open(tmp, "wb") as f:
+                while True:
+                    brocken = r.read(1 << 16)
+                    if not brocken:
+                        break
+                    f.write(brocken)
+                    geladen += len(brocken)
+                    if fortschritt and gesamt:
+                        fortschritt(ziel.name, geladen, gesamt)
+        tmp.replace(ziel)
+
+    try:
+        hol(KOKORO_MODELL_URL, _KOKORO_MODELL)
+        hol(KOKORO_STIMMEN_URL, _KOKORO_STIMMEN_DAT)
+    except Exception as exc:  # noqa: BLE001
+        return False, f"Download der Kokoro-Modelldateien ging nicht: {exc}"
+    if not kokoro_dateien_da():
+        return False, "Die Kokoro-Modelldateien fehlen noch."
+    return True, "Kokoro ist eingerichtet - stell die Stimme um mit: /stimme kokoro"
+
+
 STIMMEN = [
     {"id": "frei", "provider": "lokal", "name": "Frei (Computerstimme)", "kostenlos": True,
      "info": "die eingebaute Stimme deines PCs - gratis, offline, ohne Konto"},
+    {"id": "kokoro", "provider": "kokoro", "name": "Kokoro (lokal, realistisch)", "kostenlos": True,
+     "info": "realistische Stimme komplett offline auf deinem PC (Kokoro-82M) - gratis, ohne Konto. "
+             "Einmaliger Download (~330 MB). Englisch top, Deutsch mit leichtem Akzent."},
     {"id": "openai", "provider": "openai", "name": "OpenAI (realistisch)", "kostenlos": False,
      "preis": "ca. 0,60 $ je 1 Mio. Zeichen-Tokens", "schluessel": "openai",
      "info": "natuerliche Stimme ueber deinen vorhandenen ChatGPT-Schluessel (guenstig)"},
@@ -759,13 +862,54 @@ class CloudSpeaker:
             pass
 
 
+class KokoroSpeaker(CloudSpeaker):
+    """Realistische Stimme KOMPLETT lokal (Kokoro-82M, kein Konto/kein Schluessel). Erzeugt PCM 24 kHz
+    und spielt es ueber dieselbe Maschinerie wie CloudSpeaker ab. available=True nur, wenn 'kokoro-onnx'
+    installiert, die Modelldateien da sind UND sich Audio abspielen laesst (sonst nimmt build_speaker 'frei')."""
+
+    def __init__(self, settings, language: str = "de", http=None):
+        import queue as queue_mod
+        import threading
+
+        self.provider = "kokoro"
+        self.key = ""
+        self.settings = settings
+        self.language = language
+        self._http = http
+        self._queue = queue_mod.Queue()
+        self._idle = threading.Event()
+        self._idle.set()
+        self.completed = 0
+        self._generation = 0
+        self._pending = 0
+        self._stop = False
+        self._lock = threading.Lock()
+        self._stream = None
+        self._voice_id = (getattr(settings, "stimme_name", "") or "").strip()
+        self.available = kokoro_verfuegbar() and (self._http is not None or _importable("sounddevice"))
+        self._thread = None
+        if self.available:
+            self._thread = threading.Thread(target=self._run, name="stimme-kokoro", daemon=True)
+            self._thread.start()
+
+    def _synthesize(self, text: str) -> bytes:
+        return kokoro_pcm(text, voice=self._voice_id,
+                          tempo=float(getattr(self.settings, "stimme_tempo", 1.0) or 1.0),
+                          sprache=self.language)
+
+
 def build_speaker(settings, keys: dict | None = None, language: str = "de", http=None):
-    """Baut die passende Stimme: realistisch (OpenAI/ElevenLabs) wenn gewaehlt UND Schluessel da,
-    sonst die kostenlose Computerstimme. Faellt immer sauber auf 'frei' zurueck."""
+    """Baut die passende Stimme: realistisch (Kokoro lokal, oder OpenAI/ElevenLabs mit Schluessel) wenn
+    gewaehlt und verfuegbar, sonst die kostenlose Computerstimme. Faellt immer sauber auf 'frei' zurueck."""
     keys = keys or {}
     stimme = (getattr(settings, "stimme", "") or "frei").strip().lower()
-    provider = {"chatgpt": "openai", "eleven": "elevenlabs", "11labs": "elevenlabs"}.get(stimme, stimme)
-    if provider in ("openai", "elevenlabs"):
+    provider = {"chatgpt": "openai", "eleven": "elevenlabs", "11labs": "elevenlabs",
+                "koko": "kokoro"}.get(stimme, stimme)
+    if provider == "kokoro":
+        spk = KokoroSpeaker(settings, language, http=http)
+        if spk.available:
+            return spk
+    elif provider in ("openai", "elevenlabs"):
         key = keys.get(provider)
         if key:
             spk = CloudSpeaker(provider, key, settings, language, http=http)

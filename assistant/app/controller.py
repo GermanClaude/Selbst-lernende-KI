@@ -2688,9 +2688,14 @@ class AppController(CLI):
         optionen = []
         for e in voicemod.STIMMEN:
             hat = True if e.get("kostenlos") else bool(keys.get(e["id"]))
+            if e["id"] == "kokoro":
+                bereit = voicemod.kokoro_verfuegbar()
+            else:
+                bereit = hat
             optionen.append({"id": e["id"], "name": e["name"], "info": e["info"],
                              "kostenlos": bool(e.get("kostenlos")), "preis": e.get("preis", ""),
-                             "hat_schluessel": hat})
+                             "hat_schluessel": hat, "bereit": bereit,
+                             "braucht_download": e["id"] == "kokoro" and not bereit})
         return {
             "aktiv": self.config.voice.stimme or "frei",
             "name": self.config.voice.stimme_name or "",
@@ -2742,8 +2747,12 @@ class AppController(CLI):
             result = self.set_stimme(str(body.get("stimme", "")), str(body.get("name", "")))
         except ValueError as exc:
             return {"ok": False, "error": str(exc)}
+        if result.get("fehlt_modell"):
+            self._notice("Kokoro ist noch nicht eingerichtet (einmaliger Download ~330 MB). Hol es mit "
+                         "`/stimme kokoro installieren` - bis dahin nehme ich die freie Computerstimme.", "warn")
         self._state_changed()
-        return {"ok": True, "state": self.state(), "fehlt_schluessel": result["fehlt_schluessel"]}
+        return {"ok": True, "state": self.state(), "fehlt_schluessel": result["fehlt_schluessel"],
+                "fehlt_modell": result.get("fehlt_modell", False)}
 
     # -- Schalter -----------------------------------------------------------------
     def toggle(self, name: str, value: bool) -> None:

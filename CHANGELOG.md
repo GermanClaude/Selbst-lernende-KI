@@ -4,6 +4,13 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.82.0 – 2026-11-28
+
+- **Neue Stimme „Kokoro" (lokal & gratis):** eine realistische Vorlese-/Sprachstimme, die
+  **komplett auf deinem PC** läuft – ohne Konto, ohne Schlüssel, als Alternative zu ElevenLabs.
+  Umstellen mit `/stimme kokoro`. Beim ersten Mal lädt Nova das Modell (~330 MB) mit
+  `/stimme kokoro installieren`. Englisch klingt top, Deutsch mit leichtem Akzent.
+
 ## 0.81.0 – 2026-11-28
 
 - **Video-Studio (Premium):** Nova schneidet Videos jetzt schnell und zeigt es dir auf Wunsch
