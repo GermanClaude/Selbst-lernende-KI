@@ -4,6 +4,14 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.63.0 – 2026-11-28
+
+- **Echtheits-Nachweis fürs Premium-Paket (Wasserzeichen):** Das Premium-Paket trägt
+  jetzt ein verstecktes, signiertes Eigentums-Kennzeichen. Nova zeigt im Status, dass
+  die Herkunft signiert ist, und der Entwickler kann jederzeit beweisen, dass der Code
+  von ihm stammt – nur sein privater Schlüssel kann diese Unterschrift erzeugen. Das
+  schützt gegen Nachbau/Diebstahl. Für normale Nutzer ändert sich nichts.
+
 ## 0.62.0 – 2026-11-28
 
 - **Premium-Übersicht – was jede Stufe kann:** Eine neue Übersicht zeigt alle Stufen

@@ -380,7 +380,11 @@ def status_text(root) -> str:
     d, st = lizenz(root), stufe(root)
     if st:
         bis = time.strftime("%d.%m.%Y %H:%M", time.localtime(float(d["bis"])))
-        paket = "geladen" if paket_pfad(root).exists() else "noch nicht geladen"
+        if not paket_pfad(root).exists():
+            paket = "noch nicht geladen"
+        else:
+            e = eigentum_info(root)
+            paket = "geladen, Herkunft signiert" if (e and e.get("ok")) else "geladen"
         return f"{anzeigename(root)} aktiv bis {bis} (Paket {paket})."
     if d.get("stufe") in STUFEN:
         return "Premium ist abgelaufen."
@@ -390,6 +394,36 @@ def status_text(root) -> str:
 # ---------------------------------------------------------------- Premium-Paket (privates Repo)
 def paket_pfad(root) -> Path:
     return Path(root) / "data" / "premium" / "paket.zip"
+
+
+def eigentum_info(root, n: int = None) -> dict | None:
+    """Liest das signierte Eigentums-/Urheber-Kennzeichen (Wasserzeichen) aus dem installierten Paket und
+    prueft die Unterschrift gegen den oeffentlichen Schluessel. Gibt {'ok':bool, ...Angaben} zurueck oder
+    None, wenn kein Paket/Kennzeichen vorhanden ist. Nur der Entwickler kann so eine Unterschrift erzeugen."""
+    pfad = paket_pfad(root)
+    if not pfad.exists():
+        return None
+    try:
+        with zipfile.ZipFile(pfad) as z:
+            roh = z.read("nova_premium/_eigentum.json")
+    except (OSError, KeyError, zipfile.BadZipFile):
+        return None
+    try:
+        huelle = json.loads(roh)
+        inner = base64.b64decode(huelle["daten"])
+        sig = base64.b64decode(huelle["sig"])
+    except (ValueError, KeyError, TypeError):
+        return None
+    ok = signatur_ok(inner, sig, n)
+    claim = {}
+    if ok:
+        try:
+            geladen = json.loads(inner)
+            if isinstance(geladen, dict):
+                claim = {str(k): str(v) for k, v in geladen.items()}
+        except ValueError:
+            pass
+    return {"ok": bool(ok), **claim}
 
 
 def _github(zugang: str, pfad: str, timeout: float = 60.0) -> bytes:

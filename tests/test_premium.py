@@ -637,3 +637,36 @@ def test_uebersicht_markiert_aktive_stufe(root):
 def test_uebersicht_text_nennt_stufennamen(root):
     t = P.uebersicht_text(root)
     assert "Premium Max" in t and "Entwickler" in t and "keine Stufe" in t
+
+
+# -- Eigentums-/Urheber-Wasserzeichen im Paket --------------------------------
+def _paket_mit_eigentum(root, claim=None, kaputt=False):
+    import zipfile as zf
+    inner = json.dumps(claim or {"werk": "Nova Premium", "inhaber": "X"},
+                       separators=(",", ":"), sort_keys=True).encode()
+    sig = _sign(inner)
+    if kaputt:
+        sig = bytes([sig[0] ^ 1]) + sig[1:]
+    huelle = {"daten": base64.b64encode(inner).decode(), "sig": base64.b64encode(sig).decode()}
+    p = P.paket_pfad(root)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with zf.ZipFile(p, "w") as z:
+        z.writestr("nova_premium/__init__.py", "VERSION='x'\n")
+        z.writestr("nova_premium/_eigentum.json", json.dumps(huelle))
+    return p
+
+
+def test_eigentum_echt(root):
+    _paket_mit_eigentum(root, {"werk": "Nova Premium", "inhaber": "GermanClaude / Nova"})
+    info = P.eigentum_info(root)
+    assert info and info["ok"] is True and info["inhaber"] == "GermanClaude / Nova"
+
+
+def test_eigentum_gefaelscht(root):
+    _paket_mit_eigentum(root, kaputt=True)      # Unterschrift verfaelscht
+    info = P.eigentum_info(root)
+    assert info and info["ok"] is False and "inhaber" not in info
+
+
+def test_eigentum_ohne_paket(root):
+    assert P.eigentum_info(root) is None        # noch kein Paket installiert
