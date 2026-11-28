@@ -4,6 +4,14 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.67.0 – 2026-11-28
+
+- **Anmelde-Helfer (Premium):** Nova hilft dir beim Anmelden bei einem Dienst – sie gibt
+  dir die Seite, legt auf Wunsch eine Wegwerf-Mail an, führt dich Schritt für Schritt und
+  holt dir den Bestätigungs-Code aus der Wegwerf-Mail. **Anmelden tust du selbst** –
+  CAPTCHA und der letzte Klick bleiben bei dir, Nova legt nie von allein ein Konto an.
+  Erscheint in der Premium-Übersicht.
+
 ## 0.66.0 – 2026-11-28
 
 - **Codewort-Schutz:** Du kannst ein geheimes Codewort setzen (`/codewort setzen <wort>`).
