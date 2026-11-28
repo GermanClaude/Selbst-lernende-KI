@@ -4,6 +4,13 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.65.0 – 2026-11-28
+
+- **Wegwerf-E-Mail: mehrere Postfächer (Premium):** Deine Wegwerf-Postfächer bleiben
+  jetzt erhalten – legst du ein neues an, bleibt das alte bestehen, und du kannst
+  jederzeit zwischen ihnen wechseln. Du kannst dir auch einen **eigenen Namen** (und
+  eine Domain aus der Liste) wünschen. So nutzt du sie fast wie echte Adressen.
+
 ## 0.64.0 – 2026-11-28
 
 - **Wegwerf-E-Mail (Premium):** Nova kann dir ein temporäres Postfach anlegen und

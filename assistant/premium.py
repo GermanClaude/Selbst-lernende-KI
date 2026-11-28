@@ -55,7 +55,7 @@ FUNKTIONEN = {
         "Gewohnheiten-Tracker mit Serien (premium_gewohnheiten)",
         "Haushaltsbuch mit Budgets und Monatsauswertung (premium_haushaltsbuch)",
         "Agententeam: grosse Aufgaben automatisch aufteilen und abarbeiten lassen (premium_agententeam)",
-        "Wegwerf-E-Mail: temporaeres Postfach fuer Anmeldungen, ohne deine echte Adresse (premium_wegwerf_email)",
+        "Wegwerf-E-Mails: mehrere temporaere Postfaecher (auch mit eigenem Namen) fuer Anmeldungen, ohne deine echte Adresse (premium_wegwerf_email)",
         "Edlere Premium-Optik in der App",
     ],
     "max": [
