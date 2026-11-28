@@ -194,11 +194,21 @@ def nachrichten_holen(root, config, *, holen: Callable[[str], bytes] | None = No
     except Exception:  # noqa: BLE001
         return []
     nachrichten = antwort.get("nachrichten") if isinstance(antwort, dict) else None
-    out = []
+    d = _laden(root)
+    gesehen = set(d.get("gesehene_nachrichten") or [])
+    out, neue_ids = [], []
     for m in (nachrichten or [])[:20]:
-        if isinstance(m, dict) and str(m.get("text") or "").strip():
-            out.append({"text": str(m["text"])[:2000], "zeit": str(m.get("zeit", ""))[:20],
-                        "id": str(m.get("id", ""))[:40]})
+        if not (isinstance(m, dict) and str(m.get("text") or "").strip()):
+            continue
+        mid = str(m.get("id", ""))[:40]
+        if mid and mid in gesehen:
+            continue               # schon gezeigt (v. a. Broadcasts nicht erneut melden)
+        if mid:
+            neue_ids.append(mid)
+        out.append({"text": str(m["text"])[:2000], "zeit": str(m.get("zeit", ""))[:20], "id": mid})
+    if neue_ids:
+        d["gesehene_nachrichten"] = (list(gesehen) + neue_ids)[-200:]
+        _speichern(root, d)
     return out
 
 

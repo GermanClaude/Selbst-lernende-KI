@@ -4,6 +4,12 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.84.1 – 2026-11-28
+
+- Entwickler-Seite der Nutzer-Rückmeldung: das Feedback-Skript (`packaging/nova-feedback.gs`) kann
+  jetzt Nutzer-Pings, Entwickler-Nachrichten und eine signierte Geräte-Sperrliste verwalten
+  (muss einmal neu bereitgestellt werden). Nachrichten werden pro Gerät nur einmal angezeigt.
+
 ## 0.84.0 – 2026-11-28
 
 - **Freiwillige Nutzer-Rückmeldung (opt-in, Standard AUS):** Mit `/mitteilen an [Name]` kannst du dem

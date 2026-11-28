@@ -98,6 +98,13 @@ function doGet(e) {
       '(ausgeblendet).') : 'Rezension nicht gefunden.') + '</p>' + (ok ? '<p style="font-family:sans-serif">' +
       '<a href="' + zurueck + '" target="_top">' + (an ? 'Doch loeschen' : 'Rueckgaengig') + '</a></p>' : ''));
   }
+  if (aktion === 'nachrichten') {   // App holt Entwickler-Nachrichten fuer ihr Geraet (nur bei Zustimmung)
+    var kenn = String(e.parameter.kennung || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40);
+    return antwort({ok: true, nachrichten: nachrichtenFuer(kenn)});
+  }
+  if (aktion === 'geraete_sperre') {   // signierte Geraete-Sperrliste (die App prueft die Unterschrift selbst)
+    return antwort(geraeteSperreHolen());
+  }
   return antwort({ok: true, dienst: 'nova-feedback'});
 }
 
@@ -174,6 +181,15 @@ function verwaltung(d) {
     liste.reverse();
     return {ok: true, rezensionen: liste.slice(0, 200)};
   }
+  if (d.aktion === 'nutzer') {                       // Nutzer-Uebersicht (opt-in Telemetrie)
+    return {ok: true, nutzer: nutzerListe()};
+  }
+  if (d.aktion === 'nachricht') {                    // Nachricht an ein Geraet (id = Kennung) oder alle (leer)
+    return {ok: nachrichtSpeichern(id, String(d.text || ''))};
+  }
+  if (d.aktion === 'geraete_sperre_setzen') {        // signierte Geraete-Sperrliste hinterlegen
+    return geraeteSperreSetzen(d.blob);
+  }
   if (!id) return {ok: false, fehler: 'ungueltig'};
   return {ok: sichtbarSetzen(id, d.aktion === 'wiederherstellen')};
 }
@@ -218,8 +234,12 @@ function doPost(e) {
     if (!lock.tryLock(10000)) {
       return antwort({ok: false, fehler: 'limit'});
     }
-    if (d.aktion === 'liste' || d.aktion === 'loeschen' || d.aktion === 'wiederherstellen') {
-      return antwort(verwaltung(d));
+    if (d.aktion === 'liste' || d.aktion === 'loeschen' || d.aktion === 'wiederherstellen' ||
+        d.aktion === 'nutzer' || d.aktion === 'nachricht' || d.aktion === 'geraete_sperre_setzen') {
+      return antwort(verwaltung(d));   // signierte Entwickler-Aktionen
+    }
+    if (d.aktion === 'telemetrie') {   // Opt-in Nutzer-Ping (unsigniert, wie Feedback) - kein Mailversand
+      return antwort(nutzerUpsert(d));
     }
     var cache = CacheService.getScriptCache();
     var zaehler = Number(cache.get('anzahl') || 0);
@@ -385,4 +405,104 @@ function bildTyp(b) {
 
 function antwort(objekt) {
   return ContentService.createTextOutput(JSON.stringify(objekt)).setMimeType(ContentService.MimeType.JSON);
+}
+
+
+// =====================================================================================
+// Opt-in Nutzer-Uebersicht, Entwickler-Nachrichten (Kundendienst) und Geraete-Sperre.
+// Nutzer-Pings (aktion 'telemetrie') sind UNsigniert (wie Feedback) und landen im Blatt "Nutzer".
+// Admin-Aktionen ('nutzer','nachricht','geraete_sperre_setzen') gehen ueber verwaltung() und sind mit
+// dem privaten Entwickler-Schluessel signiert (aktion|id|zeit). Die Geraete-Sperrliste selbst ist ein
+// zusaetzlich signierter Blob (vom Codegenerator) - hier nur gespeichert und ausgeliefert.
+// =====================================================================================
+var NUTZER_SPALTEN = ['Kennung','Geraet','Name','Kontakt','Stufe','NutzungMin','Version','OS',
+                      'Rezensiert','Markierungen','ErstesMal','ZuletztGesehen'];
+var NACHRICHT_SPALTEN = ['Kennung','Text','Von','Erstellt','ID','Gelesen'];
+
+function mappe() { return blatt().getParent(); }
+
+function _namensblatt(name, spalten) {
+  var m = mappe();
+  var s = m.getSheetByName(name);
+  if (!s) { s = m.insertSheet(name); s.appendRow(spalten); }
+  return s;
+}
+function nutzerSheet()    { return _namensblatt('Nutzer', NUTZER_SPALTEN); }
+function nachrichtSheet() { return _namensblatt('Nachrichten', NACHRICHT_SPALTEN); }
+
+function nutzerUpsert(d) {
+  var kenn = kennungAus({install: d.kennung});
+  if (!kenn) return {ok: false, fehler: 'ungueltig'};
+  var sheet = nutzerSheet();
+  var werte = sheet.getDataRange().getValues();
+  var jetzt = new Date();
+  var flags = (d.flags && d.flags.length) ? d.flags.join('; ').slice(0, 500) : '';
+  var zeile = [kenn, String(d.geraet || '').slice(0, 40), String(d.name || '').slice(0, 40),
+    String(d.kontakt || '').slice(0, 120), String(d.stufe || 'gratis').slice(0, 20),
+    Number(d.nutzung_min) || 0, String(d.version || '').slice(0, 30), String(d.os || '').slice(0, 40),
+    (d.rezensiert ? 'ja' : ''), flags, jetzt, jetzt];
+  for (var i = 1; i < werte.length; i++) {
+    if (String(werte[i][0] || '') === kenn) {
+      zeile[10] = werte[i][10] || jetzt;                 // ErstesMal behalten
+      if (!flags && werte[i][9]) zeile[9] = werte[i][9]; // alte Markierungen nicht ueberschreiben
+      sheet.getRange(i + 1, 1, 1, zeile.length).setValues([zeile]);
+      return {ok: true};
+    }
+  }
+  sheet.appendRow(zeile);
+  return {ok: true};
+}
+
+function nutzerListe() {
+  var werte = nutzerSheet().getDataRange().getValues().slice(1);
+  var liste = werte.map(function (z) {
+    return {kennung: String(z[0] || ''), geraet: String(z[1] || ''), name: String(z[2] || ''),
+            kontakt: String(z[3] || ''), stufe: String(z[4] || 'gratis'), nutzung_min: Number(z[5]) || 0,
+            version: String(z[6] || ''), os: String(z[7] || ''), rezensiert: !!z[8],
+            markierungen: String(z[9] || ''),
+            erstes_mal: z[10] ? Utilities.formatDate(new Date(z[10]), 'Europe/Berlin', 'yyyy-MM-dd') : '',
+            zuletzt: z[11] ? Utilities.formatDate(new Date(z[11]), 'Europe/Berlin', 'yyyy-MM-dd HH:mm') : ''};
+  });
+  liste.reverse();
+  return liste.slice(0, 1000);
+}
+
+function nachrichtSpeichern(kennung, text) {
+  text = String(text || '').slice(0, 2000).trim();
+  if (!text) return false;
+  var ziel = kennung || '*';   // '*' = an alle (Broadcast)
+  nachrichtSheet().appendRow([ziel, text, 'Entwickler', new Date(),
+                              Utilities.getUuid().replace(/-/g, '').slice(0, 16), '']);
+  return true;
+}
+
+function nachrichtenFuer(kennung) {
+  if (!kennung) return [];
+  var sheet = nachrichtSheet();
+  var werte = sheet.getDataRange().getValues();
+  var raus = [];
+  for (var i = 1; i < werte.length; i++) {
+    var z = werte[i];
+    var ziel = String(z[0] || '');
+    if (ziel !== kennung && ziel !== '*') continue;
+    raus.push({text: String(z[1] || ''), zeit: z[3] ? Utilities.formatDate(new Date(z[3]), 'Europe/Berlin', 'yyyy-MM-dd') : '',
+               id: String(z[4] || '')});
+    if (ziel === kennung) { sheet.getRange(i + 1, 6).setValue('ja'); }  // direkte Nachricht: einmal zustellen
+  }
+  return raus.slice(0, 20);
+}
+
+function geraeteSperreSetzen(blob) {
+  // blob = vom Codegenerator signiertes {daten, sig}. Wir speichern es als Text und liefern es unveraendert aus.
+  try {
+    var text = (typeof blob === 'string') ? blob : JSON.stringify(blob);
+    if (text.length > 100000) return {ok: false, fehler: 'zu_gross'};
+    PropertiesService.getScriptProperties().setProperty('geraete_sperre', text);
+    return {ok: true};
+  } catch (err) { return {ok: false, fehler: 'server'}; }
+}
+
+function geraeteSperreHolen() {
+  var text = PropertiesService.getScriptProperties().getProperty('geraete_sperre') || '';
+  try { return text ? JSON.parse(text) : {}; } catch (err) { return {}; }
 }
