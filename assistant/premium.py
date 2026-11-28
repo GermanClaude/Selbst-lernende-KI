@@ -69,6 +69,7 @@ FUNKTIONEN = {
         "Projekt-Baukasten: groessere Sachen (Spiel/App/Webseite) strukturiert bauen - Code selbst, Grafiken per Bild-Werkzeug (premium_baukasten)",
         "Werkzeug-Schmiede: fehlt ein Werkzeug, entwirft Nova es und schlaegt es dir fuers naechste Update vor (premium_werkzeug_schmiede)",
         "Live-Coding-Fenster: sieh live und sichtbar, was Nova gerade schreibt und aendert (premium_live_coding, /livecode)",
+        "Video-Studio: Videos schnell schneiden, Teile herausschneiden, Clips zusammenfuegen, Tempo, Ton weg, Standbild - mit sichtbarem Fortschrittsfenster (premium_video_studio)",
         "Edlere Premium-Optik in der App",
     ],
     "max": [

@@ -4,6 +4,15 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.81.0 – 2026-11-28
+
+- **Video-Studio (Premium):** Nova schneidet Videos jetzt schnell und zeigt es dir auf Wunsch
+  **sichtbar in einem Fenster** (Lade → Schneide → Speichere → Fertig). Sie kann einen Abschnitt
+  behalten, einen Abschnitt herausschneiden, mehrere Clips zusammenfügen, das Tempo ändern, den
+  Ton entfernen oder ein Standbild speichern. Sag ihr einfach, was du willst.
+- Dafür braucht es das kostenlose Programm **ffmpeg**; fehlt es, sagt Nova dir genau, wie du es
+  in einem Schritt installierst.
+
 ## 0.80.0 – 2026-11-28
 
 - **Live-Coding-Fenster (Premium):** Auf Wunsch öffnet Nova ein eigenes Fenster, das **live
