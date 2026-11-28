@@ -64,6 +64,8 @@ FUNKTIONEN = {
         "Persoenliche Chronik: privates Lebens-Logbuch mit Rueckblicken - alles lokal (premium_chronik)",
         "Zweites Gehirn: vernetzte Notizen & Ideen - Nova findet Zusammenhaenge, alles lokal (premium_zweitgehirn)",
         "Schreibt wie du: lernt deinen Schreibstil aus Beispielen und verfasst Texte, die nach dir klingen (premium_schreibstil)",
+        "Reiseplaner: plant Reisen/Ausfluege - Tagesplan und Packliste (premium_reiseplaner)",
+        "Kreativ-Studio: fortlaufendes Schreibprojekt mit Gedaechtnis - Roman/Geschichte/Song weiterschreiben (premium_kreativstudio)",
         "Edlere Premium-Optik in der App",
     ],
     "max": [

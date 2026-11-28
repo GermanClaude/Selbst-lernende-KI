@@ -4,6 +4,13 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.75.0 – 2026-11-28
+
+- **Reiseplaner (Premium):** Nova plant Reisen und Ausflüge – Tag-für-Tag-Gerüst und eine passende
+  **Packliste** (auch nach Jahreszeit); die Details füllt Nova per Websuche.
+- **Kreativ-Studio (Premium):** Ein fortlaufendes Schreibprojekt **mit Gedächtnis** – schreib an deinem
+  Roman, deiner Geschichte oder deinem Song weiter, und es bleibt stimmig („schreib weiter an …").
+
 ## 0.74.0 – 2026-11-28
 
 - **Zweites Gehirn (Premium):** Nova hält deine Gedanken und Ideen als vernetzte Notizen fest,
