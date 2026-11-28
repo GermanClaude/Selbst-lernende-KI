@@ -4,6 +4,14 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.76.0 – 2026-11-28
+
+- **Projekt-Baukasten (Premium):** Für größere Vorhaben (Spiel, App, Webseite) gibt Nova eine klare
+  Struktur vor und hakt die Teile ab – den **Code schreibt sie selbst**, Grafiken macht sie mit ihrem
+  Bild-Werkzeug, für den Rest nutzt sie das passende Werkzeug. So entsteht Schritt für Schritt ein Ganzes.
+- **Werkzeug-Schmiede (Premium):** Fehlt Nova ein Werkzeug, entwirft sie eins und **schlägt es dir vor**,
+  damit du es ins nächste Update für alle übernehmen kannst (sie baut sich nichts heimlich selbst ein).
+
 ## 0.75.0 – 2026-11-28
 
 - **Reiseplaner (Premium):** Nova plant Reisen und Ausflüge – Tag-für-Tag-Gerüst und eine passende

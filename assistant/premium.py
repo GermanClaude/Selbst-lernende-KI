@@ -66,6 +66,8 @@ FUNKTIONEN = {
         "Schreibt wie du: lernt deinen Schreibstil aus Beispielen und verfasst Texte, die nach dir klingen (premium_schreibstil)",
         "Reiseplaner: plant Reisen/Ausfluege - Tagesplan und Packliste (premium_reiseplaner)",
         "Kreativ-Studio: fortlaufendes Schreibprojekt mit Gedaechtnis - Roman/Geschichte/Song weiterschreiben (premium_kreativstudio)",
+        "Projekt-Baukasten: groessere Sachen (Spiel/App/Webseite) strukturiert bauen - Code selbst, Grafiken per Bild-Werkzeug (premium_baukasten)",
+        "Werkzeug-Schmiede: fehlt ein Werkzeug, entwirft Nova es und schlaegt es dir fuers naechste Update vor (premium_werkzeug_schmiede)",
         "Edlere Premium-Optik in der App",
     ],
     "max": [
