@@ -616,3 +616,24 @@ def test_sperre_schlaegt_freischaltung(root, monkeypatch):
     monkeypatch.setattr(P, "_sperrliste_vom_server", lambda server, **kw: _sperrliste(kennungen=[k]))
     P.laden(root, ctl=None, sperrung=True)
     assert P.stufe(root) is None and P.lizenz(root).get("gesperrt")
+
+
+# -- Funktionsuebersicht je Stufe (Anzeige) -----------------------------------
+def test_uebersicht_listet_alle_stufen():
+    u = P.uebersicht()                       # ohne root: keine aktive Stufe
+    assert [s["stufe"] for s in u["stufen"]] == ["premium", "max", "dev"]
+    assert u["aktiv"] is None and all(not s["aktiv"] for s in u["stufen"])
+    assert all(s["funktionen"] for s in u["stufen"])        # jede Stufe nennt Funktionen
+
+
+def test_uebersicht_markiert_aktive_stufe(root):
+    P.einloesen(root, _code(P.kennung(root), "max", 99999, nonce="ab" * 8, u=SERVER))
+    u = P.uebersicht(root)
+    assert u["aktiv"] == "max" and u["aktiv_name"] == "Premium Max"
+    aktive = [s for s in u["stufen"] if s["aktiv"]]
+    assert len(aktive) == 1 and aktive[0]["stufe"] == "max"
+
+
+def test_uebersicht_text_nennt_stufennamen(root):
+    t = P.uebersicht_text(root)
+    assert "Premium Max" in t and "Entwickler" in t and "keine Stufe" in t

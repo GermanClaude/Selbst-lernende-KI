@@ -1270,6 +1270,51 @@
     requestAnimationFrame(() => { const d = byId('pdialog'); if (d) d.focus(); });
   }
   function closePremium() { const m = byId('premmodal'); if (m) m.hidden = true; }
+
+  // Premium-Uebersicht: alle Stufen und ihre Funktionen (aktive hervorgehoben). Holt /api/premium/uebersicht.
+  async function openStufen() {
+    const m = byId('stufenmodal');
+    if (!m) return;
+    let data = null;
+    try { data = await getJson('/api/premium/uebersicht'); } catch (e) { data = null; }
+    renderStufen(data);
+    m.hidden = false;
+    requestAnimationFrame(() => { const d = byId('sdialog'); if (d) d.focus(); });
+  }
+  function closeStufen() { const m = byId('stufenmodal'); if (m) m.hidden = true; }
+  function renderStufen(data) {
+    const box = byId('su-stufen');
+    if (!box) return;
+    box.textContent = '';
+    const stufen = data && Array.isArray(data.stufen) ? data.stufen : [];
+    const intro = byId('su-intro');
+    if (intro) intro.textContent = data && data.aktiv_name
+      ? ('Deine Stufe: ' + data.aktiv_name + '. Was die Stufen können:')
+      : 'Was die einzelnen Stufen können:';
+    for (const s of stufen) {
+      const card = document.createElement('div');
+      card.className = 'su-stufe' + (s.aktiv ? ' su-aktiv' : '');
+      const h = document.createElement('div');
+      h.className = 'su-name';
+      h.textContent = String(s.name || '') + (s.aktiv ? ' · deine Stufe' : '');
+      card.appendChild(h);
+      const ul = document.createElement('ul');
+      ul.className = 'su-feats';
+      for (const f of (s.funktionen || [])) {
+        const li = document.createElement('li');
+        li.textContent = String(f);
+        ul.appendChild(li);
+      }
+      card.appendChild(ul);
+      box.appendChild(card);
+    }
+    if (!stufen.length) {
+      const p = document.createElement('p');
+      p.className = 'klein';
+      p.textContent = 'Übersicht konnte gerade nicht geladen werden.';
+      box.appendChild(p);
+    }
+  }
   async function sendPremium() {
     const btn = byId('pm-send');
     if (btn) btn.disabled = true;
@@ -1309,7 +1354,9 @@
     badge.hidden = false;
     badge.textContent = (stufe === 'dev' ? '◆ Entwickler' : stufe === 'max' ? '★ Premium Max' : '★ Premium')
       + (p.sandbox ? ' · Sandbox' : '');
-    badge.title = 'Premium ist freigeschaltet';
+    badge.title = 'Premium-Übersicht anzeigen';
+    badge.style.cursor = 'pointer';
+    if (!badge._wired) { badge._wired = true; badge.addEventListener('click', openStufen); }
   }
 
   function applyState(s) {
@@ -9855,8 +9902,12 @@
     const px = byId('pm-x'); if (px) px.addEventListener('click', closePremium);
     const ps = byId('pm-send'); if (ps) ps.addEventListener('click', sendPremium);
     const pc = byId('pm-code'); if (pc) pc.addEventListener('click', () => { closePremium(); try { input.focus(); } catch (_) {} });
+    const pov = byId('pm-overview'); if (pov) pov.addEventListener('click', () => { closePremium(); openStufen(); });
     const pst = byId('pm-stufe'); if (pst) pst.addEventListener('change', renderPmFeats);
     const pm = byId('premmodal'); if (pm) pm.addEventListener('click', (e) => { if (e.target === pm) closePremium(); }); }
+  { const sx = byId('su-x'); if (sx) sx.addEventListener('click', closeStufen);
+    const sm = byId('stufenmodal'); if (sm) sm.addEventListener('click', (e) => { if (e.target === sm) closeStufen(); });
+    const sd = byId('sdialog'); if (sd) sd.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); closeStufen(); } }); }
   renderSwitches();
   loadAppearance(false);
   connect();

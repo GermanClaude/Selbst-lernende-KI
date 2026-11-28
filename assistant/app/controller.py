@@ -308,6 +308,12 @@ class AppController(CLI):
                      "funktionen": PM.FUNKTIONEN.get(stufe, [])})
         self._state_changed()   # Seitenleiste/Abzeichen gleich aktualisieren
 
+    def premium_uebersicht(self) -> dict:
+        """Alle Stufen und ihre Funktionen - fuer die Uebersicht im Fenster (aktive Stufe hervorgehoben)."""
+        from .. import premium as PM
+
+        return PM.uebersicht(self.config.project_root)
+
     def premium_anfrage(self, stufe: str, tage, betrag, notiz: str) -> dict:
         """'Premium anfragen': schickt die Anfrage an den Entwickler (Gmail + Discord). Kein echtes Geld."""
         from .. import premium as PM

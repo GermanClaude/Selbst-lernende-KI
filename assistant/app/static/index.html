@@ -953,9 +953,24 @@
       </div>
     </div>
     <div class="dlg-foot">
+      <button class="btn ghost" id="pm-overview" type="button">Alle Stufen ansehen</button>
       <button class="btn ghost" id="pm-code" type="button">Ich habe schon einen Code</button>
       <span class="tour-gap"></span>
       <button class="btn primary" id="pm-send" type="button">Anfrage senden</button>
+    </div>
+  </div>
+</div>
+
+<!-- Premium-Übersicht: alle Stufen und ihre Funktionen (aktive Stufe hervorgehoben) -->
+<div class="modal stufenmodal" id="stufenmodal" hidden>
+  <div class="dialog sdialog" id="sdialog" role="dialog" aria-modal="true" aria-labelledby="su-title" tabindex="-1">
+    <div class="dlg-head">
+      <h2 class="dlg-title" id="su-title">★ Premium-Übersicht</h2>
+      <button class="icon-btn dlg-x" id="su-x" type="button" aria-label="Schließen" data-icon="x"></button>
+    </div>
+    <div class="dlg-body su-body">
+      <p class="su-intro" id="su-intro">Was die einzelnen Stufen können:</p>
+      <div class="su-stufen" id="su-stufen"></div>
     </div>
   </div>
 </div>

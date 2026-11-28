@@ -248,6 +248,8 @@ class AppServer:
                     return self._json(ctl.setup_info())
                 if url.path == "/api/feedback":
                     return self._json(ctl.feedback_status())
+                if url.path == "/api/premium/uebersicht":   # alle Stufen + Funktionen (aktive hervorgehoben)
+                    return self._json(ctl.premium_uebersicht())
                 if url.path == "/api/bewertungen":
                     return self._json(ctl.bewertungen())
                 if url.path == "/api/ollama":

@@ -2824,6 +2824,9 @@ class CLI:
             print(__doc__)
         elif base == "/status":
             self._print_status()
+        elif base in ("/funktionen", "/stufen", "/premiumfunktionen"):
+            from .. import premium as PM
+            print(PM.uebersicht_text(self.config.project_root))
         elif base in ("/gedaechtnis", "/memory"):
             self._print_memory()
         elif base in ("/kosten", "/cost"):

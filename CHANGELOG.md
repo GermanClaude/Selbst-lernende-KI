@@ -4,6 +4,13 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.62.0 – 2026-11-28
+
+- **Premium-Übersicht – was jede Stufe kann:** Eine neue Übersicht zeigt alle Stufen
+  (Premium / Premium Max / Entwickler) mit ihren Funktionen und hebt deine aktuelle
+  Stufe hervor. Im Fenster per Klick auf das Premium-Abzeichen oben rechts (oder
+  „Alle Stufen ansehen" im Premium-Dialog), im Terminal mit `/funktionen`.
+
 ## 0.61.0 – 2026-11-28
 
 - **Codegenerator verschlüsselt abgelegt (nur Entwickler):** Der private Codegenerator

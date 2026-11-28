@@ -3832,3 +3832,13 @@ body:not(.premium) .sb-premium { background: linear-gradient(90deg, color-mix(in
 .jv[data-state="hearing"] .jv-ring.r1 { border-color: color-mix(in srgb, #5eead4 70%, transparent); }
 @keyframes jv-ring-dreh { to { transform: rotate(360deg); } }
 @media (max-width: 600px) { .jv-hud-l b { font-size: 17px; } .jv-ring.r3 { display: none; } }
+
+/* Premium-Uebersicht (Stufen & Funktionen) */
+.su-stufen { display: flex; flex-direction: column; gap: 12px; }
+.su-stufe { border: 1px solid var(--border, #2a2f39); border-radius: calc(var(--radius, 12px) * 0.833); padding: 12px 14px; }
+.su-stufe.su-aktiv { border-color: #d9b45b; box-shadow: inset 0 0 0 1px #d9b45b; }
+.su-name { font-weight: 600; margin-bottom: 6px; }
+.su-stufe.su-aktiv .su-name { color: #d9b45b; }
+.su-feats { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 3px; }
+.su-feats li { line-height: 1.35; }
+.su-intro { margin: 0 0 12px; opacity: .85; }

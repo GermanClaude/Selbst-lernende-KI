@@ -78,6 +78,28 @@ def glueckwunsch(stufe: str) -> str:
     punkte = "\n".join("  ✓ " + f for f in FUNKTIONEN.get(stufe, []))
     return (f"\U0001F389 Herzlichen Glueckwunsch - {name} ist freigeschaltet!\n\n"
             f"Das hast du jetzt:\n{punkte}\n")
+
+
+def uebersicht(root=None, jetzt: float | None = None) -> dict:
+    """Alle Stufen mit ihren Funktionen - fuer eine Uebersicht in der App und im Terminal.
+    'aktiv' ist die gerade gueltige Stufe (oder None), damit die App sie hervorheben kann."""
+    aktiv = stufe(root, jetzt) if root is not None else None
+    stufen = [{"stufe": s, "name": STUFEN.get(s, s), "funktionen": list(FUNKTIONEN.get(s, [])),
+               "aktiv": s == aktiv} for s in ("premium", "max", "dev")]
+    return {"aktiv": aktiv, "aktiv_name": (STUFEN.get(aktiv) if aktiv else None), "stufen": stufen}
+
+
+def uebersicht_text(root=None, jetzt: float | None = None) -> str:
+    """Dieselbe Uebersicht als lesbarer Text (fuer das Terminal und zum Vorlesen)."""
+    u = uebersicht(root, jetzt)
+    zeilen = ["Was die Nova-Stufen koennen:"]
+    for s in u["stufen"]:
+        marke = "  <- deine Stufe" if s["aktiv"] else ""
+        zeilen.append(f"\n{s['name']} ({s['stufe']}){marke}")
+        zeilen += ["  - " + f for f in s["funktionen"]]
+    if not u["aktiv"]:
+        zeilen.append("\nDu hast aktuell keine Stufe freigeschaltet.")
+    return "\n".join(zeilen)
 PAKET_REPO = "GermanClaude/Nova-Premium"   # privat - nur der Lizenzserver hat einen Lesezugang
 SPERR_PFAD = "pakete/gesperrt.json"       # signierte Liste gesperrter Codes (Entwickler kann Zugang zuruecknehmen)
 FREI_PFAD = "pakete/freischaltung.json"   # signierte Liste: Stufen, die der Entwickler per Geraete-Kennung
