@@ -2699,7 +2699,7 @@ class CLI:
                          "/novaaiupdate <dein Schluessel> - so wird er nie aus Versehen aktiviert.", YELLOW))
                 continue
             if _PM.gen_pin_ok(user_text.strip()):          # Generator-Passwort: schaltet den Generator-Modus frei
-                self._generator_modus_aktivieren()
+                self._generator_modus_aktivieren(user_text.strip())
                 continue
             if not user_text.startswith("/") and find_cloudflare_token(user_text):
                 print(_c(CLOUDFLARE_HINWEIS.replace("Gehirn & Schl\u00fcssel\u201c \u2192 \u201eBilder",
@@ -3105,17 +3105,20 @@ class CLI:
         else:
             print("Simulation aus - zurueck zur normalen Version. (Neustart stellt die Werkzeugliste ganz her.)")
 
-    def _generator_modus_aktivieren(self) -> None:
-        """Generator-Passwort erkannt: Generator-Modus an, Codegenerator holen + oeffnen."""
+    def _generator_modus_aktivieren(self, passwort: str = "") -> None:
+        """Generator-Passwort erkannt: Generator-Modus an, Codegenerator (verschluesselt im Repo) entschluesseln
+        und oeffnen. Das Passwort bleibt nur im Speicher dieser Sitzung (nie auf die Platte)."""
         from .. import premium as PM
 
         root = self.config.project_root
         PM.generator_modus_setzen(root, True)
+        if passwort:
+            self._gen_pw = passwort      # nur im RAM, fuer spaetere /codegenerator-Oeffnungen dieser Sitzung
         print(_c("Generator-Modus ist an. Ich kenne jetzt den Codegenerator und helfe dir beim Einrichten "
                  "(Lizenzserver, Token, Rezensionen). Oeffnen spaeter auch mit /codegenerator.", GREEN))
         print("Ich hole und oeffne den Generator …")
         try:
-            pfad = PM.codegenerator_holen(root)
+            pfad = PM.codegenerator_holen(root, passwort=passwort or self.__dict__.get("_gen_pw", ""))
             PM.codegenerator_starten(pfad)
             print(_c(f"Generator geoeffnet: {pfad}", GREY))
         except PM.PremiumFehler as exc:
@@ -3126,16 +3129,25 @@ class CLI:
         ohne, wenn der Generator-Modus schon freigeschaltet ist."""
         from .. import premium as PM
 
-        if not ((args and PM.cg_pin_ok(args[0])) or PM.generator_modus_an(self.config.project_root)):
+        root = self.config.project_root
+        # Schluessel zum Entschluesseln ist das Generator-Passwort: als Argument, sonst aus dieser Sitzung gemerkt.
+        pw = args[0].strip() if (args and PM.gen_pin_ok(args[0].strip())) else self.__dict__.get("_gen_pw", "")
+        erlaubt = bool(pw) or (args and PM.cg_pin_ok(args[0])) or PM.generator_modus_an(root)
+        if not erlaubt:
             print(_c("Unbekannter Befehl: /codegenerator. /hilfe zeigt alle.", YELLOW))
+            return
+        if not pw:
+            print(_c("Der Generator liegt verschluesselt im Repo. Gib einmal dein Generator-Passwort ein (dann "
+                     "merke ich es fuer diese Sitzung) - oder: /codegenerator <Generator-Passwort>.", YELLOW))
             return
 
         print("Hole den Codegenerator aus dem privaten Repo …")
         try:
-            pfad = PM.codegenerator_holen(self.config.project_root)
+            pfad = PM.codegenerator_holen(root, passwort=pw)
         except PM.PremiumFehler as exc:
             print(_c(f"Ging nicht: {exc}", YELLOW))
             return
+        self._gen_pw = pw
         print(f"Codegenerator gespeichert: {pfad}")
         try:
             PM.codegenerator_starten(pfad)

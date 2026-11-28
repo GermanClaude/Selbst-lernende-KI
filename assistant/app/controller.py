@@ -282,14 +282,17 @@ class AppController(CLI):
             "commands": [{"cmd": c, "help": schoen(h)} for c, h in COMMANDS],
         }
 
-    def _generator_modus_aktivieren(self) -> None:
-        """Generator-Passwort erkannt: Modus an, Codegenerator oeffnen, Nova darf ihn danach erklaeren."""
+    def _generator_modus_aktivieren(self, passwort: str = "") -> None:
+        """Generator-Passwort erkannt: Modus an, Codegenerator (verschluesselt im Repo) entschluesseln und
+        oeffnen, Nova darf ihn danach erklaeren. Das Passwort bleibt nur im Speicher (nie auf die Platte)."""
         from .. import premium as PM
 
         root = self.config.project_root
         PM.generator_modus_setzen(root, True)
+        if passwort:
+            self._gen_pw = passwort      # nur im RAM, fuer spaetere /codegenerator-Oeffnungen dieser Sitzung
         try:
-            pfad = PM.codegenerator_holen(root)
+            pfad = PM.codegenerator_holen(root, passwort=passwort or self.__dict__.get("_gen_pw", ""))
             PM.codegenerator_starten(pfad)
             self._notice("Generator-Modus ist an - ich habe den Codegenerator geoeffnet. Frag mich, wenn du "
                          "beim Einrichten (Lizenzserver, Token, Rezensionen) Hilfe brauchst.", "info")
@@ -495,7 +498,8 @@ class AppController(CLI):
                          "/novaaiupdate <dein Schluessel> - so wird er nie aus Versehen aktiviert.", "info")
             return {"ok": True}
         if _PM.gen_pin_ok(text.strip()):         # Generator-Passwort: geht NIE an die KI, schaltet den Modus frei
-            self.run_background(self._generator_modus_aktivieren)
+            pw = text.strip()                    # zum Entschluesseln des Generators (nur lokal, nie gespeichert)
+            self.run_background(lambda: self._generator_modus_aktivieren(pw))
             return {"ok": True}
         if not text.startswith("/") and find_cloudflare_token(text):
             return {"ok": False, "error": CLOUDFLARE_HINWEIS}

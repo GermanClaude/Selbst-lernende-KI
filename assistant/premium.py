@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import hmac
 import io
 import json
 import re
@@ -26,6 +27,7 @@ import time
 import urllib.error
 import urllib.request
 import zipfile
+import zlib
 from pathlib import Path
 from typing import Callable
 
@@ -527,7 +529,46 @@ def laden(root, ctl, n: int = None, sperrung=True):
 
 
 # ---------------------------------------------------------------- Codegenerator (nur Entwickler)
-GENERATOR_PFAD = "werkzeuge/codegenerator.py"
+# Der Codegenerator liegt im privaten Repo NUR VERSCHLUESSELT (mit dem Generator-Passwort). Selbst wer
+# Lesezugang zum Repo bekommt, sieht keinen lesbaren Generator-Code. Entschluesselt wird erst hier, lokal,
+# wenn der Entwickler sein Generator-Passwort eingibt. Format: _GENV_KOPF + salz(16) + nonce(16) + marke(32)
+# + geheim; Encrypt-then-MAC, binaersicher. Dasselbe Verfahren steht im Verschluesselungs-Skript des Repos.
+GENERATOR_ENC_PFAD = "werkzeuge/codegenerator.py.enc"
+GENERATOR_EXE_ENC_PFAD = "werkzeuge/Nova-Codegenerator.exe.enc"
+_GENV_KOPF = b"NOVAGEN1"
+_GENV_RUNDEN = 200000
+
+
+def _genv_schluessel(passwort: str, salz: bytes) -> tuple[bytes, bytes]:
+    roh = hashlib.pbkdf2_hmac("sha256", (passwort or "").encode("utf-8"), salz, _GENV_RUNDEN, dklen=64)
+    return roh[:32], roh[32:]
+
+
+def _genv_strom(k: bytes, nonce: bytes, laenge: int) -> bytes:
+    roh = b"".join(hmac.new(k, nonce + i.to_bytes(8, "big"), hashlib.sha256).digest()
+                   for i in range((laenge + 31) // 32))
+    return roh[:laenge]
+
+
+def generator_entschluesseln(blob: bytes, passwort: str) -> bytes:
+    """Den verschluesselten Generator-Blob aus dem Repo entschluesseln (nur mit dem Generator-Passwort).
+    Gibt die Klartext-Bytes zurueck (die .py-Quelle bzw. die .exe). Wirft PremiumFehler bei falschem Passwort."""
+    n = len(_GENV_KOPF)
+    if not blob.startswith(_GENV_KOPF) or len(blob) < n + 64:
+        raise PremiumFehler("Der verschluesselte Generator ist beschaedigt oder hat ein unbekanntes Format.")
+    salz, nonce, marke, geheim = blob[n:n + 16], blob[n + 16:n + 32], blob[n + 32:n + 64], blob[n + 64:]
+    k_enc, k_mac = _genv_schluessel(passwort, salz)
+    if not hmac.compare_digest(marke, hmac.new(k_mac, _GENV_KOPF + salz + nonce + geheim, hashlib.sha256).digest()):
+        raise PremiumFehler("Das Generator-Passwort passt nicht (oder die Datei wurde veraendert).")
+    strom = _genv_strom(k_enc, nonce, len(geheim))
+    klar = (int.from_bytes(geheim, "big") ^ int.from_bytes(strom, "big")).to_bytes(len(geheim), "big") if geheim else b""
+    try:
+        return zlib.decompress(klar)
+    except zlib.error as exc:
+        raise PremiumFehler("Der Generator liess sich nicht entschluesseln.") from exc
+
+
+GENERATOR_PFAD = "werkzeuge/codegenerator.py"   # nur noch fuer aeltere Hinweise - im Repo liegt der .enc-Blob
 _CG_SALZ = b"nova-cg-1"
 _CG_HASH = "93469410b2f927097437a4079870e29ceb98c0bfa10e9d8002e8a6c57f0e54f0"
 
@@ -577,25 +618,29 @@ def generator_modus_setzen(root, an: bool) -> None:
             pass
 
 
-def generator_oeffnen(root):
+def generator_oeffnen(root, passwort: str = ""):
     """Generator-Modus einschalten und den Codegenerator holen + oeffnen. Gibt den Pfad zurueck."""
     generator_modus_setzen(root, True)
-    pfad = codegenerator_holen(root)
+    pfad = codegenerator_holen(root, passwort=passwort)
     codegenerator_starten(pfad)
     return pfad
 
 
-def codegenerator_holen(root, holen: Callable[[str, str], bytes] = _github) -> Path:
-    """Laedt den Codegenerator aus dem privaten Repo. Braucht NOVA_PREMIUM_TOKEN (Lesezugang) in der Umgebung
-    - das ist bewusst NICHT in einem Code, sondern nur beim Entwickler gesetzt. Als KI.exe die fertige .exe,
-    aus dem Quellcode die .py."""
+def codegenerator_holen(root, holen: Callable[[str, str], bytes] = _github, passwort: str = "") -> Path:
+    """Laedt den (verschluesselten) Codegenerator aus dem privaten Repo und entschluesselt ihn lokal.
+    Braucht NOVA_PREMIUM_TOKEN (Lesezugang, nur beim Entwickler) UND das Generator-Passwort (zum Entschluesseln
+    - steht nirgends im Repo). Als KI.exe die .exe, aus dem Quellcode die .py."""
     import os
 
     token = os.environ.get("NOVA_PREMIUM_TOKEN", "").strip()
     if not token:
         raise PremiumFehler("Dafuer muss NOVA_PREMIUM_TOKEN (Lesezugang zum privaten Repo) in der .env stehen.")
+    if not (passwort or "").strip():
+        raise PremiumFehler("Zum Oeffnen des (verschluesselten) Generators brauche ich einmal dein "
+                            "Generator-Passwort - gib es bitte ein.")
     exe = getattr(sys, "frozen", False)
-    daten = holen(token, "werkzeuge/Nova-Codegenerator.exe" if exe else GENERATOR_PFAD)
+    blob = holen(token, GENERATOR_EXE_ENC_PFAD if exe else GENERATOR_ENC_PFAD)
+    daten = generator_entschluesseln(blob, passwort)     # nur mit richtigem Passwort lesbar
     ziel = Path(root) / "data" / "premium" / ("Nova-Codegenerator.exe" if exe else "codegenerator.py")
     ziel.parent.mkdir(parents=True, exist_ok=True)
     ziel.write_bytes(daten)

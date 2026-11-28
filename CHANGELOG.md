@@ -4,6 +4,14 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.61.0 – 2026-11-28
+
+- **Codegenerator verschlüsselt abgelegt (nur Entwickler):** Der private Codegenerator
+  liegt im geschlossenen Repo jetzt nur noch verschlüsselt – selbst mit Lesezugriff
+  bekäme niemand lesbaren Generator-Code zu sehen. Entschlüsselt wird er erst lokal
+  auf deinem PC, wenn du dein Generator-Passwort eingibst. Für normale Nutzer ändert
+  sich nichts; das betrifft nur die Entwickler-Werkzeuge.
+
 ## 0.60.0 – 2026-11-28
 
 - **Jemanden anrufen – sicherer Dialer:** Nova hilft dir jetzt beim Anrufen
