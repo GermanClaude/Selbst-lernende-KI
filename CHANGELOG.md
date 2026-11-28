@@ -4,6 +4,15 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.60.0 – 2026-11-28
+
+- **Jemanden anrufen – sicherer Dialer:** Nova hilft dir jetzt beim Anrufen
+  anderer. Sag ihr z. B. „ruf beim Zahnarzt an, hier ist die Nummer" oder gib ihr
+  eine Nummer von einer Webseite – sie öffnet den Telefon-Dialer (am Handy oder am
+  PC) mit der Nummer schon eingetippt. **Anrufen musst du selbst** – Nova wählt nie
+  von allein. (Das ist etwas anderes als „ruf mich an": dort ruft Nova mit
+  KI-Stimme nur deine eigene hinterlegte Nummer an.)
+
 ## 0.59.0 – 2026-11-28
 
 - **Stufe ohne Code freischalten (No-Code-Upgrade):** Der Entwickler kann einem

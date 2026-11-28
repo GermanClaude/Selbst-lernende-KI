@@ -229,6 +229,7 @@ class CLI:
         self.tool_ctx.extra["app_root"] = config.project_root
         self.tool_ctx.extra["tresor_filler"] = lambda daten: __import__("assistant.tresor", fromlist=["x"]).tippe_login(daten, self.config.ki.name)
         self.tool_ctx.extra["ki_name"] = lambda: self.config.ki.name  # z.B. fuer Anrufe ("Hallo, hier ist ...")
+        self.tool_ctx.extra["dialer_oeffnen"] = self._dialer_oeffnen   # Telefon-Dialer oeffnen (nur oeffnen)
         self.tool_ctx.extra["fehler_liste"] = lambda: list(self.__dict__.get("_fehler", []))  # Werkzeug app_fehler
         self.tool_ctx.extra["handy_aktiv"] = self._handy_aktiv  # Werkzeug telegram: nichts wegschnappen
         self._afk_pending: dict | None = None        # AFK-Modus vorgemerkt (Werkzeug abwesenheit)
@@ -944,6 +945,25 @@ class CLI:
             return ist_ja(antwort.text)
 
         return bestaetige
+
+    def _dialer_oeffnen(self, nummer: str, wer: str = "") -> str:
+        """Im Terminal (kein Fenster): den Telefon-Dialer des Betriebssystems ueber einen tel:-Link oeffnen -
+        nur oeffnen, nicht waehlen. Der Mensch drueckt selbst auf Anrufen."""
+        import subprocess
+        import sys as _sys
+
+        ziel = "tel:" + str(nummer)
+        try:
+            if _sys.platform.startswith("win"):
+                os.startfile(ziel)  # type: ignore[attr-defined]  # oeffnet den registrierten tel-Handler
+            elif _sys.platform == "darwin":
+                subprocess.Popen(["open", ziel])
+            else:
+                subprocess.Popen(["xdg-open", ziel])
+        except Exception as exc:  # noqa: BLE001
+            return f"Ich konnte den Dialer nicht oeffnen ({exc}). Die Nummer zum Anrufen: {nummer}"
+        return (f"\U0001F4DE Dialer geoeffnet mit {nummer}{(' - ' + wer) if wer else ''} - "
+                "druecke selbst auf Anrufen (ich waehle nie von allein).")
 
     def _handy_aktiv(self) -> bool:
         """Laeuft der Fernzugriff gerade (Terminal-Schleife oder Hintergrund-Thread der App)?"""

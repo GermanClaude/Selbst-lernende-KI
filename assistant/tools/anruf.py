@@ -1,12 +1,26 @@
-"""Werkzeug: Nova ruft ihren Menschen an (Bland AI oder Vonage) - nur die hinterlegte eigene Nummer."""
+"""Werkzeuge rund ums Telefon:
+- 'anrufen': Nova ruft ihren Menschen an (Bland AI oder Vonage) - nur die hinterlegte eigene Nummer.
+- 'telefon_waehlen': oeffnet den Dialer mit einer beliebigen Nummer - waehlt aber NIE selbst (der Mensch
+  drueckt auf Anrufen). So kann Nova beim Anrufen Dritter helfen, ohne je von sich aus zu telefonieren."""
 from __future__ import annotations
 
 import os
+import re
 
 from .. import anruf as anruf_mod
 from .. import anruf_vonage as vonage_mod
 from ..permissions import Risk
 from .base import Tool, ToolContext
+
+
+def dialer_nummer(text: str) -> str | None:
+    """Rufnummer fuer den Dialer: erst sauber als E.164 (normalisiere_nummer), sonst nur +, Ziffern, * und #
+    behalten (z.B. Sonder-/Kurznummern). None, wenn zu wenig Ziffern uebrig bleiben."""
+    n = anruf_mod.normalisiere_nummer(text)
+    if n:
+        return n
+    roh = re.sub(r"[^+0-9*#]", "", str(text or ""))
+    return roh if len(re.sub(r"\D", "", roh)) >= 3 else None
 
 
 def einstellungen(root=None) -> dict:
@@ -114,5 +128,46 @@ class AnrufTool(Tool):
         return anruf_mod.ergebnis_text(info) if info else f"Anruf gestartet (ID {call_id}), Ergebnis noch offen."
 
 
+class WaehlenTool(Tool):
+    name = "telefon_waehlen"
+    description = (
+        "Oeffnet auf dem Geraet (PC oder Handy) den Telefon-Dialer mit einer Nummer schon EINGETRAGEN - "
+        "waehlt aber NICHT selbst. Dein Mensch drueckt am Ende selbst auf Anrufen; Nova startet nie von "
+        "allein einen Anruf. Nimm das, wenn er jemand ANDEREN anrufen moechte und du ihm das Tippen abnehmen "
+        "sollst: eine Firma, einen Arzt, einen Handwerker, einen Kontakt, eine Nummer von einer Webseite. "
+        "Unterschied zu 'anrufen': 'anrufen' ruft NUR seine eigene hinterlegte Nummer per KI-Stimme an - "
+        "'telefon_waehlen' bereitet einen Anruf an eine beliebige Nummer vor, den er selbst ausloest. "
+        "'nummer': die Rufnummer. 'wer': optional, wem sie gehoert (nur zur Anzeige)."
+    )
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "nummer": {"type": "string", "description": "Rufnummer, z.B. +49 30 1234567 oder 0171 2345678."},
+            "wer": {"type": "string", "description": "Optional: wem die Nummer gehoert (nur zur Anzeige)."},
+        },
+        "required": ["nummer"],
+    }
+
+    def run(self, ctx: ToolContext, nummer: str, wer: str = "") -> str:
+        n = dialer_nummer(nummer)
+        if not n:
+            return "Das sieht nicht nach einer Rufnummer aus - gib sie mir nochmal (z.B. +49 30 1234567)."
+        wer = (wer or "").strip()[:60]
+        wofuer = f"{wer} ({n})" if wer else n
+        # Nur der Dialer wird geoeffnet (kein Anruf) - am PC trotzdem kurz nachfragen, im AFK nicht.
+        if not ctx.permissions.away:
+            ctx.permissions.require(Risk.MODERATE, f"Telefon-Dialer oeffnen mit {wofuer} - anrufen musst du selbst.")
+        oeffnen = ctx.extra.get("dialer_oeffnen")
+        if oeffnen is None:
+            return f"Ich kann den Dialer hier nicht oeffnen. Die Nummer zum Anrufen: {n}" + (f" ({wer})" if wer else "")
+        try:
+            hinweis = oeffnen(n, wer)
+        except Exception as exc:  # noqa: BLE001
+            return f"Der Dialer liess sich nicht oeffnen ({exc}). Die Nummer: {n}"
+        return hinweis or (f"\U0001F4DE Dialer geoeffnet mit {n}{(' - ' + wer) if wer else ''}. "
+                           "Druecke selbst auf Anrufen - ich waehle nie von allein.")
+
+
 def register(registry) -> None:
     registry.register(AnrufTool())
+    registry.register(WaehlenTool())

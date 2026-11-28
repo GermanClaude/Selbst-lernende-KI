@@ -1062,6 +1062,13 @@ class AppController(CLI):
                         "(ein bis drei Saetze, keine Listen, kein Markdown) - das wird ihm vorgelesen. Rueckfragen "
                         "vor heiklen Aktionen stellt das System automatisch am Telefon.]\n")
 
+    def _dialer_oeffnen(self, nummer: str, wer: str = "") -> str:
+        """Den Telefon-Dialer im Fenster bzw. auf dem Handy mit einer Nummer oeffnen - nur oeffnen, nicht
+        waehlen. Das Fenster/die Handy-App oeffnet daraufhin einen tel:-Link; der Mensch drueckt auf Anrufen."""
+        self._event({"type": "dialer", "nummer": str(nummer), "wer": str(wer or "")})
+        return (f"\U0001F4DE Ich habe den Dialer mit {nummer}{(' - ' + wer) if wer else ''} geoeffnet - "
+                "druecke selbst auf Anrufen (ich waehle nie von allein).")
+
     def _anruf_gespraech(self, anliegen: str) -> str:
         from .. import anruf as anruf_mod
         from .. import anruf_gespraech as G
@@ -2810,6 +2817,7 @@ class AppController(CLI):
         self._premium_laden()     # Nova Premium (geschlossen), falls freigeschaltet
         self._zeitplan_starten()  # geplante Aufgaben (auch ohne dass jemand die App offen hat)
         self.tool_ctx.extra["anruf_gespraech"] = self._anruf_gespraech   # Telefonat mit Auftraegen (Vonage)
+        self.tool_ctx.extra["dialer_oeffnen"] = self._dialer_oeffnen      # Dialer oeffnen (nur oeffnen, nicht waehlen)
         threading.Thread(target=self._wachwort_beim_start, name="wachwort", daemon=True).start()
         try:
             failed = self.updater.take_install_failure()

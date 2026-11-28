@@ -1185,6 +1185,21 @@
     try { setBusy(true); } catch (e) {}
   }
 
+  // Nova legt einen Anruf bereit: Dialer mit der Nummer oeffnen - der Mensch drueckt selbst auf Anrufen.
+  // Am Handy faengt die Nova-App den tel:-Link ab und zeigt den Dialer; am PC oeffnet das System den Dialer.
+  function oeffneDialer(nummer) {
+    const n = String(nummer || '').replace(/[^+0-9*#]/g, '');
+    if (!n) return;
+    try {
+      const a = document.createElement('a');
+      a.href = 'tel:' + n;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => { try { a.remove(); } catch (e) {} }, 0);
+    } catch (e) { /* egal - die Nummer steht auch in Novas Antwort */ }
+  }
+
   function feierePremium(ev) {
     const box = byId('celebrate');
     if (!box) return;
@@ -9650,6 +9665,9 @@
         break;
       case 'premium_neustart': // Modus geaendert (entzogen/abgelaufen/hochgestuft): Fenster zu, neues auf
         zeigeNeustart(ev && ev.grund);
+        break;
+      case 'dialer': // Nova legt einen Anruf bereit: Dialer oeffnen (sie waehlt nie selbst)
+        oeffneDialer(ev && ev.nummer);
         break;
       case 'user':
         onUserEcho(ev);
