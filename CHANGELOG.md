@@ -4,6 +4,13 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.80.0 – 2026-11-28
+
+- **Live-Coding-Fenster (Premium):** Auf Wunsch öffnet Nova ein eigenes Fenster, das **live
+  zeigt, was sie gerade programmiert oder schreibt** – mit Dateiname und Inhalt, der neu
+  geschriebene Teil wird hervorgehoben. So kannst du ihr beim Arbeiten zusehen und alles ist
+  transparent. Ein-/ausschalten mit `/livecode` (oder `/livecode aus`), oder sag es Nova einfach.
+
 ## 0.79.0 – 2026-11-28
 
 - **Lebenszeit-Lizenzen möglich:** Codes dürfen jetzt eine Laufzeit bis „Lebenszeit"

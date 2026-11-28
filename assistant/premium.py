@@ -68,6 +68,7 @@ FUNKTIONEN = {
         "Kreativ-Studio: fortlaufendes Schreibprojekt mit Gedaechtnis - Roman/Geschichte/Song weiterschreiben (premium_kreativstudio)",
         "Projekt-Baukasten: groessere Sachen (Spiel/App/Webseite) strukturiert bauen - Code selbst, Grafiken per Bild-Werkzeug (premium_baukasten)",
         "Werkzeug-Schmiede: fehlt ein Werkzeug, entwirft Nova es und schlaegt es dir fuers naechste Update vor (premium_werkzeug_schmiede)",
+        "Live-Coding-Fenster: sieh live und sichtbar, was Nova gerade schreibt und aendert (premium_live_coding, /livecode)",
         "Edlere Premium-Optik in der App",
     ],
     "max": [

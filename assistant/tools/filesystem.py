@@ -10,6 +10,7 @@ import shutil
 import time
 from pathlib import Path
 
+from .. import live_coding
 from ..permissions import Risk
 from .base import Tool, ToolContext
 
@@ -116,8 +117,13 @@ class WriteFileTool(Tool):
         if anhaengen:
             with path.open("a", encoding="utf-8") as fh:
                 fh.write(inhalt)
+            try:
+                live_coding.zeige(path, path.read_text(encoding="utf-8", errors="replace"), "hängt an")
+            except OSError:
+                pass
             return f"Angehaengt an {path} ({len(inhalt)} Zeichen, jetzt {path.stat().st_size} Bytes)"
         path.write_text(inhalt, encoding="utf-8")
+        live_coding.zeige(path, inhalt, "erstellt" if not existed else "schreibt")
         return f"{'Aktualisiert' if existed else 'Erstellt'}: {path} ({len(inhalt)} Zeichen)"
 
 
@@ -149,7 +155,9 @@ class EditFileTool(Tool):
             return "Der zu ersetzende Text wurde nicht gefunden - nichts geaendert."
         if count > 1:
             return f"Der Text kommt {count}-mal vor; er muss eindeutig sein. Nichts geaendert."
-        path.write_text(text.replace(suchen, ersetzen, 1), encoding="utf-8")
+        neuer = text.replace(suchen, ersetzen, 1)
+        path.write_text(neuer, encoding="utf-8")
+        live_coding.zeige(path, neuer, "ändert")
         return f"Geaendert: {path}"
 
 

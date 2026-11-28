@@ -75,7 +75,7 @@ def test_unknown_tool(tmp_path):
 def test_read_long_file_in_sections(tmp_path):
     reg = build_registry()
     ctx, _ = _ctx(tmp_path)
-    (tmp_path / "lang.txt").write_text("\n".join(f"Zeile {i}" for i in range(1, 1001)), encoding="utf-8")
+    (tmp_path / "lang.txt").write_text("\n".join(f"Zeile {i}" for i in range(1, 1001)), encoding="utf-8", newline="\n")
     out, err = reg.execute(ctx, "datei_lesen", {"pfad": "lang.txt"})
     assert not err and "Zeilen 1-400 von 1000" in out and "ab_zeile=401" in out
     assert "Zeile 400\n" in out and "Zeile 401" not in out

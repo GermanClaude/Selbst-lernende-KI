@@ -21,6 +21,7 @@ Sonderbefehle (mit '/' beginnen):
   /lizenz             - Endbenutzer-Lizenzvertrag (EULA) anzeigen
   /datenschutz        - Datenschutzerklaerung anzeigen
   /lizenzserver [url] - Lizenzserver fuers No-Code-Upgrade setzen/zeigen
+  /livecode [an|aus]  - Live-Coding-Fenster: sieh live, was ich schreibe (Premium)
   /versionen          - gesicherte alte Versionen anzeigen
   /zurueck <Nr>       - zu einer gesicherten alten Version zurueckkehren
   /autostart          - zeigen, was die KI automatisch startet (und es abstellen)
@@ -2913,6 +2914,8 @@ class CLI:
             self._print_rechts_doc("LIZENZVERTRAG.md", "Endbenutzer-Lizenzvertrag (EULA)")
         elif base in ("/lizenzserver", "/premiumserver"):
             self._lizenzserver_command(cmd.split()[1:])
+        elif base in ("/livecode", "/livecoding", "/mitschauen"):
+            self._livecode_command(cmd.split()[1:])
         elif base in ("/versionen", "/version"):
             self._print_versions()
         elif base in ("/zurueck", "/zurück"):
@@ -3738,6 +3741,34 @@ class CLI:
             except OSError:
                 continue
         return "", ""
+
+    def _livecode_command(self, args: list) -> None:
+        """Live-Coding-Fenster (Premium) oeffnen/schliessen: zeigt live, was Nova schreibt."""
+        from .. import premium as PM
+        from .. import live_coding
+
+        root = self.config.project_root
+        st = PM.stufe(root)
+        feats = PM.features(root)
+        erlaubt = bool(st) and (feats is None or "live_coding" in feats)
+        sub = args[0].lower() if args else "an"
+        if sub in ("aus", "zu", "stop", "schliessen"):
+            live_coding.stoppen()
+            print(_c("Live-Coding-Fenster geschlossen.", GREEN))
+            return
+        if sub == "status":
+            print(_c("Live-Coding-Fenster ist offen." if live_coding.aktiv()
+                     else "Kein Live-Coding-Fenster offen.", GREY))
+            return
+        if not erlaubt:
+            print(_c("Live-Coding (sichtbares Fenster, das zeigt, was ich schreibe) gibt es nur in "
+                     "Premium. Mit /novaaiupdate schaltest du Premium frei.", YELLOW))
+            return
+        if live_coding.starten():
+            print(_c("Live-Coding-Fenster geöffnet – du siehst jetzt live, was ich schreibe und ändere. "
+                     "Schließen mit /livecode aus.", GREEN))
+        else:
+            print(_c("Konnte kein Fenster öffnen (läuft hier keine grafische Oberfläche?).", YELLOW))
 
     def _lizenzserver_command(self, args: list) -> None:
         """Lizenzserver-Adresse fuer das No-Code-Upgrade lokal setzen/zeigen/loeschen."""
