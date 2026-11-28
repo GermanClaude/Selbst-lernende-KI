@@ -1562,6 +1562,50 @@ class CLI:
                  "  Vor jedem Plugin-Aufruf frage ich nach. Plugins bekommen keine Schluessel von mir.\n"
                  "  Nur Plugins aus Quellen einfuegen, denen du vertraust - es sind Programme auf deinem PC.", GREY))
 
+    # -- Konnektoren: einfache Oberflaeche fuer Plugins/MCP (assistant/konnektoren.py) ---
+    def _konnektoren_befehl(self, cmd: str) -> None:
+        from .. import konnektoren as K
+        from .. import plugins as pl
+
+        root = self.config.project_root
+        teile = cmd.split()
+        sub = teile[1].lower() if len(teile) > 1 else ""
+        try:
+            if sub in ("hinzufuegen", "hinzufügen", "add", "neu") and len(teile) > 2:
+                werte = {}
+                for stueck in teile[3:]:
+                    if "=" in stueck:
+                        k, _, v = stueck.partition("=")
+                        werte["<" + k.strip().strip("<>").upper() + ">"] = v
+                name = K.hinzufuegen(root, teile[2].lower(), werte)
+                print(_c(f"Konnektor '{name}' hinzugefuegt. Ich starte ihn ...", GREEN))
+                self._plugins_starten(warten=True)
+                return
+            if sub in ("entfernen", "loeschen", "weg") and len(teile) > 2:
+                print(_c("Entfernt." if K.entfernen(root, teile[2]) else f"Kein Konnektor '{teile[2]}'.", GREEN))
+                self._plugins_starten(warten=True)
+                return
+            if sub in ("an", "aus", "vertrauen", "misstrauen") and len(teile) > 2:
+                ok = K.setzen(root, teile[2], an={"an": True, "aus": False}.get(sub),
+                              vertrauen={"vertrauen": True, "misstrauen": False}.get(sub))
+                print(_c("Gemacht." if ok else f"Kein Konnektor '{teile[2]}'.", GREEN))
+                self._plugins_starten(warten=True)
+                return
+        except pl.PluginFehler as exc:
+            print(_c(str(exc), YELLOW))
+            return
+        print(_c("Konnektoren - externe Dienste fuer Nova (einfach aus dem Katalog):", BOLD))
+        for e in K.katalog():
+            noetig = (" [" + ", ".join(x["feld"].strip("<>") for x in e["eingaben"]) + " noetig]") if e["eingaben"] else ""
+            print(f"  {e['schluessel']:<12} {e['name']} - {e['beschreibung']}{noetig}")
+        akt = K.aktive(root)
+        print(_c("Aktiv:", BOLD))
+        print("  " + ("\n  ".join(f"{a['name']} ({'an' if a['an'] else 'aus'}"
+                                  + (', vertraut' if a['vertrauen'] else '') + f") - {a['quelle']}" for a in akt)
+                      if akt else "keine"))
+        print(_c("  Hinzufuegen: /konnektoren hinzufuegen <schluessel> [FELD=Wert]   "
+                 "z.B. /konnektoren hinzufuegen dateien ORDNER=C:\\Daten", GREY))
+
     # -- Gedaechtnis-Abgleich PC <-> Cloud (assistant/abgleich.py) ---------------
     def _abgleich_starten(self) -> None:
         """Beim Start: einmal abgleichen, danach im Hintergrund weiter (nur wenn eingerichtet)."""
@@ -2888,6 +2932,8 @@ class CLI:
             self._anruf_befehl(cmd.split()[1:])
         elif base in ("/plugins", "/plugin", "/mcp"):
             self._plugins_befehl(cmd)
+        elif base in ("/konnektoren", "/konnektor", "/connectors"):
+            self._konnektoren_befehl(cmd)
         elif base in ("/deinstallieren", "/deinstallation", "/uninstall", "/entfernen"):
             if self._deinstallieren_befehl():
                 return True

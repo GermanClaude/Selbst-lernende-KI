@@ -4,6 +4,15 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.69.0 – 2026-11-28
+
+- **Konnektoren – externe Dienste anbinden:** Nova lässt sich jetzt einfach mit externen
+  Diensten verbinden (Zeit, Web, Dateien, GitHub, Suche …). Neuer **„Konnektoren"-Bereich**
+  in der Seitenleiste und Befehl `/konnektoren`: aus einem **Katalog** auswählen und per
+  Klick hinzufügen – ganz ohne technische Konfiguration; An/Aus, Vertrauen und Entfernen
+  inklusive. (Darunter arbeitet das bewährte Plugin-/MCP-System. Konnektoren sind Programme
+  auf deinem PC – füge nur vertrauenswürdige hinzu, und Nova fragt vor jeder Nutzung nach.)
+
 ## 0.68.0 – 2026-11-28
 
 - **Dokumenten-Hirn (Premium):** „Chatte mit deinen Dateien" – Nova liest einen Ordner

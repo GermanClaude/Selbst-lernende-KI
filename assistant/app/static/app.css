@@ -3842,3 +3842,16 @@ body:not(.premium) .sb-premium { background: linear-gradient(90deg, color-mix(in
 .su-feats { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 3px; }
 .su-feats li { line-height: 1.35; }
 .su-intro { margin: 0 0 12px; opacity: .85; }
+
+/* Konnektoren (externe Dienste / MCP) */
+.kn-h { margin: 14px 0 6px; font-size: 14px; opacity: .8; }
+.kn-liste { display: flex; flex-direction: column; gap: 8px; }
+.kn-row { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+          border: 1px solid var(--border, #2a2f39); border-radius: calc(var(--radius, 12px) * 0.75); padding: 8px 10px; }
+.kn-name { min-width: 0; }
+.kn-desc { font-size: 12px; opacity: .7; margin-top: 2px; }
+.kn-btns { display: flex; gap: 6px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
+.kn-intro { opacity: .85; }
+.kn-msg { margin: 6px 0; padding: 6px 8px; border-radius: 8px; background: rgba(255,90,90,.14); }
+.kn-msg.ok { background: rgba(80,200,120,.16); }
+.btn.danger { color: #e2566e; }

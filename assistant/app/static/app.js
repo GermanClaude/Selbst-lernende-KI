@@ -1200,6 +1200,80 @@
     } catch (e) { /* egal - die Nummer steht auch in Novas Antwort */ }
   }
 
+  // Konnektoren (externe Dienste / MCP): Katalog + aktive, Hinzufuegen/Entfernen/An-Aus/Vertrauen.
+  async function openKonnektoren() {
+    const m = byId('konnmodal');
+    if (!m) return;
+    byId('kn-msg').hidden = true;
+    let data = null;
+    try { data = await getJson('/api/konnektoren'); } catch (e) { data = null; }
+    renderKonnektoren(data);
+    m.hidden = false;
+    requestAnimationFrame(() => { const d = byId('kdialog'); if (d) d.focus(); });
+  }
+  function closeKonnektoren() { const m = byId('konnmodal'); if (m) m.hidden = true; }
+  async function konnAktion(body) {
+    const msg = byId('kn-msg');
+    let r = null;
+    try { r = await post('/api/konnektoren', body); } catch (e) { r = null; }
+    if (r && r.ok) { renderKonnektoren(r); }
+    if (msg) {
+      msg.hidden = false;
+      msg.textContent = r && r.meldung ? r.meldung : 'Konnte nicht ausgeführt werden – bitte später nochmal.';
+      msg.classList.toggle('ok', !!(r && r.ok));
+    }
+  }
+  function _knBtn(text, fn, cls) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'btn small ' + (cls || 'ghost'); b.textContent = text;
+    b.addEventListener('click', fn);
+    return b;
+  }
+  function renderKonnektoren(data) {
+    const akt = byId('kn-aktiv'), kat = byId('kn-katalog');
+    if (!akt || !kat) return;
+    const aktive = data && Array.isArray(data.aktive) ? data.aktive : [];
+    const katalog = data && Array.isArray(data.katalog) ? data.katalog : [];
+    akt.textContent = '';
+    if (!aktive.length) { const p = document.createElement('p'); p.className = 'klein'; p.textContent = 'Noch keine Konnektoren.'; akt.appendChild(p); }
+    for (const a of aktive) {
+      const row = document.createElement('div'); row.className = 'kn-row';
+      const t = document.createElement('div'); t.className = 'kn-name';
+      t.textContent = a.name + (a.an ? '' : ' (aus)') + (a.vertrauen ? ' · vertraut' : '');
+      row.appendChild(t);
+      const btns = document.createElement('div'); btns.className = 'kn-btns';
+      btns.appendChild(_knBtn(a.an ? 'Aus' : 'An', () => konnAktion({ aktion: a.an ? 'aus' : 'an', name: a.name })));
+      btns.appendChild(_knBtn(a.vertrauen ? 'Misstrauen' : 'Vertrauen', () => konnAktion({ aktion: a.vertrauen ? 'misstrauen' : 'vertrauen', name: a.name })));
+      btns.appendChild(_knBtn('Entfernen', () => konnAktion({ aktion: 'entfernen', name: a.name }), 'ghost danger'));
+      row.appendChild(btns);
+      akt.appendChild(row);
+    }
+    kat.textContent = '';
+    const aktivNamen = new Set(aktive.map((a) => a.name));
+    for (const e of katalog) {
+      const row = document.createElement('div'); row.className = 'kn-row';
+      const t = document.createElement('div'); t.className = 'kn-name';
+      t.innerHTML = '';
+      const b = document.createElement('b'); b.textContent = e.name; t.appendChild(b);
+      const d = document.createElement('div'); d.className = 'kn-desc';
+      d.textContent = e.beschreibung + (e.braucht ? ' · braucht: ' + e.braucht : '');
+      t.appendChild(d);
+      row.appendChild(t);
+      const btns = document.createElement('div'); btns.className = 'kn-btns';
+      btns.appendChild(_knBtn(aktivNamen.has(e.schluessel) ? 'Erneut' : 'Hinzufügen', () => {
+        const werte = {};
+        for (const ein of (e.eingaben || [])) {
+          const v = window.prompt(ein.frage);
+          if (v === null) return;         // abgebrochen
+          werte[ein.feld] = v;
+        }
+        konnAktion({ aktion: 'hinzufuegen', schluessel: e.schluessel, werte });
+      }));
+      row.appendChild(btns);
+      kat.appendChild(row);
+    }
+  }
+
   function feierePremium(ev) {
     const box = byId('celebrate');
     if (!box) return;
@@ -9908,6 +9982,10 @@
   { const sx = byId('su-x'); if (sx) sx.addEventListener('click', closeStufen);
     const sm = byId('stufenmodal'); if (sm) sm.addEventListener('click', (e) => { if (e.target === sm) closeStufen(); });
     const sd = byId('sdialog'); if (sd) sd.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); closeStufen(); } }); }
+  { const kb = byId('sb-konnektoren'); if (kb) kb.addEventListener('click', () => { closeSidebar(); openKonnektoren(); });
+    const kx = byId('kn-x'); if (kx) kx.addEventListener('click', closeKonnektoren);
+    const km = byId('konnmodal'); if (km) km.addEventListener('click', (e) => { if (e.target === km) closeKonnektoren(); });
+    const kd = byId('kdialog'); if (kd) kd.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); closeKonnektoren(); } }); }
   renderSwitches();
   loadAppearance(false);
   connect();

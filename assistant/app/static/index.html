@@ -162,6 +162,7 @@
       <button class="sb-btn" type="button" data-cmd="/status"><span data-icon="activity"></span>Status</button>
       <button class="sb-btn" type="button" data-cmd="/gedaechtnis"><span data-icon="book"></span>Gedächtnis</button>
       <button class="sb-btn" type="button" id="sb-skills" aria-haspopup="dialog"><span data-icon="zap"></span>Skills</button>
+      <button class="sb-btn" type="button" id="sb-konnektoren" aria-haspopup="dialog"><span data-icon="zap"></span>Konnektoren</button>
       <button class="sb-btn" type="button" data-cmd="/kosten"><span data-icon="coins"></span>Kosten</button>
       <button class="sb-btn" type="button" data-cmd="/update"><span data-icon="refresh"></span>Nach Updates suchen</button>
       <button class="sb-btn" type="button" data-cmd="/versionen"><span data-icon="history"></span>Versionen</button>
@@ -971,6 +972,26 @@
     <div class="dlg-body su-body">
       <p class="su-intro" id="su-intro">Was die einzelnen Stufen können:</p>
       <div class="su-stufen" id="su-stufen"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Konnektoren: externe Dienste (MCP) hinzufügen -->
+<div class="modal konnmodal" id="konnmodal" hidden>
+  <div class="dialog kdialog" id="kdialog" role="dialog" aria-modal="true" aria-labelledby="kn-title" tabindex="-1">
+    <div class="dlg-head">
+      <h2 class="dlg-title" id="kn-title">🔌 Konnektoren</h2>
+      <button class="icon-btn dlg-x" id="kn-x" type="button" aria-label="Schließen" data-icon="x"></button>
+    </div>
+    <div class="dlg-body kn-body">
+      <p class="kn-intro">Verbinde Nova mit externen Diensten. Ein Konnektor ist ein Programm/Dienst auf
+        deinem PC – füge nur welche aus Quellen hinzu, denen du vertraust. Vor jeder Nutzung fragt Nova nach
+        (außer du setzt „vertrauen").</p>
+      <p class="kn-msg" id="kn-msg" role="status" hidden></p>
+      <h3 class="kn-h">Aktiv</h3>
+      <div class="kn-liste" id="kn-aktiv"></div>
+      <h3 class="kn-h">Katalog – zum Hinzufügen</h3>
+      <div class="kn-liste" id="kn-katalog"></div>
     </div>
   </div>
 </div>

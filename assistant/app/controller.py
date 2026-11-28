@@ -53,6 +53,7 @@ _UPLOAD_TAGE = 30  # hochgeladene Bilder (nur fuer die Anzeige) so lange aufhebe
 COMMANDS = [
     ("/status", "Einstellungen & Sicherheitslage"),
     ("/codewort", "sensible Aktionen mit einem Codewort schuetzen"),
+    ("/konnektoren", "externe Dienste (Konnektoren) hinzufuegen"),
     ("/gedaechtnis", "was die KI gelernt hat"),
     ("/kosten", "Token-Verbrauch & Kosten"),
     ("/update", "nach einer neuen Version schauen"),
@@ -314,6 +315,44 @@ class AppController(CLI):
         from .. import premium as PM
 
         return PM.uebersicht(self.config.project_root)
+
+    # -- Konnektoren (externe Dienste per MCP, assistant/konnektoren.py) ----------------
+    def konnektoren_info(self) -> dict:
+        from .. import konnektoren as K
+
+        return {"katalog": K.katalog(), "aktive": K.aktive(self.config.project_root)}
+
+    def konnektoren_aktion(self, body: dict) -> dict:
+        """Konnektor aus dem Katalog hinzufuegen/entfernen/an-aus/vertrauen (der Mensch loest es im Fenster aus)."""
+        from .. import konnektoren as K
+        from .. import plugins as pl
+
+        root = self.config.project_root
+        aktion = str(body.get("aktion") or "")
+        name = str(body.get("name") or "")
+        try:
+            if aktion == "hinzufuegen":
+                werte = body.get("werte") if isinstance(body.get("werte"), dict) else {}
+                neu = K.hinzufuegen(root, str(body.get("schluessel") or ""),
+                                    {str(k): str(v) for k, v in werte.items()})
+                meldung = f"Konnektor '{neu}' hinzugefuegt."
+            elif aktion == "entfernen":
+                meldung = "Entfernt." if K.entfernen(root, name) else "Nicht gefunden."
+            elif aktion in ("an", "aus"):
+                K.setzen(root, name, an=(aktion == "an"))
+                meldung = "Gemacht."
+            elif aktion in ("vertrauen", "misstrauen"):
+                K.setzen(root, name, vertrauen=(aktion == "vertrauen"))
+                meldung = "Gemacht."
+            else:
+                return {"ok": False, "meldung": "Unbekannte Aktion."}
+        except pl.PluginFehler as exc:
+            return {"ok": False, "meldung": str(exc)}
+        try:
+            self._plugins_starten()          # Aenderung anwenden (Konnektoren neu starten)
+        except Exception:  # noqa: BLE001
+            pass
+        return {"ok": True, "meldung": meldung, **self.konnektoren_info()}
 
     def premium_anfrage(self, stufe: str, tage, betrag, notiz: str) -> dict:
         """'Premium anfragen': schickt die Anfrage an den Entwickler (Gmail + Discord). Kein echtes Geld."""

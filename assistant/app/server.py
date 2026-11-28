@@ -250,6 +250,8 @@ class AppServer:
                     return self._json(ctl.feedback_status())
                 if url.path == "/api/premium/uebersicht":   # alle Stufen + Funktionen (aktive hervorgehoben)
                     return self._json(ctl.premium_uebersicht())
+                if url.path == "/api/konnektoren":           # Katalog + aktive Konnektoren (MCP)
+                    return self._json(ctl.konnektoren_info())
                 if url.path == "/api/bewertungen":
                     return self._json(ctl.bewertungen())
                 if url.path == "/api/ollama":
@@ -483,6 +485,8 @@ class AppServer:
                 if url.path == "/api/premium/anfrage":
                     return self._json(ctl.premium_anfrage(str(body.get("stufe") or ""), body.get("tage"),
                                                           body.get("betrag"), str(body.get("notiz") or "")))
+                if url.path == "/api/konnektoren":     # Konnektor hinzufuegen/entfernen/an-aus/vertrauen
+                    return self._json(ctl.konnektoren_aktion(body))
                 if url.path == "/api/send":
                     return self._json(ctl.submit(str(body.get("text") or ""), bool(body.get("interrupt")),
                                                  images=body.get("images"), client_id=body.get("client_id")))
