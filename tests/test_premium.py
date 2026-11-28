@@ -670,3 +670,35 @@ def test_eigentum_gefaelscht(root):
 
 def test_eigentum_ohne_paket(root):
     assert P.eigentum_info(root) is None        # noch kein Paket installiert
+
+
+# -- Lizenzserver-Bootstrap (No-Code ohne vorher eingeloesten Code) ------------
+def test_lizenzserver_lokal_bootstrap(root, monkeypatch):
+    # Ohne alles: keine Adresse
+    assert P.lizenzserver({}, root) == ""
+    # Lokale Datei wird als Fallback genommen
+    gespeichert = P.lizenzserver_lokal_setzen(root, "https://beispiel-nova.onrender.com/")
+    assert gespeichert == "https://beispiel-nova.onrender.com"
+    assert P.lizenzserver({}, root) == "https://beispiel-nova.onrender.com"
+    # Code-Adresse hat Vorrang vor der lokalen Datei
+    assert P.lizenzserver({"server": "https://aus-dem-code.example.com"}, root) \
+        == "https://aus-dem-code.example.com"
+    # Umgebungsvariable greift auch ohne Datei/Code
+    P.lizenzserver_lokal_setzen(root, "")
+    assert P.lizenzserver({}, root) == ""
+    monkeypatch.setenv("NOVA_LIZENZSERVER_URL", "https://via-env.onrender.com")
+    assert P.lizenzserver({}, root) == "https://via-env.onrender.com"
+
+
+def test_lizenzserver_lokal_setzen_prueft_adresse(root):
+    with pytest.raises(P.PremiumFehler):
+        P.lizenzserver_lokal_setzen(root, "ftp://boese")
+    with pytest.raises(P.PremiumFehler):
+        P.lizenzserver_lokal_setzen(root, "einfach-text")
+    # http nur lokal erlaubt
+    assert P.lizenzserver_lokal_setzen(root, "http://127.0.0.1:8000") == "http://127.0.0.1:8000"
+
+
+def test_lizenzserver_txt_ist_gesperrt(tmp_path):
+    pm = PermissionManager(PermissionSettings(), tmp_path / "ws", app_root=tmp_path)
+    assert pm.ist_gesperrt((tmp_path / "data" / "lizenzserver.txt").resolve())

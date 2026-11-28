@@ -20,6 +20,7 @@ Sonderbefehle (mit '/' beginnen):
   /rechtliches        - Nutzungsbedingungen, Lizenzvertrag & Datenschutz anzeigen
   /lizenz             - Endbenutzer-Lizenzvertrag (EULA) anzeigen
   /datenschutz        - Datenschutzerklaerung anzeigen
+  /lizenzserver [url] - Lizenzserver fuers No-Code-Upgrade setzen/zeigen
   /versionen          - gesicherte alte Versionen anzeigen
   /zurueck <Nr>       - zu einer gesicherten alten Version zurueckkehren
   /autostart          - zeigen, was die KI automatisch startet (und es abstellen)
@@ -2910,6 +2911,8 @@ class CLI:
             self._print_rechts_doc("DATENSCHUTZ.md", "Datenschutzerklärung")
         elif base in ("/lizenz", "/eula", "/lizenzvertrag"):
             self._print_rechts_doc("LIZENZVERTRAG.md", "Endbenutzer-Lizenzvertrag (EULA)")
+        elif base in ("/lizenzserver", "/premiumserver"):
+            self._lizenzserver_command(cmd.split()[1:])
         elif base in ("/versionen", "/version"):
             self._print_versions()
         elif base in ("/zurueck", "/zurück"):
@@ -3735,6 +3738,36 @@ class CLI:
             except OSError:
                 continue
         return "", ""
+
+    def _lizenzserver_command(self, args: list) -> None:
+        """Lizenzserver-Adresse fuer das No-Code-Upgrade lokal setzen/zeigen/loeschen."""
+        from .. import premium as P
+
+        root = self.config.project_root
+        if not args:
+            aktuell = P._lizenzserver_lokal(root)
+            if aktuell:
+                print(_c(f"Lizenzserver (lokal gesetzt): {aktuell}", BOLD))
+            else:
+                print(_c("Kein Lizenzserver lokal gesetzt.", YELLOW))
+            print(_c("Setzen:  /lizenzserver https://deine-cloud-nova.onrender.com", GREY))
+            print(_c("Loeschen: /lizenzserver aus", GREY))
+            print(_c("Das brauchst du nur fuers No-Code-Upgrade, wenn du noch nie einen Code "
+                     "eingeloest hast.", GREY))
+            return
+        wert = " ".join(args).strip()
+        if wert.lower() in ("aus", "weg", "loeschen", "entfernen"):
+            P.lizenzserver_lokal_setzen(root, "")
+            print(_c("Lizenzserver-Adresse geloescht.", GREEN))
+            return
+        try:
+            gespeichert = P.lizenzserver_lokal_setzen(root, wert)
+        except P.PremiumFehler as exc:
+            print(_c(str(exc), YELLOW))
+            return
+        print(_c(f"Lizenzserver gespeichert: {gespeichert}", GREEN))
+        print(_c("Jetzt kannst du mit 'Jetzt pruefen' / beim naechsten Start dein Premium ohne "
+                 "Code freischalten (sofern der Entwickler deine Geraete-Kennung freigegeben hat).", GREY))
 
     def _print_rechts_doc(self, name: str, titel: str) -> None:
         """Ein einzelnes Rechts-Dokument anzeigen (z.B. Datenschutz, Lizenzvertrag)."""

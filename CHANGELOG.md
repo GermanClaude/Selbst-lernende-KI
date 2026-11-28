@@ -4,6 +4,16 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.78.0 – 2026-11-28
+
+- **No-Code-Upgrade repariert:** Premium ohne Code klappt jetzt auch, wenn du noch **nie**
+  einen Code eingelöst hast. Vorher konnte Nova die Adresse deines Lizenzservers nur aus einem
+  Code kennen – ohne Code wusste sie nicht, wo sie nachsehen soll.
+- Neuer Befehl **`/lizenzserver`**: einmalig die Adresse deiner Cloud-Nova setzen
+  (`/lizenzserver https://deine-adresse.onrender.com`), dann schaltet „Jetzt prüfen" dein
+  Premium frei, sobald der Entwickler deine Geräte-Kennung freigegeben hat. `/lizenzserver aus`
+  entfernt sie wieder. Die Adresse bleibt nur lokal auf deinem Gerät.
+
 ## 0.77.0 – 2026-11-28
 
 - **Rechtstexte erweitert:** Nova bringt jetzt neben den Nutzungsbedingungen auch einen

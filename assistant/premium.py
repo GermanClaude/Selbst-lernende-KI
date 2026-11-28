@@ -255,7 +255,7 @@ def sperrung_pruefen(root, holen: Callable[[str], bytes] = None, n: int = None) 
     fehlendes Netz nie ausgesperrt. Die Liste ist signiert - eine gefaelschte wird ignoriert."""
     holen = holen or _sperrliste_vom_server
     d = lizenz(root)
-    server = lizenzserver(d)
+    server = lizenzserver(d, root)
     if not d.get("stufe") or not server:
         return False
     try:
@@ -344,7 +344,7 @@ def freischaltung_pruefen(root, holen: Callable[[str], bytes] = None, n: int = N
     Gibt die neu/weiter freigeschaltete Stufe zurueck oder None. Ohne Netz/ohne Liste bleibt der Stand."""
     holen = holen or _freischaltliste_vom_server
     d = lizenz(root)
-    server = lizenzserver(d)
+    server = lizenzserver(d, root)
     if not server:
         return None
     try:
@@ -463,11 +463,51 @@ def _server_ok(url: str) -> bool:
     return url.startswith(("http://127.0.0.1", "http://localhost"))
 
 
-def lizenzserver(d: dict) -> str:
-    """Adresse des Lizenzservers: aus dem eingeloesten Code, sonst NOVA_LIZENZSERVER_URL (Umgebung)."""
+LIZENZSERVER_PFAD = "data/lizenzserver.txt"   # lokaler Fallback (nur auf diesem Geraet, nie im Repo):
+#   eine Zeile mit der https-Adresse der eigenen Cloud-Nova. So funktioniert das No-Code-Upgrade auch
+#   OHNE vorher einen Code eingeloest zu haben (sonst kennt Nova die Server-Adresse nur aus einem Code).
+
+
+def _lizenzserver_lokal(root) -> str:
+    """Server-Adresse aus data/lizenzserver.txt (falls der Nutzer sie dort hinterlegt hat)."""
+    if root is None:
+        return ""
+    try:
+        txt = (Path(root) / "data" / "lizenzserver.txt").read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    for zeile in txt.splitlines():
+        if zeile.strip():
+            return zeile.strip()
+    return ""
+
+
+def lizenzserver_lokal_setzen(root, url: str) -> str:
+    """Speichert die Lizenzserver-Adresse lokal in data/lizenzserver.txt, damit das No-Code-Upgrade auch
+    OHNE vorher eingeloesten Code funktioniert. Gibt die gespeicherte Adresse zurueck. '' loescht sie."""
+    url = (url or "").strip().rstrip("/")
+    p = Path(root) / "data" / "lizenzserver.txt"
+    if not url:
+        try:
+            p.unlink()
+        except OSError:
+            pass
+        return ""
+    if not _server_ok(url):
+        raise PremiumFehler("Das ist keine gueltige https-Adresse eines Lizenzservers (z. B. "
+                            "https://nova-ab12.onrender.com).")
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(url + "\n", encoding="utf-8")
+    return url
+
+
+def lizenzserver(d: dict, root=None) -> str:
+    """Adresse des Lizenzservers: aus dem eingeloesten Code, sonst data/lizenzserver.txt (lokal),
+    sonst NOVA_LIZENZSERVER_URL (Umgebung)."""
     import os
 
-    for kandidat in (str(d.get("server") or ""), os.environ.get("NOVA_LIZENZSERVER_URL", "")):
+    for kandidat in (str(d.get("server") or ""), _lizenzserver_lokal(root),
+                     os.environ.get("NOVA_LIZENZSERVER_URL", "")):
         if _server_ok(kandidat):
             return kandidat.strip().rstrip("/")
     return ""
@@ -516,7 +556,7 @@ def paket_holen(root, holen: Callable[[str, str, str], dict] = None, n: int = No
     if not stufe(root):
         raise PremiumFehler("Kein gueltiges Premium - erst einen Code einloesen.")
     d = _alte_geheimnisse_entfernen(root, lizenz(root))
-    server = lizenzserver(d)
+    server = lizenzserver(d, root)
     if not d.get("code") or not server:
         raise PremiumFehler("Fuer das Paket braucht es einen neuen Code (mit Lizenzserver) - bitte beim "
                             "Entwickler melden.")
