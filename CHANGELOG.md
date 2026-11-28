@@ -4,6 +4,13 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.74.0 – 2026-11-28
+
+- **Zweites Gehirn (Premium):** Nova hält deine Gedanken und Ideen als vernetzte Notizen fest,
+  verschlagwortet sie und findet **Zusammenhänge** (verwandte Notizen) – alles lokal.
+- **Schreibt wie du (Premium):** Nova lernt deinen **Schreibstil** aus Beispielen und verfasst dann
+  Mails/Nachrichten, die nach dir klingen (du bestätigst vor dem Senden).
+
 ## 0.73.0 – 2026-11-28
 
 - **Persönliche Chronik (Premium):** Nova führt auf Wunsch ein privates, **lokales** Lebens-Logbuch –

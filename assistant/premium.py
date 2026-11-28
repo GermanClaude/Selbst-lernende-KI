@@ -62,6 +62,8 @@ FUNKTIONEN = {
         "Proaktive Nova: meldet sich von selbst zur passenden Zeit, wenn es wirklich etwas Hilfreiches gibt (premium_proaktiv)",
         "Experten-Rollen: Nova per Knopf zum Coder, Lerncoach, Schreibcoach, Verhandlungs-/Gesundheits-/Ideen-Coach (premium_rollen)",
         "Persoenliche Chronik: privates Lebens-Logbuch mit Rueckblicken - alles lokal (premium_chronik)",
+        "Zweites Gehirn: vernetzte Notizen & Ideen - Nova findet Zusammenhaenge, alles lokal (premium_zweitgehirn)",
+        "Schreibt wie du: lernt deinen Schreibstil aus Beispielen und verfasst Texte, die nach dir klingen (premium_schreibstil)",
         "Edlere Premium-Optik in der App",
     ],
     "max": [
