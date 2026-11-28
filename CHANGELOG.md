@@ -4,6 +4,14 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.70.0 – 2026-11-28
+
+- **Routinen (Premium):** Beschreib eine wiederkehrende Aufgabe in eigenen Worten
+  (z. B. „werktags 7:30: fass meine Termine zusammen und schick sie aufs Handy") – Nova
+  richtet sie als **Routine** ein und erledigt sie von selbst, auch wenn die App zu ist.
+  Mit Namen verwalten: anlegen, auflisten, pausieren, wieder anschalten, entfernen.
+  Steht in der Premium-Übersicht.
+
 ## 0.69.0 – 2026-11-28
 
 - **Konnektoren – externe Dienste anbinden:** Nova lässt sich jetzt einfach mit externen

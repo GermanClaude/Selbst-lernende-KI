@@ -58,6 +58,7 @@ FUNKTIONEN = {
         "Wegwerf-E-Mails: mehrere temporaere Postfaecher (auch mit eigenem Namen) fuer Anmeldungen, ohne deine echte Adresse (premium_wegwerf_email)",
         "Anmelde-Helfer: bereitet die Anmeldung bei einem Dienst vor (Seite, Wegwerf-Mail, Code holen) - du machst nur den letzten Klick (premium_anmelde_helfer)",
         "Dokumenten-Hirn: Fragen zu deinen eigenen Dateien beantworten, mit Quellenangabe - alles lokal (premium_dokumenten_hirn)",
+        "Routinen in eigenen Worten: wiederkehrende Automatisierungen beschreiben, Nova fuehrt sie von selbst aus (premium_routinen)",
         "Edlere Premium-Optik in der App",
     ],
     "max": [
