@@ -4,6 +4,16 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.84.0 – 2026-11-28
+
+- **Freiwillige Nutzer-Rückmeldung (opt-in, Standard AUS):** Mit `/mitteilen an [Name]` kannst du dem
+  Entwickler ein paar Eckdaten mitteilen (Geräte-Kennung, Name, Stufe, Nutzungszeit) – **keine E-Mail**,
+  außer du gibst sie an. So kann er die App verbessern und dir auf Wunsch antworten. Jederzeit aus mit
+  `/mitteilen aus`. Nova bekommt so auch kurze **Nachrichten vom Entwickler** (Kundendienst).
+- **Missbrauchsschutz:** Nova prüft beim Start eine **signierte** Geräte-Sperrliste und schaltet sich ab,
+  wenn der Entwickler dieses Gerät gesperrt hat (auch Gratis). Die Geräte-Kennung ist stabiler geworden.
+  Ohne Netz wird niemand fälschlich gesperrt. (Ehrlich: ganz umgehungssicher ist das technisch nicht.)
+
 ## 0.83.0 – 2026-11-28
 
 - **Weitere lokale Stimme „Piper" (Open-Source):** zusätzlich zu Kokoro jetzt auch Piper

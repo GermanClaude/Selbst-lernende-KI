@@ -114,6 +114,7 @@ COMMANDS = [
     ("/datenschutz", "Datenschutzerklärung (DSGVO)"),
     ("/lizenzserver", "Lizenzserver-Adresse fürs No-Code-Upgrade setzen/zeigen"),
     ("/livecode", "Live-Coding-Fenster: live sehen, was Nova schreibt (Premium)"),
+    ("/mitteilen", "Freiwillig Nutzungs-Eckdaten an den Entwickler senden (Standard aus)"),
     ("/sehen", "Live-Sehen: Nova schaut auf Bildschirm/Webcam (an, aus, pause, status)"),
     ("/spiel", "Spielmodus: Nova spielt selbst (z.B. Manor Lords) - start, nacht, stopp, kalibrieren"),
     ("/sehen handy", "Handy als Kamera koppeln (QR-Code)"),
@@ -527,6 +528,27 @@ class AppController(CLI):
                          daemon=True).start()
         return True, ""
 
+    _SPERR_TEXT = ("Dieses Gerät wurde vom Entwickler gesperrt. Falls das ein Irrtum ist, melde dich "
+                   "bitte über die Feedback-Funktion.")
+
+    def _nutzer_hintergrund(self) -> None:
+        """Einmalig im Hintergrund: Sperre pruefen (auch Gratis), und - nur bei Zustimmung - Eckdaten
+        senden und Nachrichten des Entwicklers holen. Fehler bleiben still; fail-open (kein Netz = frei)."""
+        root, cfg = self.config.project_root, self.config
+        try:
+            from .. import telemetrie as T
+
+            if T.ist_gesperrt(root, cfg):
+                self._gesperrt = True
+                self._notice(self._SPERR_TEXT, "error")
+            if T.aktiv(root):
+                if T.ping_faellig(root):
+                    T.ping(root, cfg)
+                for m in T.nachrichten_holen(root, cfg):
+                    self._notice("Nachricht vom Entwickler: " + m["text"], "info")
+        except Exception:  # noqa: BLE001
+            logger.debug("Nutzer-Hintergrund ging nicht", exc_info=True)
+
     def submit(self, text: str, interrupt: bool = False, images: Any = None, client_id: Any = None) -> dict:
         """Getippte Nachricht aus dem Fenster. Arbeitet die KI noch, kommt sie in die Warteschlange
         (interrupt=True: die laufende Antwort anhalten und diese gleich beantworten). Laeuft der
@@ -537,6 +559,12 @@ class AppController(CLI):
         from ..bilder import BildFehler
 
         text = (text or "").strip()
+        if not getattr(self, "_nutzer_gestartet", False):
+            self._nutzer_gestartet = True
+            threading.Thread(target=self._nutzer_hintergrund, name="nutzer-check", daemon=True).start()
+        if getattr(self, "_gesperrt", False):
+            self._notice(self._SPERR_TEXT, "error")
+            return {"ok": False, "error": "gesperrt"}
         cid = client_id if isinstance(client_id, str) and _CLIENT_ID.match(client_id) else None
         if images is not None and not isinstance(images, list):
             return {"ok": False, "error": "Die Bilder kamen nicht richtig an."}

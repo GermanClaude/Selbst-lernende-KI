@@ -158,10 +158,31 @@ Funktionen, die ausdrücklich einen Online-Dienst nutzen – und nur, wenn **du*
 | Feedback & Bewertung | Fremddienst | nur wenn **du** aktiv absendest (Abschnitt 3.3) |
 | Updates | GitHub | Versionsabfrage/Download (IP sichtbar, Abschnitt 3.4) |
 | Anrufe / Transkription | Telefonie-Anbieter | Verbindungs-/Audiodaten beim Anbieter (Abschnitt 3.7) |
+| **Nutzungsdaten teilen** (`/mitteilen`, **Standard AUS**) | opt-in | **nur nach deiner ausdrücklichen Zustimmung**: Geräte-Kennung, dein selbst gewählter Name, Stufe (gratis/premium), Nutzungszeit, Version/OS, ggf. Sicherheits-Markierungen – an den Herausgeber (über das Feedback-Skript). **Keine E-Mail**, außer du gibst sie selbst an. Jederzeit widerrufbar (`/mitteilen aus`) |
+| **Geräte-Sperre** (Missbrauchsschutz) | Online-Prüfung | Nova prüft beim Start eine **signierte Sperrliste**; dabei wird die Geräte-Kennung/eine stabile Geräte-ID mit der Liste abgeglichen. Dient nur dazu, gesperrte Geräte (auch Gratis) auszuschließen |
 
 > Hinweis zu den **lokalen Stimmen** (Kokoro, Piper): Nur der **einmalige Download** der Modell-/Stimmdateien
 > geht ins Netz (GitHub bzw. HuggingFace sehen dabei deine IP wie bei jedem Download). Das **Vorlesen danach
 > läuft offline** auf deinem Gerät – der vorgelesene Text verlässt den Rechner **nicht**.
+
+---
+
+## 3.9 Freiwillige Nutzungsdaten (opt-in) & Geräte-Sperre
+
+**Nutzungsdaten teilen ist freiwillig und standardmäßig AUS.** Nur wenn du es ausdrücklich anschaltest
+(`/mitteilen an`), sendet Nova gelegentlich ein paar Eckdaten an den Herausgeber, damit er die App
+verbessern und dir auf Wunsch antworten kann: **Geräte-Kennung, dein selbst gewählter Name, Stufe,
+Nutzungszeit, Version/Betriebssystem** und – zur **manuellen** Prüfung durch den Herausgeber – etwaige
+**Sicherheits-Markierungen** (z. B. abgelehnte, möglicherweise rechtswidrige Versuche). **Keine
+E-Mail-Adresse**, außer du gibst sie selbst an. Du kannst jederzeit widerrufen (`/mitteilen aus`).
+Rechtsgrundlage: **Einwilligung** (Art. 6 Abs. 1 lit. a DSGVO).
+
+**Geräte-Sperre (Missbrauchsschutz):** Unabhängig davon prüft Nova beim Start eine **signierte**
+Sperrliste und schaltet sich ab, wenn der Herausgeber **dieses Gerät** gesperrt hat (auch in der
+Gratis-Version). Dafür wird eine **stabile Geräte-Kennung** verwendet, die absichtlich schwerer
+zurückzusetzen ist. Rechtsgrundlage: **berechtigtes Interesse** an der Missbrauchs-/Betrugsabwehr
+(Art. 6 Abs. 1 lit. f DSGVO). Die Entscheidung, ein Gerät zu sperren, trifft der Herausgeber **von Hand** –
+es gibt keine automatische Sperrung.
 
 ---
 

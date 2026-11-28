@@ -68,25 +68,36 @@ deinem Anwalt klären, sobald du Abos verkaufst.
 
 ## 🧭 Zwei größere Wünsche, die eine Grundsatz-Entscheidung brauchen
 
-### 1) „Nutzer-Übersicht im Generator" (alle Nutzer, Nutzungszeit, Gratis-Nutzer, Nachrichten schicken)
-**Das geht heute bewusst nicht – und sollte nicht ohne Weiteres gebaut werden.** Nova „funkt nicht nach
-Hause": es gibt **keine** zentrale Erfassung, wer die App nutzt, wie lange, oder wer die Gratis-Version hat.
-Genau das ist Teil deines Verkaufsarguments („lokal, kein Tracking") und steht in der Datenschutzerklärung.
+### 1) „Nutzer-Übersicht" – jetzt als ausdrückliches Opt-in gebaut ✅ (du hast zugestimmt)
+Auf deinen Wunsch ist die **Nutzer-Übersicht als opt-in-Telemetrie** gebaut: **Standard AUS**, der Nutzer
+muss in der App aktiv zustimmen (`/mitteilen an`). Dann sendet Nova **Geräte-Kennung, selbst gewählten
+Namen, Stufe, Nutzungszeit, Version/OS** und – zur **manuellen** Prüfung – etwaige Sicherheits-Markierungen.
+**Keine E-Mail**, außer der Nutzer gibt sie selbst an. Jederzeit widerrufbar. In der Datenschutzerklärung
+(Abschnitt 3.9) als **Einwilligung** dokumentiert.
 
-Eine solche Übersicht würde **Telemetrie** erfordern: die App müsste regelmäßig Nutzungsdaten an deinen
-Server senden. Das bedeutet:
-- **DSGVO-Einwilligung** nötig (am besten opt-in), klare Zweckbindung, Datenschutzerklärung anpassen.
-- Widerspruch zum bisherigen „kein Tracking"-Versprechen – Nutzer könnten sich getäuscht fühlen.
-- Einen Server, der personenbezogene Nutzungsdaten speichert (Risiko, Aufwand, Haftung).
+⚠️ **Noch nötig, damit es wirklich läuft:**
+- Das **Feedback-Skript** (`packaging/nova-feedback.gs`) muss die neuen Aktionen `telemetrie`/`nutzer`/
+  `nachricht`/`nachrichten`/`geraete_sperre` können und neu deployed werden (siehe Datei-Kommentare).
+- Im **Generator** kommt ein Reiter **„Nutzer"** (Liste, Zeiträume, Nachricht senden, sperren).
 
-**Was heute schon geht (ohne Tracking):** Dein **Generator-Archiv** zeigt alle **Premium-Codes**, die du
-ausgestellt hast – mit dem **Namen**, den **du** beim Erzeugen einträgst, der **Stufe** und dem **Datum**.
-Damit siehst du deine **zahlenden** Kunden und kannst Geräte **sperren**. **Gratis-Nutzer** und reine
-Nutzungszeiten sind ohne Telemetrie **nicht** sichtbar.
+⚠️ **Dein Blick / Anwalt:** Auch opt-in ist es personenbezogen – prüfe Einwilligungstext, Speicherdauer,
+Löschkonzept (Recht auf Löschung) und dass die Zustimmung wirklich freiwillig und informiert ist. Dass du
+Nutzern **Nachrichten schicken** kannst, ist Kundendienst – kein Werbekanal ohne gesonderte Einwilligung.
 
-→ **Deine Entscheidung:** Wenn du das wirklich willst, baue ich es als **ausdrücklich opt-in**-Telemetrie
-(der Nutzer muss aktiv zustimmen) mit sauberer Datenschutz-Grundlage. Sag Bescheid – ich habe es bewusst
-**nicht** still eingebaut.
+### 1b) Gratis-Nutzer sperren + „Neuinstallation unmöglich" – ehrliche Grenzen ⚠️
+- ✅ **Gesperrt werden können jetzt auch Gratis-Nutzer:** Nova prüft beim Start eine **signierte**
+  Geräte-Sperrliste und schaltet sich ab, wenn dein Gerät gesperrt ist (fail-open: kein Netz ≠ Sperre).
+  Die Sperre entscheidest **du von Hand** – nichts ist automatisiert.
+- ⚠️ **„Neuinstallation/Überlisten unmöglich" ist technisch NICHT erreichbar.** Die Geräte-Kennung ist jetzt
+  **deutlich stabiler** (an mehreren Orten außerhalb des App-Ordners gespiegelt, notfalls aus einem
+  Hardware-Merkmal abgeleitet) – ein bloßes Neuinstallieren/Daten-Löschen bringt also nichts mehr. **Aber**
+  ein entschlossener Nutzer kann eine Sperre immer umgehen (neue Hardware, virtuelle Maschine, frisch
+  aufgesetztes System, Dekompilieren der Exe). Ein 100 % fälschungssicheres, nicht-zurücksetzbares System
+  gibt es auf fremder Hardware nicht – versprich das Nutzern/Kunden also nicht.
+- ⚠️ **„Illegale Versuche im Sandbox-Modus merken":** Nova kann abgelehnte/verdächtige Aktionen als
+  **Markierung** vormerken und (nur bei Zustimmung) zur **manuellen** Prüfung an dich melden. Es ist **kein**
+  zuverlässiger „Legalitäts-Richter" – es erkennt nur, wenn die eingebauten Sicherheitsregeln ausgelöst
+  haben. Automatisch sperren wäre riskant (Fehlalarme) und bleibt bewusst **deine** Handentscheidung.
 
 ### 2) „Namen aus der App ins Generator-Archiv (Zuordnung Name ↔ Key)"
 Teilweise schon da, teils Telemetrie: Der **Name**, den ein Nutzer in einer **öffentlichen Rezension**

@@ -22,6 +22,7 @@ Sonderbefehle (mit '/' beginnen):
   /datenschutz        - Datenschutzerklaerung anzeigen
   /lizenzserver [url] - Lizenzserver fuers No-Code-Upgrade setzen/zeigen
   /livecode [an|aus]  - Live-Coding-Fenster: sieh live, was ich schreibe (Premium)
+  /mitteilen [an|aus] - freiwillig Nutzungs-Eckdaten an den Entwickler senden (Standard aus)
   /versionen          - gesicherte alte Versionen anzeigen
   /zurueck <Nr>       - zu einer gesicherten alten Version zurueckkehren
   /autostart          - zeigen, was die KI automatisch startet (und es abstellen)
@@ -2916,6 +2917,8 @@ class CLI:
             self._lizenzserver_command(cmd.split()[1:])
         elif base in ("/livecode", "/livecoding", "/mitschauen"):
             self._livecode_command(cmd.split()[1:])
+        elif base in ("/mitteilen", "/nutzerinfo"):
+            self._mitteilen_command(cmd.split()[1:])
         elif base in ("/versionen", "/version"):
             self._print_versions()
         elif base in ("/zurueck", "/zurück"):
@@ -3762,6 +3765,41 @@ class CLI:
             except OSError:
                 continue
         return "", ""
+
+    def _mitteilen_command(self, args: list) -> None:
+        """Opt-in: Nutzungs-Eckdaten an den Entwickler senden (fuer Verbesserungen/Kundendienst). Standard AUS."""
+        from .. import telemetrie as T
+
+        root = self.config.project_root
+        sub = args[0].lower() if args else ""
+        if sub in ("an", "ein", "ja", "erlauben"):
+            name = " ".join(args[1:]).strip()
+            st = T.setzen(root, an=True, name=name or None)
+            print(_c("Danke! Du teilst dem Entwickler jetzt ein paar Nutzungs-Eckdaten mit "
+                     "(Kennung, Name, Stufe, Nutzungszeit) - keine E-Mail, ausser du gibst sie an. "
+                     "Jederzeit aus mit /mitteilen aus.", GREEN))
+            if st["name"]:
+                print(_c(f"Angezeigter Name: {st['name']}", GREY))
+            return
+        if sub in ("aus", "nein", "widerrufen", "stop"):
+            T.setzen(root, an=False)
+            print(_c("Aus. Es werden keine Nutzungsdaten mehr gesendet.", GREEN))
+            return
+        if sub == "name" and args[1:]:
+            st = T.setzen(root, name=" ".join(args[1:]))
+            print(_c(f"Name gesetzt: {st['name']}", GREEN))
+            return
+        if sub in ("kontakt", "email", "e-mail") and args[1:]:
+            T.setzen(root, kontakt=" ".join(args[1:]))
+            print(_c("Kontakt gespeichert - wird nur gesendet, wenn du das Mitteilen anschaltest.", GREEN))
+            return
+        st = T.status(root)
+        print(_c(f"Nutzungsdaten an den Entwickler senden: {'AN' if st['an'] else 'AUS (Standard)'}", BOLD))
+        print(_c("Das ist freiwillig. An: /mitteilen an [Name]   |   Aus: /mitteilen aus   |   "
+                 "Name: /mitteilen name <Name>", GREY))
+        print(_c("Gesendet werden Kennung, dein Name, Stufe, Nutzungszeit, Version - keine E-Mail, ausser "
+                 "du gibst sie mit /mitteilen email <…> an. So kann der Entwickler die App verbessern und "
+                 "dir auf Wunsch antworten.", GREY))
 
     def _livecode_command(self, args: list) -> None:
         """Live-Coding-Fenster (Premium) oeffnen/schliessen: zeigt live, was Nova schreibt."""

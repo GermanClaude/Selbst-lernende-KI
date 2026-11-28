@@ -119,7 +119,8 @@ class PermissionManager:
                 "data/server_token", "data/memory.sqlite3", "data/memory.sqlite3-wal", "data/memory.sqlite3-shm",
                 "data/zeitplan.json", "data/wachwort.json", "data/nova_wachwort.ps1", "data/app.json",
                 "data/premium.json", "data/tresor.bin", "data/tresor.tmp", "data/generator.json",
-                "data/codewort.json", "data/proaktiv.json", "data/lizenzserver.txt")
+                "data/codewort.json", "data/proaktiv.json", "data/lizenzserver.txt",
+                "data/telemetrie.json", "data/geraet.id")
     # Novas eigener Code und das Premium-Paket sind fuer Werkzeuge tabu (Schutz des Werks, siehe LICENSE).
     GESPERRT_PRAEFIXE = ("config/plugins/", "data/premium")
     GESPERRT_ENDUNGEN = (".session", ".key", ".pem", ".keystore", ".jks")

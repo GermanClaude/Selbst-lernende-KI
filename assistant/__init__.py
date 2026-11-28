@@ -15,4 +15,4 @@ Version: bei jeder Aenderung, die Nutzer bekommen sollen, __version__ erhoehen u
 CHANGELOG.md ergaenzen - daran erkennt der Updater neue Versionen.
 """
 
-__version__ = "0.83.0"
+__version__ = "0.84.0"
