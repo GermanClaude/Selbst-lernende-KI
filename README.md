@@ -11,7 +11,7 @@ arbeitet weiter, während du weg bist – und läuft auf Wunsch komplett kostenl
 [📖 Anleitung für Anfänger](ANLEITUNG.md) ·
 [🆕 Neuigkeiten](CHANGELOG.md) ·
 [🛠️ Mitentwickeln](docs/ENTWICKLUNG.md) ·
-[⚖️ Rechtliches](NUTZUNGSBEDINGUNGEN.md)
+[⚖️ Rechtliches](NUTZUNGSBEDINGUNGEN.md) · [📜 Lizenz (EULA)](LIZENZVERTRAG.md) · [🔒 Datenschutz](DATENSCHUTZ.md)
 
 ![Nova – Startbildschirm](docs/bilder/start.png)
 
@@ -950,8 +950,8 @@ vornehmen. Nutze `safe_mode` und `auto_confirm` bewusst. Du bist für die Aktion
 verantwortlich, die du der KI erlaubst. Starte mit den sicheren Standardwerten und
 erweitere die Rechte erst, wenn du dich damit wohlfühlst.
 
-Die vollständigen **[Nutzungsbedingungen & den Haftungsausschluss](NUTZUNGSBEDINGUNGEN.md)**
-findest du in einer eigenen Datei – in der App und im Terminal auch über den Befehl
-`/rechtliches`. Es ist eine **Vorlage** mit Platzhaltern in eckigen Klammern, die du selbst
-ausfüllst; sie ist **kein Rechtsrat**. In Deutschland/der EU lässt sich die Haftung nicht
+Die vollständigen Rechtstexte – **[Nutzungsbedingungen & Haftungsausschluss](NUTZUNGSBEDINGUNGEN.md)**, **[Lizenzvertrag/EULA](LIZENZVERTRAG.md)** und **[Datenschutzerklärung](DATENSCHUTZ.md)** –
+findest du in eigenen Dateien – in der App und im Terminal auch über die Befehle
+`/rechtliches`, `/lizenz` und `/datenschutz`. Es sind **Vorlagen** mit Platzhaltern in eckigen Klammern, die du selbst
+ausfüllst; sie sind **kein Rechtsrat**. In Deutschland/der EU lässt sich die Haftung nicht
 vollständig ausschließen (siehe Hinweis in der Datei).

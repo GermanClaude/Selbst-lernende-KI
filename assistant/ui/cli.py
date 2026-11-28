@@ -17,7 +17,9 @@ Sonderbefehle (mit '/' beginnen):
   /gedaechtnis        - zeigen, was die KI gelernt hat
   /kosten             - Token-Verbrauch & geschaetzte Kosten dieser Sitzung
   /update             - jetzt nach einer neuen Version schauen
-  /rechtliches        - Nutzungsbedingungen & Haftungsausschluss anzeigen
+  /rechtliches        - Nutzungsbedingungen, Lizenzvertrag & Datenschutz anzeigen
+  /lizenz             - Endbenutzer-Lizenzvertrag (EULA) anzeigen
+  /datenschutz        - Datenschutzerklaerung anzeigen
   /versionen          - gesicherte alte Versionen anzeigen
   /zurueck <Nr>       - zu einer gesicherten alten Version zurueckkehren
   /autostart          - zeigen, was die KI automatisch startet (und es abstellen)
@@ -2904,6 +2906,10 @@ class CLI:
             return self._update_command()
         elif base in ("/rechtliches", "/recht", "/nutzungsbedingungen", "/agb"):
             self._print_rechtliches()
+        elif base in ("/datenschutz", "/privacy", "/dsgvo"):
+            self._print_rechts_doc("DATENSCHUTZ.md", "Datenschutzerklärung")
+        elif base in ("/lizenz", "/eula", "/lizenzvertrag"):
+            self._print_rechts_doc("LIZENZVERTRAG.md", "Endbenutzer-Lizenzvertrag (EULA)")
         elif base in ("/versionen", "/version"):
             self._print_versions()
         elif base in ("/zurueck", "/zurück"):
@@ -3730,14 +3736,37 @@ class CLI:
                 continue
         return "", ""
 
-    def _print_rechtliches(self) -> None:
-        nutzung, pfad_n = self._rechts_text("NUTZUNGSBEDINGUNGEN.md")
-        if not nutzung:
-            print(_c("Keine Nutzungsbedingungen gefunden (NUTZUNGSBEDINGUNGEN.md).", YELLOW))
+    def _print_rechts_doc(self, name: str, titel: str) -> None:
+        """Ein einzelnes Rechts-Dokument anzeigen (z.B. Datenschutz, Lizenzvertrag)."""
+        text, pfad = self._rechts_text(name)
+        if not text:
+            print(_c(f"{titel} nicht gefunden ({name}).", YELLOW))
             return
-        print(_c("\n=== Nutzungsbedingungen & Haftungsausschluss ===", BOLD))
-        print(nutzung.rstrip())
-        print(_c(f"\n(Datei: {pfad_n})", GREY))
+        print(_c(f"\n=== {titel} ===", BOLD))
+        print(text.rstrip())
+        print(_c(f"\n(Datei: {pfad})", GREY))
+        print(_c("\nTipp: Platzhalter in eckigen Klammern selbst ausfuellen. "
+                 "Das ist eine Vorlage, kein Rechtsrat.", GREY))
+
+    def _print_rechtliches(self) -> None:
+        dokumente = [
+            ("NUTZUNGSBEDINGUNGEN.md", "Nutzungsbedingungen & Haftungsausschluss"),
+            ("LIZENZVERTRAG.md", "Endbenutzer-Lizenzvertrag (EULA)"),
+            ("DATENSCHUTZ.md", "Datenschutzerklärung"),
+        ]
+        gefunden = False
+        print(_c("\nRechtliches – Einzelteile auch mit /lizenz und /datenschutz.", GREY))
+        for name, titel in dokumente:
+            text, pfad = self._rechts_text(name)
+            if not text:
+                continue
+            gefunden = True
+            print(_c(f"\n=== {titel} ===", BOLD))
+            print(text.rstrip())
+            print(_c(f"\n(Datei: {pfad})", GREY))
+        if not gefunden:
+            print(_c("Keine Rechtstexte gefunden (NUTZUNGSBEDINGUNGEN.md).", YELLOW))
+            return
         print(_c("\nTipp: Platzhalter in eckigen Klammern selbst ausfuellen. "
                  "Das ist eine Vorlage, kein Rechtsrat.", GREY))
 

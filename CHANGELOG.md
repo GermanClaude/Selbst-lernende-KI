@@ -4,6 +4,18 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.77.0 – 2026-11-28
+
+- **Rechtstexte erweitert:** Nova bringt jetzt neben den Nutzungsbedingungen auch einen
+  **Lizenzvertrag (EULA)** und eine **Datenschutzerklärung** mit – als verständliche Vorlagen
+  mit Platzhaltern in eckigen Klammern, die du selbst ausfüllst (**kein Rechtsrat**).
+- Du kannst sie in der App und im Terminal direkt öffnen: `/rechtliches` zeigt alle drei,
+  `/lizenz` nur den Lizenzvertrag, `/datenschutz` nur die Datenschutzerklärung.
+- Die Datenschutzerklärung erklärt in einfachen Worten, dass Nova **lokal zuerst** arbeitet:
+  Deine Gespräche bleiben auf deinem Gerät, und Daten gehen nur dann nach außen, wenn du eine
+  Funktion nutzt, die das braucht (z. B. ein Cloud-KI-Modell, Premium-Freischaltung, Feedback).
+- **Preise sind bewusst noch nicht hinterlegt** – nur Platzhalter. Ein Impressum ist nicht enthalten.
+
 ## 0.76.0 – 2026-11-28
 
 - **Projekt-Baukasten (Premium):** Für größere Vorhaben (Spiel, App, Webseite) gibt Nova eine klare

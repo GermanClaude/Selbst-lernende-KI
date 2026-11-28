@@ -21,7 +21,7 @@ NODE = shutil.which("node")
 needs_node = pytest.mark.skipif(NODE is None, reason="Node.js fehlt")
 
 # Elemente, die app.js selbst anlegt (nicht im HTML)
-_DYNAMIC_IDS = {"su-start"}
+_DYNAMIC_IDS = {"su-start", "neustart-overlay"}
 
 
 def _ids():

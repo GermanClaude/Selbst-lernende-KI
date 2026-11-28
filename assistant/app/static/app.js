@@ -1353,7 +1353,7 @@
     try { data = await getJson('/api/premium/uebersicht'); } catch (e) { data = null; }
     renderStufen(data);
     m.hidden = false;
-    requestAnimationFrame(() => { const d = byId('sdialog'); if (d) d.focus(); });
+    requestAnimationFrame(() => { const d = byId('stdialog'); if (d) d.focus(); });
   }
   function closeStufen() { const m = byId('stufenmodal'); if (m) m.hidden = true; }
   function renderStufen(data) {
@@ -9981,7 +9981,7 @@
     const pm = byId('premmodal'); if (pm) pm.addEventListener('click', (e) => { if (e.target === pm) closePremium(); }); }
   { const sx = byId('su-x'); if (sx) sx.addEventListener('click', closeStufen);
     const sm = byId('stufenmodal'); if (sm) sm.addEventListener('click', (e) => { if (e.target === sm) closeStufen(); });
-    const sd = byId('sdialog'); if (sd) sd.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); closeStufen(); } }); }
+    const sd = byId('stdialog'); if (sd) sd.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); closeStufen(); } }); }
   { const kb = byId('sb-konnektoren'); if (kb) kb.addEventListener('click', () => { closeSidebar(); openKonnektoren(); });
     const kx = byId('kn-x'); if (kx) kx.addEventListener('click', closeKonnektoren);
     const km = byId('konnmodal'); if (km) km.addEventListener('click', (e) => { if (e.target === km) closeKonnektoren(); });
