@@ -4,6 +4,13 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.64.0 – 2026-11-28
+
+- **Wegwerf-E-Mail (Premium):** Nova kann dir ein temporäres Postfach anlegen und
+  reinschauen – praktisch für Anmeldungen, bei denen du nicht deine echte Adresse
+  angeben willst. Nova holt dir daraus z. B. auch den Bestätigungs-Code. Erscheint in
+  der Premium-Übersicht. (Nur für Zeug zum Wegwerfen – nichts Wichtiges darüber laufen lassen.)
+
 ## 0.63.0 – 2026-11-28
 
 - **Echtheits-Nachweis fürs Premium-Paket (Wasserzeichen):** Das Premium-Paket trägt
