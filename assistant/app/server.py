@@ -204,6 +204,8 @@ class AppServer:
                     return self._send(200, b"ok", "text/plain; charset=utf-8")
                 if url.path == "/lizenz/sperrliste":   # Lizenzserver (nur Cloud des Entwicklers, sonst 404)
                     return self._lizenz_sperrliste()
+                if url.path == "/lizenz/freischaltung":  # No-Code-Upgrade: vom Entwickler vergebene Stufen
+                    return self._lizenz_freischaltung()
                 if not self._host_ok():
                     return self._deny()
                 if url.path in ("/", "/index.html"):
@@ -392,6 +394,21 @@ class AppServer:
                     return self._json({"ok": False, "grund": str(exc)}, 404 if str(exc) == "nicht_gefunden" else 503)
                 except Exception:  # noqa: BLE001
                     logger.warning("Lizenzserver: Sperrliste nicht lesbar")
+                    return self._json({"ok": False, "grund": "repo_fehler"}, 503)
+
+            def _lizenz_freischaltung(self) -> None:
+                from .. import lizenzserver as L
+
+                if not L.aktiv():
+                    return self._deny(404)
+                if self._lizenz_bremse():
+                    return self._json({"ok": False, "meldung": "Zu viele Versuche - bitte spaeter."}, 429)
+                try:
+                    return self._send(200, L.freischaltliste_roh(), "application/json")
+                except L.LizenzFehler as exc:
+                    return self._json({"ok": False, "grund": str(exc)}, 404 if str(exc) == "nicht_gefunden" else 503)
+                except Exception:  # noqa: BLE001
+                    logger.warning("Lizenzserver: Freischaltliste nicht lesbar")
                     return self._json({"ok": False, "grund": "repo_fehler"}, 503)
 
             def _lizenz_paket(self) -> None:

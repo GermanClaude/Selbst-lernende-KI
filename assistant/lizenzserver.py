@@ -79,6 +79,14 @@ def sperrliste_roh(holen: Callable[[str], bytes] | None = None) -> bytes:
     return blob
 
 
+def freischaltliste_roh(holen: Callable[[str], bytes] | None = None) -> bytes:
+    """Die signierte Freischaltliste (No-Code-Upgrade) unveraendert weitergeben. Enthaelt nur ganz normale,
+    an je eine Geraete-Kennung gebundene Codes - nichts Geheimes; die Geraete pruefen die Unterschrift selbst."""
+    blob = (holen or repo_holen)(P.FREI_PFAD)
+    P.freischaltliste_lesen(blob)       # nur Unterschriebenes weitergeben
+    return blob
+
+
 def _gesperrt(c: dict, holen: Callable[[str], bytes]) -> bool:
     try:
         liste = P.sperrliste_lesen(holen(P.SPERR_PFAD))

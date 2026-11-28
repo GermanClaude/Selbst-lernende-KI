@@ -2885,7 +2885,8 @@ class AppController(CLI):
         try:
             from .. import premium as PM
 
-            PM.sperrung_pruefen(self.config.project_root)
+            PM.freischaltung_pruefen(self.config.project_root)   # No-Code-Upgrade: Stufe vom Server holen
+            PM.sperrung_pruefen(self.config.project_root)        # danach Sperren (haben Vorrang)
         except Exception:  # noqa: BLE001 - kein Netz: Stand lassen
             pass
         neu = self._premium_signatur()

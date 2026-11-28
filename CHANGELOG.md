@@ -4,6 +4,16 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.59.0 – 2026-11-28
+
+- **Stufe ohne Code freischalten (No-Code-Upgrade):** Der Entwickler kann einem
+  Gerät eine Stufe jetzt direkt über die Geräte-Kennung geben – du musst keinen
+  Code mehr abtippen. Beim nächsten „Jetzt prüfen“ holt Nova die Freischaltung
+  automatisch, und die Stufe bleibt nach jedem Update erhalten. So muss nach einem
+  Update niemand mehr einen neuen Schlüssel anfordern. Sicher bleibt alles: jede
+  Freischaltung ist – wie ein Code – an genau dein Gerät gebunden und vom Entwickler
+  unterschrieben; eine Sperre hat weiterhin Vorrang.
+
 ## 0.58.0 – 2026-11-27
 
 - **Agenten-Fenster (Premium Max):** Für eine große Aufgabe kann Nova jetzt mehrere

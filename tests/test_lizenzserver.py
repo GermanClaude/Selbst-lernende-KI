@@ -13,7 +13,7 @@ from assistant import lizenzserver as L
 from assistant import premium as P
 from assistant.app.server import AppServer
 
-from .test_premium import N, _code, _sign, _sperrliste
+from .test_premium import N, _code, _frei, _sign, _sperrliste
 
 KENNUNG = "0123456789abcdef"
 
@@ -28,12 +28,14 @@ def _zip():
 ZIP = _zip()
 
 
-def _repo(sperre=None, sig=None, ohne_sperrliste=True):
+def _repo(sperre=None, sig=None, frei=None, ohne_sperrliste=True):
     dateien = {L.PAKET_ZIP: ZIP,
                L.PAKET_META: json.dumps({"sig": sig or base64.b64encode(_sign(ZIP)).decode(),
                                          "info": {"version": "9"}}).encode()}
     if sperre is not None:
         dateien[P.SPERR_PFAD] = sperre
+    if frei is not None:
+        dateien[P.FREI_PFAD] = frei
 
     def holen(pfad):
         if pfad not in dateien:
@@ -142,6 +144,34 @@ def test_http_sperrliste(server):
     c.request("GET", "/lizenz/sperrliste", headers={"Host": "nova.test"})
     r = c.getresponse()
     assert r.status == 200 and P.sperrliste_lesen(r.read()) is not None
+
+
+def _get(port, pfad):
+    c = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+    c.request("GET", pfad, headers={"Host": "nova.test"})
+    r = c.getresponse()
+    return r.status, r.read()
+
+
+def test_http_freischaltung_noch_keine(server):
+    # Noch keine Freischaltliste im Repo -> sauber 404, kein Fehler.
+    assert _get(server.port, "/lizenz/freischaltung")[0] == 404
+
+
+def test_http_freischaltung(monkeypatch):
+    monkeypatch.setenv("NOVA_LIZENZSERVER", "1")
+    monkeypatch.setenv("NOVA_PREMIUM_REPO_TOKEN", "github_pat_GEHEIM_test")
+    blob = _frei([_code(KENNUNG, "max", 99999, u="https://nova.test")])
+    monkeypatch.setattr(L, "repo_holen", _repo(sperre=_sperrliste(), frei=blob))
+    s = AppServer(lambda b: FakeCtl(), port=0, token="t" * 30, hosts="*")
+    s.start()
+    try:
+        status, roh = _get(s.port, "/lizenz/freischaltung")
+        assert status == 200 and b"GEHEIM" not in roh
+        liste = P.freischaltliste_lesen(roh)
+        assert liste["codes"] and P.code_lesen(liste["codes"][0])["t"] == "max"
+    finally:
+        s.stop()
 
 
 def test_http_aus_wenn_nicht_eingeschaltet(monkeypatch):

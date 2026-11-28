@@ -550,3 +550,69 @@ def test_paket_wird_automatisch_nachgeholt_wenn_es_fehlt(root, monkeypatch):
     P.laden(root, ctl=None, sperrung=False)     # ctl=None: laedt nichts, aber holt das Paket nach
     assert geholt == [True]
     assert P.paket_pfad(root).exists()
+
+
+# -- Freischaltung (No-Code-Upgrade: Stufe per Geraete-Kennung vom Server) -----
+def _frei(codes):
+    import base64 as b64
+    inner = json.dumps({"v": 1, "codes": list(codes), "stand": 1}, separators=(",", ":")).encode()
+    huelle = {"daten": b64.urlsafe_b64encode(inner).rstrip(b"=").decode(),
+              "sig": b64.b64encode(_sign(inner)).decode()}
+    return json.dumps(huelle).encode()
+
+
+def test_freischaltung_ohne_code(root, monkeypatch):
+    """Frisches Geraet ohne Code: der Entwickler vergibt per Kennung eine Stufe - Nova wendet sie an."""
+    monkeypatch.setenv("NOVA_LIZENZSERVER_URL", SERVER)
+    k = P.kennung(root)
+    assert P.stufe(root) is None
+    code = _code(k, "max", 99999, nonce="f1" * 8, u=SERVER)
+    st = P.freischaltung_pruefen(root, holen=lambda server: _frei([code]))
+    assert st == "max" and P.stufe(root) == "max"
+
+
+def test_freischaltung_nur_eigenes_geraet(root, monkeypatch):
+    monkeypatch.setenv("NOVA_LIZENZSERVER_URL", SERVER)
+    fremd = _code("0123456789abcdef", "max", 99999, nonce="f2" * 8, u=SERVER)
+    assert P.freischaltung_pruefen(root, holen=lambda server: _frei([fremd])) is None
+    assert P.stufe(root) is None
+
+
+def test_freischaltung_hebt_premium_auf_max(root):
+    """Geraet hat Premium (per Code) -> Freischaltliste mit Max-Code hebt es ohne neuen Code auf Max."""
+    k = P.kennung(root)
+    P.einloesen(root, _code(k, "premium", 99999, nonce="f3" * 8, u=SERVER))
+    assert P.stufe(root) == "premium"
+    maxcode = _code(k, "max", 99999, nonce="f4" * 8, u=SERVER)
+    st = P.freischaltung_pruefen(root, holen=lambda server: _frei([maxcode]))
+    assert st == "max" and P.stufe(root) == "max"
+
+
+def test_freischaltung_doppelt_ist_harmlos(root, monkeypatch):
+    """Zweimal pruefen loest denselben Code nicht doppelt ein (Nonce schon benutzt) - Stufe bleibt einfach."""
+    monkeypatch.setenv("NOVA_LIZENZSERVER_URL", SERVER)
+    k = P.kennung(root)
+    code = _code(k, "max", 99999, nonce="f7" * 8, u=SERVER)
+    P.freischaltung_pruefen(root, holen=lambda server: _frei([code]))
+    assert P.freischaltung_pruefen(root, holen=lambda server: _frei([code])) is None
+    assert P.stufe(root) == "max"
+
+
+def test_freischaltung_unsigniert_ignoriert(root, monkeypatch):
+    monkeypatch.setenv("NOVA_LIZENZSERVER_URL", SERVER)
+    k = P.kennung(root)
+    code = _code(k, "max", 99999, nonce="f5" * 8, u=SERVER)
+    monkeypatch.setattr(P, "OEFFENTLICH_N", N + 4)   # Liste mit falschem Schluessel signiert
+    assert P.freischaltung_pruefen(root, holen=lambda server: _frei([code])) is None
+    assert P.stufe(root) is None
+
+
+def test_sperre_schlaegt_freischaltung(root, monkeypatch):
+    """Geraet steht auf der Sperrliste (ganzes Geraet) UND auf der Freischaltliste -> die Sperre gewinnt."""
+    monkeypatch.setenv("NOVA_LIZENZSERVER_URL", SERVER)
+    k = P.kennung(root)
+    code = _code(k, "max", 99999, nonce="f6" * 8, u=SERVER)
+    monkeypatch.setattr(P, "_freischaltliste_vom_server", lambda server, **kw: _frei([code]))
+    monkeypatch.setattr(P, "_sperrliste_vom_server", lambda server, **kw: _sperrliste(kennungen=[k]))
+    P.laden(root, ctl=None, sperrung=True)
+    assert P.stufe(root) is None and P.lizenz(root).get("gesperrt")

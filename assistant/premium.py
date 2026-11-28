@@ -78,6 +78,8 @@ def glueckwunsch(stufe: str) -> str:
             f"Das hast du jetzt:\n{punkte}\n")
 PAKET_REPO = "GermanClaude/Nova-Premium"   # privat - nur der Lizenzserver hat einen Lesezugang
 SPERR_PFAD = "pakete/gesperrt.json"       # signierte Liste gesperrter Codes (Entwickler kann Zugang zuruecknehmen)
+FREI_PFAD = "pakete/freischaltung.json"   # signierte Liste: Stufen, die der Entwickler per Geraete-Kennung
+                                          # vergibt - ohne dass der Nutzer einen Code abtippen muss (No-Code)
 _SHA256_INFO = bytes.fromhex("3031300d060960864801650304020105000420")
 _TAG = 86400
 
@@ -280,6 +282,61 @@ def einloesen(root, code: str, jetzt: float | None = None, n: int = None) -> dic
     return neu
 
 
+def freischaltliste_lesen(blob: bytes, n: int = None) -> dict:
+    """Signierte Freischaltliste {"codes":[NOVA-...], "stand":ts}. Jeder Eintrag ist ein ganz normaler,
+    an EINE Geraete-Kennung gebundener, unterschriebener Code. Die Liste selbst ist zusaetzlich unterschrieben.
+    Wirft PremiumFehler, wenn die Unterschrift der Liste fehlt/falsch ist."""
+    try:
+        huelle = json.loads(blob)
+        daten = _b64d(huelle["daten"]) if isinstance(huelle, dict) and "daten" in huelle else None
+        sig = base64.b64decode(huelle.get("sig", "")) if isinstance(huelle, dict) else b""
+    except (ValueError, KeyError, TypeError) as exc:
+        raise PremiumFehler("Freischaltliste unlesbar.") from exc
+    if daten is None or not signatur_ok(daten, sig, n):
+        raise PremiumFehler("Freischaltliste ist nicht vom Entwickler unterschrieben.")
+    liste = json.loads(daten)
+    return liste if isinstance(liste, dict) else {}
+
+
+def freischaltung_pruefen(root, holen: Callable[[str], bytes] = None, n: int = None,
+                          jetzt: float | None = None) -> str | None:
+    """No-Code-Upgrade: beim Lizenzserver nachsehen, ob der Entwickler diesem Geraet (ueber seine Kennung)
+    eine Stufe vergeben/angehoben hat - OHNE dass der Nutzer einen Code abtippt. Jeder Eintrag ist ein
+    signierter, an die Kennung gebundene Code; wir loesen den passenden hier einfach selbst ein. So bleibt
+    die Stufe nach jedem Update erhalten, ohne dass fuer jeden Nutzer ein neuer Code noetig ist.
+    Gibt die neu/weiter freigeschaltete Stufe zurueck oder None. Ohne Netz/ohne Liste bleibt der Stand."""
+    holen = holen or _freischaltliste_vom_server
+    d = lizenz(root)
+    server = lizenzserver(d)
+    if not server:
+        return None
+    try:
+        liste = freischaltliste_lesen(holen(server), n)
+    except PremiumFehler as exc:
+        if "unterschrieben" in str(exc):          # da liegt was Falsches - nicht darauf hereinfallen
+            logger.warning("Premium: Freischaltliste ungueltig")
+        return None
+    except Exception:  # noqa: BLE001 - kein Netz, 404 (noch keine Liste): Stand lassen
+        return None
+    meine = kennung(root)
+    neu = None
+    for code in (liste.get("codes") or []):
+        if not isinstance(code, str):
+            continue
+        try:
+            c = code_lesen(code, n)
+        except PremiumFehler:
+            continue
+        if c.get("k") != meine or c.get("t") == "aus":
+            continue
+        try:
+            ergebnis = einloesen(root, code, jetzt=jetzt, n=n)   # prueft Bindung/Frist/Einmaligkeit selbst
+        except PremiumFehler:
+            continue                 # schon eingeloest oder abgelaufen: der naechste Eintrag ist dran
+        neu = ergebnis.get("stufe") or neu
+    return neu
+
+
 def anzeigename(root, jetzt: float | None = None) -> str | None:
     """Der (evtl. selbst gewaehlte) Name der aktiven Stufe - fuer die Anzeige in der App. None = kein Premium."""
     st = stufe(root, jetzt)
@@ -347,6 +404,11 @@ def lizenzserver(d: dict) -> str:
 
 def _sperrliste_vom_server(server: str, timeout: float = 20.0) -> bytes:
     with urllib.request.urlopen(server + "/lizenz/sperrliste", timeout=timeout) as r:
+        return r.read()
+
+
+def _freischaltliste_vom_server(server: str, timeout: float = 20.0) -> bytes:
+    with urllib.request.urlopen(server + "/lizenz/freischaltung", timeout=timeout) as r:
         return r.read()
 
 
@@ -422,7 +484,11 @@ def laden(root, ctl, n: int = None, sperrung=True):
         pass
     if sperrung:
         try:
-            sperrung_pruefen(root, n=n)        # gesperrt? -> stufe() ist danach None, nichts wird geladen
+            freischaltung_pruefen(root, n=n)   # No-Code-Upgrade: vom Server vergebene Stufe anwenden
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            sperrung_pruefen(root, n=n)        # danach Sperren - eine Sperre hat immer Vorrang
         except Exception:  # noqa: BLE001
             pass
     st = stufe(root)
