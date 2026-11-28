@@ -4,6 +4,13 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.73.0 – 2026-11-28
+
+- **Persönliche Chronik (Premium):** Nova führt auf Wunsch ein privates, **lokales** Lebens-Logbuch –
+  Meilensteine, Entscheidungen, schöne Momente. Sag „schreib das in meine Chronik", frag später danach,
+  oder lass dir Rückblicke geben („heute vor einem Jahr …"). Es wird nichts hochgeladen. Steht in der
+  Premium-Übersicht.
+
 ## 0.72.0 – 2026-11-28
 
 - **Experten-Rollen (Premium):** Lass Nova in eine Rolle schlüpfen – **Coder**, **Lerncoach**,

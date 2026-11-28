@@ -61,6 +61,7 @@ FUNKTIONEN = {
         "Routinen in eigenen Worten: wiederkehrende Automatisierungen beschreiben, Nova fuehrt sie von selbst aus (premium_routinen)",
         "Proaktive Nova: meldet sich von selbst zur passenden Zeit, wenn es wirklich etwas Hilfreiches gibt (premium_proaktiv)",
         "Experten-Rollen: Nova per Knopf zum Coder, Lerncoach, Schreibcoach, Verhandlungs-/Gesundheits-/Ideen-Coach (premium_rollen)",
+        "Persoenliche Chronik: privates Lebens-Logbuch mit Rueckblicken - alles lokal (premium_chronik)",
         "Edlere Premium-Optik in der App",
     ],
     "max": [
