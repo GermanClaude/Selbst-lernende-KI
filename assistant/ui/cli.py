@@ -2824,6 +2824,9 @@ class CLI:
             print(__doc__)
         elif base == "/status":
             self._print_status()
+        elif base == "/codewort":        # Codewort-Schutz: Eingabe bleibt lokal, geht nie ans Modell
+            from .. import codewort
+            print(_c(codewort.befehl(self.config.project_root, cmd.split()[1:]), GREY))
         elif base in ("/funktionen", "/stufen", "/premiumfunktionen"):
             from .. import premium as PM
             print(PM.uebersicht_text(self.config.project_root))

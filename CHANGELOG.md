@@ -4,6 +4,16 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.66.0 – 2026-11-28
+
+- **Codewort-Schutz:** Du kannst ein geheimes Codewort setzen (`/codewort setzen <wort>`).
+  Danach macht Nova sensible Dinge – eine Nachricht senden, jemanden anrufen bzw. den
+  Dialer öffnen, dich irgendwo anmelden, ein gespeichertes Passwort benutzen – erst,
+  wenn du einmal dein Codewort eingibst (`/codewort <wort>`, dann 15 Minuten frei).
+  Schützt, falls mal jemand anders an deinem PC sitzt. Vom Codewort wird nur ein
+  verschlüsselter Fingerabdruck gespeichert, nie das Wort selbst, und deine Eingabe
+  geht nie an die KI.
+
 ## 0.65.0 – 2026-11-28
 
 - **Wegwerf-E-Mail: mehrere Postfächer (Premium):** Deine Wegwerf-Postfächer bleiben

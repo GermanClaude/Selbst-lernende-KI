@@ -53,6 +53,9 @@ class TelegramBotTool(Tool):
             if aktion == "senden":
                 if not (text or "").strip():
                     return "Was soll ich schicken? (text fehlt)"
+                from .. import codewort
+                if not codewort.frei(ctx.extra.get("app_root")):
+                    return codewort.SPERR_HINWEIS
                 relay.sende(text.strip()[:4000])
                 return "Auf Telegram an ihn geschickt."
             if ctx.extra.get("handy_aktiv", lambda: False)():

@@ -52,6 +52,7 @@ _UPLOAD_TAGE = 30  # hochgeladene Bilder (nur fuer die Anzeige) so lange aufhebe
 
 COMMANDS = [
     ("/status", "Einstellungen & Sicherheitslage"),
+    ("/codewort", "sensible Aktionen mit einem Codewort schuetzen"),
     ("/gedaechtnis", "was die KI gelernt hat"),
     ("/kosten", "Token-Verbrauch & Kosten"),
     ("/update", "nach einer neuen Version schauen"),
@@ -506,6 +507,10 @@ class AppController(CLI):
         if _PM.gen_pin_ok(text.strip()):         # Generator-Passwort: geht NIE an die KI, schaltet den Modus frei
             pw = text.strip()                    # zum Entschluesseln des Generators (nur lokal, nie gespeichert)
             self.run_background(lambda: self._generator_modus_aktivieren(pw))
+            return {"ok": True}
+        if text.strip().lower().startswith("/codewort"):   # Codewort-Schutz: Eingabe geht NIE an die KI
+            from .. import codewort
+            self._notice(codewort.befehl(self.config.project_root, text.strip().split()[1:]), "info")
             return {"ok": True}
         if not text.startswith("/") and find_cloudflare_token(text):
             return {"ok": False, "error": CLOUDFLARE_HINWEIS}

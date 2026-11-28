@@ -93,6 +93,9 @@ class AnrufTool(Tool):
 
     def run(self, ctx: ToolContext, anliegen: str, warten: bool = True, gespraech: bool = False) -> str:
         root = ctx.extra.get("app_root")
+        from .. import codewort
+        if not codewort.frei(root):
+            return codewort.SPERR_HINWEIS
         e = einstellungen(root)
         if not e["bereit"] or not e["nummer"]:
             return ("Anrufen ist noch nicht eingerichtet. Dein Mensch braucht Bland AI (/anruf schluessel <KEY>) "
@@ -149,6 +152,9 @@ class WaehlenTool(Tool):
     }
 
     def run(self, ctx: ToolContext, nummer: str, wer: str = "") -> str:
+        from .. import codewort
+        if not codewort.frei(ctx.extra.get("app_root")):
+            return codewort.SPERR_HINWEIS
         n = dialer_nummer(nummer)
         if not n:
             return "Das sieht nicht nach einer Rufnummer aus - gib sie mir nochmal (z.B. +49 30 1234567)."

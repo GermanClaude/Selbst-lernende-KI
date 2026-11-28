@@ -64,6 +64,9 @@ class ZugangTool(Tool):
             if aktion == "einloggen":
                 if not T.hat(root, dienst):
                     return f"Fuer '{dienst}' ist nichts im Tresor. Erst mit /zugang anlegen."
+                from .. import codewort
+                if not codewort.frei(root):
+                    return codewort.SPERR_HINWEIS
                 filler = ctx.extra.get("tresor_filler")
                 if not callable(filler):
                     return ("Automatisches Einloggen geht in dieser Ansicht nicht. Oeffne die Login-Seite; dein "
