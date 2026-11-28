@@ -2874,6 +2874,15 @@ class CLI:
         elif base in ("/funktionen", "/stufen", "/premiumfunktionen"):
             from .. import premium as PM
             print(PM.uebersicht_text(self.config.project_root))
+        elif base == "/proaktiv":
+            from .. import proaktiv as PV
+            root = self.config.project_root
+            sub = cmd.split()[1].lower() if len(cmd.split()) > 1 else ""
+            if sub == "an":
+                PV.setzen(root, an=True)
+            elif sub == "aus":
+                PV.setzen(root, an=False)
+            print(_c(PV.status_text(root), GREY))
         elif base in ("/gedaechtnis", "/memory"):
             self._print_memory()
         elif base in ("/kosten", "/cost"):

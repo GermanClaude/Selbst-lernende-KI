@@ -4,6 +4,14 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.71.0 – 2026-11-28
+
+- **Proaktive Nova (Premium):** Auf Wunsch meldet sich Nova von selbst zur passenden Zeit –
+  aber nur, wenn es wirklich etwas Hilfreiches gibt (Erinnerung, Vorschlag, Hinweis);
+  sonst bleibt sie still. Mit **Ruhezeiten** und **Tageslimit**, damit es nie nervt.
+  Einschalten mit `/proaktiv an` oder dem Premium-Werkzeug (standardmäßig aus).
+  Steht in der Premium-Übersicht.
+
 ## 0.70.0 – 2026-11-28
 
 - **Routinen (Premium):** Beschreib eine wiederkehrende Aufgabe in eigenen Worten

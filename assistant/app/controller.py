@@ -54,6 +54,7 @@ COMMANDS = [
     ("/status", "Einstellungen & Sicherheitslage"),
     ("/codewort", "sensible Aktionen mit einem Codewort schuetzen"),
     ("/konnektoren", "externe Dienste (Konnektoren) hinzufuegen"),
+    ("/proaktiv", "proaktive Meldungen an/aus (Premium)"),
     ("/gedaechtnis", "was die KI gelernt hat"),
     ("/kosten", "Token-Verbrauch & Kosten"),
     ("/update", "nach einer neuen Version schauen"),
@@ -1220,6 +1221,109 @@ class AppController(CLI):
 
         self._zeitplan_thread = threading.Thread(target=schleife, name="zeitplan", daemon=True)
         self._zeitplan_thread.start()
+
+    # -- Proaktive Nova (assistant/proaktiv.py): meldet sich von selbst, nur wenn sinnvoll -----------
+    _PROAKTIV_HINWEIS = (
+        "[Proaktiver Moment - du meldest dich von dir aus bei deinem Menschen, OHNE dass er gerade etwas "
+        "gefragt hat. Schau dir den kurzen Stand unten an. NUR wenn es gerade wirklich etwas Hilfreiches, "
+        "Freundliches oder Wichtiges zu sagen gibt (eine Erinnerung, ein guter Vorschlag, ein Hinweis), sag es "
+        "in EINEM kurzen, warmen Satz - keine Werkzeuge, nichts erfinden. Wenn es nichts Sinnvolles gibt (meistens), "
+        "antworte NUR mit [still]. Lieber einmal zu oft still als nerven.]\n\nStand:\n")
+
+    def _proaktiv_kontext(self) -> str:
+        teile = [f"- Uhrzeit: {time.strftime('%H:%M, %A')}"]
+        try:
+            from .. import zeitplan as Z
+
+            eintraege = Z.laden(self.config.project_root)
+            teile.append(f"- geplante Aufgaben/Routinen: {len(eintraege)}")
+        except Exception:  # noqa: BLE001
+            pass
+        offen = [f for f in self.__dict__.get("_fehler", []) if not f.get("gesehen")]
+        if offen:
+            teile.append(f"- offene Fehler/Hinweise: {len(offen)}")
+        return "\n".join(teile)
+
+    def _proaktiv_idle(self) -> bool:
+        return not self.busy and self.tool_ctx.extra.get("afk_session") is None and not self.permissions.away
+
+    def _proaktiv_starten(self) -> None:
+        if self.__dict__.get("_proaktiv_thread") is not None:
+            return
+        stop = self._stop_watch
+
+        def schleife() -> None:
+            from .. import proaktiv as PV
+
+            root = self.config.project_root
+            while not stop.wait(300.0):           # alle 5 Minuten schauen; PV.faellig bremst die Haeufigkeit
+                try:
+                    e = PV.einstellungen(root)
+                    if PV.faellig(root, idle=self._proaktiv_idle(), e=e):
+                        self._proaktiv_pruefen()
+                except Exception:  # noqa: BLE001 - darf Nova nie stoppen
+                    logger.exception("Proaktiv")
+
+        self._proaktiv_thread = threading.Thread(target=schleife, name="proaktiv", daemon=True)
+        self._proaktiv_thread.start()
+
+    def _proaktiv_pruefen(self) -> bool:
+        """Einmal fragen, ob es etwas zu sagen gibt (sonst [still]); nur mit gueltigem Premium. Gibt True
+        zurueck, wenn tatsaechlich etwas gemeldet wurde."""
+        from .. import premium as PM
+        from .. import proaktiv as PV
+        from ..sehen.dienst import ist_still
+
+        root = self.config.project_root
+        if PM.stufe(root) not in ("premium", "max", "dev"):      # Proaktiv ist ein Premium-Feature
+            return False
+        with self._lock:
+            if self.busy:
+                return False
+            self.busy = True
+            self._live_turn = None
+            self._drop_turn = False
+            self.brain.provider.cancel_event.clear()
+        schon_weg = self.permissions.away
+        alt_confirm = self.permissions.confirm_fn
+        self.permissions.confirm_fn = lambda _m, _r=None: False   # niemand da, der antwortet
+        anweisung = self._PROAKTIV_HINWEIS + self._proaktiv_kontext()
+        snapshot = self.brain.provider.history_snapshot()
+        antwort = ""
+        try:
+            if not schon_weg:
+                self.permissions.begin_away()
+            antwort = self.brain.wortmeldung(anweisung, on_text=None) or ""   # on_text=None: nichts streamen
+        except Exception:  # noqa: BLE001
+            logger.exception("Proaktiv-Wortmeldung")
+            try:
+                self.brain.provider.abort_turn(snapshot, "proaktiv")
+            except Exception:  # noqa: BLE001
+                pass
+        finally:
+            self.permissions.confirm_fn = alt_confirm
+            if not schon_weg:
+                self.permissions.end_away()
+            with self._lock:
+                self.busy = False
+            self._state_changed()
+        try:                                                      # die Wortmeldung nie im Verlauf/Gedaechtnis lassen
+            if not self.brain.provider.drop_turn(snapshot, anweisung):
+                self.brain.provider.als_wortmeldung(snapshot)
+        except Exception:  # noqa: BLE001
+            pass
+        antwort = (antwort or "").strip()
+        if not antwort or ist_still(antwort):
+            return False
+        PV.notieren(root)
+        self._notice("\U0001F4A1 " + antwort, "info")
+        relay = getattr(self, "_handy_relay", None)
+        if relay is not None:
+            try:
+                relay.sende("\U0001F4A1 " + antwort[:3500])
+            except Exception:  # noqa: BLE001
+                pass
+        return True
 
     def _wach_halten(self, root, letzter: float) -> float:
         """Cloud mit Schlafmodus (Render Free): solange Aufgaben geplant sind, alle 10 Minuten die eigene
@@ -2870,6 +2974,7 @@ class AppController(CLI):
         self._plugins_starten()   # Plugins (MCP) fuer alle Modelle
         self._premium_laden()     # Nova Premium (geschlossen), falls freigeschaltet
         self._zeitplan_starten()  # geplante Aufgaben (auch ohne dass jemand die App offen hat)
+        self._proaktiv_starten()  # proaktive Meldungen (nur wenn eingeschaltet + Premium)
         self.tool_ctx.extra["anruf_gespraech"] = self._anruf_gespraech   # Telefonat mit Auftraegen (Vonage)
         self.tool_ctx.extra["dialer_oeffnen"] = self._dialer_oeffnen      # Dialer oeffnen (nur oeffnen, nicht waehlen)
         threading.Thread(target=self._wachwort_beim_start, name="wachwort", daemon=True).start()

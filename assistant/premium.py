@@ -59,6 +59,7 @@ FUNKTIONEN = {
         "Anmelde-Helfer: bereitet die Anmeldung bei einem Dienst vor (Seite, Wegwerf-Mail, Code holen) - du machst nur den letzten Klick (premium_anmelde_helfer)",
         "Dokumenten-Hirn: Fragen zu deinen eigenen Dateien beantworten, mit Quellenangabe - alles lokal (premium_dokumenten_hirn)",
         "Routinen in eigenen Worten: wiederkehrende Automatisierungen beschreiben, Nova fuehrt sie von selbst aus (premium_routinen)",
+        "Proaktive Nova: meldet sich von selbst zur passenden Zeit, wenn es wirklich etwas Hilfreiches gibt (premium_proaktiv)",
         "Edlere Premium-Optik in der App",
     ],
     "max": [
