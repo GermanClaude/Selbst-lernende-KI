@@ -4,6 +4,14 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.72.0 – 2026-11-28
+
+- **Experten-Rollen (Premium):** Lass Nova in eine Rolle schlüpfen – **Coder**, **Lerncoach**,
+  **Schreibcoach**, **Verhandlungs-Coach**, **Gesundheits-Coach** oder **Ideen-Coach**. Sag
+  einfach „sei mein Coder" oder „hilf mir wie ein Lerncoach", und Nova arbeitet wie ein Profi
+  auf dem Gebiet, bis du die Rolle wechselst oder abschaltest. (Ändert nur, *wie* Nova hilft –
+  Werte, Grenzen und Sicherheit bleiben.) Steht in der Premium-Übersicht.
+
 ## 0.71.0 – 2026-11-28
 
 - **Proaktive Nova (Premium):** Auf Wunsch meldet sich Nova von selbst zur passenden Zeit –

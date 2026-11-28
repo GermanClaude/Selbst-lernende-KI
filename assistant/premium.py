@@ -60,6 +60,7 @@ FUNKTIONEN = {
         "Dokumenten-Hirn: Fragen zu deinen eigenen Dateien beantworten, mit Quellenangabe - alles lokal (premium_dokumenten_hirn)",
         "Routinen in eigenen Worten: wiederkehrende Automatisierungen beschreiben, Nova fuehrt sie von selbst aus (premium_routinen)",
         "Proaktive Nova: meldet sich von selbst zur passenden Zeit, wenn es wirklich etwas Hilfreiches gibt (premium_proaktiv)",
+        "Experten-Rollen: Nova per Knopf zum Coder, Lerncoach, Schreibcoach, Verhandlungs-/Gesundheits-/Ideen-Coach (premium_rollen)",
         "Edlere Premium-Optik in der App",
     ],
     "max": [

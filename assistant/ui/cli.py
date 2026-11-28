@@ -230,6 +230,7 @@ class CLI:
         self.tool_ctx.extra["tresor_filler"] = lambda daten: __import__("assistant.tresor", fromlist=["x"]).tippe_login(daten, self.config.ki.name)
         self.tool_ctx.extra["ki_name"] = lambda: self.config.ki.name  # z.B. fuer Anrufe ("Hallo, hier ist ...")
         self.tool_ctx.extra["dialer_oeffnen"] = self._dialer_oeffnen   # Telefon-Dialer oeffnen (nur oeffnen)
+        self.tool_ctx.extra["system_neu"] = self._werkzeuge_geaendert  # System-Prompt neu bauen (z.B. Rolle)
         self.tool_ctx.extra["fehler_liste"] = lambda: list(self.__dict__.get("_fehler", []))  # Werkzeug app_fehler
         self.tool_ctx.extra["handy_aktiv"] = self._handy_aktiv  # Werkzeug telegram: nichts wegschnappen
         self._afk_pending: dict | None = None        # AFK-Modus vorgemerkt (Werkzeug abwesenheit)

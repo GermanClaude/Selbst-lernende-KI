@@ -203,6 +203,7 @@ class AppController(CLI):
         self.tool_ctx.extra["afk_start"] = self._afk_request
         self.tool_ctx.extra["afk_update"] = self._state_changed
         self.tool_ctx.extra["agenten_api"] = self._agenten_api()   # dirigierte Agent-Fenster (Premium Max)
+        self.tool_ctx.extra["system_neu"] = self.brain.werkzeuge_geaendert   # System-Prompt neu (z.B. Rolle)
         self._cloudflare_http = None  # fuer Tests austauschbar (None = echtes Netz)
         self._ollama_caps: dict[tuple[str, str], list] = {}  # (Adresse, Modell) -> Faehigkeiten
         # Live-Sehen: wartende Wortmeldung (nur die neueste) und ob gerade eine laeuft
