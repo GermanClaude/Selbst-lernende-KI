@@ -4,6 +4,13 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.68.0 – 2026-11-28
+
+- **Dokumenten-Hirn (Premium):** „Chatte mit deinen Dateien" – Nova liest einen Ordner
+  (Notizen, Verträge, Doku …) komplett **lokal** ein und beantwortet dann Fragen dazu
+  **mit Quellenangabe** (welche Datei). Es wird nichts hochgeladen. Text-Dateien immer;
+  PDF/Word, wenn das passende Zusatzpaket installiert ist. Erscheint in der Premium-Übersicht.
+
 ## 0.67.0 – 2026-11-28
 
 - **Anmelde-Helfer (Premium):** Nova hilft dir beim Anmelden bei einem Dienst – sie gibt
