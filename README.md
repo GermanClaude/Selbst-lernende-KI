@@ -11,7 +11,7 @@ arbeitet weiter, während du weg bist – und läuft auf Wunsch komplett kostenl
 [📖 Anleitung für Anfänger](ANLEITUNG.md) ·
 [🆕 Neuigkeiten](CHANGELOG.md) ·
 [🛠️ Mitentwickeln](docs/ENTWICKLUNG.md) ·
-[⚖️ Rechtliches](NUTZUNGSBEDINGUNGEN.md) · [📜 Lizenz (EULA)](LIZENZVERTRAG.md) · [🔒 Datenschutz](DATENSCHUTZ.md)
+[⚖️ Rechtliches](NUTZUNGSBEDINGUNGEN.md) · [📜 Lizenz](LIZENZVERTRAG.md) · [🔒 Datenschutz](DATENSCHUTZ.md) · [↩️ Widerruf](WIDERRUF.md)
 
 ![Nova – Startbildschirm](docs/bilder/start.png)
 
@@ -37,29 +37,11 @@ arbeitet weiter, während du weg bist – und läuft auf Wunsch komplett kostenl
 ## ⭐ Bewertungen
 
 <!-- BEWERTUNGEN:START -->
-### ★★★★☆ 4,3 von 5 · 6 Bewertungen
+### Noch keine Bewertungen
 
-| Sterne | Anteil | Anzahl |
-|---|---|---:|
-| ★★★★★ | ██████████ | 5 |
-| ★★★★ |  | 0 |
-| ★★★ |  | 0 |
-| ★★ |  | 0 |
-| ★ | ██ | 1 |
+Sei die/der Erste: In Nova unter „Feedback & Bewertung“ (oder `/feedback`) kannst du Nova bewerten.
 
-**Neueste Rezensionen:**
-
-> ★☆☆☆☆ **VECTORY** · 27.11.2026  
-> der nova key beinhaltete ein github token, zudem wurde es mit claude gemacht, huge red flag. der entwickler kann nicht coden, das summs it up pretty good...
-
-> ★★★★★ **Anonym** · 18.11.2026  
-> supa
-
-> ★★★★★ **Die deutsche Legende** · 14.11.2026  
-> wewdwadawd
-
-
-*Pro Installation zählt nur die letzte Bewertung. Text und Name erscheinen nur, wenn die Person es ausdrücklich erlaubt. Bewerten: in Nova unter „Feedback & Bewertung“ (oder `/feedback`).*
+*Pro Installation zählt nur die letzte Bewertung. Text und Name erscheinen nur, wenn die Person es ausdrücklich erlaubt.*
 <!-- BEWERTUNGEN:ENDE -->
 
 *Wird automatisch alle 6 Stunden aktualisiert.*

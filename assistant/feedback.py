@@ -65,6 +65,7 @@ MAX_NAME = 40
 MAX_REZENSION = 600
 MAX_REZENSIONEN = 30
 REZENSION_ABSTAND = timedelta(days=7)   # eine oeffentliche Rezension pro Woche
+MIN_REZENSION_NUTZUNG_SEK = 20 * 60     # oeffentliche Rezension erst nach 20 Min Nutzung abschicken
 BEWERTUNGEN_GUELTIG = timedelta(hours=1)
 BEWERTUNGEN_FEHLER_WARTEN = timedelta(minutes=15)
 MAX_PRO_STUNDE = 3
@@ -643,6 +644,20 @@ def abschicken(config, kind: Any = "feedback", stars: Any = None, text: Any = ""
         _log("abgelehnt", "ungueltig")
         return Ergebnis("abgelehnt", str(exc), "ungueltig")
     if payload.get("public"):
+        # Oeffentliche Rezension braucht einen Namen (oder eine E-Mail/Kontaktangabe) - keine anonymen Rezensionen.
+        if not (str(payload.get("name") or "").strip() or str(payload.get("contact") or "").strip()):
+            _log("abgelehnt", "name")
+            return Ergebnis("abgelehnt", "F\u00fcr eine \u00f6ffentliche Rezension brauche ich einen Namen "
+                            "(oder deine E-Mail-Adresse). Dein internes Feedback kannst du anonym senden.", "name")
+        # Erst nach etwas Nutzungszeit - verhindert, dass jemand die App oeffnet und sofort unfair bewertet.
+        genutzt = nutzung_sekunden(root)
+        if genutzt < MIN_REZENSION_NUTZUNG_SEK:
+            rest = int((MIN_REZENSION_NUTZUNG_SEK - genutzt) // 60) + 1
+            _log("abgelehnt", "nutzungszeit")
+            return Ergebnis("abgelehnt", "Eine \u00f6ffentliche Rezension kannst du erst nach 20 Minuten "
+                            f"Nutzung abschicken (noch ca. {rest} Min.). Schreiben und ansehen kannst du sie "
+                            "jetzt schon - sie wird dann gespeichert und abgeschickt, sobald es so weit ist.",
+                            "nutzungszeit")
         ab = naechste_rezension(root, jetzt)
         if ab is not None:
             _log("abgelehnt", "woche")

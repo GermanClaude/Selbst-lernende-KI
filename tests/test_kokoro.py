@@ -68,3 +68,33 @@ def test_install_kokoro_laedt_modelldateien(tmp_path, monkeypatch):
     assert ok is True
     assert "pip" in ran["cmd"] and "install" in ran["cmd"]
     assert (tmp_path / "kokoro-v1.0.onnx").exists() and (tmp_path / "voices-v1.0.bin").exists()
+
+
+# -- Piper (zweite lokale Open-Source-Stimme) ---------------------------------
+def test_piper_in_stimmenliste():
+    assert "piper" in [s["id"] for s in V.STIMMEN]
+    assert V.stimme_info("piper")["provider"] == "piper"
+
+
+def test_build_speaker_nimmt_piper_wenn_verfuegbar(monkeypatch):
+    monkeypatch.setattr(V, "piper_verfuegbar", lambda voice="": True)
+    spk = V.build_speaker(_settings(stimme="piper"), keys={}, http=lambda *a: b"")
+    assert isinstance(spk, V.PiperSpeaker) and spk.available is True
+    spk.stop()
+
+
+def test_build_speaker_piper_faellt_auf_frei_zurueck(monkeypatch):
+    monkeypatch.setattr(V, "piper_verfuegbar", lambda voice="": False)
+    spk = V.build_speaker(_settings(stimme="piper"), keys={}, http=lambda *a: b"")
+    assert not isinstance(spk, V.PiperSpeaker)
+
+
+def test_install_piper_laedt_stimme(tmp_path, monkeypatch):
+    monkeypatch.setattr(V, "_PIPER_DIR", tmp_path)
+    monkeypatch.setattr(V, "_importable", lambda n: False if n == "piper" else True)
+    import types as _t
+    ok, msg = V.install_piper(run=lambda cmd: _t.SimpleNamespace(returncode=0, stderr=""),
+                              fetch=lambda url: b"x" * 2_000_000)
+    assert ok is True
+    assert (tmp_path / "de_DE-thorsten-medium.onnx").exists()
+    assert (tmp_path / "de_DE-thorsten-medium.onnx.json").exists()

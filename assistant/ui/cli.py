@@ -9,7 +9,7 @@ Sonderbefehle (mit '/' beginnen):
   /sprache            - Stand der Spracheingabe (F2) anzeigen
   /sprache einrichten - Spracheingabe installieren
   /sprache vorlesen   - Antworten vorlesen an/aus
-  /stimme [frei|kokoro|openai|elevenlabs] - Stimme waehlen (kokoro = lokal & gratis, realistisch)
+  /stimme [frei|kokoro|piper|openai|elevenlabs] - Stimme waehlen (kokoro/piper = lokal & gratis)
   /transkript [start system|start mikrofon|stop|name N Name|zusammenfassung] - Ton lokal mitschreiben
   /protokoll [an|aus|zeigen] - Aktivitaets-Protokoll: welche Apps/Fenster (kein Keylogger)
   /skill [add <Name> <Anweisung>|addfuer <gehirn> …|an|aus|weg <Name>] - eigene Regeln/Skills
@@ -3299,8 +3299,8 @@ class CLI:
         from .. import voice as voicemod
 
         s = self._STIMME_ALIAS.get((stimme or "").strip().lower(), (stimme or "").strip().lower())
-        if s not in ("frei", "kokoro", "openai", "elevenlabs"):
-            raise ValueError(f"Unbekannte Stimme '{stimme}'. Moeglich: frei, kokoro, openai, elevenlabs.")
+        if s not in ("frei", "kokoro", "piper", "openai", "elevenlabs"):
+            raise ValueError(f"Unbekannte Stimme '{stimme}'. Moeglich: frei, kokoro, piper, openai, elevenlabs.")
         self.config.voice.stimme = s
         save_setting(self.config.project_root, "voice", "stimme", toml_string(s))
         if name:
@@ -3317,7 +3317,8 @@ class CLI:
         if getattr(self, "voice_out", None) and self.voice_out.enabled:
             self.voice_out = VoiceOutput(True, self.config.voice, self.config.stimme_keys)
         fehlt = s in ("openai", "elevenlabs") and not self.config.stimme_keys.get(s)
-        fehlt_modell = s == "kokoro" and not voicemod.kokoro_verfuegbar()
+        fehlt_modell = ((s == "kokoro" and not voicemod.kokoro_verfuegbar())
+                        or (s == "piper" and not voicemod.piper_verfuegbar()))
         return {"ok": True, "stimme": s, "name": self.config.voice.stimme_name,
                 "fehlt_schluessel": fehlt, "fehlt_modell": fehlt_modell, "info": voicemod.stimme_info(s)}
 
@@ -3342,15 +3343,17 @@ class CLI:
                 "Hallo, so klinge ich mit dieser Stimme.")
             print(_c("Test gesprochen (wenn die Stimme eingerichtet ist).", GREY))
             return
-        if sub in ("kokoro", "koko") and args[1:2] and args[1].lower() in ("installieren", "einrichten", "laden"):
-            print(_c("Richte Kokoro ein (Paket + Modell ~330 MB, einmalig) - das dauert etwas …", GREY))
+        if sub in ("kokoro", "koko", "piper") and args[1:2] and args[1].lower() in ("installieren", "einrichten", "laden"):
+            groesse = "~330 MB" if sub in ("kokoro", "koko") else "~60 MB"
+            print(_c(f"Richte {sub} ein (Paket + Stimme {groesse}, einmalig) - das dauert etwas …", GREY))
 
             def _fort(name, done, total):
                 pct = int(done / total * 100) if total else 0
                 print(_c(f"\r  {name}: {pct}%  ({done // 1048576}/{total // 1048576} MB)   ", GREY),
                       end="", flush=True)
 
-            ok, msg = voicemod.install_kokoro(fortschritt=_fort)
+            einrichten = voicemod.install_piper if sub == "piper" else voicemod.install_kokoro
+            ok, msg = einrichten(fortschritt=_fort)
             print()
             print(_c(msg, GREEN if ok else YELLOW))
             return
@@ -3371,8 +3374,10 @@ class CLI:
             return
         e = result["info"]
         if result.get("fehlt_modell"):
-            print(_c("Kokoro ist noch nicht eingerichtet (Paket + Modell ~330 MB). Jetzt holen mit:  "
-                     "/stimme kokoro installieren  - bis dahin nehme ich die freie Computerstimme.", YELLOW))
+            st = result["stimme"]
+            groesse = "~330 MB" if st == "kokoro" else "~60 MB"
+            print(_c(f"{e['name']} ist noch nicht eingerichtet (Paket + Stimme {groesse}). Jetzt holen mit:  "
+                     f"/stimme {st} installieren  - bis dahin nehme ich die freie Computerstimme.", YELLOW))
         elif result["fehlt_schluessel"]:
             if result["stimme"] == "openai":
                 print(_c("Fuer die OpenAI-Stimme fehlt noch der ChatGPT-Schluessel - trag ihn ein mit "
@@ -3833,6 +3838,7 @@ class CLI:
             ("NUTZUNGSBEDINGUNGEN.md", "Nutzungsbedingungen & Haftungsausschluss"),
             ("LIZENZVERTRAG.md", "Endbenutzer-Lizenzvertrag (EULA)"),
             ("DATENSCHUTZ.md", "Datenschutzerklärung"),
+            ("WIDERRUF.md", "Widerrufsbelehrung"),
         ]
         gefunden = False
         print(_c("\nRechtliches – Einzelteile auch mit /lizenz und /datenschutz.", GREY))

@@ -897,20 +897,46 @@ def test_echtes_requests_folgt_der_weiterleitung_wie_bei_google(tmp_path, monkey
 # -- 0.52: oeffentliche Rezension nur einmal pro Woche --------------------------------
 def test_oeffentliche_rezension_nur_einmal_pro_woche(tmp_path):
     cfg = _cfg(tmp_path, adresse=URL)
+    feedback.nutzung_hinzufuegen(21 * 60, root=tmp_path)   # genug Nutzungszeit fuer oeffentliche Rezensionen
     post = FakePost(ok())
-    erste = feedback.abschicken(cfg, "bewertung", 5, "Toll!", oeffentlich=True, post=post, jetzt=JETZT)
+    erste = feedback.abschicken(cfg, "bewertung", 5, "Toll!", oeffentlich=True, name="Max", post=post, jetzt=JETZT)
     assert erste.status == "gesendet"
     assert feedback.status(cfg, jetzt=JETZT + timedelta(days=1))["rezension_ab"] == "15.11.2026"
-    zweite = feedback.abschicken(cfg, "bewertung", 4, "Nochmal", oeffentlich=True, post=post,
+    zweite = feedback.abschicken(cfg, "bewertung", 4, "Nochmal", oeffentlich=True, name="Max", post=post,
                                  jetzt=JETZT + timedelta(days=3))
     assert (zweite.status, zweite.grund) == ("abgelehnt", "woche") and "15.11.2026" in zweite.meldung
     assert len(post.calls) == 1
     privat = feedback.abschicken(cfg, "bewertung", 4, "Privat geht", oeffentlich=False, post=post,
                                  jetzt=JETZT + timedelta(days=3))
     assert privat.status == "gesendet"                    # Sterne/Feedback ohne "oeffentlich" gehen immer
-    spaeter = feedback.abschicken(cfg, "bewertung", 5, "Eine Woche spaeter", oeffentlich=True, post=post,
-                                  jetzt=JETZT + timedelta(days=7, minutes=1))
+    spaeter = feedback.abschicken(cfg, "bewertung", 5, "Eine Woche spaeter", oeffentlich=True, name="Max",
+                                  post=post, jetzt=JETZT + timedelta(days=7, minutes=1))
     assert spaeter.status == "gesendet"
+
+
+def test_oeffentliche_rezension_braucht_namen(tmp_path):
+    cfg = _cfg(tmp_path, adresse=URL)
+    feedback.nutzung_hinzufuegen(21 * 60, root=tmp_path)
+    post = FakePost(ok())
+    ohne = feedback.abschicken(cfg, "bewertung", 2, "Schlecht", oeffentlich=True, post=post, jetzt=JETZT)
+    assert (ohne.status, ohne.grund) == ("abgelehnt", "name")
+    assert not post.calls                                 # nichts gesendet
+    mit = feedback.abschicken(cfg, "bewertung", 2, "Schlecht", oeffentlich=True, name="Kritiker", post=post, jetzt=JETZT)
+    assert mit.status == "gesendet"
+
+
+def test_oeffentliche_rezension_erst_nach_20_minuten(tmp_path):
+    cfg = _cfg(tmp_path, adresse=URL)
+    post = FakePost(ok())
+    feedback.nutzung_hinzufuegen(5 * 60, root=tmp_path)   # erst 5 Minuten -> zu frueh
+    frueh = feedback.abschicken(cfg, "bewertung", 1, "Direkt 1 Stern", oeffentlich=True, name="Hitzkopf",
+                                post=post, jetzt=JETZT)
+    assert (frueh.status, frueh.grund) == ("abgelehnt", "nutzungszeit")
+    assert not post.calls
+    feedback.nutzung_hinzufuegen(16 * 60, root=tmp_path)  # jetzt zusammen 21 Minuten
+    spaet = feedback.abschicken(cfg, "bewertung", 1, "Jetzt erlaubt", oeffentlich=True, name="Hitzkopf",
+                                post=post, jetzt=JETZT)
+    assert spaet.status == "gesendet"
 
 
 def test_wochenlimit_verstellte_uhr_sperrt_nicht_ewig(tmp_path):

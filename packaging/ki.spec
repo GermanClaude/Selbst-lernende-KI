@@ -32,6 +32,7 @@ added_files = [
     (str(project_root / "NUTZUNGSBEDINGUNGEN.md"), "."),  # fuer /rechtliches
     (str(project_root / "LIZENZVERTRAG.md"), "."),  # fuer /lizenz und /rechtliches
     (str(project_root / "DATENSCHUTZ.md"), "."),  # fuer /datenschutz und /rechtliches
+    (str(project_root / "WIDERRUF.md"), "."),  # fuer /rechtliches
 ]
 
 # Live-Mitschrift im Jarvis-Modus (Vosk): die DLL liegt im Paketordner.

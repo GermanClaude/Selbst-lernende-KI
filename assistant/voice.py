@@ -675,12 +675,130 @@ def install_kokoro(run=None, fetch=None, fortschritt=None) -> tuple[bool, str]:
     return True, "Kokoro ist eingerichtet - stell die Stimme um mit: /stimme kokoro"
 
 
+# Piper: bekanntes Open-Source-TTS (github.com/rhasspy/piper), laeuft lokal, mit SEHR gutem Deutsch
+# (Stimme "Thorsten"). Stimmen sind kleine .onnx-Dateien, die man einmal herunterlaedt.
+_PIPER_DIR = Path.home() / ".nova-piper"
+_PIPER_STANDARD_STIMME = "de_DE-thorsten-medium"
+_PIPER_BASIS_URL = ("https://huggingface.co/rhasspy/piper-voices/resolve/main/"
+                    "de/de_DE/thorsten/medium/de_DE-thorsten-medium.onnx")
+PIPER_PACKAGES = ["piper-tts"]
+_piper_cache: dict = {}
+
+
+def _piper_pfade(voice: str = ""):
+    name = (voice or _PIPER_STANDARD_STIMME).strip() or _PIPER_STANDARD_STIMME
+    modell = _PIPER_DIR / (name + ".onnx")
+    return modell, modell.with_suffix(".onnx.json")
+
+
+def piper_dateien_da(voice: str = "") -> bool:
+    modell, konfig = _piper_pfade(voice)
+    return modell.exists() and konfig.exists()
+
+
+def piper_verfuegbar(voice: str = "") -> bool:
+    return _importable("piper") and piper_dateien_da(voice)
+
+
+def _piper_laden(voice: str = ""):
+    modell, konfig = _piper_pfade(voice)
+    schluessel = str(modell)
+    stimme = _piper_cache.get(schluessel)
+    if stimme is None:
+        from piper import PiperVoice
+
+        stimme = PiperVoice.load(str(modell), config_path=str(konfig))
+        _piper_cache[schluessel] = stimme
+    return stimme
+
+
+def piper_pcm(text: str, voice: str = "", tempo: float = 1.0, sprache: str = "de") -> bytes:
+    """Erzeugt lokal PCM (24 kHz, 16 bit, mono) mit Piper. Resamplet von der Stimm-Rate (meist 22,05 kHz)."""
+    import numpy as np
+
+    stimme = _piper_laden(voice)
+    tempo = max(0.5, min(2.0, float(tempo or 1.0)))
+    laenge_skala = 1.0 / tempo                      # Piper: groesser = langsamer
+    roh = bytearray()
+    rate = 22050
+    # Neuere piper-API (synthesize -> AudioChunk) und aeltere (synthesize_stream_raw -> bytes) abdecken.
+    if hasattr(stimme, "synthesize"):
+        try:
+            for chunk in stimme.synthesize(text, length_scale=laenge_skala):
+                roh += getattr(chunk, "audio_int16_bytes", b"") or b""
+                rate = getattr(chunk, "sample_rate", rate) or rate
+        except TypeError:
+            for chunk in stimme.synthesize(text):
+                roh += getattr(chunk, "audio_int16_bytes", b"") or b""
+                rate = getattr(chunk, "sample_rate", rate) or rate
+    else:
+        try:
+            cfg = getattr(stimme, "config", None)
+            rate = int(getattr(cfg, "sample_rate", rate) or rate)
+        except Exception:  # noqa: BLE001
+            pass
+        for stueck in stimme.synthesize_stream_raw(text, length_scale=laenge_skala):
+            roh += stueck
+    samples = np.frombuffer(bytes(roh), dtype="<i2").astype("float32") / 32768.0
+    if rate and rate != KOKORO_RATE:
+        idx = (np.arange(0, len(samples), rate / KOKORO_RATE)).astype(int)
+        samples = samples[idx[idx < len(samples)]]
+    return (np.clip(samples, -1.0, 1.0) * 32767.0).astype("<i2").tobytes()
+
+
+def install_piper(run=None, fetch=None, fortschritt=None, voice: str = "") -> tuple[bool, str]:
+    """Richtet Piper ein: pip install piper-tts + eine Stimme (2 Dateien, ~60 MB) herunterladen."""
+    import subprocess
+    import urllib.request
+
+    run = run or (lambda cmd: subprocess.run(cmd, capture_output=True, text=True))
+    if not _importable("piper"):
+        res = run([sys.executable, "-m", "pip", "install", *PIPER_PACKAGES])
+        if getattr(res, "returncode", 1) != 0:
+            return False, "Konnte 'piper-tts' nicht installieren: " + (getattr(res, "stderr", "") or "")[-400:]
+    _PIPER_DIR.mkdir(parents=True, exist_ok=True)
+    modell, konfig = _piper_pfade(voice)
+
+    def hol(url: str, ziel: Path, mindest: int) -> None:
+        if ziel.exists() and ziel.stat().st_size >= mindest:
+            return
+        if fetch is not None:
+            ziel.write_bytes(fetch(url))
+            return
+        tmp = ziel.with_suffix(ziel.suffix + ".teil")
+        with urllib.request.urlopen(url, timeout=60) as r:
+            gesamt = int(r.headers.get("Content-Length") or 0)
+            geladen = 0
+            with open(tmp, "wb") as f:
+                while True:
+                    brocken = r.read(1 << 16)
+                    if not brocken:
+                        break
+                    f.write(brocken)
+                    geladen += len(brocken)
+                    if fortschritt and gesamt:
+                        fortschritt(ziel.name, geladen, gesamt)
+        tmp.replace(ziel)
+
+    try:
+        hol(_PIPER_BASIS_URL, modell, 1_000_000)
+        hol(_PIPER_BASIS_URL + ".json", konfig, 100)
+    except Exception as exc:  # noqa: BLE001
+        return False, f"Download der Piper-Stimme ging nicht: {exc}"
+    if not piper_dateien_da(voice):
+        return False, "Die Piper-Dateien fehlen noch."
+    return True, "Piper ist eingerichtet - stell die Stimme um mit: /stimme piper"
+
+
 STIMMEN = [
     {"id": "frei", "provider": "lokal", "name": "Frei (Computerstimme)", "kostenlos": True,
      "info": "die eingebaute Stimme deines PCs - gratis, offline, ohne Konto"},
     {"id": "kokoro", "provider": "kokoro", "name": "Kokoro (lokal, realistisch)", "kostenlos": True,
      "info": "realistische Stimme komplett offline auf deinem PC (Kokoro-82M) - gratis, ohne Konto. "
              "Einmaliger Download (~330 MB). Englisch top, Deutsch mit leichtem Akzent."},
+    {"id": "piper", "provider": "piper", "name": "Piper (lokal, Open-Source)", "kostenlos": True,
+     "info": "offline Open-Source-Stimme (Piper von GitHub) - gratis, ohne Konto, sehr gutes Deutsch "
+             "(Stimme Thorsten). Einmaliger Download (~60 MB)."},
     {"id": "openai", "provider": "openai", "name": "OpenAI (realistisch)", "kostenlos": False,
      "preis": "ca. 0,60 $ je 1 Mio. Zeichen-Tokens", "schluessel": "openai",
      "info": "natuerliche Stimme ueber deinen vorhandenen ChatGPT-Schluessel (guenstig)"},
@@ -898,6 +1016,40 @@ class KokoroSpeaker(CloudSpeaker):
                           sprache=self.language)
 
 
+class PiperSpeaker(CloudSpeaker):
+    """Realistische Stimme KOMPLETT lokal (Piper, Open-Source). Erzeugt PCM 24 kHz, kein Konto/Schluessel."""
+
+    def __init__(self, settings, language: str = "de", http=None):
+        import queue as queue_mod
+        import threading
+
+        self.provider = "piper"
+        self.key = ""
+        self.settings = settings
+        self.language = language
+        self._http = http
+        self._queue = queue_mod.Queue()
+        self._idle = threading.Event()
+        self._idle.set()
+        self.completed = 0
+        self._generation = 0
+        self._pending = 0
+        self._stop = False
+        self._lock = threading.Lock()
+        self._stream = None
+        self._voice_id = (getattr(settings, "stimme_name", "") or "").strip()
+        self.available = piper_verfuegbar(self._voice_id) and (self._http is not None or _importable("sounddevice"))
+        self._thread = None
+        if self.available:
+            self._thread = threading.Thread(target=self._run, name="stimme-piper", daemon=True)
+            self._thread.start()
+
+    def _synthesize(self, text: str) -> bytes:
+        return piper_pcm(text, voice=self._voice_id,
+                         tempo=float(getattr(self.settings, "stimme_tempo", 1.0) or 1.0),
+                         sprache=self.language)
+
+
 def build_speaker(settings, keys: dict | None = None, language: str = "de", http=None):
     """Baut die passende Stimme: realistisch (Kokoro lokal, oder OpenAI/ElevenLabs mit Schluessel) wenn
     gewaehlt und verfuegbar, sonst die kostenlose Computerstimme. Faellt immer sauber auf 'frei' zurueck."""
@@ -907,6 +1059,10 @@ def build_speaker(settings, keys: dict | None = None, language: str = "de", http
                 "koko": "kokoro"}.get(stimme, stimme)
     if provider == "kokoro":
         spk = KokoroSpeaker(settings, language, http=http)
+        if spk.available:
+            return spk
+    elif provider == "piper":
+        spk = PiperSpeaker(settings, language, http=http)
         if spk.available:
             return spk
     elif provider in ("openai", "elevenlabs"):

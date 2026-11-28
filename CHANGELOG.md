@@ -4,6 +4,19 @@ Jede Version hat hier einen Abschnitt `## <Version> – <Datum>`. Der Updater ze
 beim Aktualisieren alle Abschnitte zwischen deiner und der neuen Version an, und
 deine KI erklärt sie dir in eigenen Worten.
 
+## 0.83.0 – 2026-11-28
+
+- **Weitere lokale Stimme „Piper" (Open-Source):** zusätzlich zu Kokoro jetzt auch Piper
+  (von GitHub) als gratis, offline Stimme – mit sehr gutem Deutsch (Thorsten). `/stimme piper`,
+  einrichten mit `/stimme piper installieren` (~60 MB).
+- **Fairere Rezensionen:** Eine öffentliche Rezension braucht jetzt einen **Namen** (oder
+  E-Mail) und ist erst **nach 20 Minuten Nutzung** absendbar – schreiben/ansehen geht vorher.
+  So kann niemand die App öffnen und sofort unfair bewerten. Internes Feedback bleibt anonym.
+- **Mehr Rechtstexte:** Datenschutzerklärung um eine **vollständige Funktionsübersicht** ergänzt,
+  neue **Widerrufsbelehrung** (`/rechtliches` zeigt sie mit). Eine Entwickler-Prüfliste
+  (`PRUEFEN-MIT-ANWALT.md`) sammelt alles, was du mit deinem Anwalt klären solltest.
+- Alte Beispiel-/Test-Bewertungen in der GitHub-Anzeige zurückgesetzt.
+
 ## 0.82.0 – 2026-11-28
 
 - **Neue Stimme „Kokoro" (lokal & gratis):** eine realistische Vorlese-/Sprachstimme, die

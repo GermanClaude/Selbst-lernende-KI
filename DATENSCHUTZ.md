@@ -6,7 +6,7 @@
 > kommerzielle Nutzung lass diese Erklärung von einer Anwältin/einem Anwalt prüfen und an deinen Fall
 > anpassen. Diese Vorlage orientiert sich an der DSGVO.
 
-Stand: **28.11.2026** (ab Version 0.77.0).
+Stand: **28.11.2026** (ab Version 0.83.0 - mit vollständiger Funktionsübersicht, Abschnitt 3.8).
 
 ---
 
@@ -125,6 +125,43 @@ Telefonie-Funktionen nutzen einen **Telefonie-Anbieter** (z. B. **[Vonage]**); d
 Anbieter Verbindungs- und ggf. Audiodaten an. **Das Mitschneiden oder Transkribieren von Gesprächen kann
 die Zustimmung aller Beteiligten erfordern** – dafür bist **du** verantwortlich (siehe
 Nutzungsbedingungen).
+
+---
+
+## 3.8 Alle Funktionen im Überblick – wohin (wenn überhaupt) Daten gehen
+
+Die meisten Funktionen laufen **nur lokal** auf deinem Gerät. Daten verlassen den Rechner nur bei den
+Funktionen, die ausdrücklich einen Online-Dienst nutzen – und nur, wenn **du** sie einsetzt.
+
+| Funktion | Läuft wo | Was (wenn überhaupt) nach außen geht |
+|---|---|---|
+| Gedächtnis, Verlauf, Einstellungen | lokal | nichts (nur das gewählte KI-Modell erhält, was du schreibst) |
+| KI-Antworten (Cloud-Modell) | Cloud | deine Eingaben an den gewählten Anbieter (Abschnitt 3.1) |
+| KI-Antworten (Ollama/LM Studio) | lokal | nichts |
+| Stimme „Frei" (Computerstimme) | lokal | nichts |
+| Stimme **Kokoro** (lokal) | lokal | einmaliger Modell-Download von **GitHub** (dabei IP sichtbar); Vorlesen selbst offline |
+| Stimme **Piper** (lokal, Open-Source) | lokal | einmaliger Stimmen-Download von **HuggingFace** (dabei IP sichtbar); Vorlesen selbst offline |
+| Stimme OpenAI/ElevenLabs | Cloud | der vorzulesende Text an den Anbieter |
+| Spracheingabe (Whisper/Vosk lokal) | lokal | nichts |
+| Spracheingabe (Google, online) | Cloud | die Audioaufnahme an Google |
+| Live-Sehen / Bildschirm / Kamera | lokal | an ein Cloud-Modell nur, wenn du eines nutzt |
+| **Live-Coding-Fenster** | lokal | nichts (zeigt nur an, was Nova schreibt) |
+| **Video-Studio** (ffmpeg) | lokal | nichts; die einmalige ffmpeg-Installation lädt von winget/ffmpeg.org (IP sichtbar) |
+| **God's Eye / Weltkugel** (Spaß-Funktion) | lokal + Online-Dienste | ruft Live-Daten ab: USGS (Erdbeben), wheretheiss.at (ISS), Windy (Webcams) – dabei IP bei diesen Diensten sichtbar |
+| Wegwerf-E-Mail / Postfach | Fremddienst | läuft über **mail.tm** (Abschnitt 3.5) |
+| Anmelde-Helfer | öffnet Webseiten | öffnet die Seite des Dienstes; **du** meldest dich an |
+| Dokumenten-Hirn | lokal | nichts (durchsucht deine eigenen Dateien) |
+| Konnektoren (MCP, Websuche, GitHub …) | je Dienst | die jeweilige Anfrage an den verbundenen Dienst (Abschnitt 3.6) |
+| Reiseplaner | lokal (+ optional Websuche) | bei Websuche: die Suchanfrage an die Suchmaschine |
+| Routinen, Proaktive Nova, Rollen, Chronik, Zweites Gehirn, Schreibt-wie-du, Kreativ-Studio, Projekt-Baukasten, Werkzeug-Schmiede | lokal | nichts |
+| Premium-Freischaltung / Paket | Lizenzserver | Geräte-Kennung + Code an deinen Lizenzserver (Abschnitt 3.2) |
+| Feedback & Bewertung | Fremddienst | nur wenn **du** aktiv absendest (Abschnitt 3.3) |
+| Updates | GitHub | Versionsabfrage/Download (IP sichtbar, Abschnitt 3.4) |
+| Anrufe / Transkription | Telefonie-Anbieter | Verbindungs-/Audiodaten beim Anbieter (Abschnitt 3.7) |
+
+> Hinweis zu den **lokalen Stimmen** (Kokoro, Piper): Nur der **einmalige Download** der Modell-/Stimmdateien
+> geht ins Netz (GitHub bzw. HuggingFace sehen dabei deine IP wie bei jedem Download). Das **Vorlesen danach
+> läuft offline** auf deinem Gerät – der vorgelesene Text verlässt den Rechner **nicht**.
 
 ---
 

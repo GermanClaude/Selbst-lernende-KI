@@ -2690,12 +2690,14 @@ class AppController(CLI):
             hat = True if e.get("kostenlos") else bool(keys.get(e["id"]))
             if e["id"] == "kokoro":
                 bereit = voicemod.kokoro_verfuegbar()
+            elif e["id"] == "piper":
+                bereit = voicemod.piper_verfuegbar()
             else:
                 bereit = hat
             optionen.append({"id": e["id"], "name": e["name"], "info": e["info"],
                              "kostenlos": bool(e.get("kostenlos")), "preis": e.get("preis", ""),
                              "hat_schluessel": hat, "bereit": bereit,
-                             "braucht_download": e["id"] == "kokoro" and not bereit})
+                             "braucht_download": e["id"] in ("kokoro", "piper") and not bereit})
         return {
             "aktiv": self.config.voice.stimme or "frei",
             "name": self.config.voice.stimme_name or "",
@@ -2748,8 +2750,10 @@ class AppController(CLI):
         except ValueError as exc:
             return {"ok": False, "error": str(exc)}
         if result.get("fehlt_modell"):
-            self._notice("Kokoro ist noch nicht eingerichtet (einmaliger Download ~330 MB). Hol es mit "
-                         "`/stimme kokoro installieren` - bis dahin nehme ich die freie Computerstimme.", "warn")
+            st = result["stimme"]
+            groesse = "~330 MB" if st == "kokoro" else "~60 MB"
+            self._notice(f"Diese Stimme ist noch nicht eingerichtet (einmaliger Download {groesse}). Hol sie mit "
+                         f"`/stimme {st} installieren` - bis dahin nehme ich die freie Computerstimme.", "warn")
         self._state_changed()
         return {"ok": True, "state": self.state(), "fehlt_schluessel": result["fehlt_schluessel"],
                 "fehlt_modell": result.get("fehlt_modell", False)}
